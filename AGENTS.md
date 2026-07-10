@@ -41,10 +41,10 @@
 
 1. **阶段 1** ✅ 基础架构与项目骨架
 2. **阶段 2** ✅ 绑定系统与事件系统
-3. **阶段 3** 🚧 传输层与消息处理器
-4. **阶段 4** ⏳ 窗口管理器与对话框
-5. **阶段 5** ⏳ Windows 平台实现
-6. **阶段 6** ⏳ Linux 平台实现
+3. **阶段 3** ✅ 传输层与消息处理器
+4. **阶段 4** ✅ 窗口管理器与对话框
+5. **阶段 5** ✅ Windows 平台实现
+6. **阶段 6** ✅ Linux 平台实现（GirCore 0.8.0）
 7. **阶段 7** ⏳ CLI 工具与代码生成器
 
 ### 2.2 每阶段交付标准（Definition of Done）
@@ -232,6 +232,18 @@ dotnet build tests/Wails.Net.Application.Tests/Wails.Net.Application.Tests.cspro
 dotnet run --project tests/Wails.Net.Application.Tests/Wails.Net.Application.Tests.csproj --no-build
 ```
 
+#### 平台特定测试
+
+- **Windows 测试**：必须在 Windows 上运行（依赖 Win32 API、注册表、WinForms 剪贴板）
+  ```bash
+  dotnet run --project tests/Wails.Net.Application.Windows.Tests/Wails.Net.Application.Windows.Tests.csproj
+  ```
+- **Linux 测试**：必须在 Linux 或 WSL 中运行（依赖 GirCore/GTK4 原生库）
+  ```bash
+  # 在 WSL 中运行
+  wsl -d kali-linux -- bash -c "cd /mnt/f/Code/Dotnet/Wails.Net && dotnet run --project tests/Wails.Net.Application.Linux.Tests/Wails.Net.Application.Linux.Tests.csproj"
+  ```
+
 ### 4.5 测试覆盖要求
 
 | 组件类型 | 覆盖要求 |
@@ -402,4 +414,4 @@ dotnet fsi script.fsx
 
 ---
 
-**最后更新**：2026-07-10
+**最后更新**：2026-07-11

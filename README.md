@@ -67,8 +67,8 @@ public class GreetingService
 
 | 平台 | Webview | 状态 |
 |------|---------|------|
-| Windows | WebView2 | 计划中 |
-| Linux | WebKitGTK 6.0 (GirCore) | 计划中 |
+| Windows | WebView2 | 骨架已实现（主题/剪贴板/自启动/环境信息） |
+| Linux | WebKitGTK 6.0 (GirCore) | 骨架已实现（主题/剪贴板/自启动/环境信息） |
 | macOS | — | 暂不支持 |
 | iOS/Android | — | 暂不支持 |
 
@@ -128,9 +128,17 @@ Wails.Net/
 # 构建整个解决方案
 dotnet build
 
-# 运行所有测试（.NET 10 SDK 不再支持 dotnet test，使用 dotnet run）
+# 运行核心测试（.NET 10 SDK 不再支持 dotnet test，使用 dotnet run）
 dotnet run --project tests/Wails.Net.Application.Tests/Wails.Net.Application.Tests.csproj
+
+# 运行 Windows 平台测试（仅 Windows）
+dotnet run --project tests/Wails.Net.Application.Windows.Tests/Wails.Net.Application.Windows.Tests.csproj
+
+# 运行 Linux 平台测试（在 WSL 或 Linux 上运行）
+dotnet run --project tests/Wails.Net.Application.Linux.Tests/Wails.Net.Application.Linux.Tests.csproj
 ```
+
+> **提示**：Linux 测试需在 Linux 或 WSL 环境中运行。在 Windows 上可通过 `wsl -d kali-linux -- bash -c "cd /mnt/f/Code/Dotnet/Wails.Net && dotnet run --project tests/Wails.Net.Application.Linux.Tests"` 运行。
 
 ### 编码规范
 
@@ -149,7 +157,7 @@ dotnet run --project tests/Wails.Net.Application.Tests/Wails.Net.Application.Tes
 3. ✅ **传输层与消息处理器** — HTTP 传输、WebSocket 广播、消息协议
 4. ✅ **窗口管理器与对话框** — 窗口生命周期、对话框系统
 5. ✅ **Windows 平台实现** — WebView2 骨架、注册表主题检测、剪贴板、自启动、环境信息
-6. ⏳ **Linux 平台实现** — GirCore/GTK4/WebKitGTK
+6. ✅ **Linux 平台实现** — GirCore 0.8.0/GTK4 骨架、环境变量主题检测、剪贴板存根、XDG 自启动、环境信息
 7. ⏳ **CLI 工具与生成器** — 脚手架、TS 绑定生成
 
 ## 贡献

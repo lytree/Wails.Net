@@ -41,7 +41,11 @@ public static class PlatformFactory
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
-            throw new PlatformNotSupportedException("Linux 平台实现尚未完成，将在阶段 5 实现");
+            // 通过反射加载 Linux 平台实现，避免核心项目直接依赖 Linux 平台程序集
+            var assembly = Assembly.Load("Wails.Net.Application.Linux");
+            var type = assembly.GetType("Wails.Net.Application.Platform.LinuxPlatformApp")
+                ?? throw new PlatformNotSupportedException("无法找到 LinuxPlatformApp 类型");
+            return (IPlatformApp)Activator.CreateInstance(type, options)!;
         }
 
         throw new PlatformNotSupportedException($"不支持的平台: {RuntimeInformation.OSDescription}");
@@ -69,7 +73,8 @@ public static class PlatformFactory
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
-            throw new PlatformNotSupportedException("Linux 平台实现尚未完成，将在阶段 5 实现");
+            // TODO: 将在后续实现完整的 WebKitGTK 集成
+            throw new NotImplementedException("WebKitGTK 窗口创建将在后续实现");
         }
 
         throw new PlatformNotSupportedException($"不支持的平台: {RuntimeInformation.OSDescription}");
@@ -98,7 +103,11 @@ public static class PlatformFactory
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
-            throw new PlatformNotSupportedException("Linux 平台实现尚未完成，将在阶段 5 实现");
+            // 通过反射加载 Linux 平台剪贴板实现，避免核心项目直接依赖 Linux 平台程序集
+            var assembly = Assembly.Load("Wails.Net.Application.Linux");
+            var type = assembly.GetType("Wails.Net.Application.Clipboard.LinuxClipboard")
+                ?? throw new PlatformNotSupportedException("无法找到 LinuxClipboard 类型");
+            return (IClipboardImpl)Activator.CreateInstance(type)!;
         }
 
         throw new PlatformNotSupportedException($"不支持的平台: {RuntimeInformation.OSDescription}");
