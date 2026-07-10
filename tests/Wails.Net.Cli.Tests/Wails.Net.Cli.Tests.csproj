@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <EnableMSTestRunner>false</EnableMSTestRunner>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TUnit" />
+    <PackageReference Include="TUnit.Assertions" />
+    <PackageReference Include="TUnit.Engine" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Wails.Net.Cli\Wails.Net.Cli.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Generator\Wails.Net.Generator.csproj" />
+  </ItemGroup>
+
+</Project>

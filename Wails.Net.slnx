@@ -5,10 +5,13 @@
     <Project Path="src/Wails.Net.Application.Linux/Wails.Net.Application.Linux.csproj" />
     <Project Path="src/Wails.Net.Errors/Wails.Net.Errors.csproj" />
     <Project Path="src/Wails.Net.Events/Wails.Net.Events.csproj" />
+    <Project Path="src/Wails.Net.Generator/Wails.Net.Generator.csproj" />
+    <Project Path="src/Wails.Net.Cli/Wails.Net.Cli.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Wails.Net.Application.Tests/Wails.Net.Application.Tests.csproj" />
     <Project Path="tests/Wails.Net.Application.Windows.Tests/Wails.Net.Application.Windows.Tests.csproj" />
     <Project Path="tests/Wails.Net.Application.Linux.Tests/Wails.Net.Application.Linux.Tests.csproj" />
+    <Project Path="tests/Wails.Net.Cli.Tests/Wails.Net.Cli.Tests.csproj" />
   </Folder>
 </Solution>

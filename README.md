@@ -43,6 +43,26 @@ dotnet build
 dotnet run --project tests/Wails.Net.Application.Tests/Wails.Net.Application.Tests.csproj
 ```
 
+### CLI 工具
+
+```bash
+# 构建 CLI 工具
+dotnet build src/Wails.Net.Cli/Wails.Net.Cli.csproj
+
+# 环境诊断
+dotnet run --project src/Wails.Net.Cli -- doctor
+
+# 生成 TypeScript 绑定
+dotnet run --project src/Wails.Net.Cli -- generate --assembly path/to/MyApp.dll --output bindings
+
+# 脚手架新项目
+dotnet run --project src/Wails.Net.Cli -- new MyApp --template vue-ts
+
+# 构建项目
+dotnet run --project src/Wails.Net.Cli -- build --project path/to/MyApp.csproj
+```
+
+
 ### 最小示例
 
 ```csharp
@@ -136,6 +156,9 @@ dotnet run --project tests/Wails.Net.Application.Windows.Tests/Wails.Net.Applica
 
 # 运行 Linux 平台测试（在 WSL 或 Linux 上运行）
 dotnet run --project tests/Wails.Net.Application.Linux.Tests/Wails.Net.Application.Linux.Tests.csproj
+
+# 运行 CLI 工具测试
+dotnet run --project tests/Wails.Net.Cli.Tests/Wails.Net.Cli.Tests.csproj
 ```
 
 > **提示**：Linux 测试需在 Linux 或 WSL 环境中运行。在 Windows 上可通过 `wsl -d kali-linux -- bash -c "cd /mnt/f/Code/Dotnet/Wails.Net && dotnet run --project tests/Wails.Net.Application.Linux.Tests"` 运行。
@@ -158,7 +181,7 @@ dotnet run --project tests/Wails.Net.Application.Linux.Tests/Wails.Net.Applicati
 4. ✅ **窗口管理器与对话框** — 窗口生命周期、对话框系统
 5. ✅ **Windows 平台实现** — WebView2 骨架、注册表主题检测、剪贴板、自启动、环境信息
 6. ✅ **Linux 平台实现** — GirCore 0.8.0/GTK4 骨架、环境变量主题检测、剪贴板存根、XDG 自启动、环境信息
-7. ⏳ **CLI 工具与生成器** — 脚手架、TS 绑定生成
+7. ✅ **CLI 工具与生成器** — 脚手架、TS 绑定生成、环境诊断、项目构建
 
 ## 贡献
 

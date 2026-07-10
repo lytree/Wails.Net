@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>wails.net</ToolCommandName>
+    <PackageId>Wails.Net.Cli</PackageId>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>Wails.Net CLI 工具：脚手架、构建、生成 TypeScript 绑定、环境诊断。</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Wails.Net.Generator\Wails.Net.Generator.csproj" />
+    <ProjectReference Include="..\Wails.Net.Application\Wails.Net.Application.csproj" />
+    <ProjectReference Include="..\Wails.Net.Events\Wails.Net.Events.csproj" />
+  </ItemGroup>
+
+</Project>

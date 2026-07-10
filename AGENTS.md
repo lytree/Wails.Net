@@ -45,7 +45,7 @@
 4. **阶段 4** ✅ 窗口管理器与对话框
 5. **阶段 5** ✅ Windows 平台实现
 6. **阶段 6** ✅ Linux 平台实现（GirCore 0.8.0）
-7. **阶段 7** ⏳ CLI 工具与代码生成器
+7. **阶段 7** ✅ CLI 工具与代码生成器
 
 ### 2.2 每阶段交付标准（Definition of Done）
 
@@ -243,6 +243,10 @@ dotnet run --project tests/Wails.Net.Application.Tests/Wails.Net.Application.Tes
   # 在 WSL 中运行
   wsl -d kali-linux -- bash -c "cd /mnt/f/Code/Dotnet/Wails.Net && dotnet run --project tests/Wails.Net.Application.Linux.Tests/Wails.Net.Application.Linux.Tests.csproj"
   ```
+- **CLI 测试**：跨平台，验证生成器、脚手架、构建器逻辑
+  ```bash
+  dotnet run --project tests/Wails.Net.Cli.Tests/Wails.Net.Cli.Tests.csproj
+  ```
 
 ### 4.5 测试覆盖要求
 
@@ -414,4 +418,4 @@ dotnet fsi script.fsx
 
 ---
 
-**最后更新**：2026-07-11
+**最后更新**：2026-07-10（阶段 7 完成）

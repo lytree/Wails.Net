@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Wails.Net.Application\Wails.Net.Application.csproj" />
+    <ProjectReference Include="..\Wails.Net.Events\Wails.Net.Events.csproj" />
+  </ItemGroup>
+
+</Project>
