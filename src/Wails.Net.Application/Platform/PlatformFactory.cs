@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Runtime.InteropServices;
 using Wails.Net.Application.Clipboard;
 using Wails.Net.Application.Options;
@@ -31,7 +32,11 @@ public static class PlatformFactory
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            throw new PlatformNotSupportedException("Windows 平台实现尚未完成，将在阶段 4 实现");
+            // 通过反射加载 Windows 平台实现，避免核心项目直接依赖 Windows 平台程序集
+            var assembly = Assembly.Load("Wails.Net.Application.Windows");
+            var type = assembly.GetType("Wails.Net.Application.Platform.WindowsPlatformApp")
+                ?? throw new PlatformNotSupportedException("无法找到 WindowsPlatformApp 类型");
+            return (IPlatformApp)Activator.CreateInstance(type, options)!;
         }
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
@@ -58,7 +63,8 @@ public static class PlatformFactory
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            throw new PlatformNotSupportedException("Windows 平台实现尚未完成，将在阶段 4 实现");
+            // TODO: 将在后续实现完整的 WebView2 集成
+            throw new NotImplementedException("WebView2 窗口创建将在后续实现");
         }
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
@@ -83,7 +89,11 @@ public static class PlatformFactory
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            throw new PlatformNotSupportedException("Windows 平台实现尚未完成，将在阶段 4 实现");
+            // 通过反射加载 Windows 平台剪贴板实现，避免核心项目直接依赖 Windows 平台程序集
+            var assembly = Assembly.Load("Wails.Net.Application.Windows");
+            var type = assembly.GetType("Wails.Net.Application.Clipboard.WindowsClipboard")
+                ?? throw new PlatformNotSupportedException("无法找到 WindowsClipboard 类型");
+            return (IClipboardImpl)Activator.CreateInstance(type)!;
         }
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))

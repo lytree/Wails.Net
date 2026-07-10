@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- 覆盖 Directory.Build.props 中的 net10.0，使用 Windows 特定 TFM -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <!-- 启用 Windows Forms 以使用 System.Windows.Forms.Clipboard（Win32 剪贴板的托管封装） -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>false</UseWPF>
+    <!-- 允许在任何操作系统上构建 Windows 目标项目 -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <PlatformSpecific>true</PlatformSpecific>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" />
+    <PackageReference Include="Microsoft.Windows.CsWin32" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Wails.Net.Application\Wails.Net.Application.csproj" />
+  </ItemGroup>
+
+</Project>

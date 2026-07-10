@@ -148,7 +148,7 @@ dotnet run --project tests/Wails.Net.Application.Tests/Wails.Net.Application.Tes
 2. ✅ **绑定系统与事件系统** — 反射绑定、FNV-1a 哈希、事件订阅/发布
 3. ✅ **传输层与消息处理器** — HTTP 传输、WebSocket 广播、消息协议
 4. ✅ **窗口管理器与对话框** — 窗口生命周期、对话框系统
-5. ⏳ **Windows 平台实现** — WebView2、Win32 互操作
+5. ✅ **Windows 平台实现** — WebView2 骨架、注册表主题检测、剪贴板、自启动、环境信息
 6. ⏳ **Linux 平台实现** — GirCore/GTK4/WebKitGTK
 7. ⏳ **CLI 工具与生成器** — 脚手架、TS 绑定生成
 

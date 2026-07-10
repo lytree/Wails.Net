@@ -29,6 +29,15 @@ public class Application
     public IPlatformApp? PlatformApp => _platformApp;
 
     /// <summary>
+    /// 设置平台应用实例。由平台特定的扩展方法调用。
+    /// </summary>
+    /// <param name="platformApp">平台应用实例。</param>
+    public void SetPlatformApp(IPlatformApp platformApp)
+    {
+        _platformApp = platformApp;
+    }
+
+    /// <summary>
     /// 获取服务注册表。
     /// </summary>
     public ServiceRegistry Services => _serviceRegistry;
