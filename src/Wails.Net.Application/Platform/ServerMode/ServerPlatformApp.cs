@@ -1,3 +1,4 @@
+using Wails.Net.Application.Dialogs;
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Screens;
@@ -107,5 +108,39 @@ public class ServerPlatformApp : IPlatformApp
     {
         // Server 模式下同步执行操作。
         action();
+    }
+
+    /// <inheritdoc />
+    public void CreateWebviewWindow(uint id, WebviewWindowOptions options)
+    {
+        // Server 模式下不支持创建窗口。
+    }
+
+    /// <inheritdoc />
+    public Task<int> ShowMessageDialog(string title, string message, DialogStyle style, string[] buttons)
+    {
+        // Server 模式下返回默认按钮索引（第一个按钮）。
+        return Task.FromResult(0);
+    }
+
+    /// <inheritdoc />
+    public Task<string?> OpenFileDialog(OpenFileDialogOptions options)
+    {
+        // Server 模式下不支持文件对话框，返回 null。
+        return Task.FromResult<string?>(null);
+    }
+
+    /// <inheritdoc />
+    public Task<string?> SaveFileDialog(SaveFileDialogOptions options)
+    {
+        // Server 模式下不支持文件对话框，返回 null。
+        return Task.FromResult<string?>(null);
+    }
+
+    /// <inheritdoc />
+    public Task<string[]?> OpenMultipleFilesDialog(OpenFileDialogOptions options)
+    {
+        // Server 模式下不支持文件对话框，返回 null。
+        return Task.FromResult<string[]?>(null);
     }
 }

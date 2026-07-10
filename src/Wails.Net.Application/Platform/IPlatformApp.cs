@@ -1,3 +1,4 @@
+using Wails.Net.Application.Dialogs;
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Screens;
@@ -114,4 +115,42 @@ public interface IPlatformApp
     /// </summary>
     /// <param name="action">要执行的操作。</param>
     void DispatchOnMainThread(Action action);
+
+    /// <summary>
+    /// 创建平台特定的 Webview 窗口。
+    /// </summary>
+    /// <param name="id">窗口 ID。</param>
+    /// <param name="options">窗口选项。</param>
+    void CreateWebviewWindow(uint id, WebviewWindowOptions options);
+
+    /// <summary>
+    /// 异步显示消息对话框。
+    /// </summary>
+    /// <param name="title">对话框标题。</param>
+    /// <param name="message">消息内容。</param>
+    /// <param name="style">对话框样式。</param>
+    /// <param name="buttons">按钮文本数组。</param>
+    /// <returns>被点击按钮的索引。</returns>
+    Task<int> ShowMessageDialog(string title, string message, DialogStyle style, string[] buttons);
+
+    /// <summary>
+    /// 异步打开文件对话框。
+    /// </summary>
+    /// <param name="options">打开文件对话框选项。</param>
+    /// <returns>选中的文件路径，可为 null。</returns>
+    Task<string?> OpenFileDialog(OpenFileDialogOptions options);
+
+    /// <summary>
+    /// 异步保存文件对话框。
+    /// </summary>
+    /// <param name="options">保存文件对话框选项。</param>
+    /// <returns>保存的文件路径，可为 null。</returns>
+    Task<string?> SaveFileDialog(SaveFileDialogOptions options);
+
+    /// <summary>
+    /// 异步打开多文件选择对话框。
+    /// </summary>
+    /// <param name="options">打开文件对话框选项。</param>
+    /// <returns>选中的文件路径数组，可为 null。</returns>
+    Task<string[]?> OpenMultipleFilesDialog(OpenFileDialogOptions options);
 }
