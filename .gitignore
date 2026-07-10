@@ -1,0 +1,38 @@
+# .NET 构建产物
+bin/
+obj/
+*.dll
+*.pdb
+*.exe
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+
+# Visual Studio / Rider / VSCode
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userprefs
+
+# 测试结果
+TestResults/
+[Tt]est[Rr]esult*/
+coverage/
+*.coverage
+*.coveragexml
+
+# 日志
+*.log
+logs/
+
+# 操作系统
+Thumbs.db
+.Desktop
+.DS_Store
+
+# Trae 文档（计划文件，不提交）
+.trae/

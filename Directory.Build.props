@@ -1,0 +1,19 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <Authors>Wails.Net</Authors>
+    <Copyright>Copyright (c) 2026 Wails.Net</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/wailsapp/wails.net</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentrallyManagedPackageVersionEnabled>true</CentrallyManagedPackageVersionEnabled>
+  </PropertyGroup>
+
+</Project>

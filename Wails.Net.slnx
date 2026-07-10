@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Wails.Net.Application/Wails.Net.Application.csproj" />
+    <Project Path="src/Wails.Net.Errors/Wails.Net.Errors.csproj" />
+    <Project Path="src/Wails.Net.Events/Wails.Net.Events.csproj" />
+  </Folder>
+</Solution>
