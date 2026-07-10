@@ -16,9 +16,9 @@ public class MenuItem : Menu
     public Action? Callback { get; set; }
 
     /// <summary>
-    /// 菜单项 ID（自动生成）。
+    /// 菜单项 ID（自动生成，只读）。
     /// </summary>
-    public uint ID { get; set; }
+    public uint ID { get; }
 
     /// <summary>
     /// 默认构造函数，自动生成 ID。
@@ -57,11 +57,11 @@ public class MenuItem : Menu
     }
 
     /// <summary>
-    /// 生成唯一菜单项 ID。
+    /// 生成唯一菜单项 ID（线程安全）。
     /// </summary>
     /// <returns>唯一 ID。</returns>
     public static uint GenerateID()
     {
-        return s_nextID++;
+        return Interlocked.Increment(ref s_nextID) - 1;
     }
 }

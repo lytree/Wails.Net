@@ -4,4 +4,7 @@
     <Project Path="src/Wails.Net.Errors/Wails.Net.Errors.csproj" />
     <Project Path="src/Wails.Net.Events/Wails.Net.Events.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Wails.Net.Application.Tests/Wails.Net.Application.Tests.csproj" />
+  </Folder>
 </Solution>

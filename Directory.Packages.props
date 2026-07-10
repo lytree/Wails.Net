@@ -17,31 +17,27 @@
   <!-- Windows 平台 -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.3240.44" />
-    <PackageVersion Include="PInvoke.Kernel32" Version="0.7.124" />
-    <PackageVersion Include="PInvoke.User32" Version="0.7.124" />
-    <PackageVersion Include="PInvoke.Gdi32" Version="0.7.124" />
-    <PackageVersion Include="PInvoke.DwmApi" Version="0.7.124" />
-    <PackageVersion Include="PInvoke.Shell32" Version="0.7.124" />
-    <PackageVersion Include="PInvoke.Comdlg32" Version="0.7.124" />
+    <!-- CsWin32 源生成器：从 Windows SDK 元数据生成 P/Invoke 代码，替代旧版 PInvoke.* 包 -->
+    <PackageVersion Include="Microsoft.Windows.CsWin32" Version="0.3.298" />
   </ItemGroup>
 
-  <!-- Linux 平台（GirCore 0.7.0+，支持 .NET 10） -->
+  <!-- Linux 平台（GirCore 0.8.0，支持 .NET 10） -->
   <ItemGroup>
-    <PackageVersion Include="GirCore.Gtk-4.0" Version="0.7.0" />
-    <PackageVersion Include="GirCore.WebKit-6.0" Version="0.7.0" />
-    <PackageVersion Include="GirCore.JavaScriptCore-6.0" Version="0.7.0" />
-    <PackageVersion Include="GirCore.Gio-2.0" Version="0.7.0" />
-    <PackageVersion Include="GirCore.Adw-1" Version="0.7.0" />
-    <PackageVersion Include="GirCore.GdkPixbuf-2.0" Version="0.7.0" />
-    <PackageVersion Include="GirCore.Cairo-1.0" Version="0.7.0" />
-    <PackageVersion Include="GirCore.Pango-1.0" Version="0.7.0" />
+    <PackageVersion Include="GirCore.Gtk-4.0" Version="0.8.0" />
+    <PackageVersion Include="GirCore.WebKit-6.0" Version="0.8.0" />
+    <PackageVersion Include="GirCore.JavaScriptCore-6.0" Version="0.8.0" />
+    <PackageVersion Include="GirCore.Gio-2.0" Version="0.8.0" />
+    <PackageVersion Include="GirCore.Adw-1" Version="0.8.0" />
+    <PackageVersion Include="GirCore.GdkPixbuf-2.0" Version="0.8.0" />
+    <PackageVersion Include="GirCore.Cairo-1.0" Version="0.8.0" />
+    <PackageVersion Include="GirCore.Pango-1.0" Version="0.8.0" />
   </ItemGroup>
 
   <!-- 服务/工具 -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
-    <PackageVersion Include="McMaster.Extensions.CommandLineUtils" Version="4.1.1" />
+    <PackageVersion Include="System.CommandLine" Version="2.0.9" />
   </ItemGroup>
 
   <!-- 测试 -->
@@ -49,10 +45,11 @@
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageVersion Include="MSTest.TestAdapter" Version="3.7.0" />
     <PackageVersion Include="MSTest.TestFramework" Version="3.7.0" />
-    <PackageVersion Include="xunit" Version="2.9.3" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="3.0.2" />
     <PackageVersion Include="NSubstitute" Version="5.3.0" />
     <PackageVersion Include="FluentAssertions" Version="7.0.0" />
+    <PackageVersion Include="TUnit" Version="1.58.0" />
+    <PackageVersion Include="TUnit.Assertions" Version="1.58.0" />
+    <PackageVersion Include="TUnit.Engine" Version="1.58.0" />
   </ItemGroup>
 
 </Project>
