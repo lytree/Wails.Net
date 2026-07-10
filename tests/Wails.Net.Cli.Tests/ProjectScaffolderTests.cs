@@ -109,6 +109,37 @@ public sealed class ProjectScaffolderTests
     }
 
     [Test]
+    public async Task ScaffoldAsync_ProgramCsUsesCorrectApiCalls()
+    {
+        var tempRoot = CreateTempDirectory();
+        try
+        {
+            var scaffolder = new ProjectScaffolder();
+            var result = await scaffolder.ScaffoldAsync("MyApp", "vanilla-ts", tempRoot);
+
+            await Assert.That(result.Success).IsTrue();
+            var programPath = Path.Combine(tempRoot.FullName, "MyApp", "src", "MyApp", "Program.cs");
+            var content = await File.ReadAllTextAsync(programPath);
+
+            // 验证使用正确的 API（而非不存在的 app.Window.NewWebviewWindow）
+            await Assert.That(content).Contains("app.CreateWebviewWindow(");
+            await Assert.That(content).DoesNotContain("app.Window.NewWebviewWindow");
+            // 验证 URL 属性名（大写）
+            await Assert.That(content).Contains("URL =");
+            await Assert.That(content).DoesNotContain("Url =");
+            // 验证注册服务
+            await Assert.That(content).Contains("Services = { new GreetingService() }");
+            // 验证 using 语句
+            await Assert.That(content).Contains("using Wails.Net.Application;");
+            await Assert.That(content).Contains("using Wails.Net.Application.Options;");
+        }
+        finally
+        {
+            DeleteDirectory(tempRoot);
+        }
+    }
+
+    [Test]
     public async Task ScaffoldAsync_CsprojUsesWindowsTarget()
     {
         var tempRoot = CreateTempDirectory();
@@ -123,6 +154,11 @@ public sealed class ProjectScaffolderTests
 
             await Assert.That(content).Contains("net10.0-windows");
             await Assert.That(content).Contains("OutputType>WinExe");
+            // 验证不包含未定义的 UseWails 属性
+            await Assert.That(content).DoesNotContain("UseWails");
+            // 验证包含 Nullable 和 ImplicitUsings
+            await Assert.That(content).Contains("Nullable>enable");
+            await Assert.That(content).Contains("ImplicitUsings>enable");
         }
         finally
         {
@@ -153,7 +189,7 @@ public sealed class ProjectScaffolderTests
     }
 
     [Test]
-    public async Task ScaffoldAsync_VueTemplate_AddsVueDependency()
+    public async Task ScaffoldAsync_VueTemplate_AddsVueAndPluginDependencies()
     {
         var tempRoot = CreateTempDirectory();
         try
@@ -166,6 +202,10 @@ public sealed class ProjectScaffolderTests
             var content = await File.ReadAllTextAsync(pkgPath);
 
             await Assert.That(content).Contains("\"vue\":");
+            // 验证 Vite 插件
+            await Assert.That(content).Contains("\"@vitejs/plugin-vue\":");
+            // 验证 Wails 运行时
+            await Assert.That(content).Contains("\"@wails/runtime\":");
         }
         finally
         {
@@ -174,7 +214,7 @@ public sealed class ProjectScaffolderTests
     }
 
     [Test]
-    public async Task ScaffoldAsync_ReactTemplate_AddsReactDependencies()
+    public async Task ScaffoldAsync_ReactTemplate_AddsReactAndPluginDependencies()
     {
         var tempRoot = CreateTempDirectory();
         try
@@ -188,6 +228,12 @@ public sealed class ProjectScaffolderTests
 
             await Assert.That(content).Contains("\"react\":");
             await Assert.That(content).Contains("\"react-dom\":");
+            // 验证 Vite 插件和类型定义
+            await Assert.That(content).Contains("\"@vitejs/plugin-react\":");
+            await Assert.That(content).Contains("\"@types/react\":");
+            await Assert.That(content).Contains("\"@types/react-dom\":");
+            // 验证 Wails 运行时
+            await Assert.That(content).Contains("\"@wails/runtime\":");
         }
         finally
         {
@@ -196,7 +242,7 @@ public sealed class ProjectScaffolderTests
     }
 
     [Test]
-    public async Task ScaffoldAsync_SvelteTemplate_AddsSvelteDependency()
+    public async Task ScaffoldAsync_SvelteTemplate_AddsSvelteAndPluginDependencies()
     {
         var tempRoot = CreateTempDirectory();
         try
@@ -209,6 +255,11 @@ public sealed class ProjectScaffolderTests
             var content = await File.ReadAllTextAsync(pkgPath);
 
             await Assert.That(content).Contains("\"svelte\":");
+            // 验证 Vite 插件
+            await Assert.That(content).Contains("\"@sveltejs/vite-plugin-svelte\":");
+            await Assert.That(content).Contains("\"svelte-check\":");
+            // 验证 Wails 运行时
+            await Assert.That(content).Contains("\"@wails/runtime\":");
         }
         finally
         {
@@ -232,6 +283,75 @@ public sealed class ProjectScaffolderTests
             await Assert.That(content).DoesNotContain("\"vue\":");
             await Assert.That(content).DoesNotContain("\"react\":");
             await Assert.That(content).DoesNotContain("\"svelte\":");
+            // vanilla 仍应包含 Wails 运行时
+            await Assert.That(content).Contains("\"@wails/runtime\":");
+        }
+        finally
+        {
+            DeleteDirectory(tempRoot);
+        }
+    }
+
+    [Test]
+    public async Task ScaffoldAsync_VueTemplate_GeneratesVueEntryPoint()
+    {
+        var tempRoot = CreateTempDirectory();
+        try
+        {
+            var scaffolder = new ProjectScaffolder();
+            var result = await scaffolder.ScaffoldAsync("MyApp", "vue-ts", tempRoot);
+
+            await Assert.That(result.Success).IsTrue();
+            var mainPath = Path.Combine(tempRoot.FullName, "MyApp", "frontend", "src", "main.ts");
+            var content = await File.ReadAllTextAsync(mainPath);
+
+            await Assert.That(content).Contains("createApp");
+            await Assert.That(content).Contains("from 'vue'");
+            await Assert.That(content).Contains("mount('#app')");
+        }
+        finally
+        {
+            DeleteDirectory(tempRoot);
+        }
+    }
+
+    [Test]
+    public async Task ScaffoldAsync_ReactTemplate_GeneratesReactEntryPoint()
+    {
+        var tempRoot = CreateTempDirectory();
+        try
+        {
+            var scaffolder = new ProjectScaffolder();
+            var result = await scaffolder.ScaffoldAsync("MyApp", "react-ts", tempRoot);
+
+            await Assert.That(result.Success).IsTrue();
+            var mainPath = Path.Combine(tempRoot.FullName, "MyApp", "frontend", "src", "main.ts");
+            var content = await File.ReadAllTextAsync(mainPath);
+
+            await Assert.That(content).Contains("createRoot");
+            await Assert.That(content).Contains("from 'react-dom/client'");
+        }
+        finally
+        {
+            DeleteDirectory(tempRoot);
+        }
+    }
+
+    [Test]
+    public async Task ScaffoldAsync_VanillaTemplate_GeneratesSimpleEntryPoint()
+    {
+        var tempRoot = CreateTempDirectory();
+        try
+        {
+            var scaffolder = new ProjectScaffolder();
+            var result = await scaffolder.ScaffoldAsync("MyApp", "vanilla-ts", tempRoot);
+
+            await Assert.That(result.Success).IsTrue();
+            var mainPath = Path.Combine(tempRoot.FullName, "MyApp", "frontend", "src", "main.ts");
+            var content = await File.ReadAllTextAsync(mainPath);
+
+            await Assert.That(content).Contains("Wails.Net");
+            await Assert.That(content).Contains("getElementById");
         }
         finally
         {

@@ -148,9 +148,11 @@ public class BindingGenerationPipeline
         try
         {
             var methods = new List<BoundMethodModel>();
+            var assemblies = new HashSet<Assembly>();
             foreach (var instance in instances)
             {
                 methods.AddRange(_analyzer.AnalyzeInstance(instance));
+                assemblies.Add(instance.GetType().Assembly);
             }
 
             var classCount = methods.Select(m => (m.Namespace, m.ClassName)).Distinct().Count();
@@ -169,6 +171,33 @@ public class BindingGenerationPipeline
             if (options.GenerateIdMap)
             {
                 files[options.IdMapFileName] = _typeScriptGenerator.GenerateIdMap(methods);
+            }
+
+            // 生成事件类型和已知事件常量（从实例所在程序集中提取）
+            if (options.GenerateEvents || options.GenerateKnownEvents)
+            {
+                foreach (var assembly in assemblies)
+                {
+                    if (options.GenerateEvents)
+                    {
+                        var eventContent = _eventGenerator.GenerateFromAssembly(assembly);
+                        // 使用程序集名作为文件名后缀避免冲突
+                        var fileName = assemblies.Count > 1
+                            ? $"{Path.GetFileNameWithoutExtension(assembly.Location)}-{options.EventsFileName}"
+                            : options.EventsFileName;
+                        files[fileName] = eventContent;
+                    }
+
+                    if (options.GenerateKnownEvents)
+                    {
+                        var knownEventsType = assembly.GetType("Wails.Net.Events.KnownEvents");
+                        if (knownEventsType is not null)
+                        {
+                            var content = _eventGenerator.GenerateKnownEvents(knownEventsType);
+                            files[options.KnownEventsFileName] = content;
+                        }
+                    }
+                }
             }
 
             return BindingGenerationResult.SuccessResult(methods.Count, classCount, files);

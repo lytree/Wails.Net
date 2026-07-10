@@ -71,18 +71,44 @@ public sealed class ProjectBuilder
             };
         }
 
-        // 简化：输出目录基于配置名推断
-        var outputDir = Path.Combine(
-            Path.GetDirectoryName(project.FullName) ?? string.Empty,
-            "bin",
-            configuration,
-            "net10.0");
+        // 从构建输出中解析实际输出目录，避免硬编码 TFM
+        var outputDir = ParseOutputDirectory(output)
+            ?? Path.Combine(
+                Path.GetDirectoryName(project.FullName) ?? string.Empty,
+                "bin",
+                configuration);
 
         return new BuildResult
         {
             Success = true,
             OutputPath = outputDir,
         };
+    }
+
+    /// <summary>
+    /// 从 dotnet build 输出中解析输出目录路径。
+    /// </summary>
+    /// <param name="buildOutput">dotnet build 的标准输出。</param>
+    /// <returns>输出目录路径，若无法解析则返回 null。</returns>
+    private static string? ParseOutputDirectory(string buildOutput)
+    {
+        // dotnet build 输出格式：path/to/bin/Debug/net10.0/ -> /path/to/bin/Debug/net10.0/
+        var lines = buildOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            // 匹配 " -> " 后的路径
+            var arrowIndex = trimmed.IndexOf("->", StringComparison.Ordinal);
+            if (arrowIndex >= 0)
+            {
+                var path = trimmed[(arrowIndex + 2)..].Trim();
+                if (!string.IsNullOrEmpty(path))
+                {
+                    return path;
+                }
+            }
+        }
+        return null;
     }
 
     /// <summary>

@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace Wails.Net.Cli.Scaffolding;
 
 /// <summary>
@@ -152,7 +154,8 @@ public sealed class ProjectScaffolder
           <PropertyGroup>
             <OutputType>WinExe</OutputType>
             <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
-            <UseWails>true</UseWails>
+            <Nullable>enable</Nullable>
+            <ImplicitUsings>enable</ImplicitUsings>
           </PropertyGroup>
 
           <ItemGroup>
@@ -176,15 +179,16 @@ public sealed class ProjectScaffolder
                 var app = new Application(new ApplicationOptions
                 {
                     Name = "{{projectName}}",
+                    Services = { new GreetingService() },
                 });
 
                 app.UseWindows();
-                app.Window.NewWebviewWindow(new WebviewWindowOptions
+                app.CreateWebviewWindow(new WebviewWindowOptions
                 {
                     Title = "{{projectName}}",
                     Width = 1024,
                     Height = 768,
-                    Url = "http://localhost:5173",
+                    URL = "http://localhost:5173",
                 });
 
                 app.Run();
@@ -220,41 +224,65 @@ public sealed class ProjectScaffolder
 
     private static string GeneratePackageJsonContent(string projectName, string template)
     {
-        var frameworkDep = template switch
-        {
-            "vue-ts" => """
-            ,
-                "vue": "^3.4.0"
-            """,
-            "react-ts" => """
-            ,
-                "react": "^18.3.0",
-                "react-dom": "^18.3.0"
-            """,
-            "svelte-ts" => """
-            ,
-                "svelte": "^4.2.0"
-            """,
-            _ => string.Empty,
-        };
+        var sb = new StringBuilder();
+        sb.AppendLine("{");
+        sb.AppendLine($"  \"name\": \"{projectName}-frontend\",");
+        sb.AppendLine("  \"version\": \"0.1.0\",");
+        sb.AppendLine("  \"private\": true,");
+        sb.AppendLine("  \"type\": \"module\",");
+        sb.AppendLine("  \"scripts\": {");
+        sb.AppendLine("    \"dev\": \"vite\",");
+        sb.AppendLine("    \"build\": \"vite build\",");
+        sb.AppendLine("    \"preview\": \"vite preview\"");
+        sb.AppendLine("  },");
 
-        return $$"""
+        // devDependencies：typescript、vite、框架插件
+        sb.AppendLine("  \"devDependencies\": {");
+        sb.AppendLine("    \"typescript\": \"^5.4.0\",");
+        sb.AppendLine("    \"vite\": \"^5.2.0\",");
+        sb.AppendLine("    \"@wails/runtime\": \"*\"");
+
+        switch (template)
         {
-          "name": "{{projectName}}-frontend",
-          "version": "0.1.0",
-          "private": true,
-          "type": "module",
-          "scripts": {
-            "dev": "vite",
-            "build": "vite build",
-            "preview": "vite preview"
-          },
-          "devDependencies": {
-            "typescript": "^5.4.0",
-            "vite": "^5.2.0"{{frameworkDep}}
-          }
+            case "vue-ts":
+                sb.AppendLine("    ,\"@vitejs/plugin-vue\": \"^5.0.0\"");
+                break;
+            case "react-ts":
+                sb.AppendLine("    ,\"@vitejs/plugin-react\": \"^4.3.0\"");
+                sb.AppendLine("    ,\"@types/react\": \"^18.3.0\"");
+                sb.AppendLine("    ,\"@types/react-dom\": \"^18.3.0\"");
+                break;
+            case "svelte-ts":
+                sb.AppendLine("    ,\"@sveltejs/vite-plugin-svelte\": \"^3.1.0\"");
+                sb.AppendLine("    ,\"svelte-check\": \"^3.8.0\"");
+                break;
         }
-        """;
+
+        sb.AppendLine("  }");
+
+        // dependencies：框架运行时
+        var hasFrameworkDep = template is "vue-ts" or "react-ts" or "svelte-ts";
+        if (hasFrameworkDep)
+        {
+            sb.AppendLine("  ,\"dependencies\": {");
+            switch (template)
+            {
+                case "vue-ts":
+                    sb.AppendLine("    \"vue\": \"^3.4.0\"");
+                    break;
+                case "react-ts":
+                    sb.AppendLine("    \"react\": \"^18.3.0\"");
+                    sb.AppendLine("    ,\"react-dom\": \"^18.3.0\"");
+                    break;
+                case "svelte-ts":
+                    sb.AppendLine("    \"svelte\": \"^4.2.0\"");
+                    break;
+            }
+            sb.AppendLine("  }");
+        }
+
+        sb.AppendLine("}");
+        return sb.ToString();
     }
 
     private static string GenerateIndexHtmlContent(string projectName) => $$"""
@@ -272,8 +300,45 @@ public sealed class ProjectScaffolder
         </html>
         """;
 
-    private static string GenerateFrontendEntryContent(string template) => """
-        // 入口文件：模板生成。请在此处导入框架并启动应用。
-        console.log('Wails.Net 前端已启动');
-        """;
+    private static string GenerateFrontendEntryContent(string template) => template switch
+    {
+        "vue-ts" => """
+        import { createApp } from 'vue';
+
+        const app = createApp({
+          template: '<div>{{ message }}</div>',
+          data() {
+            return { message: 'Wails.Net + Vue 应用已启动' };
+          },
+        });
+
+        app.mount('#app');
+        """,
+        "react-ts" => """
+        import { createRoot } from 'react-dom/client';
+        import React from 'react';
+
+        function App() {
+          return <div>Wails.Net + React 应用已启动</div>;
+        }
+
+        const root = createRoot(document.getElementById('app')!);
+        root.render(<App />);
+        """,
+        "svelte-ts" => """
+        // Wails.Net + Svelte 应用入口
+        // 请在此处导入并挂载 Svelte 组件
+        const app = document.getElementById('app');
+        if (app) {
+          app.textContent = 'Wails.Net + Svelte 应用已启动';
+        }
+        """,
+        _ => """
+        // Wails.Net 前端入口
+        const app = document.getElementById('app');
+        if (app) {
+          app.textContent = 'Wails.Net 应用已启动';
+        }
+        """,
+    };
 }
