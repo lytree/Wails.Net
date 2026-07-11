@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wails.Net Demo</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <!-- 标题栏 -->
+        <header class="header">
+            <h1>🚀 Wails.Net Demo</h1>
+            <p class="subtitle">.NET 10 桌面应用框架示例</p>
+        </header>
+
+        <!-- 标签页导航 -->
+        <nav class="tabs">
+            <button class="tab active" data-tab="greeting">问候服务</button>
+            <button class="tab" data-tab="todo">待办事项</button>
+            <button class="tab" data-tab="counter">计数器插件</button>
+            <button class="tab" data-tab="system">系统信息</button>
+        </nav>
+
+        <!-- 问候服务面板 -->
+        <section id="greeting" class="panel active">
+            <h2>问候服务</h2>
+            <p class="description">演示 C# 后端方法绑定到前端 JavaScript 调用</p>
+
+            <div class="form-group">
+                <label for="nameInput">输入你的名字：</label>
+                <input type="text" id="nameInput" placeholder="例如：张三" value="世界">
+                <button id="greetBtn" class="btn">打招呼</button>
+            </div>
+
+            <div id="greetResult" class="result"></div>
+
+            <div class="form-group">
+                <button id="timeBtn" class="btn">获取当前时间</button>
+            </div>
+            <div id="timeResult" class="result"></div>
+
+            <div class="form-group">
+                <input type="number" id="numA" placeholder="数字 A" value="10">
+                <span>+</span>
+                <input type="number" id="numB" placeholder="数字 B" value="20">
+                <button id="addBtn" class="btn">计算</button>
+            </div>
+            <div id="addResult" class="result"></div>
+        </section>
+
+        <!-- 待办事项面板 -->
+        <section id="todo" class="panel">
+            <h2>待办事项</h2>
+            <p class="description">演示 CRUD 操作和数据绑定</p>
+
+            <div class="form-group">
+                <input type="text" id="todoInput" placeholder="输入新的待办事项...">
+                <button id="addTodoBtn" class="btn">添加</button>
+            </div>
+
+            <div class="todo-stats">
+                <span>总计：<strong id="totalCount">0</strong></span>
+                <span>已完成：<strong id="completedCount">0</strong></span>
+                <span>待办：<strong id="pendingCount">0</strong></span>
+                <button id="clearCompletedBtn" class="btn btn-small">清除已完成</button>
+            </div>
+
+            <ul id="todoList" class="todo-list">
+            </ul>
+        </section>
+
+        <!-- 计数器插件面板 -->
+        <section id="counter" class="panel">
+            <h2>计数器插件</h2>
+            <p class="description">演示自定义插件的开发和使用</p>
+
+            <div class="counter-display">
+                <span id="counterValue">0</span>
+            </div>
+
+            <div class="counter-buttons">
+                <button id="decrementBtn" class="btn">- 减少</button>
+                <button id="resetBtn" class="btn">重置</button>
+                <button id="incrementBtn" class="btn">+ 增加</button>
+            </div>
+        </section>
+
+        <!-- 系统信息面板 -->
+        <section id="system" class="panel">
+            <h2>系统信息</h2>
+            <p class="description">通过绑定方法获取后端服务器信息</p>
+
+            <button id="getServerInfoBtn" class="btn">获取服务器信息</button>
+            <div id="serverInfoResult" class="result"></div>
+
+            <h3>剪贴板操作</h3>
+            <div class="form-group">
+                <input type="text" id="clipboardInput" placeholder="输入要复制到剪贴板的文本">
+                <button id="copyBtn" class="btn">复制</button>
+                <button id="pasteBtn" class="btn">粘贴</button>
+            </div>
+            <div id="clipboardResult" class="result"></div>
+
+            <h3>通知</h3>
+            <div class="form-group">
+                <input type="text" id="notificationInput" placeholder="通知内容" value="Hello from Wails.Net!">
+                <button id="notifyBtn" class="btn">发送通知</button>
+            </div>
+        </section>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

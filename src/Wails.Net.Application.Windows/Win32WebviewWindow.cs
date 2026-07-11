@@ -7,6 +7,7 @@ using Wails.Net.Application.Windows;
 using Wails.Net.Events;
 using Windows.Win32;
 using Windows.Win32.Foundation;
+using Windows.Win32.Graphics.Dwm;
 using Windows.Win32.Graphics.Gdi;
 using Windows.Win32.UI.WindowsAndMessaging;
 using Menu = Wails.Net.Application.Menus.Menu;
@@ -2606,8 +2607,6 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         {
             unsafe
             {
-                var hwndPtr = _hwnd.Value;
-
                 // DWMWA_SYSTEMBACKDROP_TYPE 值映射：
                 // 0 = DWMSBT_AUTO, 1 = DWMSBT_NONE, 2 = DWMSBT_MAINWINDOW (Mica),
                 // 3 = DWMSBT_TRANSIENTWINDOW (Acrylic), 4 = DWMSBT_BLURBEHIND
@@ -2626,7 +2625,7 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
 
                 var value = backdropType;
                 PInvoke.DwmSetWindowAttribute(
-                    hwndPtr,
+                    _hwnd,
                     (DWMWINDOWATTRIBUTE)DwmwaSystemBackdropType,
                     &value,
                     (uint)sizeof(uint));
@@ -2675,7 +2674,7 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         try
         {
             // Windows 上近似实现：通过 HWND_TOPMOST 让窗口始终在所有工作区之上
-            var hwndInsertAfter = visible ? new HWND(-1) : new IntPtr(0); // HWND_TOPMOST = -1, HWND_NOTOPMOST = 0
+            var hwndInsertAfter = visible ? new HWND(new IntPtr(-1)) : new HWND(IntPtr.Zero); // HWND_TOPMOST = -1, HWND_NOTOPMOST = 0
             var flags = SET_WINDOW_POS_FLAGS.SWP_NOMOVE | SET_WINDOW_POS_FLAGS.SWP_NOSIZE | SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE;
             PInvoke.SetWindowPos(_hwnd, hwndInsertAfter, 0, 0, 0, 0, flags);
         }
@@ -2697,8 +2696,6 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         {
             unsafe
             {
-                var hwndPtr = _hwnd.Value;
-
                 // DWMWA_BORDER_COLOR 接受 COLORREF (0xRRGGBB) 或 DWMWA_COLOR_DEFAULT = 0xFFFFFFFF
                 uint colorRef;
                 if (string.IsNullOrEmpty(color))
@@ -2711,7 +2708,7 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                 }
 
                 PInvoke.DwmSetWindowAttribute(
-                    hwndPtr,
+                    _hwnd,
                     (DWMWINDOWATTRIBUTE)DwmwaBorderColor,
                     &colorRef,
                     (uint)sizeof(uint));
