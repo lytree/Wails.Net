@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Windows;
@@ -83,6 +84,11 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     /// WM_SETICON 消息常量（0x0080），设置窗口图标。
     /// </summary>
     private const uint WmSetIcon = 0x0080;
+
+    /// <summary>
+    /// WM_ACTIVATE 消息常量（0x0006），窗口激活或失活时收到。
+    /// </summary>
+    private const uint WmActivate = 0x0006;
 
     /// <summary>
     /// SC_CLOSE 系统命令 ID（0xF060）。
@@ -608,7 +614,8 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     /// 处理 WebView2 WebMessageReceived 事件。
     /// 对应 Wails v3 Go 版本中的 onWebMessageReceived。
     /// 接收前端通过 window.chrome.webview.postMessage() 发送的消息，
-    /// 转发到 Application.HandleMessageFromFrontend 进行 IPC 消息处理。
+    /// 优先识别 <see cref="DragMessageType"/> 拖拽请求并直接调用 <see cref="StartDrag"/>，
+    /// 其他消息转发到 Application.HandleMessageFromFrontend 进行 IPC 消息处理。
     /// </summary>
     /// <param name="sender">事件发送者。</param>
     /// <param name="args">WebMessageReceived 事件参数。</param>
@@ -618,6 +625,13 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         {
             string? message = args.TryGetWebMessageAsString();
             if (string.IsNullOrEmpty(message))
+            {
+                return;
+            }
+
+            // 优先识别 CSS 拖拽区域触发的拖拽请求，直接调用 StartDrag 启动窗口拖动。
+            // 拖拽消息不进入标准 IPC 处理流程，避免消息队列阻塞导致拖动延迟。
+            if (TryHandleDragMessage(message))
             {
                 return;
             }
@@ -635,9 +649,58 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     }
 
     /// <summary>
+    /// 尝试将消息识别为拖拽请求并触发窗口拖动。
+    /// 消息格式为 JSON 字符串：{ "type": "wails:drag", "windowId": &lt;id&gt; }。
+    /// 若消息类型匹配且 windowId 与本窗口匹配，则调用 <see cref="StartDrag"/> 并返回 true。
+    /// </summary>
+    /// <param name="message">前端发送的消息字符串。</param>
+    /// <returns>若消息已被识别为拖拽请求并处理则返回 true，否则返回 false。</returns>
+    private bool TryHandleDragMessage(string message)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(message);
+            if (!doc.RootElement.TryGetProperty("type", out var typeProp))
+            {
+                return false;
+            }
+
+            var typeValue = typeProp.GetString();
+            if (!string.Equals(typeValue, DragMessageType, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            // 校验 windowId（若存在）是否与本窗口匹配，避免跨窗口误触发。
+            if (doc.RootElement.TryGetProperty("windowId", out var windowIdProp) &&
+                windowIdProp.TryGetUInt32(out var msgWindowId) &&
+                msgWindowId != _id)
+            {
+                return false;
+            }
+
+            StartDrag();
+            return true;
+        }
+        catch (JsonException)
+        {
+            // 非 JSON 消息，按标准 IPC 流程处理。
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 拖拽请求消息类型常量，与 <see cref="DragRegionHelper.GetStartDragCallbackScript"/> 中
+    /// 注入的前端代码约定一致。前端通过 chrome.webview.postMessage 发送此类型消息
+    /// 触发后端 StartDrag 调用。
+    /// </summary>
+    private const string DragMessageType = "wails:drag";
+
+    /// <summary>
     /// 处理 WebView2 NavigationCompleted 事件。
     /// 对应 Wails v3 Go 版本中的 onNavigationCompleted。
     /// 导航完成后注入运行时 JS 并触发 WindowRuntimeReady 事件。
+    /// 若窗口为无边框模式，同时注入 CSS 拖拽区域脚本以支持 -webkit-app-region: drag。
     /// </summary>
     /// <param name="sender">事件发送者。</param>
     /// <param name="args">NavigationCompleted 事件参数。</param>
@@ -649,6 +712,17 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         }
 
         InjectRuntimeJs();
+
+        // 无边框窗口注入 CSS 拖拽区域脚本，支持 -webkit-app-region: drag。
+        // 对应 Tauri v2 / Electron 的 frameless window drag region 实现。
+        if (_options.Frameless)
+        {
+            // 先注册全局拖拽回调，再注入拖拽区域监听脚本。
+            // 顺序很重要：监听脚本会在 mousedown 时调用 window.__wails_startDrag__，
+            // 因此回调必须先于监听脚本注入。
+            _ = _webview.ExecuteScriptAsync(DragRegionHelper.GetStartDragCallbackScript(_id));
+            _ = _webview.ExecuteScriptAsync(DragRegionHelper.GetDragRegionScript());
+        }
 
         // 触发 WindowRuntimeReady 事件，通知应用层运行时已就绪。
         // 对应 Wails v3 Go 版本中的 emit(WindowRuntimeReady) 调用。
@@ -845,6 +919,10 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         }
 
         UpdateBounds();
+
+        // 分发 WindowDPIChanged 事件，通知应用层窗口 DPI 已变化。
+        Application.Get()?.DispatchWindowEvent(
+            _id, (uint)WindowEventType.WindowDPIChanged);
     }
 
     /// <summary>
@@ -868,6 +946,26 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
 
         switch (msg)
         {
+            case WmActivate:
+                // 窗口激活状态变化，wParam 低字指示激活状态。
+                // WA_INACTIVE (0) = 失活，WA_ACTIVE (1) = 通过非鼠标点击激活，WA_CLICKACTIVE (2) = 通过鼠标点击激活。
+                if (instance is not null)
+                {
+                    var activateState = (uint)wParam.Value & 0xFFFF;
+                    if (activateState == 0)
+                    {
+                        Application.Get()?.DispatchWindowEvent(
+                            instance._id, (uint)WindowEventType.WindowFocusLost);
+                    }
+                    else
+                    {
+                        Application.Get()?.DispatchWindowEvent(
+                            instance._id, (uint)WindowEventType.WindowFocus);
+                    }
+                }
+
+                break;
+
             case WmDestroy:
                 // 从实例表移除
                 lock (_instancesLock)
@@ -925,6 +1023,23 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                 {
                     Application.Get()?.DispatchWindowEvent(
                         instance._id, (uint)WindowEventType.WindowResized);
+
+                    // 检查窗口状态变化：wParam 低字指示 SIZE_MINIMIZED(1)/SIZE_MAXIMIZED(2)/SIZE_RESTORED(0)。
+                    var sizeType = (uint)wParam.Value & 0xFFFF;
+                    if (sizeType == 1) // SIZE_MINIMIZED
+                    {
+                        Application.Get()?.DispatchWindowEvent(
+                            instance._id, (uint)WindowEventType.WindowMinimised);
+                    }
+                    else if (sizeType == 2) // SIZE_MAXIMIZED
+                    {
+                        Application.Get()?.DispatchWindowEvent(
+                            instance._id, (uint)WindowEventType.WindowMaximised);
+                    }
+                    else if (sizeType == 0) // SIZE_RESTORED
+                    {
+                        // 恢复事件由窗口状态跟踪决定，此处不额外分发。
+                    }
                 }
 
                 break;
@@ -1080,6 +1195,10 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         {
             PInvoke.ShowWindow(_hwnd, SHOW_WINDOW_CMD.SW_SHOWNORMAL);
         }
+
+        // 分发 WindowShow 事件，通知应用层窗口已显示。
+        Application.Get()?.DispatchWindowEvent(
+            _id, (uint)WindowEventType.WindowShow);
     }
 
     /// <inheritdoc />
@@ -1089,6 +1208,10 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         {
             PInvoke.ShowWindow(_hwnd, SHOW_WINDOW_CMD.SW_HIDE);
         }
+
+        // 分发 WindowHide 事件，通知应用层窗口已隐藏。
+        Application.Get()?.DispatchWindowEvent(
+            _id, (uint)WindowEventType.WindowHide);
     }
 
     /// <inheritdoc />
@@ -1157,6 +1280,10 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
             SET_WINDOW_POS_FLAGS.SWP_FRAMECHANGED);
 
         UpdateBounds();
+
+        // 分发 WindowFullscreen 事件，通知应用层窗口已进入全屏。
+        Application.Get()?.DispatchWindowEvent(
+            _id, (uint)WindowEventType.WindowFullscreen);
     }
 
     /// <inheritdoc />
@@ -1179,6 +1306,10 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
             SET_WINDOW_POS_FLAGS.SWP_FRAMECHANGED);
 
         UpdateBounds();
+
+        // 分发 WindowUnfullscreen 事件，通知应用层窗口已退出全屏。
+        Application.Get()?.DispatchWindowEvent(
+            _id, (uint)WindowEventType.WindowUnfullscreen);
     }
 
     /// <inheritdoc />
@@ -1409,8 +1540,20 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     /// <inheritdoc />
     public void CloseDevTools()
     {
-        // WebView2 未直接提供关闭开发者工具的 API，通过执行快捷键关闭。
-        _webview?.ExecuteScriptAsync("window.close();");
+        // WebView2 未提供直接关闭 DevTools 的 API。
+        // 通过设置 AreDevToolsEnabled = false 再 = true 间接关闭已打开的 DevTools 窗口。
+        if (_webview is not null)
+        {
+            try
+            {
+                _webview.Settings.AreDevToolsEnabled = false;
+                _webview.Settings.AreDevToolsEnabled = true;
+            }
+            catch
+            {
+                // 忽略关闭失败
+            }
+        }
     }
 
     /// <inheritdoc />
@@ -1579,6 +1722,21 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     public void PrintToPDF(byte[]? pageOptions)
     {
         // 简化实现：暂不处理字节数组选项，使用默认设置
+    }
+
+    /// <inheritdoc />
+    public async Task<byte[]?> CapturePreviewAsync()
+    {
+        if (_webview is null)
+        {
+            return null;
+        }
+
+        using var ms = new MemoryStream();
+        await _webview.CapturePreviewAsync(
+            CoreWebView2CapturePreviewImageFormat.Png,
+            ms);
+        return ms.ToArray();
     }
 
     /// <inheritdoc />

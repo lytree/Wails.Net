@@ -543,4 +543,15 @@ public interface IWebviewWindowImpl
         // 默认立即执行回调，平台实现可重写以在合适时机调用。
         callback();
     }
+
+    /// <summary>
+    /// 捕获窗口内容为图片。
+    /// 默认实现返回 null 表示不支持，平台实现可重写以提供截图能力。
+    /// </summary>
+    /// <returns>PNG 格式的图片字节数据，不支持时返回 null。</returns>
+    Task<byte[]?> CapturePreviewAsync()
+    {
+        // 默认实现：不支持截图，返回 null。
+        return Task.FromResult<byte[]?>(null);
+    }
 }

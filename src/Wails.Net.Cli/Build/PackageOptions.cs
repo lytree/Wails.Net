@@ -37,6 +37,9 @@ public sealed class PackageOptions
     /// <summary>版本号</summary>
     public string Version { get; set; } = "1.0.0";
 
+    /// <summary>发布者名称（用于安装程序元数据）</summary>
+    public string Publisher { get; set; } = "Wails.Net";
+
     /// <summary>是否包含调试符号</summary>
     public bool IncludeSymbols { get; set; } = false;
 

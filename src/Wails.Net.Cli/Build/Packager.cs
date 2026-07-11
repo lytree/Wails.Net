@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
@@ -75,12 +76,12 @@ public sealed class Packager
                     break;
 
                 case PackageFormat.Nsis:
+                    await PackageNsisAsync(publishDir, outputPath, options);
+                    break;
+
                 case PackageFormat.AppImage:
-                    return new PackageResult
-                    {
-                        Success = false,
-                        ErrorMessage = $"格式 {options.Format} 暂未实现，请使用 zip 或 targz",
-                    };
+                    await PackageAppImageAsync(publishDir, outputPath, options);
+                    break;
 
                 default:
                     return new PackageResult
@@ -291,6 +292,427 @@ public sealed class Packager
         var ext = Path.GetExtension(path).ToLowerInvariant();
         return ext is ".pdb" or ".dbg";
     }
+
+    /// <summary>
+    /// 使用 NSIS 创建 Windows 安装程序。
+    /// 对应 Wails v3 Go 版本 internal/project/package.go 中的 NSIS 打包逻辑。
+    /// </summary>
+    /// <param name="sourceDir">发布输出目录。</param>
+    /// <param name="outputExePath">安装程序输出路径。</param>
+    /// <param name="options">打包选项。</param>
+    /// <exception cref="PlatformNotSupportedException">非 Windows 平台。</exception>
+    /// <exception cref="FileNotFoundException">未找到 makensis 或主可执行文件。</exception>
+    private static async Task PackageNsisAsync(string sourceDir, string outputExePath, PackageOptions options)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new PlatformNotSupportedException("NSIS 安装程序只能在 Windows 上生成");
+        }
+
+        var makensis = FindExecutableInPath("makensis.exe") ?? FindNsisInCommonLocations();
+        if (makensis is null)
+        {
+            throw new FileNotFoundException(
+                "未找到 makensis.exe，请安装 NSIS（https://nsis.sourceforge.io/）并确保其在 PATH 中");
+        }
+
+        var exeName = FindMainExecutable(sourceDir, options.AppName)
+            ?? throw new FileNotFoundException($"在发布目录中未找到主可执行文件：{sourceDir}");
+
+        var scriptPath = Path.Combine(Path.GetTempPath(), $"wailsnet-{Guid.NewGuid():N}.nsi");
+        try
+        {
+            var script = GenerateNsisScript(
+                options.AppName, options.Version, options.Publisher,
+                Path.GetFullPath(outputExePath), Path.GetFullPath(sourceDir), exeName);
+            await File.WriteAllTextAsync(scriptPath, script);
+
+            var (exitCode, output) = await RunProcessAsync(makensis, scriptPath);
+            if (exitCode != 0)
+            {
+                throw new InvalidOperationException($"makensis 退出码 {exitCode}：{output}");
+            }
+        }
+        finally
+        {
+            if (File.Exists(scriptPath))
+            {
+                try { File.Delete(scriptPath); } catch { }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 生成 NSIS 脚本内容。
+    /// </summary>
+    /// <param name="appName">应用名称。</param>
+    /// <param name="version">版本号。</param>
+    /// <param name="publisher">发布者。</param>
+    /// <param name="outputExePath">安装程序输出路径。</param>
+    /// <param name="sourceDir">源文件目录。</param>
+    /// <param name="exeName">主可执行文件名。</param>
+    /// <returns>NSIS 脚本内容。</returns>
+    internal static string GenerateNsisScript(
+        string appName, string version, string publisher,
+        string outputExePath, string sourceDir, string exeName)
+    {
+        // NSIS 脚本中的路径使用反斜杠
+        sourceDir = sourceDir.Replace('/', '\\');
+        outputExePath = outputExePath.Replace('/', '\\');
+
+        return $$"""
+; NSIS 脚本 - 由 Wails.Net 自动生成
+!define APPNAME "{{appName}}"
+!define APPVERSION "{{version}}"
+!define APPPUBLISHER "{{publisher}}"
+
+Name "${APPNAME}"
+OutFile "{{outputExePath}}"
+InstallDir "$PROGRAMFILES64\${APPNAME}"
+RequestExecutionLevel admin
+
+Page directory
+Page instfiles
+
+Section "Install"
+    SetOutPath $INSTDIR
+    File /r "{{sourceDir}}\*.*"
+
+    CreateDirectory "$SMPROGRAMS\${APPNAME}"
+    CreateShortcut "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk" "$INSTDIR\{{exeName}}"
+    CreateShortcut "$DESKTOP\${APPNAME}.lnk" "$INSTDIR\{{exeName}}"
+
+    WriteUninstaller "$INSTDIR\uninstall.exe"
+
+    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "DisplayName" "${APPNAME}"
+    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "UninstallString" "$INSTDIR\uninstall.exe"
+    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "DisplayVersion" "${APPVERSION}"
+    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "Publisher" "${APPPUBLISHER}"
+SectionEnd
+
+Section "Uninstall"
+    Delete "$INSTDIR\uninstall.exe"
+    RMDir /r "$INSTDIR"
+    Delete "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk"
+    RMDir "$SMPROGRAMS\${APPNAME}"
+    Delete "$DESKTOP\${APPNAME}.lnk"
+    DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}"
+SectionEnd
+""";
+    }
+
+    /// <summary>
+    /// 在 PATH 环境变量中查找可执行文件。
+    /// </summary>
+    /// <param name="fileName">可执行文件名（含扩展名）。</param>
+    /// <returns>完整路径，若未找到则返回 null。</returns>
+    internal static string? FindExecutableInPath(string fileName)
+    {
+        var path = Environment.GetEnvironmentVariable("PATH");
+        if (string.IsNullOrEmpty(path))
+        {
+            return null;
+        }
+
+        var separator = OperatingSystem.IsWindows() ? ';' : ':';
+        foreach (var dir in path.Split(separator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var fullPath = Path.Combine(dir, fileName);
+            if (File.Exists(fullPath))
+            {
+                return fullPath;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 在常见安装位置查找 NSIS。
+    /// </summary>
+    /// <returns>makensis.exe 路径，若未找到则返回 null。</returns>
+    private static string? FindNsisInCommonLocations()
+    {
+        var candidates = new[]
+        {
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "NSIS", "makensis.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "NSIS", "makensis.exe"),
+        };
+
+        foreach (var candidate in candidates)
+        {
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 在发布目录中查找主可执行文件（Windows）。
+    /// </summary>
+    /// <param name="sourceDir">发布目录。</param>
+    /// <param name="appName">应用名称。</param>
+    /// <returns>可执行文件名（不含路径），若未找到则返回 null。</returns>
+    internal static string? FindMainExecutable(string sourceDir, string appName)
+    {
+        var exeFiles = Directory.GetFiles(sourceDir, "*.exe");
+        if (exeFiles.Length == 0)
+        {
+            return null;
+        }
+
+        // 优先匹配应用名称
+        var match = Array.Find(exeFiles, f =>
+            string.Equals(Path.GetFileNameWithoutExtension(f), appName, StringComparison.OrdinalIgnoreCase));
+
+        return match is not null ? Path.GetFileName(match) : Path.GetFileName(exeFiles[0]);
+    }
+
+    /// <summary>
+    /// 使用 appimagetool 创建 AppImage 包。
+    /// 对应 Wails v3 Go 版本 internal/project/package.go 中的 Linux 打包逻辑。
+    /// </summary>
+    /// <param name="sourceDir">发布输出目录。</param>
+    /// <param name="outputPath">AppImage 输出路径。</param>
+    /// <param name="options">打包选项。</param>
+    /// <exception cref="PlatformNotSupportedException">非 Linux 平台。</exception>
+    /// <exception cref="FileNotFoundException">未找到 appimagetool 或主可执行文件。</exception>
+    private static async Task PackageAppImageAsync(string sourceDir, string outputPath, PackageOptions options)
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            throw new PlatformNotSupportedException("AppImage 只能在 Linux 上生成");
+        }
+
+        var appimagetool = FindExecutableInPath("appimagetool")
+            ?? FindExecutableInPath("appimagetool-x86_64.AppImage");
+        if (appimagetool is null)
+        {
+            throw new FileNotFoundException(
+                "未找到 appimagetool，请安装 appimagetool（https://github.com/AppImage/AppImageKit）并确保其在 PATH 中");
+        }
+
+        var appDir = Path.Combine(Path.GetTempPath(), $"wailsnet-appdir-{Guid.NewGuid():N}");
+        try
+        {
+            Directory.CreateDirectory(appDir);
+
+            // 创建 usr/bin 目录并复制发布产物
+            var usrBin = Path.Combine(appDir, "usr", "bin");
+            Directory.CreateDirectory(usrBin);
+            CopyDirectory(sourceDir, usrBin);
+
+            // 查找主可执行文件
+            var exeName = FindLinuxExecutable(usrBin, options.AppName)
+                ?? throw new FileNotFoundException($"在发布目录中未找到主可执行文件：{sourceDir}");
+
+            // 设置可执行权限
+            SetExecutablePermission(Path.Combine(usrBin, exeName));
+
+            // 创建 AppRun 脚本
+            var appRunPath = Path.Combine(appDir, "AppRun");
+            await File.WriteAllTextAsync(appRunPath, GenerateAppRunScript(exeName));
+            SetExecutablePermission(appRunPath);
+
+            // 创建 .desktop 文件
+            var desktopPath = Path.Combine(appDir, $"{options.AppName}.desktop");
+            await File.WriteAllTextAsync(desktopPath, GenerateDesktopFile(options.AppName));
+
+            // 创建图标（1x1 透明 PNG 占位符）
+            var iconPath = Path.Combine(appDir, $"{options.AppName}.png");
+            await File.WriteAllBytesAsync(iconPath, MinimalPngIcon);
+
+            // 运行 appimagetool
+            var (exitCode, output) = await RunProcessAsync(appimagetool, appDir, Path.GetFullPath(outputPath));
+            if (exitCode != 0)
+            {
+                throw new InvalidOperationException($"appimagetool 退出码 {exitCode}：{output}");
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(appDir))
+            {
+                try { Directory.Delete(appDir, recursive: true); } catch { }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 生成 AppRun 脚本内容。
+    /// </summary>
+    /// <param name="exeName">主可执行文件名。</param>
+    /// <returns>AppRun 脚本内容。</returns>
+    internal static string GenerateAppRunScript(string exeName)
+    {
+        return $$"""
+#!/bin/sh
+SELF=$(readlink -f "$0")
+HERE=${SELF%/*}
+export UNION_PRELOAD="${HERE}"
+export LD_PRELOAD="${HERE}/libunionpreload.so"
+exec "${HERE}/usr/bin/{{exeName}}" "$@"
+""";
+    }
+
+    /// <summary>
+    /// 生成 .desktop 文件内容。
+    /// </summary>
+    /// <param name="appName">应用名称。</param>
+    /// <returns>.desktop 文件内容。</returns>
+    internal static string GenerateDesktopFile(string appName)
+    {
+        return $$"""
+[Desktop Entry]
+Type=Application
+Name={{appName}}
+Exec={{appName}}
+Icon={{appName}}
+Categories=Utility;
+Terminal=false
+""";
+    }
+
+    /// <summary>
+    /// 在发布目录中查找 Linux 可执行文件。
+    /// </summary>
+    /// <param name="sourceDir">发布目录。</param>
+    /// <param name="appName">应用名称。</param>
+    /// <returns>可执行文件名（不含路径），若未找到则返回 null。</returns>
+    internal static string? FindLinuxExecutable(string sourceDir, string appName)
+    {
+        // 优先匹配应用名称（无扩展名）
+        var match = Path.Combine(sourceDir, appName);
+        if (File.Exists(match))
+        {
+            return appName;
+        }
+
+        // 查找没有扩展名的文件（通常是 Linux 可执行文件）
+        foreach (var file in Directory.GetFiles(sourceDir, "*", SearchOption.TopDirectoryOnly))
+        {
+            if (string.IsNullOrEmpty(Path.GetExtension(file)))
+            {
+                return Path.GetFileName(file);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 递归复制目录。
+    /// </summary>
+    /// <param name="sourceDir">源目录。</param>
+    /// <param name="destDir">目标目录。</param>
+    private static void CopyDirectory(string sourceDir, string destDir)
+    {
+        Directory.CreateDirectory(destDir);
+
+        foreach (var file in Directory.GetFiles(sourceDir, "*", SearchOption.TopDirectoryOnly))
+        {
+            File.Copy(file, Path.Combine(destDir, Path.GetFileName(file)), overwrite: true);
+        }
+
+        foreach (var dir in Directory.GetDirectories(sourceDir, "*", SearchOption.TopDirectoryOnly))
+        {
+            CopyDirectory(dir, Path.Combine(destDir, Path.GetFileName(dir)));
+        }
+    }
+
+    /// <summary>
+    /// 设置文件的 Linux 可执行权限（chmod +x）。
+    /// </summary>
+    /// <param name="filePath">文件路径。</param>
+    private static void SetExecutablePermission(string filePath)
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "chmod",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            psi.ArgumentList.Add("+x");
+            psi.ArgumentList.Add(filePath);
+
+            using var proc = Process.Start(psi);
+            proc?.WaitForExit();
+        }
+        catch
+        {
+            // 忽略权限设置错误
+        }
+    }
+
+    /// <summary>
+    /// 运行外部进程并捕获输出。
+    /// </summary>
+    /// <param name="fileName">可执行文件路径。</param>
+    /// <param name="arguments">参数列表。</param>
+    /// <returns>(退出码, 标准输出+错误输出)。</returns>
+    private static async Task<(int ExitCode, string Output)> RunProcessAsync(string fileName, params string[] arguments)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = fileName,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+
+        foreach (var arg in arguments)
+        {
+            psi.ArgumentList.Add(arg);
+        }
+
+        try
+        {
+            using var proc = new Process { StartInfo = psi };
+            proc.Start();
+
+            var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+            var stderrTask = proc.StandardError.ReadToEndAsync();
+            await proc.WaitForExitAsync();
+
+            var stdout = await stdoutTask;
+            var stderr = await stderrTask;
+            var combined = string.IsNullOrEmpty(stderr) ? stdout : $"{stdout}{Environment.NewLine}{stderr}";
+            return (proc.ExitCode, combined);
+        }
+        catch (Exception ex)
+        {
+            return (-1, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// 最小 PNG 图标字节数据（1x1 透明像素），用于 AppImage 占位图标。
+    /// </summary>
+    private static readonly byte[] MinimalPngIcon =
+    {
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+        0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+        0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41,
+        0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+        0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
+        0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+        0x42, 0x60, 0x82,
+    };
 
     /// <summary>
     /// 生成 SHA256 校验和文件。

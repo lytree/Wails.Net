@@ -133,8 +133,9 @@ public static class IcoDecoder
     }
 
     /// <summary>
-    /// 检测图像数据格式（PNG 或 BMP）。
-    /// PNG 数据以 8 字节签名开头；BMP 数据以 BITMAPINFOHEADER 大小（通常 40）开头。
+    /// 检测图像数据格式（PNG、BMP 或 SVG）。
+    /// PNG 数据以 8 字节签名开头；BMP 数据以 BITMAPINFOHEADER 大小（通常 40）开头；
+    /// SVG 数据以 XML 声明或 &lt;svg&gt; 标签开头（Windows 10 1809+）。
     /// </summary>
     /// <param name="data">图像数据。</param>
     /// <returns>图像格式。</returns>
@@ -143,6 +144,11 @@ public static class IcoDecoder
         if (data.Length >= 8 && data.AsSpan(0, 8).SequenceEqual(PngSignature))
         {
             return IconImageFormat.Png;
+        }
+
+        if (SvgIconConverter.IsSvg(data))
+        {
+            return IconImageFormat.Svg;
         }
 
         if (data.Length >= 4)

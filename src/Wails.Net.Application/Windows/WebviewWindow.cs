@@ -307,6 +307,15 @@ public class WebviewWindow
     public void ExecJS(string js) => ImplRequired.ExecJS(js);
 
     /// <summary>
+    /// 捕获窗口内容为 PNG 图片。
+    /// </summary>
+    /// <returns>PNG 图片字节数据，不支持时返回 null。</returns>
+    public async Task<byte[]?> CapturePreviewAsync()
+    {
+        return await ImplRequired.CapturePreviewAsync();
+    }
+
+    /// <summary>
     /// 后退导航。
     /// </summary>
     public void GoBack() => ImplRequired.GoBack();

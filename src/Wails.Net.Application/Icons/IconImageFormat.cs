@@ -2,7 +2,7 @@ namespace Wails.Net.Application.Icons;
 
 /// <summary>
 /// 图标图像数据格式。
-/// ICO 文件中的图像可以是 PNG（内嵌）或 BMP（含 BITMAPINFOHEADER + 像素数据）格式。
+/// ICO 文件中的图像可以是 PNG（内嵌）、BMP（含 BITMAPINFOHEADER + 像素数据）或 SVG（Windows 10 1809+）格式。
 /// </summary>
 public enum IconImageFormat
 {
@@ -19,5 +19,10 @@ public enum IconImageFormat
     /// <summary>
     /// BMP 格式（包含 BITMAPINFOHEADER + 像素数据，不含 BITMAPFILEHEADER）。
     /// </summary>
-    Bmp = 2
+    Bmp = 2,
+
+    /// <summary>
+    /// SVG 格式（Windows 10 1809+ 支持在 ICO 文件中嵌入 SVG 矢量数据）。
+    /// </summary>
+    Svg = 3
 }

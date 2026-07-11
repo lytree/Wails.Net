@@ -249,6 +249,7 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     /// <summary>
     /// 连接 WebKit WebView 的关键信号，使窗口生命周期事件可观测。
     /// 包括加载状态、新窗口创建、关闭、上下文菜单、策略决策和标题变更。
+    /// 同时连接 GTK 窗口的 notify 信号以检测焦点变化。
     /// </summary>
     private void ConnectWebViewSignals()
     {
@@ -265,10 +266,18 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         _webView.OnDecidePolicy += OnWebViewDecidePolicy;
         _webView.OnNotify += OnWebViewNotify;
         _webView.OnReadyToShow += OnWebViewReadyToShow;
+
+        // 连接 GTK 窗口的 notify 信号，用于检测 is-active 属性变化以分发焦点事件。
+        if (_window is not null)
+        {
+            _window.OnNotify += OnWindowNotify;
+        }
     }
 
     /// <summary>
     /// 处理 WebView 加载状态变化，分发 URL 开始/完成加载事件。
+    /// 页面加载完成时（LoadEvent.Finished），若窗口为无边框模式，
+    /// 注入 CSS 拖拽区域脚本以支持 -webkit-app-region: drag。
     /// </summary>
     /// <param name="sender">触发事件的 WebView。</param>
     /// <param name="args">加载事件参数，包含 LoadEvent。</param>
@@ -293,6 +302,17 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
             case LoadEvent.Finished:
                 // 页面加载完成，分发 URL 完成加载事件。
                 app.HandlePlatformEvent((uint)ApplicationEventType.URLFinishedLoading);
+
+                // 无边框窗口注入 CSS 拖拽区域脚本，支持 -webkit-app-region: drag。
+                // 对应 Tauri v2 / Electron 的 frameless window drag region 实现。
+                // 先注册全局拖拽回调，再注入拖拽区域监听脚本（顺序与 Win32 实现保持一致）。
+                if (_options.Frameless && _webView is not null)
+                {
+                    _ = _webView.EvaluateJavascriptAsync(
+                        DragRegionHelper.GetStartDragCallbackScript(_id));
+                    _ = _webView.EvaluateJavascriptAsync(
+                        DragRegionHelper.GetDragRegionScript());
+                }
                 break;
         }
     }
@@ -361,6 +381,36 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         {
             var app = WailsApplication.Get();
             app?.DispatchWindowEvent(_id, (uint)WindowEventType.WindowTitleChanged);
+        }
+    }
+
+    /// <summary>
+    /// 处理 GTK 窗口的 notify 信号，检测 is-active 属性变化以分发窗口焦点事件。
+    /// GTK4 中窗口激活状态通过 is-active 属性变更通知，IsActive 返回当前焦点状态。
+    /// </summary>
+    /// <param name="sender">触发事件的对象。</param>
+    /// <param name="args">通知事件参数，包含 Pspec。</param>
+    private void OnWindowNotify(GObject.Object sender, GObject.Object.NotifySignalArgs args)
+    {
+        if (args.Pspec is null || args.Pspec.GetName() != "is-active")
+        {
+            return;
+        }
+
+        var app = WailsApplication.Get();
+        if (app is null || _window is null)
+        {
+            return;
+        }
+
+        // 读取窗口激活状态分发对应的焦点事件。
+        if (_window.IsActive)
+        {
+            app.DispatchWindowEvent(_id, (uint)WindowEventType.WindowFocus);
+        }
+        else
+        {
+            app.DispatchWindowEvent(_id, (uint)WindowEventType.WindowFocusLost);
         }
     }
 
@@ -456,6 +506,10 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
 
         _window.Present();
         _visible = true;
+
+        // 分发 WindowShow 事件，通知应用层窗口已显示。
+        WailsApplication.Get()?.DispatchWindowEvent(
+            _id, (uint)WindowEventType.WindowShow);
     }
 
     /// <inheritdoc />
@@ -468,18 +522,30 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
 
         _window.SetVisible(false);
         _visible = false;
+
+        // 分发 WindowHide 事件，通知应用层窗口已隐藏。
+        WailsApplication.Get()?.DispatchWindowEvent(
+            _id, (uint)WindowEventType.WindowHide);
     }
 
     /// <inheritdoc />
     public void Maximise()
     {
         _window?.Maximize();
+
+        // 分发 WindowMaximised 事件，通知应用层窗口已最大化。
+        WailsApplication.Get()?.DispatchWindowEvent(
+            _id, (uint)WindowEventType.WindowMaximised);
     }
 
     /// <inheritdoc />
     public void UnMaximise()
     {
         _window?.Unmaximize();
+
+        // 分发 WindowUnmaximised 事件，通知应用层窗口已从最大化状态恢复。
+        WailsApplication.Get()?.DispatchWindowEvent(
+            _id, (uint)WindowEventType.WindowUnmaximised);
     }
 
     /// <inheritdoc />
@@ -487,6 +553,10 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     {
         _window?.Minimize();
         _minimised = true;
+
+        // 分发 WindowMinimised 事件，通知应用层窗口已最小化。
+        WailsApplication.Get()?.DispatchWindowEvent(
+            _id, (uint)WindowEventType.WindowMinimised);
     }
 
     /// <inheritdoc />
@@ -494,18 +564,30 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     {
         _window?.Unminimize();
         _minimised = false;
+
+        // 分发 WindowUnminimised 事件，通知应用层窗口已从最小化状态恢复。
+        WailsApplication.Get()?.DispatchWindowEvent(
+            _id, (uint)WindowEventType.WindowUnminimised);
     }
 
     /// <inheritdoc />
     public void Fullscreen()
     {
         _window?.Fullscreen();
+
+        // 分发 WindowFullscreen 事件，通知应用层窗口已进入全屏。
+        WailsApplication.Get()?.DispatchWindowEvent(
+            _id, (uint)WindowEventType.WindowFullscreen);
     }
 
     /// <inheritdoc />
     public void UnFullscreen()
     {
         _window?.Unfullscreen();
+
+        // 分发 WindowUnfullscreen 事件，通知应用层窗口已退出全屏。
+        WailsApplication.Get()?.DispatchWindowEvent(
+            _id, (uint)WindowEventType.WindowUnfullscreen);
     }
 
     /// <inheritdoc />
@@ -773,6 +855,14 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         {
             _ = _webView.EvaluateJavascriptAsync(js);
         }
+    }
+
+    /// <inheritdoc />
+    public Task<byte[]?> CapturePreviewAsync()
+    {
+        // WebKitGTK 无直接的 CapturePreview API，返回 null 表示不支持。
+        // 可通过 GTK 截图功能间接实现。
+        return Task.FromResult<byte[]?>(null);
     }
 
     /// <inheritdoc />

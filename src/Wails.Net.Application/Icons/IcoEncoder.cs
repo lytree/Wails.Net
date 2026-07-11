@@ -130,4 +130,17 @@ public static class IcoEncoder
         icon.AddPng(size, pngData, bitCount);
         return icon.ToIcoBytes();
     }
+
+    /// <summary>
+    /// 将 SVG 图像数据编码为 ICO 文件。
+    /// SVG 数据以原始形式嵌入 ICO（Windows 10 1809+ 支持的矢量图标格式）。
+    /// 委托给 <see cref="SvgIconConverter.ConvertSvgToIco"/> 完成。
+    /// </summary>
+    /// <param name="svgData">SVG 图像字节数据。</param>
+    /// <returns>ICO 文件字节数据；输入为空则返回空数组。</returns>
+    public static byte[] EncodeFromSvg(byte[] svgData)
+    {
+        ArgumentNullException.ThrowIfNull(svgData);
+        return SvgIconConverter.ConvertSvgToIco(svgData);
+    }
 }
