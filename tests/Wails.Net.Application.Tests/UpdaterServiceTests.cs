@@ -162,11 +162,18 @@ public sealed class UpdaterServiceTests
     [Test]
     public async Task InstallUpdate_ExistingFile_DoesNotThrow()
     {
-        // 安排
+        // 安排：创建一个有效的（空）ZIP 文件，使解压不抛出异常
         var filePath = Path.Combine(Path.GetTempPath(), $"update_test_{Guid.NewGuid():N}.zip");
         try
         {
-            await File.WriteAllTextAsync(filePath, "fake update content");
+            // ZIP 空文件的中央目录结尾记录（22 字节）
+            var emptyZip = new byte[]
+            {
+                0x50, 0x4B, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+            };
+            await File.WriteAllBytesAsync(filePath, emptyZip);
             var service = new UpdaterService();
 
             // 操作与断言

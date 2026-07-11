@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using System.Text;
 using Wails.Net.Application.Options;
 
 namespace Wails.Net.Application.Services;
@@ -16,9 +17,16 @@ public class SqliteService : IServiceStartup, IServiceShutdown
     private const string InMemoryPath = ":memory:";
 
     /// <summary>
+    /// 每个实例唯一的内存数据库名称，确保多个 SqliteService 实例之间数据隔离。
+    /// 使用 Cache=Shared 模式时，同名连接字符串共享同一内存数据库；
+    /// 为每个实例生成唯一名称可避免测试或并行使用时的状态污染。
+    /// </summary>
+    private readonly string _inMemoryDbName = $"InMemoryDb_{Guid.NewGuid():N}";
+
+    /// <summary>
     /// SQLite 连接字符串。
     /// </summary>
-    private string _connectionString = DefaultInMemoryConnectionString;
+    private string _connectionString = string.Empty;
 
     /// <summary>
     /// 内存数据库模式下保持打开的持久连接，确保数据跨连接共享。
@@ -29,11 +37,6 @@ public class SqliteService : IServiceStartup, IServiceShutdown
     /// 服务是否已关闭。
     /// </summary>
     private bool _isShutdown;
-
-    /// <summary>
-    /// 内存数据库的默认连接字符串，使用共享缓存模式。
-    /// </summary>
-    private const string DefaultInMemoryConnectionString = "Data Source=:memory:;Mode=Memory;Cache=Shared";
 
     /// <summary>
     /// 获取或设置数据库路径。
@@ -69,7 +72,7 @@ public class SqliteService : IServiceStartup, IServiceShutdown
     {
         _isShutdown = false;
         _connectionString = DatabasePath == InMemoryPath
-            ? DefaultInMemoryConnectionString
+            ? $"Data Source={_inMemoryDbName};Mode=Memory;Cache=Shared"
             : $"Data Source={DatabasePath}";
 
         // 内存数据库需要保持一个持久连接，否则数据在连接关闭后丢失
@@ -118,16 +121,43 @@ public class SqliteService : IServiceStartup, IServiceShutdown
     }
 
     /// <summary>
-    /// 向命令添加位置参数（使用 ? 占位符）。
+    /// 向命令添加位置参数，并将 SQL 中的 ? 占位符转换为 @pN 命名参数。
+    /// Microsoft.Data.Sqlite 不支持 ? 位置占位符，必须使用 @name 命名参数语法。
     /// </summary>
-    /// <param name="command">SQL 命令。</param>
+    /// <param name="command">SQL 命令，其 CommandText 将被设置。</param>
+    /// <param name="sql">原始 SQL 语句，可能包含 ? 占位符。</param>
     /// <param name="args">参数值数组。</param>
-    private static void AddPositionalParameters(SqliteCommand command, object?[] args)
+    private static void AddPositionalParameters(SqliteCommand command, string sql, object?[] args)
     {
-        foreach (var arg in args)
+        if (args.Length > 0 && sql.Contains('?'))
+        {
+            // 将 ? 逐个替换为 @p0, @p1, ...
+            var sb = new StringBuilder(sql.Length + args.Length * 4);
+            var paramIndex = 0;
+            foreach (var c in sql)
+            {
+                if (c == '?')
+                {
+                    sb.Append("@p").Append(paramIndex);
+                    paramIndex++;
+                }
+                else
+                {
+                    sb.Append(c);
+                }
+            }
+            command.CommandText = sb.ToString();
+        }
+        else
+        {
+            command.CommandText = sql;
+        }
+
+        for (var i = 0; i < args.Length; i++)
         {
             var parameter = command.CreateParameter();
-            parameter.Value = arg ?? DBNull.Value;
+            parameter.ParameterName = "@p" + i;
+            parameter.Value = args[i] ?? DBNull.Value;
             command.Parameters.Add(parameter);
         }
     }
@@ -182,8 +212,7 @@ public class SqliteService : IServiceStartup, IServiceShutdown
         {
             using var connection = CreateConnection();
             using var command = connection.CreateCommand();
-            command.CommandText = sql;
-            AddPositionalParameters(command, args);
+            AddPositionalParameters(command, sql, args);
             return command.ExecuteNonQuery();
         }
         catch (SqliteException ex)
@@ -206,8 +235,7 @@ public class SqliteService : IServiceStartup, IServiceShutdown
         {
             using var connection = CreateConnection();
             using var command = connection.CreateCommand();
-            command.CommandText = sql;
-            AddPositionalParameters(command, args);
+            AddPositionalParameters(command, sql, args);
 
             var results = new List<Dictionary<string, object?>>();
             using var reader = command.ExecuteReader();
@@ -244,8 +272,7 @@ public class SqliteService : IServiceStartup, IServiceShutdown
         {
             using var connection = CreateConnection();
             using var command = connection.CreateCommand();
-            command.CommandText = sql;
-            AddPositionalParameters(command, args);
+            AddPositionalParameters(command, sql, args);
             var result = command.ExecuteScalar();
             return result is DBNull ? null : result;
         }
@@ -273,8 +300,7 @@ public class SqliteService : IServiceStartup, IServiceShutdown
         {
             using var connection = CreateConnection();
             using var command = connection.CreateCommand();
-            command.CommandText = sql;
-            AddPositionalParameters(command, parameters);
+            AddPositionalParameters(command, sql, parameters);
             return await command.ExecuteNonQueryAsync();
         }
         catch (SqliteException ex)
@@ -321,8 +347,7 @@ public class SqliteService : IServiceStartup, IServiceShutdown
         {
             using var connection = CreateConnection();
             using var command = connection.CreateCommand();
-            command.CommandText = sql;
-            AddPositionalParameters(command, parameters);
+            AddPositionalParameters(command, sql, parameters);
             var result = await command.ExecuteScalarAsync();
             if (result is null or DBNull)
             {
@@ -383,8 +408,7 @@ public class SqliteService : IServiceStartup, IServiceShutdown
         {
             using var connection = CreateConnection();
             using var command = connection.CreateCommand();
-            command.CommandText = sql;
-            AddPositionalParameters(command, parameters);
+            AddPositionalParameters(command, sql, parameters);
 
             var results = new List<Dictionary<string, object?>>();
             using var reader = await command.ExecuteReaderAsync();

@@ -86,6 +86,75 @@ public sealed class ProjectBuilder
     }
 
     /// <summary>
+    /// 发布指定项目。
+    /// </summary>
+    /// <param name="project">项目文件。</param>
+    /// <param name="configuration">构建配置（Debug/Release）。</param>
+    /// <param name="runtime">运行时标识（可空）。</param>
+    /// <param name="selfContained">是否自包含。</param>
+    /// <param name="outputDir">输出目录（可空，未指定时使用默认路径）。</param>
+    /// <returns>构建结果。</returns>
+    public async Task<BuildResult> PublishAsync(
+        FileInfo project,
+        string configuration,
+        string? runtime,
+        bool selfContained,
+        string? outputDir = null)
+    {
+        var args = new List<string>
+        {
+            "publish",
+            project.FullName,
+            "-c",
+            configuration,
+        };
+
+        if (!string.IsNullOrEmpty(runtime))
+        {
+            args.Add("-r");
+            args.Add(runtime);
+        }
+
+        if (selfContained)
+        {
+            args.Add("--self-contained");
+        }
+
+        if (!string.IsNullOrEmpty(outputDir))
+        {
+            args.Add("-o");
+            args.Add(outputDir);
+        }
+
+        var (exitCode, output) = await RunDotnetAsync(args);
+
+        if (exitCode != 0)
+        {
+            return new BuildResult
+            {
+                Success = false,
+                ErrorMessage = $"dotnet publish 退出码 {exitCode}",
+                BuildLog = output,
+            };
+        }
+
+        // 解析发布输出目录
+        var publishDir = ParseOutputDirectory(output)
+            ?? outputDir
+            ?? Path.Combine(
+                Path.GetDirectoryName(project.FullName) ?? string.Empty,
+                "bin",
+                configuration,
+                "publish");
+
+        return new BuildResult
+        {
+            Success = true,
+            OutputPath = publishDir,
+        };
+    }
+
+    /// <summary>
     /// 从 dotnet build 输出中解析输出目录路径。
     /// </summary>
     /// <param name="buildOutput">dotnet build 的标准输出。</param>

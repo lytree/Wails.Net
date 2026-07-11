@@ -67,4 +67,90 @@ public sealed class ProjectBuilderTests
         // BuildLog 在失败时应有内容（MSBUILD 错误或进程输出）
         await Assert.That(result.BuildLog).IsNotNull();
     }
+
+    [Test]
+    public async Task PublishAsync_NonExistentProject_ReturnsFailure()
+    {
+        var builder = new ProjectBuilder();
+        var result = await builder.PublishAsync(
+            new FileInfo(Path.Combine(Path.GetTempPath(), "does-not-exist-" + Guid.NewGuid().ToString("N") + ".csproj")),
+            "Release",
+            runtime: null,
+            selfContained: false);
+
+        await Assert.That(result.Success).IsFalse();
+        await Assert.That(result.ErrorMessage).IsNotNull();
+    }
+
+    [Test]
+    public async Task PublishAsync_FailurePopulatesBuildLog()
+    {
+        var builder = new ProjectBuilder();
+        var result = await builder.PublishAsync(
+            new FileInfo(Path.Combine(Path.GetTempPath(), "does-not-exist-" + Guid.NewGuid().ToString("N") + ".csproj")),
+            "Release",
+            runtime: null,
+            selfContained: false);
+
+        await Assert.That(result.Success).IsFalse();
+        await Assert.That(result.BuildLog).IsNotNull();
+    }
+
+    [Test]
+    public async Task PublishAsync_ValidProject_ReturnsSuccess()
+    {
+        var projectPath = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "src", "Wails.Net.Generator", "Wails.Net.Generator.csproj"));
+
+        if (!File.Exists(projectPath))
+        {
+            return;
+        }
+
+        var builder = new ProjectBuilder();
+        var result = await builder.PublishAsync(
+            new FileInfo(projectPath),
+            "Release",
+            runtime: null,
+            selfContained: false);
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(result.OutputPath).IsNotNull();
+    }
+
+    [Test]
+    public async Task PublishAsync_WithOutputDir_ReturnsSuccess()
+    {
+        var projectPath = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "src", "Wails.Net.Generator", "Wails.Net.Generator.csproj"));
+
+        if (!File.Exists(projectPath))
+        {
+            return;
+        }
+
+        var outputDir = Path.Combine(Path.GetTempPath(), "wailsnet-publish-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var builder = new ProjectBuilder();
+            var result = await builder.PublishAsync(
+                new FileInfo(projectPath),
+                "Release",
+                runtime: null,
+                selfContained: false,
+                outputDir);
+
+            await Assert.That(result.Success).IsTrue();
+            await Assert.That(result.OutputPath).IsNotNull();
+        }
+        finally
+        {
+            if (Directory.Exists(outputDir))
+            {
+                try { Directory.Delete(outputDir, recursive: true); } catch { }
+            }
+        }
+    }
 }

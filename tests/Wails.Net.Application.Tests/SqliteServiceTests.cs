@@ -19,7 +19,7 @@ public sealed class SqliteServiceTests
         await service.ServiceStartup(new ApplicationOptions(), CancellationToken.None);
 
         // 操作
-        var result = service.Execute("CREATE TABLE users", Array.Empty<object>());
+        var result = service.Execute("CREATE TABLE users (name TEXT, age INTEGER)", Array.Empty<object>());
 
         // 断言
         await Assert.That(result).IsEqualTo(0);
@@ -31,7 +31,7 @@ public sealed class SqliteServiceTests
         // 安排
         var service = new SqliteService();
         await service.ServiceStartup(new ApplicationOptions(), CancellationToken.None);
-        service.Execute("CREATE TABLE users", Array.Empty<object>());
+        service.Execute("CREATE TABLE users (name TEXT, age INTEGER)", Array.Empty<object>());
 
         // 操作
         var result = service.Execute(
@@ -48,7 +48,7 @@ public sealed class SqliteServiceTests
         // 安排
         var service = new SqliteService();
         await service.ServiceStartup(new ApplicationOptions(), CancellationToken.None);
-        service.Execute("CREATE TABLE users", Array.Empty<object>());
+        service.Execute("CREATE TABLE users (name TEXT, age INTEGER)", Array.Empty<object>());
         service.Execute("INSERT INTO users (name, age) VALUES (?, ?)", new object[] { "Alice", 30 });
         service.Execute("INSERT INTO users (name, age) VALUES (?, ?)", new object[] { "Bob", 25 });
 
@@ -67,7 +67,7 @@ public sealed class SqliteServiceTests
         // 安排
         var service = new SqliteService();
         await service.ServiceStartup(new ApplicationOptions(), CancellationToken.None);
-        service.Execute("CREATE TABLE users", Array.Empty<object>());
+        service.Execute("CREATE TABLE users (name TEXT, age INTEGER)", Array.Empty<object>());
         service.Execute("INSERT INTO users (name, age) VALUES (?, ?)", new object[] { "Alice", 30 });
         service.Execute("INSERT INTO users (name, age) VALUES (?, ?)", new object[] { "Bob", 25 });
         service.Execute("INSERT INTO users (name, age) VALUES (?, ?)", new object[] { "Charlie", 30 });
@@ -99,7 +99,7 @@ public sealed class SqliteServiceTests
         // 安排
         var service = new SqliteService();
         await service.ServiceStartup(new ApplicationOptions(), CancellationToken.None);
-        service.Execute("CREATE TABLE users", Array.Empty<object>());
+        service.Execute("CREATE TABLE users (name TEXT, age INTEGER)", Array.Empty<object>());
         service.Execute("INSERT INTO users (name, age) VALUES (?, ?)", new object[] { "Alice", 30 });
         service.Execute("INSERT INTO users (name, age) VALUES (?, ?)", new object[] { "Bob", 25 });
 
@@ -119,7 +119,7 @@ public sealed class SqliteServiceTests
         // 安排
         var service = new SqliteService();
         await service.ServiceStartup(new ApplicationOptions(), CancellationToken.None);
-        service.Execute("CREATE TABLE users", Array.Empty<object>());
+        service.Execute("CREATE TABLE users (name TEXT, age INTEGER)", Array.Empty<object>());
         service.Execute("INSERT INTO users (name, age) VALUES (?, ?)", new object[] { "Alice", 30 });
         service.Execute("INSERT INTO users (name, age) VALUES (?, ?)", new object[] { "Bob", 25 });
 
@@ -140,7 +140,7 @@ public sealed class SqliteServiceTests
         // 安排
         var service = new SqliteService();
         await service.ServiceStartup(new ApplicationOptions(), CancellationToken.None);
-        service.Execute("CREATE TABLE users", Array.Empty<object>());
+        service.Execute("CREATE TABLE users (name TEXT, age INTEGER)", Array.Empty<object>());
         service.Execute("INSERT INTO users (name, age) VALUES (?, ?)", new object[] { "Alice", 30 });
 
         // 操作
@@ -156,7 +156,7 @@ public sealed class SqliteServiceTests
         // 安排
         var service = new SqliteService();
         await service.ServiceStartup(new ApplicationOptions(), CancellationToken.None);
-        service.Execute("CREATE TABLE users", Array.Empty<object>());
+        service.Execute("CREATE TABLE users (name TEXT, age INTEGER)", Array.Empty<object>());
 
         // 操作
         var result = service.ExecuteScalar("SELECT * FROM users WHERE name = ?", new object[] { "Nobody" });
@@ -197,7 +197,7 @@ public sealed class SqliteServiceTests
         // 安排
         var service = new SqliteService();
         await service.ServiceStartup(new ApplicationOptions(), CancellationToken.None);
-        service.Execute("CREATE TABLE items", Array.Empty<object>());
+        service.Execute("CREATE TABLE items (name TEXT, category TEXT)", Array.Empty<object>());
         service.Execute("INSERT INTO items (name, category) VALUES (?, ?)", new object[] { "A", "X" });
         service.Execute("INSERT INTO items (name, category) VALUES (?, ?)", new object[] { "B", "X" });
         service.Execute("INSERT INTO items (name, category) VALUES (?, ?)", new object[] { "C", "Y" });
@@ -218,7 +218,7 @@ public sealed class SqliteServiceTests
         // 安排
         var service = new SqliteService();
         await service.ServiceStartup(new ApplicationOptions(), CancellationToken.None);
-        service.Execute("CREATE TABLE users", Array.Empty<object>());
+        service.Execute("CREATE TABLE users (name TEXT, age INTEGER)", Array.Empty<object>());
         service.Execute("INSERT INTO users (name) VALUES (?)", new object[] { "Alice" });
 
         // 操作

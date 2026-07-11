@@ -32,6 +32,9 @@ public static class Program
         root.Subcommands.Add(DoctorCommand.Create());
         root.Subcommands.Add(NewCommand.Create());
         root.Subcommands.Add(BuildCommand.Create());
+        root.Subcommands.Add(DevCommand.Create());
+        root.Subcommands.Add(PublishCommand.Create());
+        root.Subcommands.Add(PluginCommand.Create());
         return root;
     }
 }

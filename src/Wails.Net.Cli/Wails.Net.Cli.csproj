@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <PackageReference Include="System.CommandLine" />
+    <InternalsVisibleTo Include="Wails.Net.Cli.Tests" />
   </ItemGroup>
 
   <ItemGroup>

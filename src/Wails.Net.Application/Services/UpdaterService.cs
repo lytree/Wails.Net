@@ -171,11 +171,13 @@ public class UpdaterService : IServiceStartup, IServiceShutdown
         try
         {
             var manifest = await CheckForUpdatesAsync();
+            // 缺失 version 字段时默认为 "0.0.0"，与 Wails v3 行为一致
+            var version = string.IsNullOrWhiteSpace(manifest.Version) ? "0.0.0" : manifest.Version;
             return new UpdateInfo
             {
-                Version = manifest.Version,
+                Version = version,
                 DownloadUrl = manifest.DownloadURL,
-                UpdateAvailable = IsNewerVersion(manifest.Version, CurrentVersion),
+                UpdateAvailable = IsNewerVersion(version, CurrentVersion),
                 ReleaseNotes = manifest.ReleaseNotes
             };
         }

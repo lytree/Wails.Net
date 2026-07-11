@@ -139,11 +139,20 @@ public sealed class ApplicationTests
     {
         // 安排
         var app = new Application(new ApplicationOptions { Name = "RunApp" });
-        app.SetPlatformApp(new ServerPlatformApp(app.Options));
+        var serverPlatform = new ServerPlatformApp(app.Options);
+        app.SetPlatformApp(serverPlatform);
         var startupService = new FakeLifecycleService();
         var transport = new FakeTransport();
         app.RegisterService(startupService);
         app.Transport = transport;
+
+        // ServerPlatformApp.Run() 会阻塞直到 SignalShutdown 被调用，
+        // 因此在后台线程延迟 100ms 触发关闭信号，使 Run() 能够返回。
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(100));
+            serverPlatform.SignalShutdown();
+        });
 
         // 操作
         app.Run();
