@@ -73,6 +73,12 @@ public class AssetServer
     private Func<string, Stream?>? _customAssetReader;
 
     /// <summary>
+    /// 内容安全策略（CSP）头部值，为 null 或空时不设置 CSP 头。
+    /// 由 Application 层在配置时通过 <see cref="SetCspHeader" /> 注入。
+    /// </summary>
+    private string? _cspHeader;
+
+    /// <summary>
     /// 获取资源服务器选项。
     /// </summary>
     public AssetOptions Options => _options;
@@ -117,6 +123,17 @@ public class AssetServer
     }
 
     /// <summary>
+    /// 设置内容安全策略（CSP）头部值。
+    /// 设置后，所有 HTTP 响应将携带 <c>Content-Security-Policy</c> 头。
+    /// 传入 null 或空字符串可禁用 CSP 头。
+    /// </summary>
+    /// <param name="cspHeader">CSP 头部值，可为 null。</param>
+    public void SetCspHeader(string? cspHeader)
+    {
+        _cspHeader = cspHeader;
+    }
+
+    /// <summary>
     /// 根据路径异步返回资源内容。
     /// 通过中间件链处理请求，最终由派生类提供的资源读取逻辑兜底。
     /// </summary>
@@ -146,6 +163,12 @@ public class AssetServer
 
         // 添加 CORS 响应头
         response.Headers[Headers.AccessControlAllowOrigin] = "*";
+
+        // 添加内容安全策略（CSP）响应头
+        if (!string.IsNullOrEmpty(_cspHeader))
+        {
+            response.Headers["Content-Security-Policy"] = _cspHeader;
+        }
 
         // 处理 OPTIONS 预检请求
         if (string.Equals(request.HttpMethod, "OPTIONS", StringComparison.OrdinalIgnoreCase))

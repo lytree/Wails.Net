@@ -181,4 +181,15 @@ public class ApplicationOptions
     /// 是否禁用拖放功能。
     /// </summary>
     public bool DisableDragAndDrop { get; set; } = false;
+
+    /// <summary>
+    /// 获取或设置内容安全策略（CSP）配置。
+    /// 对应 Tauri v2 的 CSP 安全配置。
+    /// </summary>
+    public Wails.Net.Application.Security.CspOptions? Csp { get; set; }
+
+    /// <summary>
+    /// 获取或设置允许的外部 URL 白名单。
+    /// </summary>
+    public Wails.Net.Application.Security.UrlWhitelist? AllowedUrls { get; set; }
 }

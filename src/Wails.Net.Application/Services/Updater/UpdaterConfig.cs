@@ -58,6 +58,19 @@ public sealed class UpdaterConfig
     public bool DisableChecksumVerification { get; set; }
 
     /// <summary>
+    /// 获取或设置是否启用签名验证（默认 false）。
+    /// 启用后将在安装前验证更新包的代码签名。
+    /// </summary>
+    public bool VerifySignature { get; set; } = false;
+
+    /// <summary>
+    /// 获取或设置期望的签名者名称（可选）。
+    /// 启用签名验证后，将校验实际签名者是否与此值匹配。
+    /// Windows 上与 Authenticode 证书 Subject 字段匹配；Linux 上与 GPG GOODSIG 行匹配。
+    /// </summary>
+    public string? ExpectedSigner { get; set; }
+
+    /// <summary>
     /// 获取或设置下载目录，默认为系统临时目录。
     /// </summary>
     public string DownloadDirectory { get; set; } = Path.GetTempPath();

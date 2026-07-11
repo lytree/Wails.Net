@@ -1,3 +1,4 @@
+using System.Security;
 using System.Text.Json;
 using Wails.Net.Application.Events;
 using Wails.Net.Application.Options;
@@ -342,6 +343,17 @@ public class UpdaterService : IServiceStartup, IServiceShutdown
 
         try
         {
+            // 签名验证（如果启用）
+            if (_config.VerifySignature)
+            {
+                var sigResult = await SignatureVerifier.VerifyAsync(archivePath, _config.ExpectedSigner);
+                if (!sigResult.IsValid)
+                {
+                    EmitEvent(UpdateEvents.UpdaterEventInstallError, $"签名验证失败: {sigResult.ErrorMessage}");
+                    throw new SecurityException($"更新包签名验证失败: {sigResult.ErrorMessage}");
+                }
+            }
+
             var extractDir = Path.Combine(
                 DownloadDirectory,
                 $"wails-update-{Guid.NewGuid():N}");

@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Wails.Net.Application.Security;
 
 namespace Wails.Net.Application.Commands;
 
@@ -29,16 +30,27 @@ public sealed class CommandDispatcher
     private readonly ILogger<CommandDispatcher>? _logger;
 
     /// <summary>
+    /// 权限管理器（可选）。
+    /// </summary>
+    private readonly PermissionManager? _permissionManager;
+
+    /// <summary>
     /// 构造命令调度器。
     /// </summary>
     /// <param name="registry">命令注册表。</param>
     /// <param name="services">DI 服务容器。</param>
     /// <param name="logger">日志记录器，可为 null。</param>
-    public CommandDispatcher(CommandRegistry registry, IServiceProvider services, ILogger<CommandDispatcher>? logger = null)
+    /// <param name="permissionManager">权限管理器，可为 null；未注入时跳过权限校验。</param>
+    public CommandDispatcher(
+        CommandRegistry registry,
+        IServiceProvider services,
+        ILogger<CommandDispatcher>? logger = null,
+        PermissionManager? permissionManager = null)
     {
         _registry = registry;
         _services = services;
         _logger = logger;
+        _permissionManager = permissionManager;
     }
 
     /// <summary>
@@ -59,6 +71,13 @@ public sealed class CommandDispatcher
         {
             _logger?.LogWarning("未找到命令: {Method}", request.Method);
             return new InvokeResponse(request.Id, false, null, $"Command not found: {request.Method}");
+        }
+
+        // 权限校验
+        if (_permissionManager is not null && !_permissionManager.ValidateCommand(entry.Method))
+        {
+            _logger?.LogWarning("权限拒绝: 命令 {Method}", request.Method);
+            return new InvokeResponse(request.Id, false, null, $"Permission denied: {request.Method}");
         }
 
         try

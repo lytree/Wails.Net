@@ -34,6 +34,7 @@ public static class Program
         root.Subcommands.Add(BuildCommand.Create());
         root.Subcommands.Add(DevCommand.Create());
         root.Subcommands.Add(PublishCommand.Create());
+        root.Subcommands.Add(PackCommand.Create());
         root.Subcommands.Add(PluginCommand.Create());
         return root;
     }
