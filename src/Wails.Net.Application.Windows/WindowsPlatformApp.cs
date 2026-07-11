@@ -99,8 +99,9 @@ public sealed class WindowsPlatformApp : IPlatformApp
 
     /// <summary>
     /// 主线程托管 ID，用于 IsOnMainThread 判断。
+    /// 在 <see cref="Run"/> 方法启动时设置，因为 UI 线程可能不是构造时的线程。
     /// </summary>
-    private readonly int _mainThreadId;
+    private int _mainThreadId;
 
     /// <summary>
     /// 应用描述，用于关于对话框。
@@ -157,7 +158,6 @@ public sealed class WindowsPlatformApp : IPlatformApp
         _name = options.Name;
         _description = options.Description;
         _version = options.Version;
-        _mainThreadId = Environment.CurrentManagedThreadId;
         s_current = this;
 
         // 设置进程 DPI 感知，必须在创建任何窗口之前完成。
@@ -245,6 +245,9 @@ public sealed class WindowsPlatformApp : IPlatformApp
     /// <inheritdoc />
     public int Run()
     {
+        // 在 UI 线程启动时记录线程 ID（可能不是构造时的线程，如通过 STA 线程运行时）。
+        _mainThreadId = Environment.CurrentManagedThreadId;
+
         // 启动系统级事件监听器（电源模式变化、网络连通性变化）。
         _systemEventWatcher = new SystemEventWatcher();
         _systemEventWatcher.Start();
