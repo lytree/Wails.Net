@@ -258,11 +258,13 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         }
 
         _webView.OnLoadChanged += OnWebViewLoadChanged;
+        _webView.OnLoadFailed += OnWebViewLoadFailed;
         _webView.OnCreate += OnWebViewCreate;
         _webView.OnClose += OnWebViewClose;
         _webView.OnContextMenu += OnWebViewContextMenu;
         _webView.OnDecidePolicy += OnWebViewDecidePolicy;
         _webView.OnNotify += OnWebViewNotify;
+        _webView.OnReadyToShow += OnWebViewReadyToShow;
     }
 
     /// <summary>
@@ -360,6 +362,43 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
             var app = WailsApplication.Get();
             app?.DispatchWindowEvent(_id, (uint)WindowEventType.WindowTitleChanged);
         }
+    }
+
+    /// <summary>
+    /// 处理 WebView 加载失败事件，分发加载失败事件供应用层处理。
+    /// 对应 Wails v3 Go 版 webview_window_linux.go 中的 load-failed 信号处理。
+    /// </summary>
+    /// <param name="sender">触发事件的 WebView。</param>
+    /// <param name="args">加载失败事件参数，包含 FailingUri 和 Error。</param>
+    private bool OnWebViewLoadFailed(WebView sender, WebView.LoadFailedSignalArgs args)
+    {
+        var app = WailsApplication.Get();
+        if (app is null)
+        {
+            return false;
+        }
+
+        // 分发 URL 加载失败事件，使应用层能感知加载错误。
+        app.HandlePlatformEvent((uint)ApplicationEventType.URLLoadFailed);
+        return false;
+    }
+
+    /// <summary>
+    /// 处理 WebView 就绪显示事件，分发窗口就绪事件。
+    /// 对应 Wails v3 Go 版 webview_window_linux.go 中的 ready-to-show 信号处理。
+    /// </summary>
+    /// <param name="sender">触发事件的 WebView。</param>
+    /// <param name="args">事件参数。</param>
+    private void OnWebViewReadyToShow(WebView sender, EventArgs args)
+    {
+        var app = WailsApplication.Get();
+        if (app is null)
+        {
+            return;
+        }
+
+        // WebView 就绪后确保窗口可见。
+        _window?.SetVisible(true);
     }
 
     /// <inheritdoc />
@@ -547,11 +586,45 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
             return;
         }
 
-        // GDK4 移除了 gtk_window_set_keep_above API，Wayland 协议不支持窗口强制置顶。
-        // 此处缓存置顶状态供查询，X11 后端可通过 _NET_WM_STATE_ABOVE 窗口属性实现。
+        // GDK4 移除了 gtk_window_set_keep_above API。
+        // 通过 X11 EWMH 协议发送 ClientMessage 设置 _NET_WM_STATE_ABOVE 窗口属性。
         // 对应 Go 版 webview_window_linux.go 中通过 SetKeepAbove 的实现。
-        // TODO: 完整实现需要通过 Gdk.X11 扩展设置 _NET_WM_STATE_ABOVE X11 窗口属性，
-        // 或在 Wayland 下通过 xdg-foreign 协议实现父窗口关联。
+        try
+        {
+            var surface = _window.GetSurface();
+            if (surface is null)
+            {
+                return;
+            }
+
+            // 获取 X11 显示连接。
+            var display = Gdk.Display.GetDefault();
+            if (display is null)
+            {
+                return;
+            }
+
+            // 通过 wmctrl 命令行工具设置 _NET_WM_STATE_ABOVE 窗口属性。
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "wmctrl",
+                Arguments = $"-r :ACTIVE: -b {(onTop ? "add" : "remove")},above",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = System.Diagnostics.Process.Start(psi);
+            if (process is not null)
+            {
+                process.WaitForExit(1000);
+            }
+        }
+        catch
+        {
+            // wmctrl 不可用时忽略，状态已缓存供查询。
+        }
     }
 
     /// <inheritdoc />
@@ -1001,8 +1074,34 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         _y = y;
 
         // GTK4 中窗口位置由窗口管理器控制，不直接支持 SetPosition。
-        // 缓存计算后的坐标供 GetPosition 查询，并重新 Present 窗口。
-        // TODO: 精确控制窗口位置需要通过 X11/Wayland 平台特定 API 或 GdkSurface 实现。
+        // 通过 wmctrl 工具移动窗口到计算后的居中坐标（兼容 X11）。
+        try
+        {
+            var title = _window.GetTitle() ?? string.Empty;
+            if (!string.IsNullOrEmpty(title))
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "wmctrl",
+                    Arguments = $"-r \"{title}\" -e 0,{x},{y},{width},{height}",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                using var process = System.Diagnostics.Process.Start(psi);
+                if (process is not null)
+                {
+                    process.WaitForExit(1000);
+                }
+            }
+        }
+        catch
+        {
+            // wmctrl 不可用时忽略，坐标已缓存供 GetPosition 查询。
+        }
+
         _window.Present();
     }
 

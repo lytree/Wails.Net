@@ -134,6 +134,9 @@ public static class KnownEvents
     /// <summary>URL 加载完成事件。</summary>
     public const string URLFinishedLoading = "wails:url:finished:loading";
 
+    /// <summary>URL 加载失败事件。</summary>
+    public const string URLLoadFailed = "wails:url:load:failed";
+
     /// <summary>窗口即将卸载事件。</summary>
     public const string WindowBeforeUnload = "wails:window:before:unload";
 
@@ -204,6 +207,7 @@ public static class KnownEvents
         ApplicationEventType.WindowExitFullScreen => WindowExitFullScreen,
         ApplicationEventType.URLStartsLoading => URLStartsLoading,
         ApplicationEventType.URLFinishedLoading => URLFinishedLoading,
+        ApplicationEventType.URLLoadFailed => URLLoadFailed,
         ApplicationEventType.WindowBeforeUnload => WindowBeforeUnload,
         _ => $"wails:custom:{(uint)type}"
     };

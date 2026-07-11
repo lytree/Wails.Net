@@ -73,4 +73,7 @@ public enum ApplicationEventType : uint
 
     /// <summary>窗口即将卸载。</summary>
     WindowBeforeUnload = 22,
+
+    /// <summary>URL 加载失败。</summary>
+    URLLoadFailed = 23,
 }
