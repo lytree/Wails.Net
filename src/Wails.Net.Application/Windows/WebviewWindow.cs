@@ -1,5 +1,6 @@
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
+using Wails.Net.Events;
 
 namespace Wails.Net.Application.Windows;
 
@@ -38,6 +39,21 @@ public class WebviewWindow
     /// 窗口关闭事件。
     /// </summary>
     public event Action<uint>? OnClose;
+
+    /// <summary>
+    /// 窗口运行时就绪事件。
+    /// </summary>
+    public event Action? RuntimeReady;
+
+    /// <summary>
+    /// 窗口事件监听器字典，按事件类型分组存储回调列表。
+    /// </summary>
+    private readonly Dictionary<uint, List<Action>> _eventListeners = new();
+
+    /// <summary>
+    /// 事件监听器字典的锁对象，保证线程安全。
+    /// </summary>
+    private readonly object _eventLock = new();
 
     /// <summary>
     /// 使用指定 ID、名称和选项构造窗口实例。
@@ -426,4 +442,157 @@ public class WebviewWindow
     /// </summary>
     /// <param name="html">要加载的 HTML 内容。</param>
     public void LoadHTML(string html) => ImplRequired.LoadHTML(html);
+
+    /// <summary>
+    /// 设置窗口背景类型。
+    /// </summary>
+    /// <param name="type">背景类型字符串。</param>
+    public void SetBackgroundType(string type) => ImplRequired.SetBackgroundType(type);
+
+    /// <summary>
+    /// 设置全屏按钮是否可用。
+    /// </summary>
+    /// <param name="enabled">是否可用。</param>
+    public void SetFullscreenButtonEnabled(bool enabled) => ImplRequired.SetFullscreenButtonEnabled(enabled);
+
+    /// <summary>
+    /// 设置缩放比例（double 重载）。
+    /// </summary>
+    /// <param name="zoom">缩放比例。</param>
+    public void SetZoom(double zoom) => ImplRequired.SetZoom(zoom);
+
+    /// <summary>
+    /// 设置是否启用缩放。
+    /// </summary>
+    /// <param name="enabled">是否启用缩放。</param>
+    public void SetZoomEnabled(bool enabled) => ImplRequired.SetZoomEnabled(enabled);
+
+    /// <summary>
+    /// 设置窗口是否半透明。
+    /// </summary>
+    /// <param name="translucent">是否半透明。</param>
+    public void SetTranslucent(bool translucent) => ImplRequired.SetTranslucent(translucent);
+
+    /// <summary>
+    /// 设置标题栏样式（字符串重载）。
+    /// </summary>
+    /// <param name="style">标题栏样式字符串。</param>
+    public void SetTitleBarStyle(string style) => ImplRequired.SetTitleBarStyle(style);
+
+    /// <summary>
+    /// 注入 CSS 样式到当前页面。
+    /// </summary>
+    /// <param name="css">CSS 样式字符串。</param>
+    public void InjectCSS(string css) => ImplRequired.InjectCSS(css);
+
+    /// <summary>
+    /// 放大缩放。
+    /// </summary>
+    public void ZoomIn() => ImplRequired.ZoomIn();
+
+    /// <summary>
+    /// 缩小缩放。
+    /// </summary>
+    public void ZoomOut() => ImplRequired.ZoomOut();
+
+    /// <summary>
+    /// 重置缩放。
+    /// </summary>
+    public void ZoomReset() => ImplRequired.ZoomReset();
+
+    /// <summary>
+    /// 将窗口设置为最小化状态。
+    /// </summary>
+    public void SetMinimised() => ImplRequired.SetMinimised();
+
+    /// <summary>
+    /// 将窗口设置为最大化状态。
+    /// </summary>
+    public void SetMaximised() => ImplRequired.SetMaximised();
+
+    /// <summary>
+    /// 将窗口设置为正常状态。
+    /// </summary>
+    public void SetNormal() => ImplRequired.SetNormal();
+
+    /// <summary>
+    /// 在指定坐标打开上下文菜单。
+    /// </summary>
+    /// <param name="x">X 坐标。</param>
+    /// <param name="y">Y 坐标。</param>
+    public void OpenContextMenu(int x, int y) => ImplRequired.OpenContextMenu(x, y);
+
+    /// <summary>
+    /// 将窗口内容导出为 PDF（字节数组选项重载）。
+    /// </summary>
+    /// <param name="pageOptions">PDF 导出选项字节数组，可为 null。</param>
+    public void PrintToPDF(byte[]? pageOptions) => ImplRequired.PrintToPDF(pageOptions);
+
+    /// <summary>
+    /// 注册窗口就绪回调。
+    /// </summary>
+    /// <param name="callback">窗口就绪时执行的回调。</param>
+    public void Run(Action callback) => ImplRequired.Run(callback);
+
+    /// <summary>
+    /// 订阅指定事件类型的回调。
+    /// </summary>
+    /// <param name="eventType">事件类型数值。</param>
+    /// <param name="callback">事件触发时执行的回调。</param>
+    public void On(uint eventType, Action callback)
+    {
+        lock (_eventLock)
+        {
+            if (!_eventListeners.TryGetValue(eventType, out var list))
+            {
+                list = new List<Action>();
+                _eventListeners[eventType] = list;
+            }
+            list.Add(callback);
+        }
+    }
+
+    /// <summary>
+    /// 取消订阅指定事件类型的所有回调。
+    /// </summary>
+    /// <param name="eventType">事件类型数值。</param>
+    public void Off(uint eventType)
+    {
+        lock (_eventLock)
+        {
+            _eventListeners.Remove(eventType);
+        }
+    }
+
+    /// <summary>
+    /// 发射指定事件类型，触发所有已订阅的回调。
+    /// 当事件类型为 <see cref="WindowEventType.WindowRuntimeReady"/> 时，
+    /// 同时触发 <see cref="RuntimeReady"/> 事件。
+    /// </summary>
+    /// <param name="eventType">事件类型数值。</param>
+    /// <param name="data">附加数据，可为 null。</param>
+    public void Emit(uint eventType, object? data = null)
+    {
+        Action[] callbacks;
+        lock (_eventLock)
+        {
+            if (!_eventListeners.TryGetValue(eventType, out var list))
+            {
+                callbacks = Array.Empty<Action>();
+            }
+            else
+            {
+                callbacks = list.ToArray();
+            }
+        }
+        foreach (var callback in callbacks)
+        {
+            callback();
+        }
+
+        if (eventType == (uint)WindowEventType.WindowRuntimeReady)
+        {
+            RuntimeReady?.Invoke();
+        }
+    }
 }

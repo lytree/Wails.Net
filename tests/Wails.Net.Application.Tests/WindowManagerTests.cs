@@ -298,7 +298,7 @@ internal sealed class FakePlatformApp : IPlatformApp
     public string? SaveFileDialogResult { get; set; } = null;
     public string[]? OpenMultipleFilesDialogResult { get; set; } = null;
 
-    public void Run() { }
+    public int Run() { return 0; }
     public void Destroy() { }
     public void SetApplicationMenu(Menu? menu) { }
     public uint GetCurrentWindowId() => 0;

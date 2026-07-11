@@ -1,0 +1,1707 @@
+using System.Drawing;
+using System.Runtime.InteropServices;
+using Microsoft.Web.WebView2.Core;
+using Wails.Net.Application.Options;
+using Wails.Net.Application.Windows;
+using Windows.Win32;
+using Windows.Win32.Foundation;
+using Windows.Win32.Graphics.Gdi;
+using Windows.Win32.UI.WindowsAndMessaging;
+using Menu = Wails.Net.Application.Menus.Menu;
+
+namespace Wails.Net.Application.Platform;
+
+/// <summary>
+/// Win32 平台的 Webview 窗口实现，对应 Go 版的 webview_window_windows.go。
+/// 通过 Win32 CreateWindowEx 创建原生窗口，使用 WebView2 承载 Web 内容。
+/// WebView2 初始化为异步操作，在消息循环中完成后即可正常使用。
+/// </summary>
+public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
+{
+    /// <summary>
+    /// 窗口类名称，用于 RegisterClassEx 注册。
+    /// </summary>
+    internal const string WindowClassName = "WailsNetWebviewWindow";
+
+    /// <summary>
+    /// WM_DESTROY 消息常量（0x0002），窗口销毁时收到。
+    /// </summary>
+    private const uint WmDestroy = 0x0002;
+
+    /// <summary>
+    /// WM_CLOSE 消息常量（0x0010），窗口关闭时收到。
+    /// </summary>
+    private const uint WmClose = 0x0010;
+
+    /// <summary>
+    /// WM_SIZE 消息常量（0x0005），窗口大小改变时收到。
+    /// </summary>
+    private const uint WmSize = 0x0005;
+
+    /// <summary>
+    /// WM_COMMAND 消息常量（0x0111），菜单命令或加速键触发时收到。
+    /// </summary>
+    private const uint WmCommand = 0x0111;
+
+    /// <summary>
+    /// WM_SYSCOMMAND 消息常量（0x0112），系统菜单命令触发时收到。
+    /// </summary>
+    private const uint WmSysCommand = 0x0112;
+
+    /// <summary>
+    /// WM_GETMINMAXINFO 消息常量（0x0024），窗口大小约束查询时收到。
+    /// </summary>
+    private const uint WmGetMinMaxInfo = 0x0024;
+
+    /// <summary>
+    /// WM_DPICHANGED 消息常量（0x02E0），DPI 变化时收到。
+    /// </summary>
+    private const uint WmDpiChanged = 0x02E0;
+
+    /// <summary>
+    /// WM_HOTKEY 消息常量（0x0312），全局热键触发时收到。
+    /// </summary>
+    private const uint WmHotkey = 0x0312;
+
+    /// <summary>
+    /// WM_DROPFILES 消息常量（0x0233），文件拖放时收到。
+    /// </summary>
+    private const uint WmDropFiles = 0x0233;
+
+    /// <summary>
+    /// WM_NCLBUTTONDOWN 消息常量（0x00A1），非客户区左键按下。
+    /// </summary>
+    private const uint WmNclButtonDown = 0x00A1;
+
+    /// <summary>
+    /// WM_SETICON 消息常量（0x0080），设置窗口图标。
+    /// </summary>
+    private const uint WmSetIcon = 0x0080;
+
+    /// <summary>
+    /// SC_CLOSE 系统命令 ID（0xF060）。
+    /// </summary>
+    private const uint ScClose = 0xF060;
+
+    /// <summary>
+    /// HTCAPTION 命中测试值（2），表示标题栏区域，用于拖动。
+    /// </summary>
+    private const nint Htcaption = 2;
+
+    /// <summary>
+    /// HTBOTTOMRIGHT 命中测试值（17），表示右下角，用于调整大小。
+    /// </summary>
+    private const nint HtBottomRight = 17;
+
+    /// <summary>
+    /// GWL_STYLE 索引（-16），用于 GetWindowLongPtrW/SetWindowLongPtrW 获取/设置窗口样式。
+    /// </summary>
+    private const int GwlStyle = -16;
+
+    /// <summary>
+    /// GWL_EXSTYLE 索引（-20），用于 GetWindowLongPtrW/SetWindowLongPtrW 获取/设置扩展窗口样式。
+    /// </summary>
+    private const int GwlExStyle = -20;
+
+    /// <summary>
+    /// LWA_ALPHA 标志（0x00000002），用于 SetLayeredWindowAttributes 按透明度设置。
+    /// </summary>
+    private const uint LwaAlpha = 0x00000002;
+
+    /// <summary>
+    /// HWND_MESSAGE 常量（-3），用于创建消息-only 窗口。
+    /// </summary>
+    private static readonly IntPtr HwndMessage = new(-3);
+
+    /// <summary>
+    /// Win32 CW_USEDEFAULT 常量，用于 CreateWindowEx 使用默认位置/尺寸。
+    /// CsWin32 未生成此常量，此处手动定义为 ((int)0x80000000)。
+    /// </summary>
+    private const int CW_USEDEFAULT = unchecked((int)0x80000000);
+
+    /// <summary>
+    /// 全局窗口类注册锁，确保只注册一次。
+    /// </summary>
+    private static readonly object _classLock = new();
+
+    /// <summary>
+    /// 全局窗口过程委托引用，防止 GC 回收导致回调失效。
+    /// </summary>
+    private static WNDPROC? _wndProc;
+
+    /// <summary>
+    /// 全局窗口实例表，按 HWND 句柄索引，用于窗口过程分发。
+    /// </summary>
+    private static readonly Dictionary<IntPtr, Win32WebviewWindow> _instancesByHwnd = new();
+
+    /// <summary>
+    /// 全局实例表锁，保护 _instancesByHwnd 字典。
+    /// </summary>
+    private static readonly object _instancesLock = new();
+
+    /// <summary>
+    /// 窗口 ID。
+    /// </summary>
+    private readonly uint _id;
+
+    /// <summary>
+    /// 窗口选项。
+    /// </summary>
+    private readonly WebviewWindowOptions _options;
+
+    /// <summary>
+    /// Win32 窗口句柄。
+    /// </summary>
+    private HWND _hwnd;
+
+    /// <summary>
+    /// WebView2 控制器，初始化完成后可用。
+    /// </summary>
+    private CoreWebView2Controller? _controller;
+
+    /// <summary>
+    /// WebView2 核心 Webview 实例，初始化完成后可用。
+    /// </summary>
+    private CoreWebView2? _webview;
+
+    /// <summary>
+    /// WebView2 异步初始化任务源，用于等待初始化完成。
+    /// </summary>
+    private readonly TaskCompletionSource<bool> _initTcs = new();
+
+    /// <summary>
+    /// 窗口是否已关闭。
+    /// </summary>
+    private bool _closed;
+
+    /// <summary>
+    /// 当前 URL。
+    /// </summary>
+    private string _currentUrl = string.Empty;
+
+    /// <summary>
+    /// 最小宽度，用于 WM_GETMINMAXINFO 约束。
+    /// </summary>
+    private int _minWidth;
+
+    /// <summary>
+    /// 最小高度，用于 WM_GETMINMAXINFO 约束。
+    /// </summary>
+    private int _minHeight;
+
+    /// <summary>
+    /// 最大宽度，用于 WM_GETMINMAXINFO 约束（0 表示不限制）。
+    /// </summary>
+    private int _maxWidth;
+
+    /// <summary>
+    /// 最大高度，用于 WM_GETMINMAXINFO 约束（0 表示不限制）。
+    /// </summary>
+    private int _maxHeight;
+
+    /// <summary>
+    /// 是否处于全屏模式。
+    /// </summary>
+    private bool _isFullscreen;
+
+    /// <summary>
+    /// 全屏前保存的窗口样式，用于退出全屏时恢复。
+    /// </summary>
+    private WINDOW_STYLE _savedStyle;
+
+    /// <summary>
+    /// 全屏前保存的窗口矩形，用于退出全屏时恢复。
+    /// </summary>
+    private RECT _savedRect;
+
+    /// <summary>
+    /// 窗口级菜单句柄（区别于应用级菜单），由 SetMenu 设置。
+    /// </summary>
+    private HMENU _windowMenu = default;
+
+    /// <summary>
+    /// 上下文菜单句柄，由 SetMenu 设置用于弹出式显示。
+    /// </summary>
+    private HMENU _contextMenu;
+
+    /// <summary>
+    /// 构造 Win32WebviewWindow 实例并创建原生窗口。
+    /// </summary>
+    /// <param name="id">窗口 ID。</param>
+    /// <param name="options">窗口选项。</param>
+    public Win32WebviewWindow(uint id, WebviewWindowOptions options)
+    {
+        _id = id;
+        _options = options;
+
+        EnsureWindowClassRegistered();
+        CreateNativeWindow();
+
+        // 注册实例到全局表，供窗口过程查找。
+        lock (_instancesLock)
+        {
+            _instancesByHwnd[(IntPtr)_hwnd] = this;
+        }
+
+        // 应用初始窗口选项。
+        ApplyInitialOptions();
+
+        // 启动 WebView2 异步初始化，不阻塞构造函数。
+        _ = InitializeWebViewAsync();
+    }
+
+    /// <summary>
+    /// 获取窗口 ID。
+    /// </summary>
+    public uint Id => _id;
+
+    /// <summary>
+    /// 获取窗口是否已关闭。
+    /// </summary>
+    public bool IsClosed => _closed;
+
+    /// <summary>
+    /// 获取 Win32 窗口句柄。
+    /// </summary>
+    internal HWND Hwnd => _hwnd;
+
+    /// <summary>
+    /// 等待 WebView2 初始化完成。
+    /// </summary>
+    /// <returns>表示初始化完成的任务。</returns>
+    public Task WaitForInitializationAsync() => _initTcs.Task;
+
+    /// <summary>
+    /// 注册窗口类（全局只注册一次）。
+    /// </summary>
+    internal static void EnsureWindowClassRegistered()
+    {
+        if (_wndProc is not null)
+        {
+            return;
+        }
+
+        lock (_classLock)
+        {
+            if (_wndProc is not null)
+            {
+                return;
+            }
+
+            _wndProc = StaticWindowProc;
+            unsafe
+            {
+                fixed (char* className = WindowClassName)
+                {
+                    var wcx = new WNDCLASSEXW
+                    {
+                        cbSize = (uint)Marshal.SizeOf<WNDCLASSEXW>(),
+                        lpfnWndProc = _wndProc,
+                        hInstance = default,
+                        hCursor = default,
+                        hbrBackground = default,
+                        lpszClassName = className,
+                    };
+                    PInvoke.RegisterClassEx(in wcx);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 创建 Win32 原生窗口。
+    /// </summary>
+    private void CreateNativeWindow()
+    {
+        var style = WINDOW_STYLE.WS_OVERLAPPEDWINDOW;
+
+        var x = _options.X < 0 ? CW_USEDEFAULT : _options.X;
+        var y = _options.Y < 0 ? CW_USEDEFAULT : _options.Y;
+        var width = _options.Width <= 0 ? CW_USEDEFAULT : _options.Width;
+        var height = _options.Height <= 0 ? CW_USEDEFAULT : _options.Height;
+
+        unsafe
+        {
+            _hwnd = PInvoke.CreateWindowEx(
+                dwExStyle: 0,
+                lpClassName: WindowClassName,
+                lpWindowName: _options.Title,
+                dwStyle: style,
+                X: x,
+                Y: y,
+                nWidth: width,
+                nHeight: height,
+                hWndParent: default,
+                hMenu: null,
+                hInstance: null,
+                lpParam: null);
+        }
+
+        if (_hwnd.IsNull)
+        {
+            throw new InvalidOperationException($"创建 Win32 窗口失败，窗口 ID: {_id}，错误码: {Marshal.GetLastWin32Error()}");
+        }
+    }
+
+    /// <summary>
+    /// 应用初始窗口选项（从 WebviewWindowOptions 读取）。
+    /// </summary>
+    private void ApplyInitialOptions()
+    {
+        if (_options.MinWidth > 0 || _options.MinHeight > 0)
+        {
+            SetMinSize(_options.MinWidth, _options.MinHeight);
+        }
+
+        if (_options.MaxWidth > 0 || _options.MaxHeight > 0)
+        {
+            SetMaxSize(_options.MaxWidth, _options.MaxHeight);
+        }
+
+        if (_options.Frameless)
+        {
+            SetFrameless(true);
+        }
+
+        if (_options.AlwaysOnTop)
+        {
+            SetAlwaysOnTop(true);
+        }
+
+        if (_options.Minimised)
+        {
+            SetMinimised();
+        }
+        else if (_options.Maximised)
+        {
+            SetMaximised();
+        }
+
+        if (_options.Fullscreen)
+        {
+            Fullscreen();
+        }
+
+        if (!_options.Resizable)
+        {
+            SetResizable(false);
+        }
+
+        if (!_options.Maximisable)
+        {
+            SetMaximisable(false);
+        }
+
+        if (!_options.Minimisable)
+        {
+            SetMinimisable(false);
+        }
+
+        if (!_options.Closable)
+        {
+            SetClosable(false);
+        }
+
+        if (_options.Centered)
+        {
+            Centre();
+        }
+
+        if (_options.Zoom != 1.0)
+        {
+            SetZoom(_options.Zoom);
+        }
+
+        if (!_options.ZoomEnabled)
+        {
+            SetZoomEnabled(false);
+        }
+    }
+
+    /// <summary>
+    /// 异步初始化 WebView2 控制器和 Webview 实例。
+    /// </summary>
+    private async Task InitializeWebViewAsync()
+    {
+        try
+        {
+            var hwndPtr = (IntPtr)_hwnd;
+            var environment = await CoreWebView2Environment.CreateAsync().ConfigureAwait(true);
+            var controller = await environment.CreateCoreWebView2ControllerAsync(hwndPtr).ConfigureAwait(true);
+            _controller = controller;
+            _webview = controller.CoreWebView2;
+
+            // 设置 WebView2 边界为窗口客户区大小。
+            UpdateBounds();
+
+            // 设置初始缩放。
+            if (_options.Zoom != 1.0)
+            {
+                _controller.ZoomFactor = _options.Zoom;
+            }
+
+            // 设置调试模式。
+            _webview.Settings.AreDevToolsEnabled = _options.ShowDevmodeEnabled;
+
+            // 设置 URL（若有）。
+            if (!string.IsNullOrEmpty(_options.URL))
+            {
+                _webview.Navigate(_options.URL);
+                _currentUrl = _options.URL;
+            }
+            else if (!string.IsNullOrEmpty(_options.HTML))
+            {
+                _webview.NavigateToString(_options.HTML);
+            }
+
+            // 注入 JS（若有）。
+            if (!string.IsNullOrEmpty(_options.JS))
+            {
+                _ = _webview.ExecuteScriptAsync(_options.JS);
+            }
+
+            // 注入 CSS（若有）。
+            if (!string.IsNullOrEmpty(_options.CSS))
+            {
+                InjectCSS(_options.CSS);
+            }
+
+            // 设置背景色（若有）。
+            if (_options.BackgroundColour is { } bg)
+            {
+                _controller.DefaultBackgroundColor = Color.FromArgb(bg.A, bg.R, bg.G, bg.B);
+            }
+
+            _initTcs.TrySetResult(true);
+        }
+        catch (Exception ex)
+        {
+            _initTcs.TrySetException(ex);
+        }
+    }
+
+    /// <summary>
+    /// 更新 WebView2 控制器边界以匹配窗口客户区。
+    /// </summary>
+    private void UpdateBounds()
+    {
+        if (_controller is null || _hwnd.IsNull)
+        {
+            return;
+        }
+
+        PInvoke.GetClientRect(_hwnd, out var rect);
+        _controller.Bounds = new Rectangle(0, 0, rect.Width, rect.Height);
+    }
+
+    /// <summary>
+    /// 获取当前窗口样式。
+    /// </summary>
+    /// <returns>窗口样式枚举。</returns>
+    private WINDOW_STYLE GetWindowStyle()
+    {
+        var value = PInvoke.GetWindowLong(_hwnd, (WINDOW_LONG_PTR_INDEX)GwlStyle);
+        return (WINDOW_STYLE)(uint)value;
+    }
+
+    /// <summary>
+    /// 设置当前窗口样式。
+    /// </summary>
+    /// <param name="style">要设置的窗口样式。</param>
+    private void SetWindowStyle(WINDOW_STYLE style)
+    {
+        PInvoke.SetWindowLong(_hwnd, (WINDOW_LONG_PTR_INDEX)GwlStyle, (int)(uint)style);
+    }
+
+    /// <summary>
+    /// 获取当前扩展窗口样式。
+    /// </summary>
+    /// <returns>扩展窗口样式枚举。</returns>
+    private WINDOW_EX_STYLE GetWindowExStyle()
+    {
+        var value = PInvoke.GetWindowLong(_hwnd, (WINDOW_LONG_PTR_INDEX)GwlExStyle);
+        return (WINDOW_EX_STYLE)(uint)value;
+    }
+
+    /// <summary>
+    /// 设置当前扩展窗口样式。
+    /// </summary>
+    /// <param name="style">要设置的扩展窗口样式。</param>
+    private void SetWindowExStyle(WINDOW_EX_STYLE style)
+    {
+        PInvoke.SetWindowLong(_hwnd, (WINDOW_LONG_PTR_INDEX)GwlExStyle, (int)(uint)style);
+    }
+
+    /// <summary>
+    /// 应用样式变更并刷新窗口框架。
+    /// </summary>
+    private void ApplyFrameChange()
+    {
+        PInvoke.SetWindowPos(_hwnd, default, 0, 0, 0, 0,
+            SET_WINDOW_POS_FLAGS.SWP_NOMOVE | SET_WINDOW_POS_FLAGS.SWP_NOSIZE |
+            SET_WINDOW_POS_FLAGS.SWP_NOZORDER | SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE |
+            SET_WINDOW_POS_FLAGS.SWP_FRAMECHANGED);
+    }
+
+    /// <summary>
+    /// 处理 WM_GETMINMAXINFO 消息，约束窗口最小/最大跟踪尺寸。
+    /// </summary>
+    /// <param name="lParam">指向 MINMAXINFO 结构的 LPARAM。</param>
+    private void HandleGetMinMaxInfo(LPARAM lParam)
+    {
+        unsafe
+        {
+            var mmi = (MINMAXINFO*)lParam.Value;
+            if (_minWidth > 0 || _minHeight > 0)
+            {
+                mmi->ptMinTrackSize = new POINT { x = _minWidth, y = _minHeight };
+            }
+
+            if (_maxWidth > 0 || _maxHeight > 0)
+            {
+                mmi->ptMaxTrackSize = new POINT { x = _maxWidth, y = _maxHeight };
+            }
+        }
+    }
+
+    /// <summary>
+    /// 处理 WM_DPICHANGED 消息，按建议矩形调整窗口大小。
+    /// </summary>
+    /// <param name="lParam">指向建议 RECT 的 LPARAM。</param>
+    private void HandleDpiChanged(LPARAM lParam)
+    {
+        unsafe
+        {
+            var rect = (RECT*)lParam.Value;
+            PInvoke.SetWindowPos(_hwnd, default, rect->left, rect->top,
+                rect->right - rect->left, rect->bottom - rect->top,
+                SET_WINDOW_POS_FLAGS.SWP_NOZORDER | SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE);
+        }
+
+        UpdateBounds();
+    }
+
+    /// <summary>
+    /// 静态窗口过程，通过 HWND 查找实例并转发消息。
+    /// 对应 Go 版 webview_window_windows.go 中的 WndProc。
+    /// </summary>
+    private static LRESULT StaticWindowProc(HWND hWnd, uint msg, WPARAM wParam, LPARAM lParam)
+    {
+        // 检查系统托盘消息（系统托盘窗口也使用此类）
+        if (SystemTray.Win32SystemTray.TryHandleTrayMessage(hWnd, msg, wParam, lParam, out var trayResult))
+        {
+            return trayResult;
+        }
+
+        // 查找窗口实例
+        Win32WebviewWindow? instance = null;
+        lock (_instancesLock)
+        {
+            _instancesByHwnd.TryGetValue((IntPtr)hWnd, out instance);
+        }
+
+        switch (msg)
+        {
+            case WmDestroy:
+                // 从实例表移除
+                lock (_instancesLock)
+                {
+                    _instancesByHwnd.Remove((IntPtr)hWnd);
+                }
+
+                break;
+
+            case WmCommand:
+                // 分发菜单命令：wParam 低字为命令 ID
+                Win32Menu.TryDispatchCommand((uint)(wParam.Value & 0xFFFF));
+                return default;
+
+            case WindowsPlatformApp.WmAppDispatchAction:
+                // 排空主线程 Action 队列
+                WindowsPlatformApp.DrainActionQueue();
+                return default;
+
+            case WindowsPlatformApp.WmAppPlatformEvent:
+                // 平台事件分发
+                Application.Get()?.HandlePlatformEvent((uint)wParam.Value);
+                return default;
+
+            case WindowsPlatformApp.WmAppSingleInstance:
+                // 单实例通知，暂不处理
+                return default;
+
+            case WmSize:
+                // 窗口大小变化，同步 WebView2 边界
+                instance?.UpdateBounds();
+                break;
+
+            case WmDpiChanged:
+                // DPI 变化，按建议矩形调整并更新布局
+                instance?.HandleDpiChanged(lParam);
+                return default;
+
+            case WmGetMinMaxInfo:
+                // 约束窗口最小/最大尺寸
+                if (instance is not null)
+                {
+                    instance.HandleGetMinMaxInfo(lParam);
+                    return default;
+                }
+
+                break;
+
+            case WmHotkey:
+                // 全局热键：wParam 为热键 ID
+                // 简化实现：暂不处理
+                break;
+
+            case WmDropFiles:
+                // 文件拖放：暂不处理
+                break;
+        }
+
+        return PInvoke.DefWindowProc(hWnd, msg, wParam, lParam);
+    }
+
+    /// <summary>
+    /// 清除窗口菜单（设置为 null 并重绘菜单栏）。
+    /// </summary>
+    internal void ClearMenu()
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        PInvoke.SetMenu(_hwnd, default);
+        PInvoke.DrawMenuBar(_hwnd);
+    }
+
+    /// <summary>
+    /// 设置窗口菜单句柄。
+    /// </summary>
+    /// <param name="menu">Win32 菜单句柄。</param>
+    internal void SetMenuHandle(HMENU menu)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        PInvoke.SetMenu(_hwnd, menu);
+        PInvoke.DrawMenuBar(_hwnd);
+    }
+
+    /// <summary>
+    /// 设置窗口图标句柄（同时设置大图标和小图标）。
+    /// </summary>
+    /// <param name="icon">Win32 图标句柄。</param>
+    internal unsafe void SetIconHandle(HICON icon)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        // ICON_BIG = 1, ICON_SMALL = 0
+        PInvoke.SendMessage(_hwnd, WmSetIcon, (WPARAM)(nuint)1, (LPARAM)(nint)icon.Value);
+        PInvoke.SendMessage(_hwnd, WmSetIcon, (WPARAM)(nuint)0, (LPARAM)(nint)icon.Value);
+    }
+
+    /// <inheritdoc />
+    public void SetTitle(string title)
+    {
+        if (!_hwnd.IsNull)
+        {
+            PInvoke.SetWindowText(_hwnd, title);
+        }
+    }
+
+    /// <inheritdoc />
+    public void SetSize(int width, int height)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        PInvoke.GetWindowRect(_hwnd, out var rect);
+        PInvoke.MoveWindow(_hwnd, rect.left, rect.top, width, height, true);
+        UpdateBounds();
+    }
+
+    /// <inheritdoc />
+    public void SetMinSize(int width, int height)
+    {
+        _minWidth = width;
+        _minHeight = height;
+    }
+
+    /// <inheritdoc />
+    public void SetMaxSize(int width, int height)
+    {
+        _maxWidth = width;
+        _maxHeight = height;
+    }
+
+    /// <inheritdoc />
+    public void SetPosition(int x, int y)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        PInvoke.GetWindowRect(_hwnd, out var rect);
+        var w = rect.right - rect.left;
+        var h = rect.bottom - rect.top;
+        PInvoke.MoveWindow(_hwnd, x, y, w, h, true);
+    }
+
+    /// <inheritdoc />
+    public void Show()
+    {
+        if (!_hwnd.IsNull)
+        {
+            PInvoke.ShowWindow(_hwnd, SHOW_WINDOW_CMD.SW_SHOWNORMAL);
+        }
+    }
+
+    /// <inheritdoc />
+    public void Hide()
+    {
+        if (!_hwnd.IsNull)
+        {
+            PInvoke.ShowWindow(_hwnd, SHOW_WINDOW_CMD.SW_HIDE);
+        }
+    }
+
+    /// <inheritdoc />
+    public void Maximise()
+    {
+        if (!_hwnd.IsNull)
+        {
+            PInvoke.ShowWindow(_hwnd, SHOW_WINDOW_CMD.SW_MAXIMIZE);
+        }
+    }
+
+    /// <inheritdoc />
+    public void UnMaximise()
+    {
+        if (!_hwnd.IsNull)
+        {
+            PInvoke.ShowWindow(_hwnd, SHOW_WINDOW_CMD.SW_RESTORE);
+        }
+    }
+
+    /// <inheritdoc />
+    public void Minimise()
+    {
+        if (!_hwnd.IsNull)
+        {
+            PInvoke.ShowWindow(_hwnd, SHOW_WINDOW_CMD.SW_MINIMIZE);
+        }
+    }
+
+    /// <inheritdoc />
+    public void UnMinimise()
+    {
+        if (!_hwnd.IsNull)
+        {
+            PInvoke.ShowWindow(_hwnd, SHOW_WINDOW_CMD.SW_RESTORE);
+        }
+    }
+
+    /// <inheritdoc />
+    public void Fullscreen()
+    {
+        if (_hwnd.IsNull || _isFullscreen)
+        {
+            return;
+        }
+
+        _isFullscreen = true;
+
+        // 保存当前样式和矩形
+        _savedStyle = GetWindowStyle();
+        PInvoke.GetWindowRect(_hwnd, out _savedRect);
+
+        // 获取窗口所在显示器信息
+        var hmon = PInvoke.MonitorFromWindow(_hwnd, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST);
+        var monitorInfo = new MONITORINFO { cbSize = (uint)Marshal.SizeOf<MONITORINFO>() };
+        PInvoke.GetMonitorInfo(hmon, ref monitorInfo);
+
+        // 设置为弹出式样式（移除标题栏和边框）
+        SetWindowStyle(WINDOW_STYLE.WS_POPUP | WINDOW_STYLE.WS_VISIBLE);
+
+        // 调整窗口为全屏尺寸
+        var rc = monitorInfo.rcMonitor;
+        PInvoke.SetWindowPos(_hwnd, default, rc.left, rc.top,
+            rc.right - rc.left, rc.bottom - rc.top,
+            SET_WINDOW_POS_FLAGS.SWP_NOZORDER | SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE |
+            SET_WINDOW_POS_FLAGS.SWP_FRAMECHANGED);
+
+        UpdateBounds();
+    }
+
+    /// <inheritdoc />
+    public void UnFullscreen()
+    {
+        if (_hwnd.IsNull || !_isFullscreen)
+        {
+            return;
+        }
+
+        _isFullscreen = false;
+
+        // 恢复窗口样式
+        SetWindowStyle(_savedStyle);
+
+        // 恢复窗口矩形
+        PInvoke.SetWindowPos(_hwnd, default, _savedRect.left, _savedRect.top,
+            _savedRect.right - _savedRect.left, _savedRect.bottom - _savedRect.top,
+            SET_WINDOW_POS_FLAGS.SWP_NOZORDER | SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE |
+            SET_WINDOW_POS_FLAGS.SWP_FRAMECHANGED);
+
+        UpdateBounds();
+    }
+
+    /// <inheritdoc />
+    public void Restore()
+    {
+        if (!_hwnd.IsNull)
+        {
+            PInvoke.ShowWindow(_hwnd, SHOW_WINDOW_CMD.SW_RESTORE);
+        }
+    }
+
+    /// <inheritdoc />
+    public void Close()
+    {
+        if (_closed)
+        {
+            return;
+        }
+
+        _closed = true;
+
+        if (!_hwnd.IsNull)
+        {
+            PInvoke.DestroyWindow(_hwnd);
+            _hwnd = default;
+        }
+
+        _controller?.Close();
+        _controller = null;
+        _webview = null;
+    }
+
+    /// <inheritdoc />
+    public void Focus()
+    {
+        if (!_hwnd.IsNull)
+        {
+            PInvoke.SetForegroundWindow(_hwnd);
+        }
+    }
+
+    /// <inheritdoc />
+    public void ShowMenuBar()
+    {
+        if (!_hwnd.IsNull && !_windowMenu.IsNull)
+        {
+            PInvoke.SetMenu(_hwnd, _windowMenu);
+            PInvoke.DrawMenuBar(_hwnd);
+        }
+    }
+
+    /// <inheritdoc />
+    public void HideMenuBar()
+    {
+        if (!_hwnd.IsNull)
+        {
+            PInvoke.SetMenu(_hwnd, default);
+            PInvoke.DrawMenuBar(_hwnd);
+        }
+    }
+
+    /// <inheritdoc />
+    public void ToggleMenuBar()
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        var current = PInvoke.GetMenu(_hwnd);
+        if (current.IsNull)
+        {
+            ShowMenuBar();
+        }
+        else
+        {
+            HideMenuBar();
+        }
+    }
+
+    /// <inheritdoc />
+    public void SetAlwaysOnTop(bool onTop)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        // HWND_TOPMOST = (HWND)-1, HWND_NOTOPMOST = (HWND)-2
+        var hwndInsertAfter = onTop ? (HWND)new IntPtr(-1) : (HWND)new IntPtr(-2);
+        PInvoke.SetWindowPos(_hwnd, hwndInsertAfter, 0, 0, 0, 0,
+            SET_WINDOW_POS_FLAGS.SWP_NOMOVE | SET_WINDOW_POS_FLAGS.SWP_NOSIZE);
+    }
+
+    /// <inheritdoc />
+    public void SetBackgroundColour(byte r, byte g, byte b, byte a)
+    {
+        if (_controller is not null)
+        {
+            _controller.DefaultBackgroundColor = Color.FromArgb(a, r, g, b);
+        }
+    }
+
+    /// <inheritdoc />
+    public void SetBackgroundColour(int r, int g, int b, int a)
+    {
+        SetBackgroundColour((byte)r, (byte)g, (byte)b, (byte)a);
+    }
+
+    /// <summary>
+    /// 设置窗口背景类型。对应 Go 版 SetBackgroundType。
+    /// </summary>
+    /// <param name="type">背景类型字符串（"transparent"、"translucent"、"solid"）。</param>
+    public void SetBackgroundType(string type)
+    {
+        if (_controller is null)
+        {
+            return;
+        }
+
+        if (string.Equals(type, "transparent", StringComparison.OrdinalIgnoreCase))
+        {
+            _controller.DefaultBackgroundColor = Color.Transparent;
+        }
+        else
+        {
+            _controller.DefaultBackgroundColor = Color.White;
+        }
+    }
+
+    /// <summary>
+    /// 设置全屏按钮是否可用。Win32 无原生全屏按钮，此方法为空操作。
+    /// </summary>
+    /// <param name="enabled">是否可用。</param>
+    public void SetFullscreenButtonEnabled(bool enabled)
+    {
+        // Win32 平台无原生全屏按钮，空操作
+    }
+
+    /// <inheritdoc />
+    public bool IsFullscreen()
+    {
+        return _isFullscreen;
+    }
+
+    /// <inheritdoc />
+    public bool IsMaximised()
+    {
+        return !_hwnd.IsNull && PInvoke.IsZoomed(_hwnd);
+    }
+
+    /// <inheritdoc />
+    public bool IsMinimised()
+    {
+        return !_hwnd.IsNull && PInvoke.IsIconic(_hwnd);
+    }
+
+    /// <inheritdoc />
+    public bool IsVisible()
+    {
+        return !_hwnd.IsNull && PInvoke.IsWindowVisible(_hwnd);
+    }
+
+    /// <inheritdoc />
+    public bool IsFocused()
+    {
+        if (_hwnd.IsNull)
+        {
+            return false;
+        }
+
+        var foreground = PInvoke.GetForegroundWindow();
+        return foreground == _hwnd;
+    }
+
+    /// <inheritdoc />
+    public void SetFrameless(bool frameless)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        var style = GetWindowStyle();
+        if (frameless)
+        {
+            // 移除标题栏和边框相关样式
+            style &= ~(WINDOW_STYLE.WS_CAPTION | WINDOW_STYLE.WS_THICKFRAME |
+                       WINDOW_STYLE.WS_SYSMENU | WINDOW_STYLE.WS_MINIMIZEBOX |
+                       WINDOW_STYLE.WS_MAXIMIZEBOX);
+        }
+        else
+        {
+            // 恢复标准窗口样式
+            style |= WINDOW_STYLE.WS_CAPTION | WINDOW_STYLE.WS_THICKFRAME |
+                     WINDOW_STYLE.WS_SYSMENU | WINDOW_STYLE.WS_MINIMIZEBOX |
+                     WINDOW_STYLE.WS_MAXIMIZEBOX;
+        }
+
+        SetWindowStyle(style);
+        ApplyFrameChange();
+    }
+
+    /// <inheritdoc />
+    public void OpenDevTools()
+    {
+        _webview?.OpenDevToolsWindow();
+    }
+
+    /// <inheritdoc />
+    public void CloseDevTools()
+    {
+        // WebView2 未直接提供关闭开发者工具的 API，通过执行快捷键关闭。
+        _webview?.ExecuteScriptAsync("window.close();");
+    }
+
+    /// <inheritdoc />
+    public void SetZoom(float zoom)
+    {
+        if (_controller is not null)
+        {
+            _controller.ZoomFactor = zoom;
+        }
+    }
+
+    /// <summary>
+    /// 设置缩放比例（double 重载）。
+    /// </summary>
+    /// <param name="zoom">缩放比例。</param>
+    public void SetZoom(double zoom)
+    {
+        if (_controller is not null)
+        {
+            _controller.ZoomFactor = zoom;
+        }
+    }
+
+    /// <inheritdoc />
+    public void SetZoomLevel(float level)
+    {
+        if (_controller is not null)
+        {
+            _controller.ZoomFactor = level;
+        }
+    }
+
+    /// <summary>
+    /// 设置是否启用缩放控制。
+    /// </summary>
+    /// <param name="enabled">是否启用缩放。</param>
+    public void SetZoomEnabled(bool enabled)
+    {
+        if (_webview is not null)
+        {
+            _webview.Settings.IsZoomControlEnabled = enabled;
+        }
+    }
+
+    /// <inheritdoc />
+    public (int Width, int Height) GetSize()
+    {
+        if (_hwnd.IsNull)
+        {
+            return (0, 0);
+        }
+
+        PInvoke.GetWindowRect(_hwnd, out var rect);
+        return (rect.Width, rect.Height);
+    }
+
+    /// <inheritdoc />
+    public (int Width, int Height) GetContentSize()
+    {
+        if (_hwnd.IsNull)
+        {
+            return (0, 0);
+        }
+
+        PInvoke.GetClientRect(_hwnd, out var rect);
+        return (rect.Width, rect.Height);
+    }
+
+    /// <inheritdoc />
+    public (int Width, int Height) GetMinSize()
+    {
+        return (_minWidth, _minHeight);
+    }
+
+    /// <inheritdoc />
+    public (int Width, int Height) GetMaxSize()
+    {
+        return (_maxWidth, _maxHeight);
+    }
+
+    /// <inheritdoc />
+    public (int X, int Y) GetPosition()
+    {
+        if (_hwnd.IsNull)
+        {
+            return (0, 0);
+        }
+
+        PInvoke.GetWindowRect(_hwnd, out var rect);
+        return (rect.left, rect.top);
+    }
+
+    /// <inheritdoc />
+    public float GetZoom()
+    {
+        return _controller is not null ? (float)_controller.ZoomFactor : 1.0f;
+    }
+
+    /// <inheritdoc />
+    public float GetZoomLevel()
+    {
+        return _controller is not null ? (float)_controller.ZoomFactor : 1.0f;
+    }
+
+    /// <inheritdoc />
+    public void ExecJS(string js)
+    {
+        _ = _webview?.ExecuteScriptAsync(js);
+    }
+
+    /// <inheritdoc />
+    public void GoBack()
+    {
+        _webview?.GoBack();
+    }
+
+    /// <inheritdoc />
+    public void GoForward()
+    {
+        _webview?.GoForward();
+    }
+
+    /// <inheritdoc />
+    public void Reload()
+    {
+        _webview?.Reload();
+    }
+
+    /// <inheritdoc />
+    public void SetURL(string url)
+    {
+        LoadURL(url);
+    }
+
+    /// <inheritdoc />
+    public void SetHTML(string html)
+    {
+        if (_webview is not null)
+        {
+            _webview.NavigateToString(html);
+        }
+    }
+
+    /// <inheritdoc />
+    public void Print()
+    {
+        _webview?.ExecuteScriptAsync("window.print();");
+    }
+
+    /// <inheritdoc />
+    public void PrintToPDF(string path)
+    {
+        // 异步打印 PDF：通过 WebView2 的 PrintToPdfAsync 实现。
+        // 此处触发异步操作但不等待结果（同步方法签名限制）。
+        if (_webview is not null)
+        {
+            _ = _webview.PrintToPdfAsync(path, null);
+        }
+    }
+
+    /// <summary>
+    /// 将窗口内容导出为 PDF（字节数组选项重载）。
+    /// 简化实现：暂不支持自定义页面选项。
+    /// </summary>
+    /// <param name="pageOptions">PDF 导出选项字节数组，可为 null。</param>
+    public void PrintToPDF(byte[]? pageOptions)
+    {
+        // 简化实现：暂不处理字节数组选项，使用默认设置
+    }
+
+    /// <inheritdoc />
+    public void SetMenu(Menu? menu)
+    {
+        if (menu is null)
+        {
+            _contextMenu = default;
+            return;
+        }
+
+        // 创建弹出式菜单用于上下文菜单显示
+        var win32Menu = new Win32Menu(menu, isPopup: true);
+        win32Menu.Build();
+        _contextMenu = win32Menu.Hmenu;
+    }
+
+    /// <summary>
+    /// 在指定坐标打开上下文菜单。
+    /// </summary>
+    /// <param name="x">X 坐标（屏幕坐标）。</param>
+    /// <param name="y">Y 坐标（屏幕坐标）。</param>
+    public unsafe void OpenContextMenu(int x, int y)
+    {
+        if (_hwnd.IsNull || _contextMenu.IsNull)
+        {
+            return;
+        }
+
+        PInvoke.SetForegroundWindow(_hwnd);
+        var cmd = PInvoke.TrackPopupMenu(
+            _contextMenu,
+            TRACK_POPUP_MENU_FLAGS.TPM_LEFTALIGN | TRACK_POPUP_MENU_FLAGS.TPM_TOPALIGN |
+            TRACK_POPUP_MENU_FLAGS.TPM_RETURNCMD | TRACK_POPUP_MENU_FLAGS.TPM_NONOTIFY,
+            x, y, 0, _hwnd, null);
+
+        // TrackPopupMenu 返回 BOOL，但使用 TPM_RETURNCMD 时实际返回命令 ID（int）。
+        var cmdValue = *(int*)&cmd;
+        if (cmdValue != 0)
+        {
+            Win32Menu.TryDispatchCommand((uint)cmdValue);
+        }
+    }
+
+    /// <inheritdoc />
+    public void StartDrag()
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        // 释放鼠标捕获并通过 WM_NCLBUTTONDOWN 模拟标题栏拖动
+        PInvoke.ReleaseCapture();
+        PInvoke.SendMessage(_hwnd, WmNclButtonDown, (WPARAM)(nuint)Htcaption, default);
+    }
+
+    /// <inheritdoc />
+    public void StartResize()
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        // 释放鼠标捕获并通过 WM_NCLBUTTONDOWN 模拟右下角调整大小
+        PInvoke.ReleaseCapture();
+        PInvoke.SendMessage(_hwnd, WmNclButtonDown, (WPARAM)(nuint)HtBottomRight, default);
+    }
+
+    /// <inheritdoc />
+    public void SetEnabled(bool enabled)
+    {
+        if (!_hwnd.IsNull)
+        {
+            PInvoke.EnableWindow(_hwnd, enabled);
+        }
+    }
+
+    /// <inheritdoc />
+    public void SetContentProtection(bool enabled)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        // WDA_NONE = 0, WDA_MONITOR = 1
+        PInvoke.SetWindowDisplayAffinity(_hwnd, (WINDOW_DISPLAY_AFFINITY)(enabled ? 1 : 0));
+    }
+
+    /// <inheritdoc />
+    public void AttachAsModal(uint parentWindowId)
+    {
+        // 简化实现：暂不支持模态窗口
+    }
+
+    /// <inheritdoc />
+    public void SetResizable(bool resizable)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        var style = GetWindowStyle();
+        if (resizable)
+        {
+            style |= WINDOW_STYLE.WS_THICKFRAME;
+        }
+        else
+        {
+            style &= ~WINDOW_STYLE.WS_THICKFRAME;
+        }
+
+        SetWindowStyle(style);
+        ApplyFrameChange();
+    }
+
+    /// <inheritdoc />
+    public void SetMaximisable(bool maximisable)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        var style = GetWindowStyle();
+        if (maximisable)
+        {
+            style |= WINDOW_STYLE.WS_MAXIMIZEBOX;
+        }
+        else
+        {
+            style &= ~WINDOW_STYLE.WS_MAXIMIZEBOX;
+        }
+
+        SetWindowStyle(style);
+        ApplyFrameChange();
+    }
+
+    /// <inheritdoc />
+    public void SetMinimisable(bool minimisable)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        var style = GetWindowStyle();
+        if (minimisable)
+        {
+            style |= WINDOW_STYLE.WS_MINIMIZEBOX;
+        }
+        else
+        {
+            style &= ~WINDOW_STYLE.WS_MINIMIZEBOX;
+        }
+
+        SetWindowStyle(style);
+        ApplyFrameChange();
+    }
+
+    /// <inheritdoc />
+    public void SetClosable(bool closable)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        // 通过系统菜单控制关闭按钮状态
+        var hSysMenu = PInvoke.GetSystemMenu(_hwnd, false);
+        if (hSysMenu.IsNull)
+        {
+            return;
+        }
+
+        var flags = closable
+            ? MENU_ITEM_FLAGS.MF_BYCOMMAND | MENU_ITEM_FLAGS.MF_ENABLED
+            : MENU_ITEM_FLAGS.MF_BYCOMMAND | MENU_ITEM_FLAGS.MF_GRAYED;
+        PInvoke.EnableMenuItem(hSysMenu, ScClose, flags);
+    }
+
+    /// <inheritdoc />
+    public void SetHasShadow(bool hasShadow)
+    {
+        // Windows 自动为 WS_OVERLAPPEDWINDOW 样式窗口添加阴影
+        // 简化实现：暂不支持单独控制阴影
+    }
+
+    /// <summary>
+    /// 设置窗口是否半透明。通过 WS_EX_LAYERED 扩展样式实现。
+    /// </summary>
+    /// <param name="translucent">是否半透明。</param>
+    public void SetTranslucent(bool translucent)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        var exStyle = GetWindowExStyle();
+        if (translucent)
+        {
+            exStyle |= WINDOW_EX_STYLE.WS_EX_LAYERED;
+            SetWindowExStyle(exStyle);
+            // 设置 200/255 透明度
+            PInvoke.SetLayeredWindowAttributes(_hwnd, new COLORREF(0), 200, (LAYERED_WINDOW_ATTRIBUTES_FLAGS)LwaAlpha);
+        }
+        else
+        {
+            exStyle &= ~WINDOW_EX_STYLE.WS_EX_LAYERED;
+            SetWindowExStyle(exStyle);
+        }
+    }
+
+    /// <inheritdoc />
+    public void SetTitleBarStyle(TitleBarStyle style)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        // Win32 平台仅支持 Hidden 样式（移除标题栏）
+        if (style == TitleBarStyle.Hidden || style == TitleBarStyle.HiddenInset)
+        {
+            var winStyle = GetWindowStyle();
+            winStyle &= ~WINDOW_STYLE.WS_CAPTION;
+            SetWindowStyle(winStyle);
+            ApplyFrameChange();
+        }
+    }
+
+    /// <summary>
+    /// 设置标题栏样式（字符串重载）。
+    /// </summary>
+    /// <param name="style">标题栏样式字符串（如 "hidden"、"hiddenInset"、"unified"）。</param>
+    public void SetTitleBarStyle(string style)
+    {
+        if (Enum.TryParse<TitleBarStyle>(style, true, out var barStyle))
+        {
+            SetTitleBarStyle(barStyle);
+        }
+    }
+
+    /// <summary>
+    /// 注入 CSS 样式到当前页面。
+    /// </summary>
+    /// <param name="css">CSS 样式字符串。</param>
+    public void InjectCSS(string css)
+    {
+        if (_webview is null || string.IsNullOrEmpty(css))
+        {
+            return;
+        }
+
+        // 转义 CSS 字符串中的特殊字符
+        var escaped = css
+            .Replace("\\", "\\\\")
+            .Replace("'", "\\'")
+            .Replace("\n", "\\n")
+            .Replace("\r", "\\r");
+        var js = $"var s=document.createElement('style');s.textContent='{escaped}';document.head.appendChild(s);";
+        _ = _webview.ExecuteScriptAsync(js);
+    }
+
+    /// <summary>
+    /// 放大缩放。
+    /// </summary>
+    public void ZoomIn()
+    {
+        if (_controller is not null)
+        {
+            _controller.ZoomFactor *= 1.1;
+        }
+    }
+
+    /// <summary>
+    /// 缩小缩放。
+    /// </summary>
+    public void ZoomOut()
+    {
+        if (_controller is not null)
+        {
+            _controller.ZoomFactor /= 1.1;
+        }
+    }
+
+    /// <summary>
+    /// 重置缩放到 1.0。
+    /// </summary>
+    public void ZoomReset()
+    {
+        if (_controller is not null)
+        {
+            _controller.ZoomFactor = 1.0;
+        }
+    }
+
+    /// <summary>
+    /// 将窗口设置为最小化状态。
+    /// </summary>
+    public void SetMinimised()
+    {
+        if (!_hwnd.IsNull)
+        {
+            PInvoke.ShowWindow(_hwnd, SHOW_WINDOW_CMD.SW_MINIMIZE);
+        }
+    }
+
+    /// <summary>
+    /// 将窗口设置为最大化状态。
+    /// </summary>
+    public void SetMaximised()
+    {
+        if (!_hwnd.IsNull)
+        {
+            PInvoke.ShowWindow(_hwnd, SHOW_WINDOW_CMD.SW_MAXIMIZE);
+        }
+    }
+
+    /// <summary>
+    /// 将窗口设置为正常状态（恢复）。
+    /// </summary>
+    public void SetNormal()
+    {
+        if (!_hwnd.IsNull)
+        {
+            PInvoke.ShowWindow(_hwnd, SHOW_WINDOW_CMD.SW_RESTORE);
+        }
+    }
+
+    /// <summary>
+    /// 注册窗口就绪回调。在 WebView2 初始化完成后执行回调。
+    /// </summary>
+    /// <param name="callback">窗口就绪时执行的回调。</param>
+    public void Run(Action callback)
+    {
+        if (_initTcs.Task.IsCompletedSuccessfully)
+        {
+            callback();
+        }
+        else
+        {
+            _initTcs.Task.ContinueWith(t =>
+            {
+                if (t.IsCompletedSuccessfully)
+                {
+                    callback();
+                }
+            }, TaskScheduler.Default);
+        }
+    }
+
+    /// <inheritdoc />
+    public void Centre()
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        // 获取窗口矩形和屏幕矩形，计算居中位置。
+        PInvoke.GetWindowRect(_hwnd, out var windowRect);
+        var hwndMonitor = PInvoke.MonitorFromWindow(_hwnd, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST);
+        var monitorInfo = new MONITORINFO { cbSize = (uint)Marshal.SizeOf<MONITORINFO>() };
+        PInvoke.GetMonitorInfo(hwndMonitor, ref monitorInfo);
+
+        var workArea = monitorInfo.rcWork;
+        var x = workArea.left + ((workArea.Width - windowRect.Width) / 2);
+        var y = workArea.top + ((workArea.Height - windowRect.Height) / 2);
+
+        PInvoke.MoveWindow(_hwnd, x, y, windowRect.Width, windowRect.Height, true);
+    }
+
+    /// <inheritdoc />
+    public void SetDebuggingEnabled(bool enabled)
+    {
+        // 调试模式通过 WebView2 环境变量或 AreDevToolsEnabled 属性控制。
+        if (_webview is not null)
+        {
+            _webview.Settings.AreDevToolsEnabled = enabled;
+        }
+    }
+
+    /// <inheritdoc />
+    public string GetURL()
+    {
+        return _webview?.Source ?? _currentUrl;
+    }
+
+    /// <inheritdoc />
+    public void LoadURL(string url)
+    {
+        if (_webview is not null)
+        {
+            _webview.Navigate(url);
+            _currentUrl = url;
+        }
+        else
+        {
+            // WebView2 尚未初始化完成，记录 URL 待初始化后加载。
+            _currentUrl = url;
+        }
+    }
+
+    /// <inheritdoc />
+    public void LoadHTML(string html)
+    {
+        SetHTML(html);
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        Close();
+    }
+
+    /// <summary>
+    /// Win32 POINT 结构，对应 native POINT（两个 LONG 坐标）。
+    /// CsWin32 拒绝生成 POINT（PInvoke003：建议使用 System.Drawing.Point），
+    /// 但此处需要可直接用于 unsafe 指针运算的 blittable 结构，
+    /// 因此手动定义与 Win32 内存布局一致的 POINT。
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT
+    {
+        /// <summary>x 坐标。</summary>
+        public int x;
+
+        /// <summary>y 坐标。</summary>
+        public int y;
+    }
+
+    /// <summary>
+    /// MINMAXINFO 结构，用于 WM_GETMINMAXINFO 消息处理。
+    /// CsWin32 未生成此结构，此处手动定义。
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MINMAXINFO
+    {
+        /// <summary>保留点。</summary>
+        public POINT ptReserved;
+
+        /// <summary>最大尺寸。</summary>
+        public POINT ptMaxSize;
+
+        /// <summary>最大位置。</summary>
+        public POINT ptMaxPosition;
+
+        /// <summary>最小跟踪尺寸。</summary>
+        public POINT ptMinTrackSize;
+
+        /// <summary>最大跟踪尺寸。</summary>
+        public POINT ptMaxTrackSize;
+    }
+}

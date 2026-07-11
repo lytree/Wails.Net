@@ -16,9 +16,27 @@ public interface IPlatformApp
     string Name { get; }
 
     /// <summary>
-    /// 启动平台应用主循环。
+    /// 启动平台应用主循环，阻塞直到主循环退出。
     /// </summary>
-    void Run();
+    /// <returns>进程退出码。</returns>
+    int Run();
+
+    /// <summary>
+    /// 尝试获取单实例锁。返回 true 表示当前进程为首实例。
+    /// 对应 Wails v3 Go 版本 application.go 中 SingleInstanceLock 的协调入口。
+    /// </summary>
+    /// <param name="uniqueId">用于标识应用的唯一 ID（通常为应用名称）。</param>
+    /// <returns>成功获取锁（首实例）返回 true，否则返回 false。</returns>
+    bool AcquireSingleInstanceLock(string uniqueId) => true;
+
+    /// <summary>
+    /// 通知已运行的前一个实例：有新的实例尝试启动（携带命令行参数）。
+    /// </summary>
+    /// <param name="args">新实例启动时传入的命令行参数。</param>
+    void NotifySingleInstance(string[] args)
+    {
+        // 默认空实现，由平台特定实现覆盖。
+    }
 
     /// <summary>
     /// 销毁平台应用。

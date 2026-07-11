@@ -165,7 +165,7 @@ public class WebviewWindowOptions
     /// <summary>
     /// 标题栏样式。
     /// </summary>
-    public TitleBarStyle TitleBar { get; set; } = TitleBarStyle.Default;
+    public TitleBarStyle TitleBar { get; set; } = Wails.Net.Application.Windows.TitleBarStyle.Default;
 
     /// <summary>
     /// Windows 平台特定选项，暂用 object 类型。
@@ -181,4 +181,59 @@ public class WebviewWindowOptions
     /// 是否居中显示。
     /// </summary>
     public bool Centered { get; set; } = false;
+
+    /// <summary>
+    /// 背景色 RGBA 元组，可为 null 表示使用默认值。
+    /// </summary>
+    public (byte R, byte G, byte B, byte A)? BackgroundColour { get; set; }
+
+    /// <summary>
+    /// 背景类型，可选值为 "transparent"、"translucent" 或 "solid"，可为 null。
+    /// </summary>
+    public string? BackgroundType { get; set; }
+
+    /// <summary>
+    /// 是否半透明。
+    /// </summary>
+    public bool Translucent { get; set; } = false;
+
+    /// <summary>
+    /// 标题栏样式字符串（如 "hidden"、"hiddenInset"、"unified"），可为 null。
+    /// </summary>
+    public string? TitleBarStyle { get; set; }
+
+    /// <summary>
+    /// 全屏按钮是否可用。
+    /// </summary>
+    public bool FullscreenButtonEnabled { get; set; } = true;
+
+    /// <summary>
+    /// 启动时是否最小化。
+    /// </summary>
+    public bool Minimised { get; set; } = false;
+
+    /// <summary>
+    /// 启动时是否最大化。
+    /// </summary>
+    public bool Maximised { get; set; } = false;
+
+    /// <summary>
+    /// 是否启用缩放。
+    /// </summary>
+    public bool ZoomEnabled { get; set; } = true;
+
+    /// <summary>
+    /// 初始缩放比例。
+    /// </summary>
+    public double Zoom { get; set; } = 1.0;
+
+    /// <summary>
+    /// 是否禁用右键菜单。
+    /// </summary>
+    public bool DisableContextMenu { get; set; } = false;
+
+    /// <summary>
+    /// 是否显示开发者工具。
+    /// </summary>
+    public bool ShowDevmodeEnabled { get; set; } = false;
 }

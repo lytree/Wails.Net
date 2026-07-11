@@ -94,4 +94,84 @@ public class ApplicationOptions
     /// 关闭时执行的任务列表。
     /// </summary>
     public List<Action> ShutdownTasks { get; set; } = new();
+
+    /// <summary>
+    /// 全局快捷键绑定字典，键为快捷键描述，值为回调。
+    /// </summary>
+    public IReadOnlyDictionary<string, Action>? KeyBindings { get; set; }
+
+    /// <summary>
+    /// 错误处理回调，可为 null。
+    /// </summary>
+    public Action<Exception>? ErrorHandler { get; set; }
+
+    /// <summary>
+    /// 警告处理回调，可为 null。
+    /// </summary>
+    public Action<string>? WarningHandler { get; set; }
+
+    /// <summary>
+    /// 致命错误处理回调，可为 null。
+    /// </summary>
+    public Action<Exception>? FatalErrorHandler { get; set; }
+
+    /// <summary>
+    /// 启动前执行的回调，可为 null。
+    /// </summary>
+    public Action? OnBeforeStart { get; set; }
+
+    /// <summary>
+    /// 启动后执行的回调，可为 null。
+    /// </summary>
+    public Action? OnAfterStart { get; set; }
+
+    /// <summary>
+    /// 自定义打开浏览器 URL 的函数，返回是否已处理。
+    /// </summary>
+    public Func<string, bool>? BrowserOpenURLFunc { get; set; }
+
+    /// <summary>
+    /// 任务栏缩略图图标字节数据，可为 null。
+    /// </summary>
+    public byte[]? ThumbnailIcon { get; set; }
+
+    /// <summary>
+    /// 应用级托盘图标字节数据，可为 null。
+    /// </summary>
+    public byte[]? TrayIcon { get; set; }
+
+    /// <summary>
+    /// 应用级是否无边框。
+    /// </summary>
+    public bool Frameless { get; set; } = false;
+
+    /// <summary>
+    /// 应用级背景色 RGBA 元组，可为 null 表示使用默认值。
+    /// </summary>
+    public (byte R, byte G, byte B, byte A)? BackgroundColour { get; set; }
+
+    /// <summary>
+    /// 单实例锁标识，可为 null。
+    /// </summary>
+    public string? SingleInstanceLock { get; set; }
+
+    /// <summary>
+    /// 单实例唯一 ID，可为 null。
+    /// </summary>
+    public string? SingleInstanceUniqueID { get; set; }
+
+    /// <summary>
+    /// 单实例模式下检测到已有实例运行时的退出码，默认 1。
+    /// </summary>
+    public int SingleInstanceExitCode { get; set; } = 1;
+
+    /// <summary>
+    /// 是否禁用右键菜单。
+    /// </summary>
+    public bool DisableContextMenu { get; set; } = false;
+
+    /// <summary>
+    /// 是否禁用拖放功能。
+    /// </summary>
+    public bool DisableDragAndDrop { get; set; } = false;
 }

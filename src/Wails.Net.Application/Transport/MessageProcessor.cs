@@ -15,6 +15,7 @@ public class MessageProcessor
 {
     /// <summary>
     /// 消息类型常量，与 Wails v3 前端协议一致。
+    /// 对应 Wails v3 Go 版本 messageprocessor.go 中的消息类型定义。
     /// </summary>
     public static class MessageTypes
     {
@@ -35,6 +36,15 @@ public class MessageProcessor
 
         /// <summary>错误消息。</summary>
         public const string Error = "error";
+
+        /// <summary>拖放操作（文件拖入窗口）。</summary>
+        public const string Drag = "drag";
+
+        /// <summary>上下文菜单（右键菜单）。</summary>
+        public const string ContextMenu = "contextmenu";
+
+        /// <summary>系统命令。</summary>
+        public const string System = "system";
     }
 
     /// <summary>
@@ -134,6 +144,7 @@ public class MessageProcessor
     /// <summary>
     /// 同步处理单条消息并返回响应。
     /// 此方法主要用于测试和需要立即响应的场景。
+    /// 支持 call、event、query、drag、contextmenu、window 等消息类型。
     /// </summary>
     /// <param name="message">要处理的消息。</param>
     /// <returns>响应消息，若无需响应则返回 null。</returns>
@@ -144,6 +155,9 @@ public class MessageProcessor
             MessageTypes.Call => await ProcessCallAsync(message),
             MessageTypes.Event => ProcessEvent(message),
             MessageTypes.Query => ProcessQuery(message),
+            MessageTypes.Drag => ProcessDrag(message),
+            MessageTypes.ContextMenu => ProcessContextMenu(message),
+            MessageTypes.Window => ProcessWindow(message),
             _ => null
         };
     }
@@ -213,6 +227,63 @@ public class MessageProcessor
     }
 
     /// <summary>
+    /// 处理拖放消息（文件拖入窗口）。
+    /// 将拖放事件转发为标准的 Wails 事件进行广播。
+    /// </summary>
+    /// <param name="message">拖放消息。</param>
+    /// <returns>始终返回 null（拖放事件无需响应）。</returns>
+    private ResponseMessage? ProcessDrag(Message message)
+    {
+        var dragPayload = message.Payload.Deserialize<DragPayload>(JsonOptions.DefaultSerializerOptions);
+        if (dragPayload is null)
+        {
+            return null;
+        }
+
+        // 将拖放事件转发为标准事件广播
+        _events.Emit("wails:drag", dragPayload, message.WindowId);
+        return null;
+    }
+
+    /// <summary>
+    /// 处理上下文菜单消息（右键菜单）。
+    /// 将上下文菜单事件转发为标准的 Wails 事件进行广播。
+    /// </summary>
+    /// <param name="message">上下文菜单消息。</param>
+    /// <returns>始终返回 null（上下文菜单事件无需响应）。</returns>
+    private ResponseMessage? ProcessContextMenu(Message message)
+    {
+        var menuPayload = message.Payload.Deserialize<ContextMenuPayload>(JsonOptions.DefaultSerializerOptions);
+        if (menuPayload is null)
+        {
+            return null;
+        }
+
+        // 将上下文菜单事件转发为标准事件广播
+        _events.Emit("wails:contextmenu", menuPayload, message.WindowId);
+        return null;
+    }
+
+    /// <summary>
+    /// 处理窗口操作消息。
+    /// 将窗口操作事件转发为标准的 Wails 事件进行广播。
+    /// </summary>
+    /// <param name="message">窗口操作消息。</param>
+    /// <returns>始终返回 null（窗口操作事件无需响应）。</returns>
+    private ResponseMessage? ProcessWindow(Message message)
+    {
+        var windowPayload = message.Payload.Deserialize<WindowPayload>(JsonOptions.DefaultSerializerOptions);
+        if (windowPayload is null)
+        {
+            return null;
+        }
+
+        // 将窗口操作事件转发为标准事件广播
+        _events.Emit($"wails:window:{windowPayload.Action}", windowPayload, message.WindowId);
+        return null;
+    }
+
+    /// <summary>
     /// 处理查询消息。
     /// </summary>
     /// <param name="message">查询消息。</param>
@@ -271,16 +342,23 @@ public class MessageProcessor
     /// </summary>
     private async Task ProcessQueueAsync()
     {
-        foreach (var message in _queue.GetConsumingEnumerable(_cts.Token))
+        try
         {
-            try
+            foreach (var message in _queue.GetConsumingEnumerable(_cts.Token))
             {
-                await ProcessAsync(message);
+                try
+                {
+                    await ProcessAsync(message);
+                }
+                catch
+                {
+                    // 队列消费中的异常不应中断循环
+                }
             }
-            catch
-            {
-                // 队列消费中的异常不应中断循环
-            }
+        }
+        catch (OperationCanceledException)
+        {
+            // 停止时取消令牌触发的取消异常是预期行为，正常退出循环。
         }
     }
 }
@@ -374,6 +452,99 @@ public class QueryPayload
     /// </summary>
     [JsonPropertyName("query")]
     public string Query { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// 拖放消息的载荷，包含拖入的文件/数据信息。
+/// 对应 Wails v3 前端拖放事件。
+/// </summary>
+public class DragPayload
+{
+    /// <summary>
+    /// 拖入的文件路径列表。
+    /// </summary>
+    [JsonPropertyName("files")]
+    public string[]? Files { get; set; }
+
+    /// <summary>
+    /// 拖入的数据（文本或自定义数据）。
+    /// </summary>
+    [JsonPropertyName("data")]
+    public string? Data { get; set; }
+
+    /// <summary>
+    /// 鼠标 X 坐标。
+    /// </summary>
+    [JsonPropertyName("x")]
+    public int X { get; set; }
+
+    /// <summary>
+    /// 鼠标 Y 坐标。
+    /// </summary>
+    [JsonPropertyName("y")]
+    public int Y { get; set; }
+
+    /// <summary>
+    /// 发送窗口 ID。
+    /// </summary>
+    [JsonPropertyName("windowId")]
+    public uint? WindowId { get; set; }
+}
+
+/// <summary>
+/// 上下文菜单消息的载荷。
+/// 对应 Wails v3 前端右键菜单事件。
+/// </summary>
+public class ContextMenuPayload
+{
+    /// <summary>
+    /// 鼠标 X 坐标。
+    /// </summary>
+    [JsonPropertyName("x")]
+    public int X { get; set; }
+
+    /// <summary>
+    /// 鼠标 Y 坐标。
+    /// </summary>
+    [JsonPropertyName("y")]
+    public int Y { get; set; }
+
+    /// <summary>
+    /// 触发上下文菜单的元素标识。
+    /// </summary>
+    [JsonPropertyName("contextId")]
+    public string? ContextId { get; set; }
+
+    /// <summary>
+    /// 发送窗口 ID。
+    /// </summary>
+    [JsonPropertyName("windowId")]
+    public uint? WindowId { get; set; }
+}
+
+/// <summary>
+/// 窗口操作消息的载荷。
+/// 对应 Wails v3 前端窗口操作事件。
+/// </summary>
+public class WindowPayload
+{
+    /// <summary>
+    /// 窗口操作类型（如 minimize、maximize、close、focus 等）。
+    /// </summary>
+    [JsonPropertyName("action")]
+    public string Action { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 目标窗口 ID。
+    /// </summary>
+    [JsonPropertyName("windowId")]
+    public uint? WindowId { get; set; }
+
+    /// <summary>
+    /// 附加数据。
+    /// </summary>
+    [JsonPropertyName("data")]
+    public object? Data { get; set; }
 }
 
 /// <summary>

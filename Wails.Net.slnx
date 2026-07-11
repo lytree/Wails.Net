@@ -7,6 +7,8 @@
     <Project Path="src/Wails.Net.Events/Wails.Net.Events.csproj" />
     <Project Path="src/Wails.Net.Generator/Wails.Net.Generator.csproj" />
     <Project Path="src/Wails.Net.Cli/Wails.Net.Cli.csproj" />
+    <Project Path="src/Wails.Net.AssetServer/Wails.Net.AssetServer.csproj" />
+    <Project Path="src/Wails.Net.Runtime.Js/Wails.Net.Runtime.Js.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Wails.Net.Application.Tests/Wails.Net.Application.Tests.csproj" />

@@ -5,10 +5,19 @@
     <IsPackable>true</IsPackable>
   </PropertyGroup>
 
+  <!-- 标记整个程序集为 Linux 平台特定，消除 CA1416 平台兼容性警告 -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatformAttribute">
+      <_Parameter1>linux</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="GirCore.Gtk-4.0" />
     <PackageReference Include="GirCore.Gio-2.0" />
     <PackageReference Include="GirCore.GdkPixbuf-2.0" />
+    <PackageReference Include="GirCore.WebKit-6.0" />
+    <PackageReference Include="GirCore.JavaScriptCore-6.0" />
   </ItemGroup>
 
   <ItemGroup>

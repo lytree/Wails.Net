@@ -135,22 +135,134 @@ public sealed class ApplicationTests
     }
 
     [Test]
-    public async Task Run_ThrowsNotImplementedException()
+    public async Task Run_WithServerPlatformApp_StartsServicesAndTransportsAndShutsDown()
     {
         // 安排
-        var app = new Application(new ApplicationOptions());
+        var app = new Application(new ApplicationOptions { Name = "RunApp" });
+        app.SetPlatformApp(new ServerPlatformApp(app.Options));
+        var startupService = new FakeLifecycleService();
+        var transport = new FakeTransport();
+        app.RegisterService(startupService);
+        app.Transport = transport;
 
-        // 操作与断言
-        await Assert.That(() => app.Run()).ThrowsExactly<NotImplementedException>();
+        // 操作
+        app.Run();
+
+        // 断言：服务启动、传输层启动、服务关闭、传输层停止均被调用
+        await Assert.That(startupService.StartupCalled).IsTrue();
+        await Assert.That(startupService.ShutdownCalled).IsTrue();
+        await Assert.That(transport.Started).IsTrue();
+        await Assert.That(transport.Stopped).IsTrue();
+        await Assert.That(app.IsRunning).IsFalse();
     }
 
     [Test]
-    public async Task Shutdown_ThrowsNotImplementedException()
+    public async Task Run_WhenAlreadyRunning_ReturnsImmediately()
+    {
+        // 安排：通过反射将 _isRunning 置为 true 模拟已运行
+        var app = new Application(new ApplicationOptions());
+        var field = typeof(Application).GetField("_isRunning",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        field.SetValue(app, true);
+
+        var startupService = new FakeLifecycleService();
+        app.RegisterService(startupService);
+
+        // 操作
+        app.Run();
+
+        // 断言：不会再次启动服务
+        await Assert.That(startupService.StartupCalled).IsFalse();
+    }
+
+    [Test]
+    public async Task Shutdown_WhenNotRunning_ReturnsImmediately()
+    {
+        // 安排：未调用 Run，_isRunning 为 false
+        var app = new Application(new ApplicationOptions());
+        var shutdownService = new FakeLifecycleService();
+        app.RegisterService(shutdownService);
+
+        // 操作
+        app.Shutdown();
+
+        // 断言：未运行时不会触发服务关闭
+        await Assert.That(shutdownService.ShutdownCalled).IsFalse();
+    }
+
+    [Test]
+    public async Task Shutdown_ClosesAllWindowsAndStopsTransportInReverseOrder()
     {
         // 安排
-        var app = new Application(new ApplicationOptions());
+        var app = new Application(new ApplicationOptions { Name = "ShutdownApp" });
+        app.SetPlatformApp(new ServerPlatformApp(app.Options));
+        var first = new FakeLifecycleService { Name = "First" };
+        var second = new FakeLifecycleService { Name = "Second" };
+        app.RegisterService(first);
+        app.RegisterService(second);
+        var transport = new FakeTransport();
+        app.Transport = transport;
 
-        // 操作与断言
-        await Assert.That(() => app.Shutdown()).ThrowsExactly<NotImplementedException>();
+        // 先标记为运行状态
+        var field = typeof(Application).GetField("_isRunning",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        field.SetValue(app, true);
+
+        // 操作
+        app.Shutdown();
+
+        // 断言：传输层已停止
+        await Assert.That(transport.Stopped).IsTrue();
+        // 断言：两个服务均被关闭
+        await Assert.That(first.ShutdownCalled).IsTrue();
+        await Assert.That(second.ShutdownCalled).IsTrue();
+        // 断言：不再处于运行状态
+        await Assert.That(app.IsRunning).IsFalse();
+    }
+
+    /// <summary>
+    /// 用于测试服务生命周期的假服务。
+    /// </summary>
+    private sealed class FakeLifecycleService : Wails.Net.Application.Services.IServiceStartup,
+        Wails.Net.Application.Services.IServiceShutdown
+    {
+        public string Name { get; set; } = "Fake";
+        public bool StartupCalled { get; private set; }
+        public bool ShutdownCalled { get; private set; }
+
+        public Task ServiceStartup(ApplicationOptions options, CancellationToken cancellationToken)
+        {
+            StartupCalled = true;
+            return Task.CompletedTask;
+        }
+
+        public Task ServiceShutdown(CancellationToken cancellationToken)
+        {
+            ShutdownCalled = true;
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// 用于测试传输层生命周期的假传输层。
+    /// </summary>
+    private sealed class FakeTransport : Wails.Net.Application.Transport.ITransport
+    {
+        public bool Started { get; private set; }
+        public bool Stopped { get; private set; }
+
+        public string JSClient() => string.Empty;
+
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            Started = true;
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken)
+        {
+            Stopped = true;
+            return Task.CompletedTask;
+        }
     }
 }

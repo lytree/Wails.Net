@@ -55,4 +55,22 @@ public enum ApplicationEventType : uint
 
     /// <summary>系统托盘菜单已打开。</summary>
     SystemTrayMenuOpened = 16,
+
+    /// <summary>窗口运行时就绪。</summary>
+    WindowRuntimeReady = 17,
+
+    /// <summary>窗口进入全屏。</summary>
+    WindowEnterFullScreen = 18,
+
+    /// <summary>窗口退出全屏。</summary>
+    WindowExitFullScreen = 19,
+
+    /// <summary>URL 开始加载。</summary>
+    URLStartsLoading = 20,
+
+    /// <summary>URL 加载完成。</summary>
+    URLFinishedLoading = 21,
+
+    /// <summary>窗口即将卸载。</summary>
+    WindowBeforeUnload = 22,
 }

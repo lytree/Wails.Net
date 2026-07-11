@@ -17,6 +17,13 @@
     <PackageReference Include="TUnit.Engine" />
   </ItemGroup>
 
+  <!-- 标记测试程序集为 Linux 平台特定，消除 CA1416 平台兼容性警告 -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatformAttribute">
+      <_Parameter1>linux</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\Wails.Net.Application.Linux\Wails.Net.Application.Linux.csproj" />
   </ItemGroup>

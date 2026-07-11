@@ -17,6 +17,11 @@ public class ServerPlatformApp : IPlatformApp
     private readonly string _name;
 
     /// <summary>
+    /// 用于阻塞主循环直到关闭信号到达的等待句柄。
+    /// </summary>
+    private readonly ManualResetEventSlim _shutdownEvent = new(initialState: false);
+
+    /// <summary>
     /// 构造 ServerPlatformApp 实例。
     /// </summary>
     /// <param name="options">应用配置选项。</param>
@@ -29,15 +34,39 @@ public class ServerPlatformApp : IPlatformApp
     public string Name => _name;
 
     /// <inheritdoc />
-    public void Run()
+    public int Run()
     {
-        // Server 模式下无主循环，直接返回。
+        // Server 模式下阻塞直到 SignalShutdown 被调用，模拟无 GUI 的运行-阻塞模型。
+        _shutdownEvent.Wait();
+        return 0;
+    }
+
+    /// <summary>
+    /// 释放主循环阻塞，使 <see cref="Run"/> 返回。
+    /// </summary>
+    public void SignalShutdown()
+    {
+        _shutdownEvent.Set();
+    }
+
+    /// <inheritdoc />
+    public bool AcquireSingleInstanceLock(string uniqueId)
+    {
+        // Server 模式下始终视作首实例。
+        return true;
+    }
+
+    /// <inheritdoc />
+    public void NotifySingleInstance(string[] args)
+    {
+        // Server 模式下不支持单实例通知。
     }
 
     /// <inheritdoc />
     public void Destroy()
     {
-        // Server 模式下无需销毁资源。
+        // 释放主循环阻塞，确保 Run() 能够返回。
+        SignalShutdown();
     }
 
     /// <inheritdoc />

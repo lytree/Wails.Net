@@ -1,12 +1,16 @@
+using System.Net;
+
 namespace Wails.Net.Application.Transport;
 
 /// <summary>
 /// 传输层接口，对应 Wails v3 中的 Transport 接口。
+/// 传输层负责从前端接收运行时调用请求、通过 MessageProcessor 处理、并将响应返回前端。
 /// </summary>
 public interface ITransport
 {
     /// <summary>
     /// 返回前端 JS 客户端代码。
+    /// 对应 Wails v3 Go 版本 Transport 接口的 JSClient() 方法。
     /// </summary>
     /// <returns>JS 客户端代码字符串。</returns>
     string JSClient();
@@ -28,11 +32,13 @@ public interface ITransport
 
 /// <summary>
 /// 事件监听器接口，用于监听事件的传输层。
+/// 实现此接口的传输层会被 EventProcessor 调用以将事件广播到前端。
+/// 对应 Wails v3 Go 版本中 EventProcessor 的 wailsEventListener 字段类型。
 /// </summary>
 public interface IWailsEventListener
 {
     /// <summary>
-    /// 通知事件。
+    /// 通知事件，将事件广播到连接的前端客户端。
     /// </summary>
     /// <param name="eventName">事件名称。</param>
     /// <param name="data">事件数据，可为 null。</param>
@@ -40,35 +46,34 @@ public interface IWailsEventListener
 }
 
 /// <summary>
-/// HTTP 处理器接口，用于基于 HTTP 的传输层。
+/// HTTP 处理器接口，用于基于 HTTP 的传输层提供请求上下文。
+/// 对应 Wails v3 Go 版本中的 TransportHTTPHandler 接口。
+/// AssetServer 中间件可通过此接口获取当前 HTTP 请求上下文，
+/// 以便对 webview 发往 wails:// 的请求进行处理。
 /// </summary>
 public interface ITransportHttpHandler
 {
     /// <summary>
-    /// 处理 HTTP 请求（使用 object 暂代 HttpRequest/HttpResponse 避免依赖 ASP.NET）。
+    /// 获取当前正在处理的 HTTP 请求上下文。
+    /// 用于资源服务器中间件访问当前请求的头部、查询参数等。
     /// </summary>
-    /// <param name="request">请求对象。</param>
-    /// <param name="response">响应对象。</param>
-    /// <returns>表示处理操作的异步任务。</returns>
-    Task HandleRequestAsync(object request, object response);
+    /// <returns>当前 HTTP 上下文；若无正在处理的请求则返回 null。</returns>
+    HttpListenerContext? GetCurrentContext();
 }
 
 /// <summary>
 /// 资源服务器传输接口，用于提供资源服务的传输层。
+/// 对应 Wails v3 Go 版本中的 AssetServerTransport 接口。
+/// 实现此接口的传输层可服务于浏览器场景，将 HTML、CSS、JS 等静态资源
+/// 与 IPC 传输端点共同暴露在 HTTP 服务器上。
 /// </summary>
 public interface IAssetServerTransport
 {
     /// <summary>
-    /// 获取资源。
+    /// 将资源服务器绑定到当前传输层。
+    /// 传输层在收到资源请求时应将请求转发给 AssetServer 处理。
+    /// 此方法在 StartAsync 完成后调用。
     /// </summary>
-    /// <param name="path">资源路径。</param>
-    /// <returns>资源字节数据，若不存在则返回 null。</returns>
-    byte[]? GetAsset(string path);
-
-    /// <summary>
-    /// 检查资源是否存在。
-    /// </summary>
-    /// <param name="path">资源路径。</param>
-    /// <returns>如果资源存在则返回 true，否则返回 false。</returns>
-    bool HasAsset(string path);
+    /// <param name="assetServer">Wails 内部资源服务器实例。</param>
+    void ServeAssets(Wails.Net.AssetServer.AssetServer assetServer);
 }

@@ -8,14 +8,25 @@ namespace Wails.Net.Application.Transport;
 /// <summary>
 /// 基于 HTTP 的传输层实现。
 /// 对应 Wails v3 Go 版本中的 IPC HTTP 传输。
-/// 内嵌一个轻量级 HTTP 服务器，接收前端消息并通过 MessageProcessor 处理。
+/// 内嵌一个轻量级 HTTP 服务器，接收前端消息并通过 MessageProcessor 处理，
+/// 同时支持将资源请求转发给 AssetServer。
 /// </summary>
-public class HttpTransport : ITransport, IWailsEventListener
+public class HttpTransport : ITransport, IWailsEventListener, ITransportHttpHandler, IAssetServerTransport
 {
     /// <summary>
     /// 默认监听端口起始值，若被占用则自动递增。
     /// </summary>
     public const int DefaultPortStart = 34115;
+
+    /// <summary>
+    /// 消息端点路径。
+    /// </summary>
+    public const string MessageEndpoint = "/wails/message";
+
+    /// <summary>
+    /// WebSocket 端点路径。
+    /// </summary>
+    public const string WebSocketEndpoint = "/wails/ws";
 
     /// <summary>
     /// HTTP 监听器。
@@ -53,6 +64,16 @@ public class HttpTransport : ITransport, IWailsEventListener
     private Task? _listenTask;
 
     /// <summary>
+    /// 异步上下文持有当前请求的 HTTP 上下文，用于 ITransportHttpHandler 接口。
+    /// </summary>
+    private static readonly AsyncLocal<HttpListenerContext?> _currentContext = new();
+
+    /// <summary>
+    /// 绑定的资源服务器实例（可为 null）。
+    /// </summary>
+    private Wails.Net.AssetServer.AssetServer? _assetServer;
+
+    /// <summary>
     /// 是否已启动。
     /// </summary>
     public bool IsRunning { get; private set; }
@@ -74,7 +95,7 @@ public class HttpTransport : ITransport, IWailsEventListener
     /// <returns>JS 客户端代码字符串。</returns>
     public string JSClient()
     {
-        return $"// Wails.Net HTTP Transport Client, endpoint: {BaseUrl}/wails/message";
+        return $"// Wails.Net HTTP Transport Client, endpoint: {BaseUrl}{MessageEndpoint}";
     }
 
     /// <summary>
@@ -146,6 +167,26 @@ public class HttpTransport : ITransport, IWailsEventListener
     }
 
     /// <summary>
+    /// 获取当前正在处理的 HTTP 请求上下文（实现 ITransportHttpHandler）。
+    /// 用于资源服务器中间件访问当前请求的头部、查询参数等。
+    /// </summary>
+    /// <returns>当前 HTTP 上下文；若无正在处理的请求则返回 null。</returns>
+    public HttpListenerContext? GetCurrentContext()
+    {
+        return _currentContext.Value;
+    }
+
+    /// <summary>
+    /// 将资源服务器绑定到当前传输层（实现 IAssetServerTransport）。
+    /// 传输层在收到非消息端点的请求时，将请求转发给 AssetServer 处理。
+    /// </summary>
+    /// <param name="assetServer">Wails 内部资源服务器实例。</param>
+    public void ServeAssets(Wails.Net.AssetServer.AssetServer assetServer)
+    {
+        _assetServer = assetServer;
+    }
+
+    /// <summary>
     /// HTTP 请求监听循环。
     /// </summary>
     /// <param name="cancellationToken">取消令牌。</param>
@@ -171,6 +212,7 @@ public class HttpTransport : ITransport, IWailsEventListener
 
     /// <summary>
     /// 处理单个 HTTP 请求。
+    /// 根据 URL 路径决定转发给消息处理器还是资源服务器。
     /// </summary>
     /// <param name="context">HTTP 上下文。</param>
     /// <param name="cancellationToken">取消令牌。</param>
@@ -180,39 +222,44 @@ public class HttpTransport : ITransport, IWailsEventListener
         var request = context.Request;
         var response = context.Response;
 
+        // 设置当前上下文（供 ITransportHttpHandler 使用）
+        _currentContext.Value = context;
+
         try
         {
-            // 仅处理 POST /wails/message
-            if (request.HttpMethod != "POST" || !request.Url!.AbsolutePath.EndsWith("/wails/message"))
+            // 添加 CORS 响应头
+            ApplyCorsHeaders(response);
+
+            // 处理 OPTIONS 预检请求
+            if (string.Equals(request.HttpMethod, "OPTIONS", StringComparison.OrdinalIgnoreCase))
             {
-                response.StatusCode = 404;
+                response.StatusCode = 204;
                 return;
             }
 
-            using var reader = new StreamReader(request.InputStream);
-            var body = await reader.ReadToEndAsync(cancellationToken);
+            var path = request.Url?.AbsolutePath ?? "/";
 
-            var message = _processor.ParseMessage(body);
-            if (message is null)
+            // 消息端点：处理 IPC 消息
+            if (string.Equals(request.HttpMethod, "POST", StringComparison.OrdinalIgnoreCase) &&
+                path.EndsWith(MessageEndpoint, StringComparison.OrdinalIgnoreCase))
             {
-                response.StatusCode = 400;
+                await HandleMessageAsync(context, cancellationToken);
                 return;
             }
 
-            var result = await _processor.ProcessAsync(message);
+            // 资源端点：转发给 AssetServer
+            if (_assetServer is not null)
+            {
+                await _assetServer.ServeHttpAsync(context, cancellationToken);
+                return;
+            }
 
-            response.ContentType = "application/json; charset=utf-8";
-            if (result is not null)
-            {
-                var json = JsonSerializer.Serialize(result, JsonOptions.DefaultSerializerOptions);
-                var bytes = System.Text.Encoding.UTF8.GetBytes(json);
-                response.ContentLength64 = bytes.Length;
-                await response.OutputStream.WriteAsync(bytes, cancellationToken);
-            }
-            else
-            {
-                response.StatusCode = 204; // 无内容
-            }
+            // 无资源服务器时返回 404
+            response.StatusCode = 404;
+            response.ContentType = "text/plain; charset=utf-8";
+            var body = System.Text.Encoding.UTF8.GetBytes($"404 Not Found: {path}");
+            response.ContentLength64 = body.Length;
+            await response.OutputStream.WriteAsync(body, cancellationToken);
         }
         catch
         {
@@ -220,8 +267,57 @@ public class HttpTransport : ITransport, IWailsEventListener
         }
         finally
         {
+            _currentContext.Value = null;
             response.Close();
         }
+    }
+
+    /// <summary>
+    /// 处理 IPC 消息请求。
+    /// </summary>
+    /// <param name="context">HTTP 上下文。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>表示处理操作的异步任务。</returns>
+    private async Task HandleMessageAsync(HttpListenerContext context, CancellationToken cancellationToken)
+    {
+        var request = context.Request;
+        var response = context.Response;
+
+        using var reader = new StreamReader(request.InputStream);
+        var body = await reader.ReadToEndAsync(cancellationToken);
+
+        var message = _processor.ParseMessage(body);
+        if (message is null)
+        {
+            response.StatusCode = 400;
+            return;
+        }
+
+        var result = await _processor.ProcessAsync(message);
+
+        response.ContentType = "application/json; charset=utf-8";
+        if (result is not null)
+        {
+            var json = JsonSerializer.Serialize(result, JsonOptions.DefaultSerializerOptions);
+            var bytes = System.Text.Encoding.UTF8.GetBytes(json);
+            response.ContentLength64 = bytes.Length;
+            await response.OutputStream.WriteAsync(bytes, cancellationToken);
+        }
+        else
+        {
+            response.StatusCode = 204; // 无内容
+        }
+    }
+
+    /// <summary>
+    /// 应用 CORS 响应头。
+    /// </summary>
+    /// <param name="response">HTTP 响应对象。</param>
+    private static void ApplyCorsHeaders(HttpListenerResponse response)
+    {
+        response.Headers["Access-Control-Allow-Origin"] = "*";
+        response.Headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS";
+        response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Range, If-None-Match, x-wails-window-id, x-wails-window-name";
     }
 
     /// <summary>

@@ -10,6 +10,8 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <PlatformSpecific>true</PlatformSpecific>
     <IsPackable>true</IsPackable>
+    <!-- CsWin32 生成的类型包含指针字段，需要 unsafe 上下文 -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

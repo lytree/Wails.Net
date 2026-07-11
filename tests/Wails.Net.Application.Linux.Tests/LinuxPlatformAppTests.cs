@@ -183,17 +183,17 @@ public sealed class LinuxPlatformAppTests
     }
 
     [Test]
-    public async Task GetPrimaryScreen_ReturnsNull_ForNow()
+    public async Task GetPrimaryScreen_ReturnsNull_OnNonLinux()
     {
         // 安排
         var app = new LinuxPlatformApp(new ApplicationOptions { Name = "TestApp" });
 
-        // 操作与断言：当前为 TODO 桩，返回 null
+        // 操作与断言：非 Linux 平台上 GetPrimaryScreen 返回 null
         await Assert.That(app.GetPrimaryScreen()).IsNull();
     }
 
     [Test]
-    public async Task GetScreens_ReturnsEmptyArray_ForNow()
+    public async Task GetScreens_ReturnsEmptyArray_OnNonLinux()
     {
         // 安排
         var app = new LinuxPlatformApp(new ApplicationOptions { Name = "TestApp" });
@@ -201,22 +201,32 @@ public sealed class LinuxPlatformAppTests
         // 操作
         var screens = app.GetScreens();
 
-        // 断言：当前为 TODO 桩，返回空数组
+        // 断言：非 Linux 平台上返回空数组
         await Assert.That(screens.Length).IsEqualTo(0);
     }
 
     [Test]
-    public async Task Run_ThrowsNotImplementedException()
+    public async Task Run_ThrowsPlatformNotSupportedException_OnNonLinux()
     {
         // 安排
         var app = new LinuxPlatformApp(new ApplicationOptions { Name = "TestApp" });
 
-        // 操作与断言：Run() 尚未实现
-        await Assert.That(() => app.Run()).ThrowsExactly<NotImplementedException>();
+        // 操作与断言：非 Linux 平台上 Run() 抛出 PlatformNotSupportedException
+        await Assert.That(() => app.Run()).ThrowsExactly<PlatformNotSupportedException>();
     }
 
     [Test]
-    public async Task ShowMessageDialog_ReturnsZero()
+    public async Task Destroy_DoesNotThrow_WhenMainLoopNotStarted()
+    {
+        // 安排
+        var app = new LinuxPlatformApp(new ApplicationOptions { Name = "TestApp" });
+
+        // 操作与断言：未启动主循环时 Destroy 不抛异常
+        await Assert.That(() => app.Destroy()).ThrowsNothing();
+    }
+
+    [Test]
+    public async Task ShowMessageDialog_ReturnsZero_OnNonLinux()
     {
         // 安排
         var app = new LinuxPlatformApp(new ApplicationOptions { Name = "TestApp" });
@@ -224,12 +234,12 @@ public sealed class LinuxPlatformAppTests
         // 操作
         var result = await app.ShowMessageDialog("Title", "Message", DialogStyle.Info, new[] { "OK" });
 
-        // 断言：桩实现返回 0
+        // 断言：非 Linux 平台上返回 0
         await Assert.That(result).IsEqualTo(0);
     }
 
     [Test]
-    public async Task OpenFileDialog_ReturnsNull()
+    public async Task OpenFileDialog_ReturnsNull_OnNonLinux()
     {
         // 安排
         var app = new LinuxPlatformApp(new ApplicationOptions { Name = "TestApp" });
@@ -237,12 +247,12 @@ public sealed class LinuxPlatformAppTests
         // 操作
         var result = await app.OpenFileDialog(new OpenFileDialogOptions());
 
-        // 断言：桩实现返回 null
+        // 断言：非 Linux 平台上返回 null
         await Assert.That(result).IsNull();
     }
 
     [Test]
-    public async Task SaveFileDialog_ReturnsNull()
+    public async Task SaveFileDialog_ReturnsNull_OnNonLinux()
     {
         // 安排
         var app = new LinuxPlatformApp(new ApplicationOptions { Name = "TestApp" });
@@ -250,12 +260,12 @@ public sealed class LinuxPlatformAppTests
         // 操作
         var result = await app.SaveFileDialog(new SaveFileDialogOptions());
 
-        // 断言：桩实现返回 null
+        // 断言：非 Linux 平台上返回 null
         await Assert.That(result).IsNull();
     }
 
     [Test]
-    public async Task OpenMultipleFilesDialog_ReturnsNull()
+    public async Task OpenMultipleFilesDialog_ReturnsNull_OnNonLinux()
     {
         // 安排
         var app = new LinuxPlatformApp(new ApplicationOptions { Name = "TestApp" });
@@ -263,18 +273,79 @@ public sealed class LinuxPlatformAppTests
         // 操作
         var result = await app.OpenMultipleFilesDialog(new OpenFileDialogOptions());
 
-        // 断言：桩实现返回 null
+        // 断言：非 Linux 平台上返回 null
         await Assert.That(result).IsNull();
     }
 
     [Test]
-    public async Task DispatchOnMainThread_ExecutesAction()
+    public async Task CreateWebviewWindow_DoesNotThrow_OnNonLinux()
+    {
+        // 安排
+        var app = new LinuxPlatformApp(new ApplicationOptions { Name = "TestApp" });
+        var options = new WebviewWindowOptions { Title = "Test" };
+
+        // 操作与断言：非 Linux 平台上 CreateWebviewWindow 不创建窗口但不抛异常
+        await Assert.That(() => app.CreateWebviewWindow(1, options)).ThrowsNothing();
+    }
+
+    [Test]
+    public async Task GetCurrentWindowId_ReturnsZero_WhenNoWindows()
+    {
+        // 安排
+        var app = new LinuxPlatformApp(new ApplicationOptions { Name = "TestApp" });
+
+        // 操作与断言：无窗口时返回 0
+        await Assert.That(app.GetCurrentWindowId()).IsEqualTo((uint)0);
+    }
+
+    [Test]
+    public async Task Hide_DoesNotThrow_OnNonLinux()
+    {
+        // 安排
+        var app = new LinuxPlatformApp(new ApplicationOptions { Name = "TestApp" });
+
+        // 操作与断言：非 Linux 平台上 Hide 不抛异常
+        await Assert.That(() => app.Hide()).ThrowsNothing();
+    }
+
+    [Test]
+    public async Task Show_DoesNotThrow_OnNonLinux()
+    {
+        // 安排
+        var app = new LinuxPlatformApp(new ApplicationOptions { Name = "TestApp" });
+
+        // 操作与断言：非 Linux 平台上 Show 不抛异常
+        await Assert.That(() => app.Show()).ThrowsNothing();
+    }
+
+    [Test]
+    public async Task ShowAboutDialog_DoesNotThrow_OnNonLinux()
+    {
+        // 安排
+        var app = new LinuxPlatformApp(new ApplicationOptions { Name = "TestApp" });
+
+        // 操作与断言：非 Linux 平台上 ShowAboutDialog 不抛异常
+        await Assert.That(() => app.ShowAboutDialog("TestApp", "Description", null)).ThrowsNothing();
+    }
+
+    [Test]
+    public async Task SetIcon_DoesNotThrow_WithNullIcon()
+    {
+        // 安排
+        var app = new LinuxPlatformApp(new ApplicationOptions { Name = "TestApp" });
+
+        // 操作与断言：null 图标不抛异常
+        await Assert.That(() => app.SetIcon(null)).ThrowsNothing();
+    }
+
+    [Test]
+    public async Task DispatchOnMainThread_ExecutesAction_OnNonLinux()
     {
         // 安排
         var app = new LinuxPlatformApp(new ApplicationOptions { Name = "TestApp" });
         var executed = false;
 
-        // 操作：分发到主线程（当前桩实现直接执行）
+        // 操作：非 Linux 环境下直接执行
         app.DispatchOnMainThread(() => executed = true);
 
         // 断言：动作被执行

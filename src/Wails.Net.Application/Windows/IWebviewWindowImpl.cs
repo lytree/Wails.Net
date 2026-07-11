@@ -403,4 +403,144 @@ public interface IWebviewWindowImpl
     /// </summary>
     /// <param name="html">要加载的 HTML 内容。</param>
     void LoadHTML(string html);
+
+    /// <summary>
+    /// 设置窗口背景类型。
+    /// </summary>
+    /// <param name="type">背景类型字符串（如 "transparent"、"translucent"、"solid"）。</param>
+    void SetBackgroundType(string type)
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 设置全屏按钮是否可用。
+    /// </summary>
+    /// <param name="enabled">是否可用。</param>
+    void SetFullscreenButtonEnabled(bool enabled)
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 设置缩放比例（double 重载）。
+    /// </summary>
+    /// <param name="zoom">缩放比例。</param>
+    void SetZoom(double zoom)
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 设置是否启用缩放。
+    /// </summary>
+    /// <param name="enabled">是否启用缩放。</param>
+    void SetZoomEnabled(bool enabled)
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 设置窗口是否半透明。
+    /// </summary>
+    /// <param name="translucent">是否半透明。</param>
+    void SetTranslucent(bool translucent)
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 设置标题栏样式（字符串重载）。
+    /// </summary>
+    /// <param name="style">标题栏样式字符串。</param>
+    void SetTitleBarStyle(string style)
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 注入 CSS 样式到当前页面。
+    /// </summary>
+    /// <param name="css">CSS 样式字符串。</param>
+    void InjectCSS(string css)
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 放大缩放。
+    /// </summary>
+    void ZoomIn()
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 缩小缩放。
+    /// </summary>
+    void ZoomOut()
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 重置缩放。
+    /// </summary>
+    void ZoomReset()
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 将窗口设置为最小化状态。
+    /// </summary>
+    void SetMinimised()
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 将窗口设置为最大化状态。
+    /// </summary>
+    void SetMaximised()
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 将窗口设置为正常状态。
+    /// </summary>
+    void SetNormal()
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 在指定坐标打开上下文菜单。
+    /// </summary>
+    /// <param name="x">X 坐标。</param>
+    /// <param name="y">Y 坐标。</param>
+    void OpenContextMenu(int x, int y)
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 将窗口内容导出为 PDF（字节数组选项重载）。
+    /// </summary>
+    /// <param name="pageOptions">PDF 导出选项字节数组，可为 null。</param>
+    void PrintToPDF(byte[]? pageOptions)
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 注册窗口就绪回调。
+    /// </summary>
+    /// <param name="callback">窗口就绪时执行的回调。</param>
+    void Run(Action callback)
+    {
+        // 默认立即执行回调，平台实现可重写以在合适时机调用。
+        callback();
+    }
 }

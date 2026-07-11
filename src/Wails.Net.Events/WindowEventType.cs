@@ -73,4 +73,19 @@ public enum WindowEventType : uint
 
     /// <summary>窗口已隐藏。</summary>
     WindowHide = 1022,
+
+    /// <summary>窗口运行时就绪。</summary>
+    WindowRuntimeReady = 1023,
+
+    /// <summary>文件拖放目标。</summary>
+    WindowFileDropTarget = 1024,
+
+    /// <summary>窗口进入全屏。</summary>
+    WindowEnterFullScreen = 1025,
+
+    /// <summary>窗口退出全屏。</summary>
+    WindowExitFullScreen = 1026,
+
+    /// <summary>窗口标题已更改。</summary>
+    WindowTitleChanged = 1027,
 }
