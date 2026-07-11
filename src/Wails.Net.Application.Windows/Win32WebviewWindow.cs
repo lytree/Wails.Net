@@ -71,6 +71,11 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     private const uint WmDropFiles = 0x0233;
 
     /// <summary>
+    /// WM_SETTINGCHANGE 消息常量（0x001A），系统设置（如主题）变化时收到。
+    /// </summary>
+    private const uint WmSettingChange = 0x001A;
+
+    /// <summary>
     /// WM_MOVE 消息常量（0x0003），窗口移动时收到。
     /// </summary>
     private const uint WmMove = 0x0003;
@@ -1113,6 +1118,28 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                 }
 
                 break;
+
+            case WmSettingChange:
+                // 系统设置变化：检测暗/亮模式切换。
+                // lParam 指向变化类别的字符串，"ImmersiveColorSet" 表示主题变化。
+                // 对应 Wails v3 和 Tauri v2 的系统主题变化监听。
+                if (instance is not null && lParam.Value != 0)
+                {
+                    try
+                    {
+                        var category = Marshal.PtrToStringUni(lParam.Value);
+                        if (category == "ImmersiveColorSet")
+                        {
+                            Application.Get()?.Events.Emit(KnownEvents.ThemeChanged, null, null);
+                        }
+                    }
+                    catch
+                    {
+                        // 忽略指针读取异常
+                    }
+                }
+
+                break;
         }
 
         return PInvoke.DefWindowProc(hWnd, msg, wParam, lParam);
@@ -2026,6 +2053,68 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
             exStyle &= ~WINDOW_EX_STYLE.WS_EX_LAYERED;
             SetWindowExStyle(exStyle);
         }
+    }
+
+    /// <summary>
+    /// 设置窗口透明度（0.0 完全透明 ~ 1.0 完全不透明）。
+    /// 通过 WS_EX_LAYERED 扩展样式和 SetLayeredWindowAttributes 实现。
+    /// 对应 Wails v3 的 window.setOpacity 和 Tauri v2 的 window.setAlpha。
+    /// </summary>
+    /// <param name="opacity">透明度值，范围 0.0 到 1.0，会被截断到 [0, 1] 区间。</param>
+    public void SetOpacity(float opacity)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        // 截断到 [0, 1] 区间
+        opacity = Math.Max(0f, Math.Min(1f, opacity));
+
+        // 确保窗口具有 WS_EX_LAYERED 扩展样式
+        var exStyle = GetWindowExStyle();
+        if ((exStyle & WINDOW_EX_STYLE.WS_EX_LAYERED) == 0)
+        {
+            exStyle |= WINDOW_EX_STYLE.WS_EX_LAYERED;
+            SetWindowExStyle(exStyle);
+        }
+
+        // 将 0.0-1.0 映射到 0-255
+        var alpha = (byte)(opacity * 255);
+        PInvoke.SetLayeredWindowAttributes(_hwnd, new COLORREF(0), alpha, (LAYERED_WINDOW_ATTRIBUTES_FLAGS)LwaAlpha);
+    }
+
+    /// <summary>
+    /// 获取窗口透明度（0.0 完全透明 ~ 1.0 完全不透明）。
+    /// 通过 GetLayeredWindowAttributes 读取当前透明度设置。
+    /// </summary>
+    /// <returns>当前透明度值，范围 0.0 到 1.0。</returns>
+    public float GetOpacity()
+    {
+        if (_hwnd.IsNull)
+        {
+            return 1.0f;
+        }
+
+        var exStyle = GetWindowExStyle();
+        if ((exStyle & WINDOW_EX_STYLE.WS_EX_LAYERED) == 0)
+        {
+            return 1.0f;
+        }
+
+        // 读取分层窗口属性
+        byte alpha = 255;
+        LAYERED_WINDOW_ATTRIBUTES_FLAGS flags = 0;
+        COLORREF crKey = default;
+        PInvoke.GetLayeredWindowAttributes(_hwnd, out crKey, MemoryMarshal.CreateSpan(ref alpha, 1), out flags);
+
+        // 如果未使用 LWA_ALPHA 标志，则完全不透明
+        if ((flags & (LAYERED_WINDOW_ATTRIBUTES_FLAGS)LwaAlpha) == 0)
+        {
+            return 1.0f;
+        }
+
+        return alpha / 255f;
     }
 
     /// <inheritdoc />

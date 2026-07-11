@@ -231,6 +231,39 @@ public static class RuntimeGenerator
             },
             zoomReset: function() {
               return window._wailsInvoke("window.zoomReset", {});
+            },
+            setOpacity: function(opacity) {
+              return window._wailsInvoke("window.setOpacity", { opacity: opacity });
+            },
+            getOpacity: function() {
+              return window._wailsInvoke("window.getOpacity", {});
+            }
+          },
+          // 系统托盘 API（对应 Tauri v2 的 tray API 和 Wails v3 的 SystemTray）
+          tray: {
+            setIcon: function(iconData) {
+              return window._wailsInvoke("tray.setIcon", { iconData: iconData });
+            },
+            setLabel: function(label) {
+              return window._wailsInvoke("tray.setLabel", { label: label });
+            },
+            setMenu: function(menu) {
+              return window._wailsInvoke("tray.setMenu", { menu: menu });
+            },
+            setTooltip: function(tooltip) {
+              return window._wailsInvoke("tray.setTooltip", { tooltip: tooltip });
+            },
+            destroy: function() {
+              return window._wailsInvoke("tray.destroy", {});
+            },
+            isVisible: function() {
+              return window._wailsInvoke("tray.isVisible", {});
+            },
+            show: function() {
+              return window._wailsInvoke("tray.show", {});
+            },
+            hide: function() {
+              return window._wailsInvoke("tray.hide", {});
             }
           },
           // 应用级窗口管理 API（对应 Tauri v2 的 getCurrentWindow / getAllWindows）
@@ -246,6 +279,9 @@ public static class RuntimeGenerator
             },
             getById: function(id) {
               return window._wailsInvoke("windows.getById", { id: id });
+            },
+            emit: function(eventName, data, targetWindowId) {
+              return window._wailsInvoke("windows.emit", { name: eventName, data: data, targetWindowId: targetWindowId || null });
             }
           },
           screen: {
@@ -322,6 +358,12 @@ public static class RuntimeGenerator
             },
             getAccentColor: function() {
               return window._wailsInvoke("application.getAccentColor", {});
+            },
+            setTheme: function(theme) {
+              return window._wailsInvoke("application.setTheme", { theme: theme });
+            },
+            onThemeChanged: function(callback) {
+              return window._wailsInvoke("application.onThemeChanged", { callback: callback });
             }
           }
         };

@@ -330,6 +330,19 @@ public class WebviewWindow
     public void PrintToPDF(string path, PrintToPdfOptions? options) => ImplRequired.PrintToPDF(path, options);
 
     /// <summary>
+    /// 设置窗口透明度（0.0 完全透明 ~ 1.0 完全不透明）。
+    /// 对应 Wails v3 的 window.setOpacity 和 Tauri v2 的 window.setAlpha。
+    /// </summary>
+    /// <param name="opacity">透明度值，范围 0.0 到 1.0。</param>
+    public void SetOpacity(float opacity) => ImplRequired.SetOpacity(opacity);
+
+    /// <summary>
+    /// 获取窗口透明度（0.0 完全透明 ~ 1.0 完全不透明）。
+    /// </summary>
+    /// <returns>当前透明度值。</returns>
+    public float GetOpacity() => ImplRequired.GetOpacity();
+
+    /// <summary>
     /// 后退导航。
     /// </summary>
     public void GoBack() => ImplRequired.GoBack();

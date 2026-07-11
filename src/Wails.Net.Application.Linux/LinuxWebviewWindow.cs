@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Gtk;
 using WebKit;
 using Wails.Net.Application.Menus;
@@ -15,6 +16,37 @@ namespace Wails.Net.Application.Platform;
 /// </summary>
 public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
 {
+    /// <summary>
+    /// 原生 gdk_file_list_get_files 函数，从 GdkFileList 取出 GFile* 链表。
+    /// GirCore 0.8.0 未生成此方法的托管包装，需手动 P/Invoke。
+    /// </summary>
+    /// <param name="fileList">GdkFileList* 原生指针。</param>
+    /// <returns>返回 GSList* 链表，包含 GFile* 指针。</returns>
+    [DllImport("gtk-4", EntryPoint = "gdk_file_list_get_files")]
+    private static extern IntPtr GdkFileListGetFiles(IntPtr fileList);
+
+    /// <summary>
+    /// 原生 g_file_get_path 函数，从 GFile* 取出本地路径字符串。
+    /// </summary>
+    /// <param name="file">GFile* 原生指针。</param>
+    /// <returns>返回新分配的 UTF-8 路径字符串，调用者需用 g_free 释放。</returns>
+    [DllImport("gio-2.0", EntryPoint = "g_file_get_path")]
+    private static extern IntPtr GFileGetPath(IntPtr file);
+
+    /// <summary>
+    /// 原生 g_free 函数，释放 GLib 分配的内存。
+    /// </summary>
+    /// <param name="ptr">待释放的内存指针。</param>
+    [DllImport("glib-2.0", EntryPoint = "g_free")]
+    private static extern void GFree(IntPtr ptr);
+
+    /// <summary>
+    /// 原生 g_slist_free 函数，释放 GSList 链表结构。
+    /// </summary>
+    /// <param name="slist">GSList* 原生指针。</param>
+    [DllImport("glib-2.0", EntryPoint = "g_slist_free")]
+    private static extern void GSlistFree(IntPtr slist);
+
     /// <summary>
     /// 窗口 ID。
     /// </summary>
@@ -280,7 +312,7 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     /// <summary>
     /// 设置文件拖放目标，使窗口能够接收文件拖放操作。
     /// GTK4 使用 <see cref="Gtk.DropTarget"/> 替代 GTK3 的 drag-data-received 信号。
-    /// 接受 <c>text/uri-list</c> 格式（文件 URI 列表），拖放时解析文件路径并触发
+    /// 使用 GdkFileList 的 GType 创建 DropTarget，拖放时解析文件路径并触发
     /// <see cref="WindowEventType.WindowFileDropped"/> 事件。
     /// 对应 Wails v3 Go 版本 webview_window_linux.go 中的 drag-data-received 信号处理。
     /// </summary>
@@ -291,9 +323,8 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
             return;
         }
 
-        // 创建 DropTarget，接受 text/uri-list 格式（文件 URI 列表）。
-        var formats = Gdk.ContentFormats.New(["text/uri-list"]);
-        var dropTarget = Gtk.DropTarget.New(formats, Gdk.DragAction.Copy);
+        // 使用 GdkFileList 的 GType 创建 DropTarget，接受文件列表拖放。
+        var dropTarget = Gtk.DropTarget.New(Gdk.FileList.GetGType(), Gdk.DragAction.Copy);
         dropTarget.OnDrop += OnFileDrop;
 
         // 将 DropTarget 作为事件控制器附加到窗口。
@@ -303,35 +334,56 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     /// <summary>
     /// 处理文件拖放事件，从 <see cref="Gdk.FileList"/> 提取文件路径并触发
     /// <see cref="WindowEventType.WindowFileDropped"/> 事件。
+    /// GirCore 0.8.0 的 Gdk.FileList 未公开 GetFiles 方法，需通过 P/Invoke 调用
+    /// 原生 <c>gdk_file_list_get_files()</c> 获取 GSList，再遍历 GFile* 调用
+    /// <c>g_file_get_path()</c> 提取本地路径。
     /// </summary>
     /// <param name="sender">触发事件的对象。</param>
     /// <param name="args">拖放事件参数，包含封装 <see cref="Gdk.FileList"/> 的值。</param>
     /// <returns>返回 true 表示已处理拖放。</returns>
     private bool OnFileDrop(Gtk.DropTarget sender, Gtk.DropTarget.DropSignalArgs args)
     {
-        // 从信号参数值中提取 Gdk.FileList。
-        if (!args.Value.Holds(typeof(Gdk.FileList)))
+        // 从 Value 中取出 Gdk.FileList 的原始指针。
+        // GObject.Value.GetBoxed() 返回 IntPtr，对应 GdkFileList* 原生指针。
+        IntPtr fileListPtr = args.Value.GetBoxed();
+        if (fileListPtr == IntPtr.Zero)
         {
             return false;
         }
 
-        var fileList = (Gdk.FileList)args.Value.Extract();
-        var files = fileList.GetFiles();
-        if (files is null)
+        // 调用原生 gdk_file_list_get_files() 获取 GSList*（GFile* 链表）。
+        IntPtr slistPtr = GdkFileListGetFiles(fileListPtr);
+        if (slistPtr == IntPtr.Zero)
         {
             return false;
         }
 
-        // 遍历文件列表，提取本地文件路径。
+        // GSList 结构为 { gpointer data; GSList *next; }，手动遍历。
         var paths = new List<string>();
-        foreach (var file in files)
+        IntPtr current = slistPtr;
+        while (current != IntPtr.Zero)
         {
-            var path = file?.GetPath();
-            if (!string.IsNullOrEmpty(path))
+            IntPtr filePtr = Marshal.ReadIntPtr(current);
+            if (filePtr != IntPtr.Zero)
             {
-                paths.Add(path);
+                IntPtr pathPtr = GFileGetPath(filePtr);
+                if (pathPtr != IntPtr.Zero)
+                {
+                    string path = Marshal.PtrToStringUTF8(pathPtr) ?? string.Empty;
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        paths.Add(path);
+                    }
+                    // g_file_get_path 返回新分配的字符串，需要释放。
+                    GFree(pathPtr);
+                }
             }
+            // next 字段位于 data 之后，偏移量等于指针大小。
+            current = Marshal.ReadIntPtr(current, IntPtr.Size);
         }
+
+        // 释放 GSList 链表结构本身（data 指针不释放，由 GFile 持有）。
+        GSlistFree(slistPtr);
 
         if (paths.Count == 0)
         {
@@ -1386,6 +1438,31 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
                 _window.RemoveCssClass("translucent");
             }
         }
+    }
+
+    /// <inheritdoc />
+    public void SetOpacity(float opacity)
+    {
+        if (_window is null || !OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        // GTK4 通过 set_opacity 设置窗口整体透明度（0.0-1.0）。
+        // 对应 Wails v3 的 window.setOpacity 和 Tauri v2 的 window.setAlpha。
+        opacity = Math.Max(0f, Math.Min(1f, opacity));
+        _window.SetOpacity(opacity);
+    }
+
+    /// <inheritdoc />
+    public float GetOpacity()
+    {
+        if (_window is null || !OperatingSystem.IsLinux())
+        {
+            return 1.0f;
+        }
+
+        return (float)_window.GetOpacity();
     }
 
     /// <inheritdoc />

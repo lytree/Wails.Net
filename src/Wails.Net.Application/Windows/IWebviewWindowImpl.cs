@@ -450,6 +450,27 @@ public interface IWebviewWindowImpl
     }
 
     /// <summary>
+    /// 设置窗口透明度（0.0 完全透明 ~ 1.0 完全不透明）。
+    /// 对应 Wails v3 的 window.setOpacity 和 Tauri v2 的 window.setAlpha。
+    /// 默认实现为空操作，平台实现可重写以提供实际透明度控制。
+    /// </summary>
+    /// <param name="opacity">透明度值，范围 0.0 到 1.0。</param>
+    void SetOpacity(float opacity)
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 获取窗口透明度（0.0 完全透明 ~ 1.0 完全不透明）。
+    /// 默认实现返回 1.0（完全不透明），平台实现可重写。
+    /// </summary>
+    /// <returns>当前透明度值。</returns>
+    float GetOpacity()
+    {
+        return 1.0f;
+    }
+
+    /// <summary>
     /// 设置标题栏样式（字符串重载）。
     /// </summary>
     /// <param name="style">标题栏样式字符串。</param>
