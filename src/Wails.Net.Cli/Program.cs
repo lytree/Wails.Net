@@ -40,6 +40,9 @@ public static class Program
         root.Subcommands.Add(CleanCommand.Create());
         root.Subcommands.Add(InfoCommand.Create());
         root.Subcommands.Add(IconCommand.Create());
+        root.Subcommands.Add(SignerCommand.Create());
+        root.Subcommands.Add(PlatformCommand.Create());
+        root.Subcommands.Add(SelfUpdateCommand.Create());
         return root;
     }
 }
