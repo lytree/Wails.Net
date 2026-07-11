@@ -55,16 +55,23 @@ public sealed class DesktopApplicationBuilder
         // 注册 Wails.Net 核心管理器（EventProcessor、BindingManager、WindowManager 等）和内置服务
         Services.AddWailsCore();
 
-        // 注册 Application 为工厂单例，从 DesktopHostOptions 映射字段
-        Services.AddSingleton<Application>(sp =>
+        // 注册 ApplicationOptions 为工厂单例，从 DesktopHostOptions 映射字段
+        // 平台应用（如 WindowsPlatformApp）通过构造函数注入此实例
+        Services.AddSingleton(sp =>
         {
             var desktopOpts = sp.GetRequiredService<IOptions<DesktopHostOptions>>().Value;
-            var options = new ApplicationOptions
+            return new ApplicationOptions
             {
                 Name = desktopOpts.ApplicationName,
                 SingleInstance = desktopOpts.SingleInstance,
                 Frameless = desktopOpts.Window.Frameless,
             };
+        });
+
+        // 注册 Application 为工厂单例，复用已注册的 ApplicationOptions
+        Services.AddSingleton<Application>(sp =>
+        {
+            var options = sp.GetRequiredService<ApplicationOptions>();
             return new Application(options);
         });
 
