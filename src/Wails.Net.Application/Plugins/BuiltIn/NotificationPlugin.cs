@@ -33,5 +33,25 @@ public class NotificationPlugin : IPlugin
             var service = ctx.Services.GetService<NotificationService>();
             service?.SendNotification(title, body);
         }));
+
+        // 请求通知权限。简化实现下始终返回 true（已授权）。
+        context.Commands.MapCommand("notification.requestPermission", (Func<ICommandContext, bool>)(ctx => true));
+
+        // 查询通知权限是否已授予。简化实现下始终返回 true。
+        context.Commands.MapCommand("notification.isPermissionGranted", (Func<ICommandContext, bool>)(ctx => true));
+
+        // 取消指定 ID 的通知，返回是否取消成功。
+        context.Commands.MapCommand("notification.cancel", (Func<ICommandContext, string, bool>)((ctx, id) =>
+        {
+            var service = ctx.Services.GetService<NotificationService>();
+            return service?.CancelNotification(id) ?? false;
+        }));
+
+        // 显示通知并返回通知 ID，可用于后续取消操作。
+        context.Commands.MapCommand("notification.showWithId", (Func<ICommandContext, string, string, string>)((ctx, title, body) =>
+        {
+            var service = ctx.Services.GetService<NotificationService>();
+            return service?.ShowNotification(title, body, null) ?? string.Empty;
+        }));
     }
 }

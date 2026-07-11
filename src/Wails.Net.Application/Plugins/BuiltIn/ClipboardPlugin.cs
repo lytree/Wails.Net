@@ -39,5 +39,29 @@ public class ClipboardPlugin : IPlugin
             var app = ctx.Services.GetService<Application>();
             app?.ClipboardManager?.SetText(text);
         }));
+
+        context.Commands.MapCommand("clipboard.getHTML", (Func<ICommandContext, string>)(ctx =>
+            ctx.Services.GetService<Application>()?.ClipboardManager?.GetHTML() ?? string.Empty));
+
+        context.Commands.MapCommand("clipboard.setHTML", (Action<ICommandContext, string, string>)((ctx, html, fallbackText) =>
+        {
+            var app = ctx.Services.GetService<Application>();
+            app?.ClipboardManager?.SetHTML(html, fallbackText);
+        }));
+
+        context.Commands.MapCommand("clipboard.getImage", (Func<ICommandContext, byte[]?>)(ctx =>
+            ctx.Services.GetService<Application>()?.ClipboardManager?.GetImage()));
+
+        context.Commands.MapCommand("clipboard.setImage", (Action<ICommandContext, byte[]>)((ctx, imageData) =>
+        {
+            var app = ctx.Services.GetService<Application>();
+            app?.ClipboardManager?.SetImage(imageData);
+        }));
+
+        context.Commands.MapCommand("clipboard.clear", (Action<ICommandContext>)(ctx =>
+        {
+            var app = ctx.Services.GetService<Application>();
+            app?.ClipboardManager?.Clear();
+        }));
     }
 }
