@@ -726,19 +726,78 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     /// <inheritdoc />
     public void StartDrag()
     {
-        // GTK4 窗口拖动通过 Gdk.Toplevel.BeginMove 实现，需 GdkSurface 和 EventSequence。
-        // GirCore 0.8.0 未完整暴露 Gdk.Toplevel.BeginMove 的 NativeHandle 接口，
-        // 且 GTK4 的拖动通常由窗口管理器自动处理（点击标题栏拖动），
-        // 简化实现暂留空，由窗口管理器的默认行为接管。
+        // GTK4 窗口拖动通过 Gdk.Toplevel.BeginMove 实现。
+        // 对应 Go 版 webview_window_linux.go 中的 StartDrag。
+        // 需获取窗口的 GdkSurface（Toplevel）和默认指针设备，调用 BeginMove 触发窗口管理器移动操作。
+        if (_window is null || !OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        var surface = _window.GetSurface();
+        if (surface is null)
+        {
+            return;
+        }
+
+        var display = surface.GetDisplay();
+        if (display is null)
+        {
+            return;
+        }
+
+        var seat = display.GetDefaultSeat();
+        var device = seat?.GetPointer();
+        if (device is null)
+        {
+            return;
+        }
+
+        // 通过 Gdk.Internal.Toplevel 调用原生 gdk_toplevel_begin_move。
+        // button=0, x=0, y=0, timestamp=0 表示使用当前事件状态触发移动。
+        Gdk.Internal.Toplevel.BeginMove(
+            surface.Handle.DangerousGetHandle(),
+            device.Handle.DangerousGetHandle(),
+            0, 0, 0, 0);
     }
 
     /// <inheritdoc />
     public void StartResize()
     {
-        // GTK4 窗口调整大小通过 Gdk.Toplevel.BeginResize 实现，需 GdkSurface、edge 和 EventSequence。
-        // GirCore 0.8.0 未完整暴露 Gdk.Toplevel.BeginResize 的 NativeHandle 接口，
-        // 且 GTK4 的缩放通常由窗口管理器自动处理（拖拽窗口边框），
-        // 简化实现暂留空，由窗口管理器的默认行为接管。
+        // GTK4 窗口调整大小通过 Gdk.Toplevel.BeginResize 实现。
+        // 对应 Go 版 webview_window_linux.go 中的 StartResize。
+        // 需获取窗口的 GdkSurface（Toplevel）和默认指针设备，调用 BeginResize 触发窗口管理器调整大小操作。
+        if (_window is null || !OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        var surface = _window.GetSurface();
+        if (surface is null)
+        {
+            return;
+        }
+
+        var display = surface.GetDisplay();
+        if (display is null)
+        {
+            return;
+        }
+
+        var seat = display.GetDefaultSeat();
+        var device = seat?.GetPointer();
+        if (device is null)
+        {
+            return;
+        }
+
+        // 通过 Gdk.Internal.Toplevel 调用原生 gdk_toplevel_begin_resize。
+        // edge=SurfaceEdge.SouthEast 表示从右下角开始调整大小。
+        Gdk.Internal.Toplevel.BeginResize(
+            surface.Handle.DangerousGetHandle(),
+            Gdk.SurfaceEdge.SouthEast,
+            device.Handle.DangerousGetHandle(),
+            0, 0, 0, 0);
     }
 
     /// <inheritdoc />
@@ -1022,9 +1081,12 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     /// 设置窗口的应用菜单栏。
     /// 使用 GMenu 模型与 Gtk.PopoverMenuBar 实现 GTK4 菜单栏。
     /// 菜单栏插入到主容器 Box 的顶部，WebView 填充剩余空间。
+    /// 同时注入 ActionGroup，使 GMenu 中的 app.item{ID} 引用能解析到对应回调。
+    /// 对应 Go 版 application_linux_gtk3.go 中的菜单构建与 action 注入逻辑。
     /// </summary>
     /// <param name="menuModel">GMenu 模型实例，可为 null（移除菜单栏）。</param>
-    public void SetApplicationMenu(Gio.Menu? menuModel)
+    /// <param name="actionGroup">包含菜单项 action 的 SimpleActionGroup，可为 null。注入后 GMenu 的 app.item{ID} 引用可解析到对应 SimpleAction。</param>
+    public void SetApplicationMenu(Gio.Menu? menuModel, Gio.SimpleActionGroup? actionGroup)
     {
         if (!OperatingSystem.IsLinux() || _mainBox is null)
         {
@@ -1046,6 +1108,13 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         // 创建 PopoverMenuBar 并插入到主容器顶部。
         _appMenuBar = PopoverMenuBar.NewFromModel(menuModel);
         _mainBox.Prepend(_appMenuBar);
+
+        // 注入 ActionGroup，使 GMenu 中的 app.item{ID} 引用能解析到对应的 SimpleAction 回调。
+        // 对应 Go 版中 gtk_widget_insert_action_group(window, "app", actionGroup) 调用。
+        if (actionGroup is not null)
+        {
+            _window?.InsertActionGroup("app", actionGroup);
+        }
     }
 
     /// <inheritdoc />

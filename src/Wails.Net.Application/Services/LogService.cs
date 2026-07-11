@@ -56,6 +56,16 @@ public sealed class LogEntry
 }
 
 /// <summary>
+/// 自定义日志处理委托。
+/// 日志写入时依次调用所有已注册的处理器，可据此接入外部日志管线（如 ILogger）。
+/// </summary>
+/// <param name="level">日志级别字符串（Debug/Info/Warning/Error/Fatal）。</param>
+/// <param name="message">日志消息。</param>
+/// <param name="exception">异常实例，可为 null。</param>
+/// <param name="fields">结构化字段字典，可为 null。</param>
+public delegate void LogHandler(string level, string message, Exception? exception, IReadOnlyDictionary<string, object?>? fields);
+
+/// <summary>
 /// 日志服务，允许前端写入日志并支持级别过滤。
 /// 对应 Wails v3 Go 版本 pkg/services/log。
 /// 日志写入 System.Diagnostics.Trace 并可选写入文件。
@@ -76,6 +86,12 @@ public class LogService : IServiceStartup, IServiceShutdown
     /// 日志文件写入器，为 null 时不写入文件。
     /// </summary>
     private StreamWriter? _writer;
+
+    /// <summary>
+    /// 自定义日志处理器列表。
+    /// 日志写入时依次调用所有已注册的处理器。
+    /// </summary>
+    private readonly List<LogHandler> _handlers = new();
 
     /// <summary>
     /// 获取或设置最低日志级别，低于此级别的日志将被忽略。
@@ -185,6 +201,38 @@ public class LogService : IServiceStartup, IServiceShutdown
     public void Fatal(string message) => Log(LogLevel.Fatal, message);
 
     /// <summary>
+    /// 注册自定义日志处理器。
+    /// 日志写入时将依次调用所有已注册的处理器。
+    /// </summary>
+    /// <param name="handler">要注册的日志处理器。</param>
+    public void AddHandler(LogHandler handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        lock (_lock)
+        {
+            _handlers.Add(handler);
+        }
+    }
+
+    /// <summary>
+    /// 写入带结构化字段的日志。
+    /// 对应结构化日志模型（类似 ILogger 的 LogScope + Log 模式），
+    /// 字段字典会传递给所有已注册的 handler。
+    /// </summary>
+    /// <param name="level">日志级别字符串（Debug/Info/Warning/Error/Fatal）。</param>
+    /// <param name="message">日志消息。</param>
+    /// <param name="fields">结构化字段字典。</param>
+    public void LogStructured(string level, string message, Dictionary<string, object?> fields)
+    {
+        if (TryParseLevel(level, out var logLevel))
+        {
+            IReadOnlyDictionary<string, object?>? readOnlyFields =
+                fields is null ? null : new Dictionary<string, object?>(fields);
+            WriteLog(logLevel, message, readOnlyFields);
+        }
+    }
+
+    /// <summary>
     /// 获取所有已记录的日志条目（主要用于测试验证）。
     /// </summary>
     /// <returns>日志条目的只读列表。</returns>
@@ -203,6 +251,17 @@ public class LogService : IServiceStartup, IServiceShutdown
     /// <param name="message">日志消息。</param>
     private void Log(LogLevel level, string message)
     {
+        WriteLog(level, message, null);
+    }
+
+    /// <summary>
+    /// 写入结构化日志的核心实现，应用级别过滤并依次调用所有注册的 handler。
+    /// </summary>
+    /// <param name="level">日志级别。</param>
+    /// <param name="message">日志消息。</param>
+    /// <param name="fields">结构化字段字典，可为 null。</param>
+    private void WriteLog(LogLevel level, string message, IReadOnlyDictionary<string, object?>? fields)
+    {
         if (level < MinimumLevel)
         {
             return;
@@ -215,12 +274,28 @@ public class LogService : IServiceStartup, IServiceShutdown
             Timestamp = DateTime.UtcNow
         };
 
+        LogHandler[] handlersCopy;
         lock (_lock)
         {
             _entries.Add(entry);
             var formatted = $"[{entry.Timestamp:yyyy-MM-dd HH:mm:ss}] [{level}] {message}";
             Trace.WriteLine(formatted);
             _writer?.WriteLine(formatted);
+            handlersCopy = _handlers.ToArray();
+        }
+
+        // 在锁外调用 handler 以避免回调中再次写日志导致死锁
+        var levelStr = level.ToString();
+        foreach (var handler in handlersCopy)
+        {
+            try
+            {
+                handler(levelStr, message, null, fields);
+            }
+            catch
+            {
+                // handler 中的异常不应中断日志流程
+            }
         }
     }
 

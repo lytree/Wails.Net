@@ -68,6 +68,11 @@ public class AssetServer
     private readonly MiddlewareChain _middlewareChain = new();
 
     /// <summary>
+    /// 自定义资产读取器，为 null 时使用默认资源读取逻辑。
+    /// </summary>
+    private Func<string, Stream?>? _customAssetReader;
+
+    /// <summary>
     /// 获取资源服务器选项。
     /// </summary>
     public AssetOptions Options => _options;
@@ -98,6 +103,17 @@ public class AssetServer
     public void Use(IHttpMiddleware middleware)
     {
         _middlewareChain.Use(middleware);
+    }
+
+    /// <summary>
+    /// 设置自定义资产读取器。
+    /// 在 <see cref="ReadAssetCore" /> 中优先调用自定义读取器，返回非 null 则使用其结果。
+    /// </summary>
+    /// <param name="reader">自定义资产读取器，接收资源路径返回资源流。</param>
+    public void SetAssetReader(Func<string, Stream?> reader)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+        _customAssetReader = reader;
     }
 
     /// <summary>
@@ -403,12 +419,27 @@ public class AssetServer
 
     /// <summary>
     /// 核心资源读取方法，由派生类重写以提供具体的资源来源。
-    /// 默认实现返回 null，表示资源不存在。
+    /// 默认实现先调用自定义读取器（若已设置），返回非 null 则使用之；否则返回 null。
     /// </summary>
     /// <param name="path">请求的资源路径。</param>
     /// <returns>资源内容字节组；若资源不存在则返回 null。</returns>
     protected virtual byte[]? ReadAssetCore(string path)
     {
+        // 先调用自定义读取器，返回非 null 则使用之
+        if (_customAssetReader is not null)
+        {
+            var stream = _customAssetReader(path);
+            if (stream is not null)
+            {
+                using (stream)
+                using (var ms = new MemoryStream())
+                {
+                    stream.CopyTo(ms);
+                    return ms.ToArray();
+                }
+            }
+        }
+
         return null;
     }
 

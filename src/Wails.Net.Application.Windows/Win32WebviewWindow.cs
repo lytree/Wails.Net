@@ -352,6 +352,10 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         {
             throw new InvalidOperationException($"创建 Win32 窗口失败，窗口 ID: {_id}，错误码: {Marshal.GetLastWin32Error()}");
         }
+
+        // 启用文件拖放接收，使窗口能够收到 WM_DROPFILES 消息。
+        // 对应 Wails v3 Go 版本中的 DragAcceptFiles 调用。
+        PInvoke.DragAcceptFiles(_hwnd, true);
     }
 
     /// <summary>

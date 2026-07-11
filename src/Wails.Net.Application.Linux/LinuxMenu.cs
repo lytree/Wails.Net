@@ -61,6 +61,12 @@ public sealed class LinuxMenu : IMenuImpl, IDisposable
     /// </summary>
     public Gio.SimpleActionGroup? ActionGroup => _actionGroup;
 
+    /// <summary>
+    /// 获取 GMenu 模型实例，用于驱动 PopoverMenuBar 或应用菜单栏。
+    /// 模型中的菜单项通过 app.item{ID} 引用关联到 ActionGroup 中的 SimpleAction。
+    /// </summary>
+    public Gio.Menu? MenuModel => _menuModel;
+
     /// <inheritdoc />
     public void Show()
     {

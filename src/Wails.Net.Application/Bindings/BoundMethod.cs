@@ -45,6 +45,12 @@ public class BoundMethod
     public bool HasCancellationToken { get; }
 
     /// <summary>
+    /// 获取或设置方法调用的超时时间。为 null 表示不限制。
+    /// 仅对返回 Task 的异步方法生效，使用 CancellationTokenSource 配合 Task.WhenAny 实现超时控制。
+    /// </summary>
+    public TimeSpan? Timeout { get; set; }
+
+    /// <summary>
     /// 使用指定参数构造 BoundMethod 实例。
     /// </summary>
     /// <param name="fullName">方法全限定名。</param>
@@ -89,6 +95,20 @@ public class BoundMethod
             // 若方法返回 Task，则等待其完成
             if (result is Task task)
             {
+                // 若配置了超时，使用 CancellationTokenSource 配合 Task.WhenAny 实现超时控制
+                if (Timeout.HasValue)
+                {
+                    using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    timeoutCts.CancelAfter(Timeout.Value);
+                    var completed = await Task.WhenAny(task, Task.Delay(Timeout.Value, timeoutCts.Token));
+                    if (completed != task)
+                    {
+                        return ErrorResult(
+                            $"方法执行超时（{Timeout.Value.TotalMilliseconds}ms）",
+                            Errors.CallErrorKind.RuntimeError);
+                    }
+                }
+
                 await task;
                 // 尝试获取 Task<T>.Result
                 var resultProperty = result.GetType().GetProperty("Result");

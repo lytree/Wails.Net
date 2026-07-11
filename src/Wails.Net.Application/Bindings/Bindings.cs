@@ -149,6 +149,35 @@ public class BindingManager
     }
 
     /// <summary>
+    /// 为已绑定的方法注册别名。
+    /// 对应 Wails v3 Go 版本 bindings.go 中的 BindAliases 方法。
+    /// </summary>
+    /// <param name="instance">已绑定的实例。</param>
+    /// <param name="methodName">原方法名。</param>
+    /// <param name="aliases">别名列表。</param>
+    public void BindAliases(object instance, string methodName, params string[] aliases)
+    {
+        var type = instance.GetType();
+        var namespaceName = type.Namespace ?? "";
+        var className = type.Name ?? "";
+        var fullName = $"{namespaceName}.{className}.{methodName}";
+
+        if (!_boundMethods.TryGetValue(fullName, out var boundMethod))
+        {
+            throw new InvalidOperationException($"未找到名为 '{fullName}' 的绑定方法，无法注册别名");
+        }
+
+        foreach (var alias in aliases)
+        {
+            var aliasFullName = $"{namespaceName}.{className}.{alias}";
+            var aliasId = FNV1aHash(aliasFullName);
+
+            _boundMethods[aliasFullName] = boundMethod;
+            _boundByID[aliasId] = boundMethod;
+        }
+    }
+
+    /// <summary>
     /// 获取绑定方法的全限定名（Namespace.ClassName.MethodName）。
     /// </summary>
     /// <param name="methodInfo">方法反射信息。</param>

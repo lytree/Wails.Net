@@ -86,9 +86,16 @@ public class ApplicationOptions
     public List<string> Bind { get; set; } = new();
 
     /// <summary>
-    /// 资源服务器配置，暂用 object 类型。
+    /// 获取或设置资源服务器配置。
+    /// 对应 Wails v3 Go 版本 application_options.go 中的 AssetServer 配置。
     /// </summary>
-    public object? AssetServer { get; set; }
+    public AssetOptions? AssetServer { get; set; }
+
+    /// <summary>
+    /// 获取或设置应用的能力声明列表，用于权限控制。
+    /// 对应 Tauri v2 的 Capabilities 配置。
+    /// </summary>
+    public List<Capability> Capabilities { get; set; } = new();
 
     /// <summary>
     /// 关闭时执行的任务列表。

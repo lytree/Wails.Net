@@ -62,9 +62,10 @@ public sealed class LinuxPlatformApp : IPlatformApp
     private string? _singleInstanceLockPath;
 
     /// <summary>
-    /// 应用菜单的 GMenu 模型，由 SetApplicationMenu 构建。
+    /// 应用菜单的 LinuxMenu 实例，由 SetApplicationMenu 构建。
+    /// 包含 GMenu 模型与对应的 ActionGroup（含所有菜单项回调）。
     /// </summary>
-    private Gio.Menu? _appMenuModel;
+    private LinuxMenu? _appMenu;
 
     /// <summary>
     /// 构造 LinuxPlatformApp 实例。
@@ -316,49 +317,14 @@ public sealed class LinuxPlatformApp : IPlatformApp
     {
         if (!OperatingSystem.IsLinux() || menu is null)
         {
-            _appMenuModel = null;
+            _appMenu = null;
             return;
         }
 
-        // 通过 GMenu 模型构建应用菜单结构，对应 Go 版 application_linux_gtk3.go 中的菜单构建。
-        var model = Gio.Menu.New();
-        BuildGMenu(model, menu);
-        _appMenuModel = model;
-    }
-
-    /// <summary>
-    /// 递归构建 GMenu 模型，遍历菜单项并附加到目标模型。
-    /// </summary>
-    /// <param name="model">目标 GMenu 模型。</param>
-    /// <param name="menu">源菜单实例。</param>
-    private static void BuildGMenu(Gio.Menu model, Menu menu)
-    {
-        foreach (var item in menu.Items)
-        {
-            if (item.IsSeparator)
-            {
-                // 分隔符作为一个新的空段。
-                var section = Gio.Menu.New();
-                model.AppendSection(null, section);
-                continue;
-            }
-
-            var label = item.Label ?? string.Empty;
-
-            if (item.Items.Count > 0)
-            {
-                // 包含子项则作为子菜单附加。
-                var submenu = Gio.Menu.New();
-                BuildGMenu(submenu, item);
-                model.AppendSubmenu(label, submenu);
-            }
-            else
-            {
-                // 普通菜单项，action 名以菜单项 ID 派生。
-                var actionName = $"app.item{item.ID}";
-                model.Append(label, actionName);
-            }
-        }
+        // 通过 LinuxMenu 构建 GMenu 模型与 ActionGroup（含所有菜单项回调）。
+        // 对应 Go 版 application_linux_gtk3.go 中的菜单构建逻辑。
+        // LinuxMenu 同时创建 SimpleAction 并连接 OnActivate 回调，使菜单项点击可响应。
+        _appMenu = new LinuxMenu(menu);
     }
 
     /// <inheritdoc />
@@ -514,6 +480,12 @@ public sealed class LinuxPlatformApp : IPlatformApp
 
         var window = new LinuxWebviewWindow(id, options);
         _windows[id] = window;
+
+        // 若已设置应用菜单，将其应用到新窗口（注入 GMenu 模型与 ActionGroup）。
+        if (_appMenu is not null)
+        {
+            window.SetApplicationMenu(_appMenu.MenuModel, _appMenu.ActionGroup);
+        }
     }
 
     /// <inheritdoc />
