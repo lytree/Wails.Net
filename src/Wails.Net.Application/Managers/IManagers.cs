@@ -43,6 +43,12 @@ public interface IWindowManager
     /// </summary>
     /// <param name="id">窗口 ID。</param>
     void DestroyWindow(uint id);
+
+    /// <summary>
+    /// 获取当前活动窗口。
+    /// </summary>
+    /// <returns>当前活动窗口，无则 null。</returns>
+    WebviewWindow? GetActiveWindow();
 }
 
 /// <summary>
@@ -240,6 +246,13 @@ public interface IKeyBindingManager
     /// </summary>
     /// <param name="accelerator">快捷键描述。</param>
     void UnregisterKeyBinding(string accelerator);
+
+    /// <summary>
+    /// 处理全局热键触发。
+    /// 当平台层收到热键按下事件时调用此方法，由管理器分发到对应回调。
+    /// </summary>
+    /// <param name="hotkeyId">热键 ID。</param>
+    void HandleHotKey(int hotkeyId);
 }
 
 /// <summary>

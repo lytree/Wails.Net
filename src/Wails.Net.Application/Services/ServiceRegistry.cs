@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+
 namespace Wails.Net.Application.Services;
 
 /// <summary>
@@ -56,5 +58,18 @@ public class ServiceRegistry
     public void Clear()
     {
         _services.Clear();
+    }
+
+    /// <summary>
+    /// 将已注册的服务实例迁移到 <see cref="IServiceCollection"/>。
+    /// 所有服务以单例生命周期注册，使用服务的运行时类型作为服务类型。
+    /// </summary>
+    /// <param name="services">目标服务集合。</param>
+    public void CopyTo(IServiceCollection services)
+    {
+        foreach (var service in _services)
+        {
+            services.AddSingleton(service.GetType(), service);
+        }
     }
 }

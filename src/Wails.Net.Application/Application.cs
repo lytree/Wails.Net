@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Wails.Net.Application.Bindings;
 using Wails.Net.Application.Events;
 using Wails.Net.Application.Managers;
@@ -41,6 +42,12 @@ public class Application
     /// 传输层实例。
     /// </summary>
     private ITransport? _transport;
+
+    /// <summary>
+    /// 消息处理器实例，懒加载。
+    /// 用于 <see cref="HandleMessageFromFrontend"/> 解析和处理前端消息。
+    /// </summary>
+    private MessageProcessor? _messageProcessor;
 
     /// <summary>
     /// 资源服务器实例。
@@ -161,6 +168,85 @@ public class Application
         _windowManager = new WindowManager(platformApp);
         _dialogManager = new DialogManager(platformApp);
         _screenManager = new ScreenManager(platformApp);
+    }
+
+    /// <summary>
+    /// 从 DI 容器初始化管理器。
+    /// 尝试从 DI 获取已注册的管理器实例，替换 Application 内部的管理器。
+    /// 注意：<see cref="_events"/> 和 <see cref="_bindings"/> 为只读字段，无法从 DI 替换，
+    /// 保留 Application 创建的实例；但可对 <see cref="_events"/> 设置传输层监听器。
+    /// </summary>
+    /// <param name="serviceProvider">DI 容器。</param>
+    internal void InitializeFromServiceProvider(IServiceProvider serviceProvider)
+    {
+        // 平台依赖的管理器（非只读字段，可从 DI 替换）
+        var windowManager = serviceProvider.GetService<WindowManager>();
+        if (windowManager is not null)
+        {
+            _windowManager = windowManager;
+        }
+
+        var dialogManager = serviceProvider.GetService<DialogManager>();
+        if (dialogManager is not null)
+        {
+            _dialogManager = dialogManager;
+        }
+
+        var screenManager = serviceProvider.GetService<ScreenManager>();
+        if (screenManager is not null)
+        {
+            _screenManager = screenManager;
+        }
+
+        // 通过公共 Setter 注入的管理器（由平台特定代码注册到 DI）
+        var clipboardManager = serviceProvider.GetService<IClipboardManager>();
+        if (clipboardManager is not null)
+        {
+            ClipboardManager = clipboardManager;
+        }
+
+        var menuManager = serviceProvider.GetService<IMenuManager>();
+        if (menuManager is not null)
+        {
+            MenuManager = menuManager;
+        }
+
+        var systemTrayManager = serviceProvider.GetService<ISystemTrayManager>();
+        if (systemTrayManager is not null)
+        {
+            SystemTrayManager = systemTrayManager;
+        }
+
+        var keyBindingManager = serviceProvider.GetService<IKeyBindingManager>();
+        if (keyBindingManager is not null)
+        {
+            KeyBindingManager = keyBindingManager;
+        }
+
+        var browserManager = serviceProvider.GetService<IBrowserManager>();
+        if (browserManager is not null)
+        {
+            BrowserManager = browserManager;
+        }
+
+        var autostartManager = serviceProvider.GetService<IAutostartManager>();
+        if (autostartManager is not null)
+        {
+            AutostartManager = autostartManager;
+        }
+
+        var environmentManager = serviceProvider.GetService<IEnvironmentManager>();
+        if (environmentManager is not null)
+        {
+            EnvironmentManager = environmentManager;
+        }
+
+        // 连接传输层事件监听器到事件处理器（_events 为只读字段，仅设置监听器而非替换实例）
+        var listener = serviceProvider.GetService<IWailsEventListener>();
+        if (listener is not null)
+        {
+            _events.SetWailsEventListener(listener);
+        }
     }
 
     /// <summary>
@@ -615,6 +701,24 @@ public class Application
     {
         var eventName = KnownEvents.GetEventName(eventType);
         _events.Emit(eventName, null, windowId);
+    }
+
+    /// <summary>
+    /// 处理从前端 WebView 发来的消息。
+    /// 对应 Wails v3 Go 版本中的消息分发逻辑。
+    /// 将 JSON 消息委托给 <see cref="MessageProcessor"/> 解析并处理，
+    /// 支持 call、event、query、drag、contextmenu、window 等消息类型。
+    /// </summary>
+    /// <param name="message">JSON 格式的消息字符串。</param>
+    /// <returns>表示处理操作的异步任务。</returns>
+    public async Task HandleMessageFromFrontend(string message)
+    {
+        _messageProcessor ??= new MessageProcessor(_bindings, _events);
+        var parsed = _messageProcessor.ParseMessage(message);
+        if (parsed is not null)
+        {
+            await _messageProcessor.ProcessAsync(parsed);
+        }
     }
 
     /// <summary>

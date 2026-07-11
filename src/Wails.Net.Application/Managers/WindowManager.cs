@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform;
 using Wails.Net.Application.Windows;
+using Wails.Net.Events;
 
 namespace Wails.Net.Application.Managers;
 
@@ -51,7 +52,7 @@ public class WindowManager : IWindowManager
     public int Count => _windows.Count;
 
     /// <summary>
-    /// 创建新窗口。
+    /// 创建新窗口，并注册窗口关闭事件监听器以自动清理窗口列表。
     /// </summary>
     /// <param name="options">窗口选项。</param>
     /// <returns>新创建窗口的 ID。</returns>
@@ -65,6 +66,18 @@ public class WindowManager : IWindowManager
         {
             _windowNames[options.Name] = id;
         }
+
+        // 注册窗口关闭事件监听器，当窗口发出 WindowClosed 事件时自动从管理器中移除
+        window.On((uint)WindowEventType.WindowClosed, () =>
+        {
+            if (_windows.TryRemove(id, out _))
+            {
+                if (!string.IsNullOrEmpty(window.Name))
+                {
+                    _windowNames.TryRemove(window.Name, out _);
+                }
+            }
+        });
 
         // 通知平台应用创建窗口
         _platformApp?.CreateWebviewWindow(id, options);
@@ -103,6 +116,22 @@ public class WindowManager : IWindowManager
     public IReadOnlyList<WebviewWindow> GetAllWindows()
     {
         return _windows.Values.ToList().AsReadOnly();
+    }
+
+    /// <summary>
+    /// 获取当前活动窗口。
+    /// 若平台应用支持获取当前窗口 ID，则返回对应窗口；否则返回 null。
+    /// </summary>
+    /// <returns>当前活动窗口，无则 null。</returns>
+    public WebviewWindow? GetActiveWindow()
+    {
+        if (_platformApp is null)
+        {
+            return _windows.Values.FirstOrDefault();
+        }
+
+        var currentId = _platformApp.GetCurrentWindowId();
+        return GetWindow(currentId);
     }
 
     /// <summary>

@@ -3,7 +3,9 @@ using WebKit;
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Windows;
+using Wails.Net.Events;
 using Menu = Wails.Net.Application.Menus.Menu;
+using WailsApplication = Wails.Net.Application.Application;
 
 namespace Wails.Net.Application.Platform;
 
@@ -134,6 +136,16 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     private LinuxContextMenu? _contextMenu;
 
     /// <summary>
+    /// 主容器 Box，用于组合菜单栏与 WebView。
+    /// </summary>
+    private Box? _mainBox;
+
+    /// <summary>
+    /// 应用菜单栏实例，由 SetApplicationMenu 设置。
+    /// </summary>
+    private PopoverMenuBar? _appMenuBar;
+
+    /// <summary>
     /// 构造 LinuxWebviewWindow 实例并创建 GTK 窗口与 WebKit WebView。
     /// </summary>
     /// <param name="id">窗口 ID。</param>
@@ -149,6 +161,9 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
 
         CreateNativeWindow();
         CreateWebView();
+
+        // 连接 WebKit 信号，使 WebView 生命周期事件可观测。
+        ConnectWebViewSignals();
 
         // 加载初始 URL 或 HTML。
         if (!string.IsNullOrEmpty(options.URL))
@@ -209,11 +224,18 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
 
     /// <summary>
     /// 创建 WebKitGTK WebView 并设置为窗口子控件。
+    /// 使用垂直 Box 组合，使应用菜单栏可插入到 WebView 上方。
     /// </summary>
     private void CreateWebView()
     {
         _webView = WebView.New();
-        _window?.SetChild(_webView);
+
+        // 创建垂直 Box 作为主容器，菜单栏在顶部，WebView 填充剩余空间。
+        _mainBox = Box.New(Orientation.Vertical, 0);
+        _webView.SetHexpand(true);
+        _webView.SetVexpand(true);
+        _mainBox.Append(_webView);
+        _window?.SetChild(_mainBox);
 
         // 配置 WebView 设置。
         var settings = _webView.GetSettings();
@@ -221,6 +243,122 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         {
             settings.SetEnableJavascript(true);
             settings.SetEnableDeveloperExtras(true);
+        }
+    }
+
+    /// <summary>
+    /// 连接 WebKit WebView 的关键信号，使窗口生命周期事件可观测。
+    /// 包括加载状态、新窗口创建、关闭、上下文菜单、策略决策和标题变更。
+    /// </summary>
+    private void ConnectWebViewSignals()
+    {
+        if (_webView is null)
+        {
+            return;
+        }
+
+        _webView.OnLoadChanged += OnWebViewLoadChanged;
+        _webView.OnCreate += OnWebViewCreate;
+        _webView.OnClose += OnWebViewClose;
+        _webView.OnContextMenu += OnWebViewContextMenu;
+        _webView.OnDecidePolicy += OnWebViewDecidePolicy;
+        _webView.OnNotify += OnWebViewNotify;
+    }
+
+    /// <summary>
+    /// 处理 WebView 加载状态变化，分发 URL 开始/完成加载事件。
+    /// </summary>
+    /// <param name="sender">触发事件的 WebView。</param>
+    /// <param name="args">加载事件参数，包含 LoadEvent。</param>
+    private void OnWebViewLoadChanged(WebView sender, WebView.LoadChangedSignalArgs args)
+    {
+        var app = WailsApplication.Get();
+        if (app is null)
+        {
+            return;
+        }
+
+        switch (args.LoadEvent)
+        {
+            case LoadEvent.Started:
+            case LoadEvent.Redirected:
+                // 页面开始加载或重定向，分发 URL 开始加载事件。
+                app.HandlePlatformEvent((uint)ApplicationEventType.URLStartsLoading);
+                break;
+            case LoadEvent.Committed:
+                // 页面已提交，可注入运行时 JS。
+                break;
+            case LoadEvent.Finished:
+                // 页面加载完成，分发 URL 完成加载事件。
+                app.HandlePlatformEvent((uint)ApplicationEventType.URLFinishedLoading);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// 处理新窗口创建请求，返回 null 表示不创建新窗口。
+    /// </summary>
+    /// <param name="sender">触发事件的 WebView。</param>
+    /// <param name="args">创建事件参数，包含 NavigationAction。</param>
+    /// <returns>返回 null 表示不创建新窗口。</returns>
+    private Gtk.Widget OnWebViewCreate(WebView sender, WebView.CreateSignalArgs args)
+    {
+        // 返回 null! 表示不创建新窗口，由 WebKit 使用默认行为。
+        // GirCore 将 Widget 标记为 non-nullable，但 WebKitGTK 的 create 信号返回 NULL 是合法语义。
+        return null!;
+    }
+
+    /// <summary>
+    /// 处理 WebView 关闭事件，分发窗口即将关闭事件。
+    /// </summary>
+    /// <param name="sender">触发事件的 WebView。</param>
+    /// <param name="args">事件参数。</param>
+    private void OnWebViewClose(WebView sender, EventArgs args)
+    {
+        var app = WailsApplication.Get();
+        app?.DispatchWindowEvent(_id, (uint)WindowEventType.WindowClosing);
+    }
+
+    /// <summary>
+    /// 处理上下文菜单请求。
+    /// 返回 false 表示允许 WebKit 显示默认上下文菜单。
+    /// </summary>
+    /// <param name="sender">触发事件的 WebView。</param>
+    /// <param name="args">上下文菜单事件参数。</param>
+    /// <returns>返回 false 表示允许默认上下文菜单。</returns>
+    private bool OnWebViewContextMenu(WebView sender, WebView.ContextMenuSignalArgs args)
+    {
+        // 返回 false 允许 WebKit 显示默认上下文菜单。
+        // 若有自定义上下文菜单，可在此处弹出并返回 true。
+        return false;
+    }
+
+    /// <summary>
+    /// 处理导航策略决策，允许默认导航并阻止新窗口。
+    /// </summary>
+    /// <param name="sender">触发事件的 WebView。</param>
+    /// <param name="args">策略决策事件参数，包含 Decision 和 DecisionType。</param>
+    /// <returns>返回 true 表示已处理决策。</returns>
+    private bool OnWebViewDecidePolicy(WebView sender, WebView.DecidePolicySignalArgs args)
+    {
+        // 允许所有导航决策的默认处理。
+        args.Decision?.Use();
+        return true;
+    }
+
+    /// <summary>
+    /// 处理 GObject 属性变更通知，检测 title 属性变化并分发标题变更事件。
+    /// WebKit WebView 无独立的 OnNotifyTitle 信号，通过 OnNotify 检查 pspec 名实现。
+    /// </summary>
+    /// <param name="sender">触发事件的对象。</param>
+    /// <param name="args">通知事件参数，包含 Pspec。</param>
+    private void OnWebViewNotify(GObject.Object sender, GObject.Object.NotifySignalArgs args)
+    {
+        // 检查是否为 title 属性变化。
+        if (args.Pspec is not null && args.Pspec.GetName() == "title")
+        {
+            var app = WailsApplication.Get();
+            app?.DispatchWindowEvent(_id, (uint)WindowEventType.WindowTitleChanged);
         }
     }
 
@@ -588,13 +726,19 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     /// <inheritdoc />
     public void StartDrag()
     {
-        // GTK4 窗口拖动通过 Gdk.Toplevel.begin_move 处理，需事件控制器，简化实现暂留空。
+        // GTK4 窗口拖动通过 Gdk.Toplevel.BeginMove 实现，需 GdkSurface 和 EventSequence。
+        // GirCore 0.8.0 未完整暴露 Gdk.Toplevel.BeginMove 的 NativeHandle 接口，
+        // 且 GTK4 的拖动通常由窗口管理器自动处理（点击标题栏拖动），
+        // 简化实现暂留空，由窗口管理器的默认行为接管。
     }
 
     /// <inheritdoc />
     public void StartResize()
     {
-        // GTK4 窗口调整大小通过 Gdk.Toplevel.begin_resize 处理，需事件控制器，简化实现暂留空。
+        // GTK4 窗口调整大小通过 Gdk.Toplevel.BeginResize 实现，需 GdkSurface、edge 和 EventSequence。
+        // GirCore 0.8.0 未完整暴露 Gdk.Toplevel.BeginResize 的 NativeHandle 接口，
+        // 且 GTK4 的缩放通常由窗口管理器自动处理（拖拽窗口边框），
+        // 简化实现暂留空，由窗口管理器的默认行为接管。
     }
 
     /// <inheritdoc />
@@ -859,6 +1003,49 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     {
         // 窗口就绪后立即执行回调；GTK4 中窗口在 Present 后即可交互。
         callback();
+    }
+
+    /// <summary>
+    /// 注入 Wails 运行时 JavaScript 到 WebView。
+    /// 在页面加载完成后调用，注入运行时初始化脚本以建立前后端通信桥。
+    /// </summary>
+    /// <param name="js">要注入的 JavaScript 代码。</param>
+    public void InjectRuntimeJs(string js)
+    {
+        if (_webView is not null && !string.IsNullOrEmpty(js))
+        {
+            _ = _webView.EvaluateJavascriptAsync(js);
+        }
+    }
+
+    /// <summary>
+    /// 设置窗口的应用菜单栏。
+    /// 使用 GMenu 模型与 Gtk.PopoverMenuBar 实现 GTK4 菜单栏。
+    /// 菜单栏插入到主容器 Box 的顶部，WebView 填充剩余空间。
+    /// </summary>
+    /// <param name="menuModel">GMenu 模型实例，可为 null（移除菜单栏）。</param>
+    public void SetApplicationMenu(Gio.Menu? menuModel)
+    {
+        if (!OperatingSystem.IsLinux() || _mainBox is null)
+        {
+            return;
+        }
+
+        // 移除旧的菜单栏。
+        if (_appMenuBar is not null)
+        {
+            _mainBox.Remove(_appMenuBar);
+            _appMenuBar = null;
+        }
+
+        if (menuModel is null)
+        {
+            return;
+        }
+
+        // 创建 PopoverMenuBar 并插入到主容器顶部。
+        _appMenuBar = PopoverMenuBar.NewFromModel(menuModel);
+        _mainBox.Prepend(_appMenuBar);
     }
 
     /// <inheritdoc />

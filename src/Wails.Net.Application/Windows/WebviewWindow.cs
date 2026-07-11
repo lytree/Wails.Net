@@ -568,6 +568,8 @@ public class WebviewWindow
     /// 发射指定事件类型，触发所有已订阅的回调。
     /// 当事件类型为 <see cref="WindowEventType.WindowRuntimeReady"/> 时，
     /// 同时触发 <see cref="RuntimeReady"/> 事件。
+    /// 同时将事件传播到应用级 <see cref="Application.Events"/> 事件处理器，
+    /// 以便窗口事件能够被应用级订阅者接收。
     /// </summary>
     /// <param name="eventType">事件类型数值。</param>
     /// <param name="data">附加数据，可为 null。</param>
@@ -594,5 +596,10 @@ public class WebviewWindow
         {
             RuntimeReady?.Invoke();
         }
+
+        // 将窗口事件传播到应用级事件处理器，使窗口事件接入 EventProcessor。
+        // 通过 Application.Get() 获取全局应用实例，避免持有额外引用。
+        // 使用 KnownEvents.GetEventName 将事件类型数值转换为事件名称字符串。
+        Application.Get()?.Events?.Emit(KnownEvents.GetEventName(eventType), data, ID);
     }
 }

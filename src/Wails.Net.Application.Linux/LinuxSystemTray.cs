@@ -11,9 +11,21 @@ namespace Wails.Net.Application.Platform;
 /// 对应 Go 版 application_linux.go 中的 SystemTray。
 /// GTK4 移除了 Gtk.StatusIcon，本实现通过隐藏的 GtkWindow 模拟托盘行为：
 /// 创建无边框小窗口作为托盘容器，通过图标和弹出菜单提供交互。
+/// 使用 GestureClick 事件控制器处理鼠标点击事件：
+/// 左键点击触发窗口呈现（模拟托盘点击），右键点击弹出上下文菜单。
 /// </summary>
 public sealed class LinuxSystemTray : ISystemTrayImpl, IDisposable
 {
+    /// <summary>
+    /// GTK 鼠标左键按钮标识。
+    /// </summary>
+    private const int LeftButton = 1;
+
+    /// <summary>
+    /// GTK 鼠标右键按钮标识。
+    /// </summary>
+    private const int RightButton = 3;
+
     /// <summary>
     /// 模拟托盘的隐藏窗口实例。
     /// </summary>
@@ -23,6 +35,11 @@ public sealed class LinuxSystemTray : ISystemTrayImpl, IDisposable
     /// 托盘图标图片控件。
     /// </summary>
     private Image? _iconImage;
+
+    /// <summary>
+    /// 点击手势事件控制器，用于处理鼠标点击事件。
+    /// </summary>
+    private GestureClick? _clickGesture;
 
     /// <summary>
     /// 托盘标签。
@@ -67,6 +84,38 @@ public sealed class LinuxSystemTray : ISystemTrayImpl, IDisposable
 
         _iconImage = Image.New();
         _trayWindow.SetChild(_iconImage);
+
+        // 创建点击手势控制器并注册到窗口，监听所有鼠标按钮。
+        _clickGesture = GestureClick.New();
+        _clickGesture.SetButton(0);
+        _clickGesture.OnPressed += OnTrayPressed;
+        _trayWindow.AddController(_clickGesture);
+    }
+
+    /// <summary>
+    /// 处理托盘图标的鼠标按下事件。
+    /// 左键点击时呈现窗口（模拟托盘点击回调），右键点击时弹出上下文菜单。
+    /// </summary>
+    /// <param name="sender">事件发送者（GestureClick 实例）。</param>
+    /// <param name="args">按下事件参数，包含点击次数和坐标。</param>
+    private void OnTrayPressed(GestureClick sender, GObject.SignalArgs args)
+    {
+        if (_trayWindow is null)
+        {
+            return;
+        }
+
+        var button = sender.GetCurrentButton();
+        if (button == RightButton)
+        {
+            // 右键点击：弹出上下文菜单。
+            PopupMenu(0, 0);
+        }
+        else if (button == LeftButton)
+        {
+            // 左键点击：呈现窗口，模拟托盘点击回调。
+            _trayWindow.Present();
+        }
     }
 
     /// <inheritdoc />
@@ -137,6 +186,7 @@ public sealed class LinuxSystemTray : ISystemTrayImpl, IDisposable
         _trayWindow?.Destroy();
         _trayWindow = null;
         _iconImage = null;
+        _clickGesture = null;
 
         // 清理临时图标文件。
         CleanupTempFile(ref _iconTempPath);

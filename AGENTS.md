@@ -17,12 +17,23 @@
 | 领域 | 选型 | 说明 |
 |------|------|------|
 | 运行时 | .NET 10 (net10.0) | 不支持早期版本 |
+| **宿主** | Microsoft.Extensions.Hosting 10.0.0 | Generic Host 管理生命周期 |
+| **DI** | Microsoft.Extensions.DependencyInjection 10.0.0 | 依赖注入容器 |
+| **配置** | Microsoft.Extensions.Configuration 10.0.0 | appsettings.json 配置 |
+| **选项** | Microsoft.Extensions.Options 10.0.0 | IOptions\<T\> 强类型配置 |
+| **日志** | Microsoft.Extensions.Logging 10.0.0 | ILogger\<T\> 日志抽象 |
 | Windows Webview | Microsoft.Web.WebView2 1.0.3240.44 | WebView2 Runtime |
 | Win32 互操作 | Microsoft.Windows.CsWin32 0.3.298 | 源生成器，**禁止使用 PInvoke.\*** |
 | Linux GTK | GirCore 0.8.0 | **禁止使用 Xamarin.Forms、GtkSharp** |
 | CLI 解析 | System.CommandLine 2.0.9 | **禁止使用 McMaster.Extensions.CommandLineUtils** |
 | 测试框架 | TUnit 1.58.0 | **禁止使用 MSTest/xUnit/NUnit** |
 | 脚本语言 | F# (.fsx) | **严禁使用 Python (.py)** |
+
+### 1.1.1 架构融合策略
+
+- **Host/DI/Config/Logging** → 学 ASP.NET Core（Microsoft.Extensions.* 全栈）
+- **Runtime/Window/IPC** → 学 Wails v3（对象模型、IPC、多窗口、事件总线）
+- **Plugin/Security/Capability** → 学 Tauri v2（插件能力、权限模型、安全设计）
 
 ### 1.2 互操作策略
 

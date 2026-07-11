@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using Microsoft.Web.WebView2.Core;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Windows;
+using Wails.Net.Events;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Gdi;
@@ -67,6 +68,11 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     /// WM_DROPFILES 消息常量（0x0233），文件拖放时收到。
     /// </summary>
     private const uint WmDropFiles = 0x0233;
+
+    /// <summary>
+    /// WM_MOVE 消息常量（0x0003），窗口移动时收到。
+    /// </summary>
+    private const uint WmMove = 0x0003;
 
     /// <summary>
     /// WM_NCLBUTTONDOWN 消息常量（0x00A1），非客户区左键按下。
@@ -223,6 +229,11 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     /// 上下文菜单句柄，由 SetMenu 设置用于弹出式显示。
     /// </summary>
     private HMENU _contextMenu;
+
+    /// <summary>
+    /// 标记运行时 JS 是否已注入，避免重复注入。
+    /// </summary>
+    private bool _runtimeInjected;
 
     /// <summary>
     /// 构造 Win32WebviewWindow 实例并创建原生窗口。
@@ -443,6 +454,22 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
             // 设置调试模式。
             _webview.Settings.AreDevToolsEnabled = _options.ShowDevmodeEnabled;
 
+            // 注册 WebResourceRequested 过滤器，拦截 wails.localhost 的所有请求。
+            // 对应 Wails v3 Go 版本 webview_window_windows.go 中的 AddWebResourceRequestedFilter 调用。
+            _webview.AddWebResourceRequestedFilter(
+                "http://wails.localhost/*", CoreWebView2WebResourceContext.All);
+            _webview.AddWebResourceRequestedFilter(
+                "https://wails.localhost/*", CoreWebView2WebResourceContext.All);
+            _webview.WebResourceRequested += OnWebResourceRequested;
+
+            // 注册 WebMessageReceived 事件，接收前端 postMessage 消息。
+            // 对应 Wails v3 Go 版本中的 WebMessageReceived 事件处理。
+            _webview.WebMessageReceived += OnWebMessageReceived;
+
+            // 注册 NavigationCompleted 事件，导航完成后注入运行时 JS。
+            // 对应 Wails v3 Go 版本中的 NavigationCompleted 事件处理。
+            _webview.NavigationCompleted += OnNavigationCompleted;
+
             // 设置 URL（若有）。
             if (!string.IsNullOrEmpty(_options.URL))
             {
@@ -492,6 +519,241 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
 
         PInvoke.GetClientRect(_hwnd, out var rect);
         _controller.Bounds = new Rectangle(0, 0, rect.Width, rect.Height);
+    }
+
+    /// <summary>
+    /// 处理 WebView2 WebResourceRequested 事件。
+    /// 对应 Wails v3 Go 版本 webview_window_windows.go 中的 onWebResourceRequested。
+    /// 拦截 http(s)://wails.localhost/* 的请求：
+    /// - /wails/call、/wails/event、/wails/drag：转发到 MessageProcessor 进行 IPC 消息处理。
+    /// - 其他路径：由 AssetServer 提供静态资源服务。
+    /// </summary>
+    /// <param name="sender">事件发送者。</param>
+    /// <param name="args">WebResourceRequested 事件参数。</param>
+    private async void OnWebResourceRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs args)
+    {
+        var deferral = args.GetDeferral();
+        try
+        {
+            var uri = new Uri(args.Request.Uri);
+            var path = uri.AbsolutePath;
+            var method = args.Request.Method;
+            var app = Application.Get();
+
+            // IPC 消息端点：/wails/call、/wails/event、/wails/drag
+            if (method.Equals("POST", StringComparison.OrdinalIgnoreCase) &&
+                (path.Equals("/wails/call", StringComparison.OrdinalIgnoreCase) ||
+                 path.Equals("/wails/event", StringComparison.OrdinalIgnoreCase) ||
+                 path.Equals("/wails/drag", StringComparison.OrdinalIgnoreCase)))
+            {
+                string body = string.Empty;
+                if (args.Request.Content is { } contentStream)
+                {
+                    using var reader = new StreamReader(contentStream);
+                    body = await reader.ReadToEndAsync();
+                }
+
+                if (app is not null)
+                {
+                    await app.HandleMessageFromFrontend(body);
+                }
+
+                args.Response = _webview?.Environment.CreateWebResourceResponse(
+                    null, 200, "OK", "Content-Type: application/json\r\n");
+                return;
+            }
+
+            // 静态资源端点：转发给 AssetServer
+            var assetServer = app?.AssetServer;
+            if (assetServer is not null)
+            {
+                var assetPath = path.TrimStart('/');
+                if (string.IsNullOrEmpty(assetPath))
+                {
+                    assetPath = "index.html";
+                }
+
+                var content = await assetServer.ServeAsync(assetPath);
+                if (content is not null && content.Length > 0)
+                {
+                    var mimeType = assetServer.GetMimeType(path);
+                    var ms = new MemoryStream(content);
+                    args.Response = _webview?.Environment.CreateWebResourceResponse(
+                        ms, 200, "OK", $"Content-Type: {mimeType}\r\n");
+                    return;
+                }
+            }
+
+            // 无匹配资源：返回 404
+            args.Response = _webview?.Environment.CreateWebResourceResponse(
+                null, 404, "Not Found", string.Empty);
+        }
+        catch
+        {
+            // 异常时返回 500 错误响应
+            args.Response = _webview?.Environment.CreateWebResourceResponse(
+                null, 500, "Internal Server Error", string.Empty);
+        }
+        finally
+        {
+            deferral.Complete();
+        }
+    }
+
+    /// <summary>
+    /// 处理 WebView2 WebMessageReceived 事件。
+    /// 对应 Wails v3 Go 版本中的 onWebMessageReceived。
+    /// 接收前端通过 window.chrome.webview.postMessage() 发送的消息，
+    /// 转发到 Application.HandleMessageFromFrontend 进行 IPC 消息处理。
+    /// </summary>
+    /// <param name="sender">事件发送者。</param>
+    /// <param name="args">WebMessageReceived 事件参数。</param>
+    private async void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs args)
+    {
+        try
+        {
+            string? message = args.TryGetWebMessageAsString();
+            if (string.IsNullOrEmpty(message))
+            {
+                return;
+            }
+
+            var app = Application.Get();
+            if (app is not null)
+            {
+                await app.HandleMessageFromFrontend(message);
+            }
+        }
+        catch
+        {
+            // 消息处理异常时忽略，避免中断 WebView2 消息循环
+        }
+    }
+
+    /// <summary>
+    /// 处理 WebView2 NavigationCompleted 事件。
+    /// 对应 Wails v3 Go 版本中的 onNavigationCompleted。
+    /// 导航完成后注入运行时 JS 并触发 WindowRuntimeReady 事件。
+    /// </summary>
+    /// <param name="sender">事件发送者。</param>
+    /// <param name="args">NavigationCompleted 事件参数。</param>
+    private void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs args)
+    {
+        if (!args.IsSuccess || _webview is null)
+        {
+            return;
+        }
+
+        InjectRuntimeJs();
+
+        // 触发 WindowRuntimeReady 事件，通知应用层运行时已就绪。
+        // 对应 Wails v3 Go 版本中的 emit(WindowRuntimeReady) 调用。
+        Application.Get()?.DispatchWindowEvent(_id, (uint)WindowEventType.WindowRuntimeReady);
+    }
+
+    /// <summary>
+    /// 注入 Wails 运行时 JavaScript 代码到 WebView2。
+    /// 对应 Wails v3 Go 版本中的 injectRuntimeJs 方法。
+    /// 通过 Application.GenerateRuntimeJs 生成运行时代码并执行。
+    /// 仅注入一次，后续导航不重复注入。
+    /// </summary>
+    private void InjectRuntimeJs()
+    {
+        if (_runtimeInjected || _webview is null)
+        {
+            return;
+        }
+
+        var app = Application.Get();
+        if (app is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var js = app.GenerateRuntimeJs(false);
+            if (!string.IsNullOrEmpty(js))
+            {
+                _ = _webview.ExecuteScriptAsync(js);
+                _runtimeInjected = true;
+            }
+        }
+        catch
+        {
+            // 运行时注入失败时忽略，不影响窗口正常使用
+        }
+    }
+
+    /// <summary>
+    /// 向 WebView 前端发送消息。
+    /// 对应 Wails v3 Go 版本中的 postMessage 方法。
+    /// 后端通过此方法将消息推送到前端 JavaScript。
+    /// </summary>
+    /// <param name="message">要发送的消息字符串。</param>
+    public void PostMessageToWebView(string message)
+    {
+        _webview?.PostWebMessageAsString(message);
+    }
+
+    /// <summary>
+    /// DragQueryFileW 的手动 P/Invoke 声明。
+    /// CsWin32 源生成器无法生成此函数，因此使用手动 DllImport 作为回退。
+    /// 对应 Win32 shell32.dll 中的 DragQueryFileW 函数。
+    /// </summary>
+    /// <param name="hDrop">HDROP 句柄。</param>
+    /// <param name="iFile">文件索引；0xFFFFFFFF 时返回文件数量。</param>
+    /// <param name="lpszFile">接收文件路径的缓冲区；null 时返回路径长度。</param>
+    /// <param name="cch">缓冲区大小（字符数）。</param>
+    /// <returns>iFile 为 0xFFFFFFFF 时返回文件数量；否则返回路径长度或复制字符数。</returns>
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern unsafe uint DragQueryFileW(IntPtr hDrop, uint iFile, char* lpszFile, uint cch);
+
+    /// <summary>
+    /// DragFinish 的手动 P/Invoke 声明。
+    /// CsWin32 源生成器无法生成此函数，因此使用手动 DllImport 作为回退。
+    /// 对应 Win32 shell32.dll 中的 DragFinish 函数。
+    /// </summary>
+    /// <param name="hDrop">要释放的 HDROP 句柄。</param>
+    [DllImport("shell32.dll", SetLastError = true)]
+    private static extern void DragFinish(IntPtr hDrop);
+
+    /// <summary>
+    /// 解析 WM_DROPFILES 消息中的拖放文件列表。
+    /// 对应 Wails v3 Go 版本中的 parseDropFiles 方法。
+    /// 使用 Win32 DragQueryFileW 和 DragFinish API 获取文件路径数组。
+    /// </summary>
+    /// <param name="hDropPtr">HDROP 句柄值（来自 WM_DROPFILES 的 wParam）。</param>
+    /// <returns>拖放的文件路径数组。</returns>
+    private unsafe string[] ParseDropFiles(nint hDropPtr)
+    {
+        // iFile = 0xFFFFFFFF 时返回拖放文件数量
+        var count = DragQueryFileW(hDropPtr, 0xFFFFFFFF, null, 0);
+
+        var files = new string[count];
+        for (uint i = 0; i < count; i++)
+        {
+            // 获取文件路径长度（不含 null 终止符）
+            var length = DragQueryFileW(hDropPtr, i, null, 0);
+            if (length == 0)
+            {
+                continue;
+            }
+
+            // 获取文件路径
+            var buffer = new char[length + 1];
+            fixed (char* ptr = buffer)
+            {
+                DragQueryFileW(hDropPtr, i, ptr, (uint)buffer.Length);
+            }
+
+            files[i] = new string(buffer, 0, (int)length);
+        }
+
+        // 释放拖放数据句柄
+        DragFinish(hDropPtr);
+
+        return files;
     }
 
     /// <summary>
@@ -609,6 +871,26 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                     _instancesByHwnd.Remove((IntPtr)hWnd);
                 }
 
+                // 触发 WindowClosed 事件，通知应用层窗口已销毁。
+                // 对应 Wails v3 Go 版本中的 emit(WindowClosed) 调用。
+                if (instance is not null)
+                {
+                    Application.Get()?.DispatchWindowEvent(
+                        instance._id, (uint)WindowEventType.WindowClosed);
+                }
+
+                break;
+
+            case WmClose:
+                // 触发 WindowClosing 事件，通知应用层窗口即将关闭。
+                // 不拦截关闭操作，交由 DefWindowProc 完成默认销毁流程。
+                // 对应 Wails v3 Go 版本中的 emit(WindowClosing) 调用。
+                if (instance is not null)
+                {
+                    Application.Get()?.DispatchWindowEvent(
+                        instance._id, (uint)WindowEventType.WindowClosing);
+                }
+
                 break;
 
             case WmCommand:
@@ -631,8 +913,26 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                 return default;
 
             case WmSize:
-                // 窗口大小变化，同步 WebView2 边界
+                // 窗口大小变化，同步 WebView2 边界并触发 WindowResized 事件。
+                // 对应 Wails v3 Go 版本中的 emit(WindowResized) 调用。
                 instance?.UpdateBounds();
+                if (instance is not null)
+                {
+                    Application.Get()?.DispatchWindowEvent(
+                        instance._id, (uint)WindowEventType.WindowResized);
+                }
+
+                break;
+
+            case WmMove:
+                // 窗口移动，触发 WindowMoved 事件。
+                // 对应 Wails v3 Go 版本中的 emit(WindowMoved) 调用。
+                if (instance is not null)
+                {
+                    Application.Get()?.DispatchWindowEvent(
+                        instance._id, (uint)WindowEventType.WindowMoved);
+                }
+
                 break;
 
             case WmDpiChanged:
@@ -651,12 +951,22 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                 break;
 
             case WmHotkey:
-                // 全局热键：wParam 为热键 ID
-                // 简化实现：暂不处理
+                // 全局热键：wParam 为热键 ID，转发到快捷键绑定管理器处理。
+                // 对应 Wails v3 Go 版本中的 keybindings.HandleHotKey 调用。
+                Application.Get()?.KeyBindingManager?.HandleHotKey((int)wParam.Value);
                 break;
 
             case WmDropFiles:
-                // 文件拖放：暂不处理
+                // 文件拖放：解析文件列表并触发 WindowFileDropped 事件。
+                // wParam 为 HDROP 句柄，通过 DragQueryFileW 解析为文件路径数组。
+                // 对应 Wails v3 Go 版本中的 emit(WindowFileDropped, files) 调用。
+                if (instance is not null)
+                {
+                    var files = instance.ParseDropFiles((nint)wParam.Value);
+                    Application.Get()?.Events.Emit(
+                        KnownEvents.WindowFileDropped, files, instance._id);
+                }
+
                 break;
         }
 
