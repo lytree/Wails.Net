@@ -76,6 +76,29 @@ public sealed class WindowsClipboard : IClipboardImpl
     }
 
     /// <inheritdoc />
+    public void SetFiles(string[] files)
+    {
+        if (files is null || files.Length == 0)
+        {
+            return;
+        }
+
+        // WinForms Clipboard.SetFileDropList 要求 StringCollection。
+        // 内部通过 CF_HDROP 格式写入剪贴板。
+        var collection = new System.Collections.Specialized.StringCollection();
+        collection.AddRange(files);
+        WinFormsClipboard.SetFileDropList(collection);
+    }
+
+    /// <inheritdoc />
+    public string[] GetFiles()
+    {
+        return WinFormsClipboard.ContainsFileDropList()
+            ? WinFormsClipboard.GetFileDropList().OfType<string>().ToArray()
+            : Array.Empty<string>();
+    }
+
+    /// <inheritdoc />
     public void Clear()
     {
         WinFormsClipboard.Clear();

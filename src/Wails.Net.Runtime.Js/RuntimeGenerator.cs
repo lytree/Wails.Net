@@ -67,7 +67,8 @@ public static class RuntimeGenerator
 
     /// <summary>
     /// 生成 <c>window.wails</c> API 对象。
-    /// 包含绑定调用与事件订阅/发布的 API 接口。
+    /// 包含绑定调用、事件订阅/发布、窗口管理、屏幕、剪贴板、对话框命名空间。
+    /// 对应 Wails v3 Go 版本 internal/runtime/desktop.ts。
     /// </summary>
     /// <param name="options">运行时生成选项。</param>
     /// <returns>包含 <c>window.wails</c> API 对象的 JavaScript 代码字符串。</returns>
@@ -88,6 +89,95 @@ public static class RuntimeGenerator
             },
             emit: function(eventName, data) {
               return window._wailsInvoke("event.emit", { name: eventName, data: data });
+            }
+          },
+          window: {
+            setTitle: function(title) {
+              return window._wailsInvoke("window.setTitle", { title: title });
+            },
+            setSize: function(width, height) {
+              return window._wailsInvoke("window.setSize", { width: width, height: height });
+            },
+            setMinSize: function(width, height) {
+              return window._wailsInvoke("window.setMinSize", { width: width, height: height });
+            },
+            setMaxSize: function(width, height) {
+              return window._wailsInvoke("window.setMaxSize", { width: width, height: height });
+            },
+            setPosition: function(x, y) {
+              return window._wailsInvoke("window.setPosition", { x: x, y: y });
+            },
+            close: function() {
+              return window._wailsInvoke("window.close", {});
+            },
+            minimize: function() {
+              return window._wailsInvoke("window.minimize", {});
+            },
+            maximize: function() {
+              return window._wailsInvoke("window.maximize", {});
+            },
+            unminimize: function() {
+              return window._wailsInvoke("window.unminimize", {});
+            },
+            unmaximize: function() {
+              return window._wailsInvoke("window.unmaximize", {});
+            },
+            show: function() {
+              return window._wailsInvoke("window.show", {});
+            },
+            hide: function() {
+              return window._wailsInvoke("window.hide", {});
+            },
+            centre: function() {
+              return window._wailsInvoke("window.centre", {});
+            },
+            setAlwaysOnTop: function(onTop) {
+              return window._wailsInvoke("window.setAlwaysOnTop", { onTop: onTop });
+            },
+            setFullscreen: function(fullscreen) {
+              return window._wailsInvoke("window.setFullscreen", { fullscreen: fullscreen });
+            },
+            execJS: function(js) {
+              return window._wailsInvoke("window.execJS", { js: js });
+            }
+          },
+          screen: {
+            getAll: function() {
+              return window._wailsInvoke("screen.getAll", {});
+            }
+          },
+          clipboard: {
+            setText: function(text) {
+              return window._wailsInvoke("clipboard.setText", { text: text });
+            },
+            getText: function() {
+              return window._wailsInvoke("clipboard.getText", {});
+            },
+            setHTML: function(html, fallbackText) {
+              return window._wailsInvoke("clipboard.setHTML", { html: html, fallbackText: fallbackText });
+            },
+            getHTML: function() {
+              return window._wailsInvoke("clipboard.getHTML", {});
+            },
+            setFiles: function(files) {
+              return window._wailsInvoke("clipboard.setFiles", { files: files });
+            },
+            getFiles: function() {
+              return window._wailsInvoke("clipboard.getFiles", {});
+            }
+          },
+          dialog: {
+            openFile: function(options) {
+              return window._wailsInvoke("dialog.openFile", { options: options || {} });
+            },
+            saveFile: function(options) {
+              return window._wailsInvoke("dialog.saveFile", { options: options || {} });
+            },
+            message: function(title, message, type) {
+              return window._wailsInvoke("dialog.message", { title: title, message: message, type: type || "info" });
+            },
+            question: function(title, message, buttons) {
+              return window._wailsInvoke("dialog.question", { title: title, message: message, buttons: buttons || ["Yes", "No"] });
             }
           }
         };

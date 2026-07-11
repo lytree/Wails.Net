@@ -43,6 +43,20 @@ public interface IClipboardImpl
     byte[]? GetImage();
 
     /// <summary>
+    /// 设置剪贴板文件列表（对应 Win32 CF_HDROP）。
+    /// 对应 Wails v3 Go 版本 clipboard.go 中的 SetFiles。
+    /// </summary>
+    /// <param name="files">文件路径数组。</param>
+    void SetFiles(string[] files);
+
+    /// <summary>
+    /// 获取剪贴板文件列表。
+    /// 对应 Wails v3 Go 版本 clipboard.go 中的 GetFiles。
+    /// </summary>
+    /// <returns>文件路径数组，若剪贴板无文件则返回空数组。</returns>
+    string[] GetFiles();
+
+    /// <summary>
     /// 清空剪贴板内容。
     /// </summary>
     void Clear();

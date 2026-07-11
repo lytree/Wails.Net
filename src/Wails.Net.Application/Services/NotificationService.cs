@@ -64,12 +64,11 @@ public class NotificationService : IServiceStartup, IServiceShutdown
 
     /// <summary>
     /// 通知被点击时触发，参数为通知 ID。
-    /// 注意：简化实现下（msg.exe / notify-send）此事件不会被触发，
-    /// 仅在支持交互的平台上才会触发。
+    /// 注意：简化实现下（msg.exe / notify-send）原生通知不支持点击回调，
+    /// 通过 <see cref="TriggerNotificationClick"/> 方法可程序化触发此事件，
+    /// 例如前端通过 IPC 回调通知点击。
     /// </summary>
-#pragma warning disable CS0067
     public event Action<string>? NotificationClicked;
-#pragma warning restore CS0067
 
     /// <summary>
     /// 通知被关闭时触发，参数为通知 ID。
@@ -258,6 +257,28 @@ public class NotificationService : IServiceStartup, IServiceShutdown
                 .ToList()
                 .AsReadOnly();
         }
+    }
+
+    /// <summary>
+    /// 程序化触发通知点击事件。
+    /// 简化实现下（msg.exe / notify-send）原生通知不支持点击回调，
+    /// 前端可通过 IPC 调用此方法来模拟通知点击，触发 <see cref="NotificationClicked"/> 事件。
+    /// 对应 Wails v3 Go 版本中通过 NotificationActivation 回调触发的方式。
+    /// </summary>
+    /// <param name="id">通知 ID。</param>
+    /// <returns>若通知存在且事件已触发返回 true，否则返回 false。</returns>
+    public bool TriggerNotificationClick(string id)
+    {
+        lock (_lock)
+        {
+            if (!_notifications.ContainsKey(id))
+            {
+                return false;
+            }
+        }
+
+        NotificationClicked?.Invoke(id);
+        return true;
     }
 
     /// <summary>

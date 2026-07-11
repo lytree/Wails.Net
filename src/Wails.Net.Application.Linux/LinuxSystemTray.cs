@@ -26,6 +26,9 @@ public sealed class LinuxSystemTray : ISystemTrayImpl, IDisposable
     /// </summary>
     private const int RightButton = 3;
 
+    /// <inheritdoc />
+    public event Action? OnTrayClick;
+
     /// <summary>
     /// 模拟托盘的隐藏窗口实例。
     /// </summary>
@@ -113,8 +116,9 @@ public sealed class LinuxSystemTray : ISystemTrayImpl, IDisposable
         }
         else if (button == LeftButton)
         {
-            // 左键点击：呈现窗口，模拟托盘点击回调。
+            // 左键点击：呈现窗口，并触发 OnTrayClick 事件。
             _trayWindow.Present();
+            OnTrayClick?.Invoke();
         }
     }
 

@@ -38,6 +38,11 @@ public sealed class LinuxClipboard : IClipboardImpl
     private const string ImageTarget = "image/png";
 
     /// <summary>
+    /// 剪贴板文件 URI 列表 MIME 目标类型。
+    /// </summary>
+    private const string UriListTarget = "text/uri-list";
+
+    /// <summary>
     /// 设置剪贴板文本内容。
     /// 通过 xclip 或 xsel 将文本写入系统剪贴板。
     /// </summary>
@@ -150,6 +155,55 @@ public sealed class LinuxClipboard : IClipboardImpl
         {
             WriteWithXsel(emptyData);
         }
+    }
+
+    /// <summary>
+    /// 设置剪贴板文件列表。
+    /// 通过 xclip 设置 text/uri-list 目标，每行一个 file:// URI。
+    /// 对应 Wails v3 Go 版本 clipboard_linux.go 中的 SetFiles。
+    /// </summary>
+    /// <param name="files">文件路径数组。</param>
+    public void SetFiles(string[] files)
+    {
+        if (files is null || files.Length == 0)
+        {
+            return;
+        }
+
+        // 构建 text/uri-list 格式：每行一个 file:// URI，以换行结尾。
+        var uris = files.Select(f => new Uri(f).AbsoluteUri);
+        var uriList = string.Join("\n", uris) + "\n";
+        var data = Encoding.UTF8.GetBytes(uriList);
+        WriteWithXclip(UriListTarget, data);
+    }
+
+    /// <summary>
+    /// 获取剪贴板文件列表。
+    /// 从 text/uri-list 目标读取并解析 file:// URI。
+    /// 对应 Wails v3 Go 版本 clipboard_linux.go 中的 GetFiles。
+    /// </summary>
+    /// <returns>文件路径数组，若剪贴板无文件则返回空数组。</returns>
+    public string[] GetFiles()
+    {
+        var data = ReadWithXclip(UriListTarget);
+        if (data is null || data.Length == 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        var uriList = Encoding.UTF8.GetString(data);
+        var files = new List<string>();
+        foreach (var line in uriList.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+            {
+                // 将 file:// URI 转换为本地路径。
+                files.Add(Uri.UnescapeDataString(trimmed["file://".Length..]));
+            }
+        }
+
+        return files.ToArray();
     }
 
     /// <summary>

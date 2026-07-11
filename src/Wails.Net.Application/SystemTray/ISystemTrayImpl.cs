@@ -8,6 +8,12 @@ namespace Wails.Net.Application.SystemTray;
 public interface ISystemTrayImpl
 {
     /// <summary>
+    /// 托盘左键点击事件。
+    /// 对应 Wails v3 Go 版本 SystemTray.OnTrayClick。
+    /// </summary>
+    event Action? OnTrayClick;
+
+    /// <summary>
     /// 设置托盘图标。
     /// </summary>
     /// <param name="iconData">图标字节数据。</param>

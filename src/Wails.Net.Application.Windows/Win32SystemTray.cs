@@ -24,6 +24,9 @@ public sealed class Win32SystemTray : ISystemTrayImpl, IDisposable
     /// </summary>
     internal const uint WmTrayCallback = WindowsPlatformApp.WmApp + 0x1000;
 
+    /// <inheritdoc />
+    public event Action? OnTrayClick;
+
     /// <summary>
     /// 托盘图标 ID。
     /// </summary>
@@ -351,7 +354,8 @@ public sealed class Win32SystemTray : ISystemTrayImpl, IDisposable
                 result = (LRESULT)1;
                 return true;
             case WmLButtonUp:
-                // 左键点击：未来可触发自定义回调。
+                // 左键点击：触发 OnTrayClick 事件。
+                tray.OnTrayClick?.Invoke();
                 result = (LRESULT)1;
                 return true;
             default:

@@ -36,6 +36,15 @@ public class ServerClipboard : IClipboardImpl
     public byte[]? GetImage() => null;
 
     /// <inheritdoc />
+    public void SetFiles(string[] files)
+    {
+        // Server 模式下不支持设置剪贴板文件。
+    }
+
+    /// <inheritdoc />
+    public string[] GetFiles() => Array.Empty<string>();
+
+    /// <inheritdoc />
     public void Clear()
     {
         // Server 模式下不支持清空剪贴板。
