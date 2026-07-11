@@ -365,6 +365,84 @@ public static class RuntimeGenerator
             onThemeChanged: function(callback) {
               return window._wailsInvoke("application.onThemeChanged", { callback: callback });
             }
+          },
+          // 加密安全存储 API（对应 Tauri v2 的 @tauri-apps/plugin-stronghold）
+          stronghold: {
+            unlock: function(password, vaultPath) {
+              return window._wailsInvoke("stronghold.unlock", { password: password, vaultPath: vaultPath || null });
+            },
+            lock: function(vaultPath) {
+              return window._wailsInvoke("stronghold.lock", { vaultPath: vaultPath || null });
+            },
+            saveSecret: function(key, value, vaultPath) {
+              return window._wailsInvoke("stronghold.saveSecret", { key: key, value: value, vaultPath: vaultPath || null });
+            },
+            getSecret: function(key, vaultPath) {
+              return window._wailsInvoke("stronghold.getSecret", { key: key, vaultPath: vaultPath || null });
+            },
+            deleteSecret: function(key, vaultPath) {
+              return window._wailsInvoke("stronghold.deleteSecret", { key: key, vaultPath: vaultPath || null });
+            },
+            listKeys: function(vaultPath) {
+              return window._wailsInvoke("stronghold.listKeys", { vaultPath: vaultPath || null });
+            },
+            isUnlocked: function(vaultPath) {
+              return window._wailsInvoke("stronghold.isUnlocked", { vaultPath: vaultPath || null });
+            },
+            changePassword: function(oldPassword, newPassword, vaultPath) {
+              return window._wailsInvoke("stronghold.changePassword", { oldPassword: oldPassword, newPassword: newPassword, vaultPath: vaultPath || null });
+            }
+          },
+          // 文件系统范围持久化 API（对应 Tauri v2 的 @tauri-apps/plugin-persisted-scope）
+          scope: {
+            addPath: function(path, scopePath) {
+              return window._wailsInvoke("scope.addPath", { path: path, scopePath: scopePath || null });
+            },
+            removePath: function(path, scopePath) {
+              return window._wailsInvoke("scope.removePath", { path: path, scopePath: scopePath || null });
+            },
+            listPaths: function(scopePath) {
+              return window._wailsInvoke("scope.listPaths", { scopePath: scopePath || null });
+            },
+            clear: function(scopePath) {
+              return window._wailsInvoke("scope.clear", { scopePath: scopePath || null });
+            },
+            isAllowed: function(path, scopePath) {
+              return window._wailsInvoke("scope.isAllowed", { path: path, scopePath: scopePath || null });
+            },
+            save: function(scopePath) {
+              return window._wailsInvoke("scope.save", { scopePath: scopePath || null });
+            },
+            load: function(scopePath) {
+              return window._wailsInvoke("scope.load", { scopePath: scopePath || null });
+            }
+          },
+          // 嵌入式本地 HTTP 服务器 API（对应 Tauri v2 的 @tauri-apps/plugin-localhost）
+          localhost: {
+            start: function(port, rootDir) {
+              return window._wailsInvoke("localhost.start", { port: port, rootDir: rootDir || null });
+            },
+            stop: function(port) {
+              return window._wailsInvoke("localhost.stop", { port: port });
+            },
+            getUrl: function(port) {
+              return window._wailsInvoke("localhost.getUrl", { port: port });
+            },
+            isRunning: function(port) {
+              return window._wailsInvoke("localhost.isRunning", { port: port });
+            },
+            setRoot: function(port, rootDir) {
+              return window._wailsInvoke("localhost.setRoot", { port: port, rootDir: rootDir });
+            },
+            addRoute: function(port, route, method) {
+              return window._wailsInvoke("localhost.addRoute", { port: port, route: route, method: method });
+            },
+            removeRoute: function(port, route) {
+              return window._wailsInvoke("localhost.removeRoute", { port: port, route: route });
+            },
+            listRoutes: function(port) {
+              return window._wailsInvoke("localhost.listRoutes", { port: port });
+            }
           }
         };
         """;
