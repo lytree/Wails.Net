@@ -153,3 +153,16 @@ HDROP
 DragQueryFileW
 DragFinish
 DragAcceptFiles
+EnumWindows
+FindWindow
+FindWindowEx
+GetClassName
+GetWindowTextLength
+GetWindowThreadProcessId
+IsWindow
+GetProp
+SetProp
+RemoveProp
+GetParent
+GetAncestor
+EnumChildWindows

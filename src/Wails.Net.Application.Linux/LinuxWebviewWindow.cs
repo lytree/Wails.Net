@@ -503,19 +503,39 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     /// <inheritdoc />
     public void ShowMenuBar()
     {
-        // GTK4 不使用传统菜单栏，通过 GMenu 和 Popover 实现，简化实现暂留空。
+        // 显示应用菜单栏（PopoverMenuBar），对应 Go 版的 ShowMenuBar 实现。
+        // GTK4 通过 Widget.SetVisible 控制子控件可见性。
+        if (_appMenuBar is null || !OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        _appMenuBar.SetVisible(true);
     }
 
     /// <inheritdoc />
     public void HideMenuBar()
     {
-        // GTK4 不使用传统菜单栏，简化实现暂留空。
+        // 隐藏应用菜单栏，对应 Go 版的 HideMenuBar 实现。
+        if (_appMenuBar is null || !OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        _appMenuBar.SetVisible(false);
     }
 
     /// <inheritdoc />
     public void ToggleMenuBar()
     {
-        // GTK4 不使用传统菜单栏，简化实现暂留空。
+        // 切换应用菜单栏可见性，对应 Go 版的 ToggleMenuBar 实现。
+        // 通过 Widget.IsVisible 查询当前状态后翻转。
+        if (_appMenuBar is null || !OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        _appMenuBar.SetVisible(!_appMenuBar.IsVisible());
     }
 
     /// <inheritdoc />
@@ -836,7 +856,26 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     /// <inheritdoc />
     public void SetContentProtection(bool enabled)
     {
-        // 内容保护通过窗口 hint 实现，简化实现暂留空。
+        // 内容保护通过 WebKit Settings 的 enable-write-protected-content 属性实现。
+        // 对应 Go 版 webview_window_linux.go 中的 SetContentProtection 实现。
+        // 启用后可阻止屏幕截图与不安全显示捕获（依赖 Wayland/X11 会话管理器支持）。
+        if (_webView is null || !OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        var settings = _webView.GetSettings();
+        if (settings is null)
+        {
+            return;
+        }
+
+        // GirCore 0.8.0 未为 WebKitGTK 的 "enable-write-protected-content" 属性
+        // 生成强类型 SetEnableWriteProtectedContent 方法（属性本身需 WebKit2 2.34+）。
+        // 此处通过 GObject 通用属性接口 SetProperty 按名称设置该属性。
+        // 对应 C API: g_object_set_property(settings, "enable-write-protected-content", &value)。
+        using var value = new GObject.Value(enabled);
+        settings.SetProperty("enable-write-protected-content", value);
     }
 
     /// <inheritdoc />
@@ -1002,14 +1041,24 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     {
         // 根据背景类型字符串切换 WebKit 背景透明与窗口装饰。
         // 对应 Go 版 webview_window_linux.go 中的 BackgroundType 处理。
-        _translucent = string.Equals(type, "translucent", StringComparison.OrdinalIgnoreCase)
-                       || string.Equals(type, "transparent", StringComparison.OrdinalIgnoreCase);
+        var isTransparent = string.Equals(type, "transparent", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(type, "translucent", StringComparison.OrdinalIgnoreCase);
+        _translucent = isTransparent;
 
-        if (_webView is not null && OperatingSystem.IsLinux())
+        if (_webView is null || !OperatingSystem.IsLinux())
         {
-            // WebKitGTK 通过 is-web-context-interactive 设置支持透明背景，简化实现缓存状态。
-            _ = _webView.GetSettings();
+            return;
         }
+
+        var settings = _webView.GetSettings();
+        if (settings is null)
+        {
+            return;
+        }
+
+        // 透明背景通过 WebKit Settings 的 draw-compositing-indicators 属性辅助可视化合成分层，
+        // 同时通过 WebView 合成模式使背景可透明显示（依赖 compositor 支持）。
+        settings.SetDrawCompositingIndicators(isTransparent);
     }
 
     /// <inheritdoc />

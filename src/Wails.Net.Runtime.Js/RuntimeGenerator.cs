@@ -67,7 +67,7 @@ public static class RuntimeGenerator
 
     /// <summary>
     /// 生成 <c>window.wails</c> API 对象。
-    /// 包含绑定调用、事件订阅/发布、窗口管理、屏幕、剪贴板、对话框命名空间。
+    /// 包含绑定调用、事件订阅/发布、窗口管理、屏幕、剪贴板、对话框、菜单、应用命名空间。
     /// 对应 Wails v3 Go 版本 internal/runtime/desktop.ts。
     /// </summary>
     /// <param name="options">运行时生成选项。</param>
@@ -178,6 +178,43 @@ public static class RuntimeGenerator
             },
             question: function(title, message, buttons) {
               return window._wailsInvoke("dialog.question", { title: title, message: message, buttons: buttons || ["Yes", "No"] });
+            }
+          },
+          menu: {
+            setApplicationMenu: function(menu) {
+              return window._wailsInvoke("menu.setApplicationMenu", { menu: menu });
+            },
+            setContextMenu: function(menu) {
+              return window._wailsInvoke("menu.setContextMenu", { menu: menu });
+            },
+            updateMenuItem: function(id, properties) {
+              return window._wailsInvoke("menu.updateMenuItem", { id: id, properties: properties || {} });
+            },
+            popup: function(menu, x, y) {
+              return window._wailsInvoke("menu.popup", { menu: menu, x: x || 0, y: y || 0 });
+            }
+          },
+          application: {
+            quit: function() {
+              return window._wailsInvoke("application.quit", {});
+            },
+            hide: function() {
+              return window._wailsInvoke("application.hide", {});
+            },
+            show: function() {
+              return window._wailsInvoke("application.show", {});
+            },
+            getName: function() {
+              return window._wailsInvoke("application.getName", {});
+            },
+            setIcon: function(iconData) {
+              return window._wailsInvoke("application.setIcon", { iconData: iconData });
+            },
+            isDarkMode: function() {
+              return window._wailsInvoke("application.isDarkMode", {});
+            },
+            getAccentColor: function() {
+              return window._wailsInvoke("application.getAccentColor", {});
             }
           }
         };
