@@ -624,6 +624,94 @@ public interface IWebviewWindowImpl
     {
         // 默认空实现，平台实现可重写。
     }
+
+    /// <summary>
+    /// 设置窗口是否跳过任务栏（不在任务栏显示）。
+    /// 对应 Tauri v2 的 window.setSkipTaskbar(skip)。
+    /// 默认实现为空操作，平台实现可重写。
+    /// </summary>
+    /// <param name="skip">true 表示隐藏任务栏按钮。</param>
+    void SetSkipTaskbar(bool skip)
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 设置窗口是否忽略鼠标事件（点击穿透）。
+    /// 对应 Tauri v2 的 window.setIgnoreCursorEvents(ignore)。
+    /// 默认实现为空操作，平台实现可重写。
+    /// </summary>
+    /// <param name="ignore">true 表示鼠标事件穿透窗口。</param>
+    void SetIgnoreCursorEvents(bool ignore)
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 设置窗口视觉特效（Mica/Acrylic/BlurBehind 等）。
+    /// 对应 Tauri v2 的 window.setEffects(effects)。
+    /// 默认实现为空操作，Windows 11 平台实现通过 DwmSetWindowAttribute 提供实际功能。
+    /// </summary>
+    /// <param name="effects">窗口特效参数。</param>
+    void SetEffects(WindowEffects effects)
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 设置任务栏徽章计数。
+    /// 对应 Tauri v2 的 window.setBadgeCount(count)。
+    /// 默认实现为空操作，Windows 平台实现通过 ITaskbarList3.SetOverlayIcon 生成数字徽章。
+    /// </summary>
+    /// <param name="count">徽章计数值，0 表示清除。</param>
+    void SetBadgeCount(int count)
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 设置任务栏徽章文本。
+    /// 对应 Tauri v2 的 window.setBadgeLabel(label)。
+    /// 默认实现为空操作，Windows 平台实现通过 ITaskbarList3.SetOverlayIcon 生成文本徽章。
+    /// </summary>
+    /// <param name="label">徽章文本，null 或空字符串表示清除。</param>
+    void SetBadgeLabel(string? label)
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 设置窗口是否在所有工作区可见。
+    /// 对应 Tauri v2 的 window.setVisibleOnAllWorkspaces(visible)。
+    /// 默认实现为空操作，平台实现可重写。
+    /// </summary>
+    /// <param name="visible">true 表示在所有工作区可见。</param>
+    void SetVisibleOnAllWorkspaces(bool visible)
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 设置窗口边框颜色。
+    /// 对应 Tauri v2 的 window.setBorderColor(color)。
+    /// 默认实现为空操作，Windows 11 平台实现通过 DwmSetWindowAttribute。
+    /// </summary>
+    /// <param name="color">十六进制颜色字符串（如 #FF0000），null 表示恢复默认。</param>
+    void SetBorderColor(string? color)
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 设置是否启用文件拖放。
+    /// 对应 Tauri v2 的 window.setFileDropEnabled(enabled)。
+    /// 默认实现为空操作，平台实现可重写。
+    /// </summary>
+    /// <param name="enabled">true 表示启用文件拖放。</param>
+    void SetFileDropEnabled(bool enabled)
+    {
+        // 默认空实现，平台实现可重写。
+    }
 }
 
 /// <summary>
@@ -656,4 +744,67 @@ public enum TaskbarProgressState
     /// 暂停进度（TBPF_PAUSED），显示黄色进度条。
     /// </summary>
     Paused = 8,
+}
+
+/// <summary>
+/// 窗口视觉特效类型。
+/// 对应 Tauri v2 的 window.setEffects() 中的 effects 和 Wails v3 的窗口背景类型。
+/// </summary>
+public enum WindowEffect
+{
+    /// <summary>无特效（恢复正常窗口背景）。</summary>
+    None = 0,
+
+    /// <summary>
+    /// Mica 特效（Windows 11 22000+），亚克力云母材质背景。
+    /// 对应 DWMWA_SYSTEMBACKDROP_TYPE = DWMSBT_MAINWINDOW。
+    /// </summary>
+    Mica = 1,
+
+    /// <summary>
+    /// Acrylic 特效（Windows 11 22000+），亚克力模糊背景。
+    /// 对应 DWMWA_SYSTEMBACKDROP_TYPE = DWMSBT_TRANSIENTWINDOW。
+    /// </summary>
+    Acrylic = 2,
+
+    /// <summary>
+    /// 模糊背景特效（Windows 7+，已过时但兼容）。
+    /// 对应 DWMWA_SYSTEMBACKDROP_TYPE = DWMSBT_BLURBEHIND。
+    /// </summary>
+    BlurBehind = 3,
+
+    /// <summary>
+    /// Linux 透明背景（通过 GTK CSS 实现）。
+    /// </summary>
+    Transparent = 4,
+}
+
+/// <summary>
+/// 窗口视觉特效参数。
+/// 对应 Tauri v2 的 window.setEffects(effects) 参数。
+/// </summary>
+public sealed class WindowEffects
+{
+    /// <summary>
+    /// 特效类型。
+    /// </summary>
+    public WindowEffect Effect { get; set; } = WindowEffect.None;
+
+    /// <summary>
+    /// 特效状态（true 表示应用特效，false 表示移除）。
+    /// 对应 Tauri v2 的 effects.state。
+    /// </summary>
+    public bool State { get; set; } = true;
+
+    /// <summary>
+    /// 特效半径（用于模糊等效果），单位像素。
+    /// 对应 Tauri v2 的 effects.radius。
+    /// </summary>
+    public int Radius { get; set; }
+
+    /// <summary>
+    /// 背景色（十六进制颜色字符串，如 #80000000 表示半透明黑）。
+    /// 对应 Tauri v2 的 effects.color。
+    /// </summary>
+    public string? Color { get; set; }
 }

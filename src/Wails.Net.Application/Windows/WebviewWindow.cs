@@ -362,6 +362,72 @@ public class WebviewWindow
         => ImplRequired.SetOverlayIcon(iconBytes, description);
 
     /// <summary>
+    /// 设置窗口是否跳过任务栏（不在任务栏显示）。
+    /// 对应 Tauri v2 的 window.setSkipTaskbar(skip)。
+    /// </summary>
+    /// <param name="skip">true 表示隐藏任务栏按钮。</param>
+    public void SetSkipTaskbar(bool skip)
+        => ImplRequired.SetSkipTaskbar(skip);
+
+    /// <summary>
+    /// 设置窗口是否忽略鼠标事件（点击穿透）。
+    /// 对应 Tauri v2 的 window.setIgnoreCursorEvents(ignore)。
+    /// </summary>
+    /// <param name="ignore">true 表示鼠标事件穿透窗口。</param>
+    public void SetIgnoreCursorEvents(bool ignore)
+        => ImplRequired.SetIgnoreCursorEvents(ignore);
+
+    /// <summary>
+    /// 设置窗口视觉特效（Mica/Acrylic/BlurBehind 等）。
+    /// 对应 Tauri v2 的 window.setEffects(effects)。
+    /// 仅 Windows 11 22000+ 支持 Mica/Acrylic。
+    /// </summary>
+    /// <param name="effects">窗口特效参数。</param>
+    public void SetEffects(WindowEffects effects)
+        => ImplRequired.SetEffects(effects);
+
+    /// <summary>
+    /// 设置任务栏徽章计数。
+    /// 对应 Tauri v2 的 window.setBadgeCount(count)。
+    /// </summary>
+    /// <param name="count">徽章计数值，0 表示清除。</param>
+    public void SetBadgeCount(int count)
+        => ImplRequired.SetBadgeCount(count);
+
+    /// <summary>
+    /// 设置任务栏徽章文本。
+    /// 对应 Tauri v2 的 window.setBadgeLabel(label)。
+    /// </summary>
+    /// <param name="label">徽章文本，null 或空字符串表示清除。</param>
+    public void SetBadgeLabel(string? label)
+        => ImplRequired.SetBadgeLabel(label);
+
+    /// <summary>
+    /// 设置窗口是否在所有工作区可见。
+    /// 对应 Tauri v2 的 window.setVisibleOnAllWorkspaces(visible)。
+    /// </summary>
+    /// <param name="visible">true 表示在所有工作区可见。</param>
+    public void SetVisibleOnAllWorkspaces(bool visible)
+        => ImplRequired.SetVisibleOnAllWorkspaces(visible);
+
+    /// <summary>
+    /// 设置窗口边框颜色。
+    /// 对应 Tauri v2 的 window.setBorderColor(color)。
+    /// 仅 Windows 11 22000+ 支持。
+    /// </summary>
+    /// <param name="color">十六进制颜色字符串（如 #FF0000），null 表示恢复默认。</param>
+    public void SetBorderColor(string? color)
+        => ImplRequired.SetBorderColor(color);
+
+    /// <summary>
+    /// 设置是否启用文件拖放。
+    /// 对应 Tauri v2 的 window.setFileDropEnabled(enabled)。
+    /// </summary>
+    /// <param name="enabled">true 表示启用文件拖放。</param>
+    public void SetFileDropEnabled(bool enabled)
+        => ImplRequired.SetFileDropEnabled(enabled);
+
+    /// <summary>
     /// 后退导航。
     /// </summary>
     public void GoBack() => ImplRequired.GoBack();

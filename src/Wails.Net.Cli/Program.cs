@@ -39,6 +39,7 @@ public static class Program
         root.Subcommands.Add(VersionCommand.Create());
         root.Subcommands.Add(CleanCommand.Create());
         root.Subcommands.Add(InfoCommand.Create());
+        root.Subcommands.Add(IconCommand.Create());
         return root;
     }
 }

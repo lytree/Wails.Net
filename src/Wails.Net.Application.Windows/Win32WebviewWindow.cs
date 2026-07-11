@@ -2498,6 +2498,311 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         return _taskbarList;
     }
 
+    /// <summary>
+    /// DWMWA_SYSTEMBACKDROP_TYPE 属性索引（38），Windows 11 22000+ 用于设置 Mica/Acrylic 特效。
+    /// </summary>
+    private const uint DwmwaSystemBackdropType = 38;
+
+    /// <summary>
+    /// DWMWA_BORDER_COLOR 属性索引（34），Windows 11 22000+ 用于设置窗口边框颜色。
+    /// </summary>
+    private const uint DwmwaBorderColor = 34;
+
+    /// <summary>
+    /// WS_EX_TOOLWINDOW 扩展样式标志（0x00000080），使窗口不在任务栏显示。
+    /// </summary>
+    private const uint WsExToolWindow = 0x00000080;
+
+    /// <summary>
+    /// WS_EX_TRANSPARENT 扩展样式标志（0x00000020），使鼠标事件穿透窗口。
+    /// </summary>
+    private const uint WsExTransparent = 0x00000020;
+
+    /// <inheritdoc />
+    public void SetSkipTaskbar(bool skip)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        try
+        {
+            var exStyle = (uint)PInvoke.GetWindowLong(_hwnd, (WINDOW_LONG_PTR_INDEX)GwlExStyle);
+
+            if (skip)
+            {
+                exStyle |= WsExToolWindow;
+            }
+            else
+            {
+                exStyle &= ~WsExToolWindow;
+            }
+
+            PInvoke.SetWindowLong(_hwnd, (WINDOW_LONG_PTR_INDEX)GwlExStyle, (int)exStyle);
+
+            // 同步任务栏列表
+            var taskbar = GetTaskbarList();
+            if (taskbar is not null)
+            {
+                unsafe
+                {
+                    var hwndPtr = new IntPtr(_hwnd.Value);
+                    if (skip)
+                    {
+                        taskbar.DeleteTab(hwndPtr);
+                    }
+                    else
+                    {
+                        taskbar.AddTab(hwndPtr);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // 静默处理
+        }
+    }
+
+    /// <inheritdoc />
+    public void SetIgnoreCursorEvents(bool ignore)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        try
+        {
+            var exStyle = (uint)PInvoke.GetWindowLong(_hwnd, (WINDOW_LONG_PTR_INDEX)GwlExStyle);
+
+            if (ignore)
+            {
+                exStyle |= WsExTransparent;
+            }
+            else
+            {
+                exStyle &= ~WsExTransparent;
+            }
+
+            PInvoke.SetWindowLong(_hwnd, (WINDOW_LONG_PTR_INDEX)GwlExStyle, (int)exStyle);
+        }
+        catch
+        {
+            // 静默处理
+        }
+    }
+
+    /// <inheritdoc />
+    public void SetEffects(WindowEffects effects)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        try
+        {
+            unsafe
+            {
+                var hwndPtr = _hwnd.Value;
+
+                // DWMWA_SYSTEMBACKDROP_TYPE 值映射：
+                // 0 = DWMSBT_AUTO, 1 = DWMSBT_NONE, 2 = DWMSBT_MAINWINDOW (Mica),
+                // 3 = DWMSBT_TRANSIENTWINDOW (Acrylic), 4 = DWMSBT_BLURBEHIND
+                uint backdropType = effects.State switch
+                {
+                    true => effects.Effect switch
+                    {
+                        WindowEffect.Mica => 2,
+                        WindowEffect.Acrylic => 3,
+                        WindowEffect.BlurBehind => 4,
+                        WindowEffect.Transparent => 1, // 透明，无特效
+                        _ => 1,
+                    },
+                    false => 1, // DWMSBT_NONE
+                };
+
+                var value = backdropType;
+                PInvoke.DwmSetWindowAttribute(
+                    hwndPtr,
+                    (DWMWINDOWATTRIBUTE)DwmwaSystemBackdropType,
+                    &value,
+                    (uint)sizeof(uint));
+            }
+        }
+        catch
+        {
+            // DWM 调用失败时静默处理（可能非 Windows 11）
+        }
+    }
+
+    /// <inheritdoc />
+    public void SetBadgeCount(int count)
+    {
+        if (count <= 0)
+        {
+            SetOverlayIcon(null, null);
+            return;
+        }
+
+        var iconBytes = GenerateBadgeIcon(count.ToString(), System.Drawing.Color.Red);
+        SetOverlayIcon(iconBytes, count.ToString());
+    }
+
+    /// <inheritdoc />
+    public void SetBadgeLabel(string? label)
+    {
+        if (string.IsNullOrEmpty(label))
+        {
+            SetOverlayIcon(null, null);
+            return;
+        }
+
+        var iconBytes = GenerateBadgeIcon(label, System.Drawing.Color.Blue);
+        SetOverlayIcon(iconBytes, label);
+    }
+
+    /// <inheritdoc />
+    public void SetVisibleOnAllWorkspaces(bool visible)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        try
+        {
+            // Windows 上近似实现：通过 HWND_TOPMOST 让窗口始终在所有工作区之上
+            var hwndInsertAfter = visible ? new HWND(-1) : new IntPtr(0); // HWND_TOPMOST = -1, HWND_NOTOPMOST = 0
+            var flags = SET_WINDOW_POS_FLAGS.SWP_NOMOVE | SET_WINDOW_POS_FLAGS.SWP_NOSIZE | SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE;
+            PInvoke.SetWindowPos(_hwnd, hwndInsertAfter, 0, 0, 0, 0, flags);
+        }
+        catch
+        {
+            // 静默处理
+        }
+    }
+
+    /// <inheritdoc />
+    public void SetBorderColor(string? color)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        try
+        {
+            unsafe
+            {
+                var hwndPtr = _hwnd.Value;
+
+                // DWMWA_BORDER_COLOR 接受 COLORREF (0xRRGGBB) 或 DWMWA_COLOR_DEFAULT = 0xFFFFFFFF
+                uint colorRef;
+                if (string.IsNullOrEmpty(color))
+                {
+                    colorRef = 0xFFFFFFFF; // 恢复默认
+                }
+                else
+                {
+                    colorRef = ParseColorToColorRef(color);
+                }
+
+                PInvoke.DwmSetWindowAttribute(
+                    hwndPtr,
+                    (DWMWINDOWATTRIBUTE)DwmwaBorderColor,
+                    &colorRef,
+                    (uint)sizeof(uint));
+            }
+        }
+        catch
+        {
+            // DWM 调用失败时静默处理
+        }
+    }
+
+    /// <inheritdoc />
+    public void SetFileDropEnabled(bool enabled)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        try
+        {
+            PInvoke.DragAcceptFiles(_hwnd, enabled);
+        }
+        catch
+        {
+            // 静默处理
+        }
+    }
+
+    /// <summary>
+    /// 解析十六进制颜色字符串为 Win32 COLORREF 值。
+    /// </summary>
+    /// <param name="color">颜色字符串（如 #FF0000 或 FF0000）。</param>
+    /// <returns>COLORREF 值（0xRRGGBB）。</returns>
+    private static uint ParseColorToColorRef(string color)
+    {
+        var hex = color.TrimStart('#');
+        if (hex.Length == 6 && uint.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out var rgb))
+        {
+            return rgb;
+        }
+
+        return 0xFFFFFFFF; // 默认
+    }
+
+    /// <summary>
+    /// 生成带有文本的 ICO 字节数组，用于任务栏徽章。
+    /// 使用 System.Drawing 在内存中绘制文本，然后转换为 ICO 格式。
+    /// </summary>
+    /// <param name="text">徽章文本。</param>
+    /// <param name="backgroundColor">背景颜色。</param>
+    /// <returns>ICO 格式字节数组。</returns>
+    private static byte[] GenerateBadgeIcon(string text, System.Drawing.Color backgroundColor)
+    {
+        const int size = 32;
+
+        using var bitmap = new System.Drawing.Bitmap(size, size, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        using (var g = System.Drawing.Graphics.FromImage(bitmap))
+        {
+            g.Clear(backgroundColor);
+
+            // 绘制文本
+            using var font = new System.Drawing.Font("Segoe UI", text.Length <= 2 ? 16f : 12f, System.Drawing.FontStyle.Bold);
+            using var brush = new System.Drawing.SolidBrush(System.Drawing.Color.White);
+
+            var sf = new System.Drawing.StringFormat
+            {
+                Alignment = System.Drawing.StringAlignment.Center,
+                LineAlignment = System.Drawing.StringAlignment.Center,
+            };
+
+            var rect = new System.Drawing.Rectangle(0, 0, size, size);
+            g.DrawString(text, font, brush, rect, sf);
+        }
+
+        // 将 Bitmap 转换为 HICON
+        var hIcon = bitmap.GetHicon();
+        try
+        {
+            // 获取 ICO 字节
+            using var icon = System.Drawing.Icon.FromHandle(hIcon);
+            using var ms = new MemoryStream();
+            icon.Save(ms);
+            return ms.ToArray();
+        }
+        finally
+        {
+            PInvoke.DestroyIcon((HICON)hIcon);
+        }
+    }
+
     /// <inheritdoc />
     public void Dispose()
     {

@@ -243,6 +243,30 @@ public static class RuntimeGenerator
             },
             setOverlayIcon: function(iconBytes, description) {
               return window._wailsInvoke("window.setOverlayIcon", { iconBytes: iconBytes, description: description || "" });
+            },
+            setSkipTaskbar: function(skip) {
+              return window._wailsInvoke("window.setSkipTaskbar", { skip: skip });
+            },
+            setIgnoreCursorEvents: function(ignore) {
+              return window._wailsInvoke("window.setIgnoreCursorEvents", { ignore: ignore });
+            },
+            setEffects: function(effects) {
+              return window._wailsInvoke("window.setEffects", { effects: effects || null });
+            },
+            setBadgeCount: function(count) {
+              return window._wailsInvoke("window.setBadgeCount", { count: count });
+            },
+            setBadgeLabel: function(label) {
+              return window._wailsInvoke("window.setBadgeLabel", { label: label });
+            },
+            setVisibleOnAllWorkspaces: function(visible) {
+              return window._wailsInvoke("window.setVisibleOnAllWorkspaces", { visible: visible });
+            },
+            setBorderColor: function(color) {
+              return window._wailsInvoke("window.setBorderColor", { color: color });
+            },
+            setFileDropEnabled: function(enabled) {
+              return window._wailsInvoke("window.setFileDropEnabled", { enabled: enabled });
             }
           },
           // 系统托盘 API（对应 Tauri v2 的 tray API 和 Wails v3 的 SystemTray）
