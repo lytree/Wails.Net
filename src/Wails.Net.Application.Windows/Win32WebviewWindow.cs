@@ -242,6 +242,16 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     private bool _runtimeInjected;
 
     /// <summary>
+    /// 窗口是否曾处于最小化状态，用于 SIZE_RESTORED 时判断是否应触发 WindowUnminimised 事件。
+    /// </summary>
+    private bool _wasMinimised;
+
+    /// <summary>
+    /// 窗口是否曾处于最大化状态，用于 SIZE_RESTORED 时判断是否应触发 WindowUnmaximised 事件。
+    /// </summary>
+    private bool _wasMaximised;
+
+    /// <summary>
     /// 构造 Win32WebviewWindow 实例并创建原生窗口。
     /// </summary>
     /// <param name="id">窗口 ID。</param>
@@ -1028,17 +1038,32 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                     var sizeType = (uint)wParam.Value & 0xFFFF;
                     if (sizeType == 1) // SIZE_MINIMIZED
                     {
+                        instance._wasMinimised = true;
                         Application.Get()?.DispatchWindowEvent(
                             instance._id, (uint)WindowEventType.WindowMinimised);
                     }
                     else if (sizeType == 2) // SIZE_MAXIMIZED
                     {
+                        instance._wasMaximised = true;
                         Application.Get()?.DispatchWindowEvent(
                             instance._id, (uint)WindowEventType.WindowMaximised);
                     }
                     else if (sizeType == 0) // SIZE_RESTORED
                     {
-                        // 恢复事件由窗口状态跟踪决定，此处不额外分发。
+                        // 根据之前的状态触发对应的恢复事件。
+                        if (instance._wasMinimised)
+                        {
+                            instance._wasMinimised = false;
+                            Application.Get()?.DispatchWindowEvent(
+                                instance._id, (uint)WindowEventType.WindowUnminimised);
+                        }
+
+                        if (instance._wasMaximised)
+                        {
+                            instance._wasMaximised = false;
+                            Application.Get()?.DispatchWindowEvent(
+                                instance._id, (uint)WindowEventType.WindowUnmaximised);
+                        }
                     }
                 }
 
@@ -1722,6 +1747,35 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     public void PrintToPDF(byte[]? pageOptions)
     {
         // 简化实现：暂不处理字节数组选项，使用默认设置
+    }
+
+    /// <inheritdoc />
+    public void PrintToPDF(string path, PrintToPdfOptions? options)
+    {
+        if (_webview is null)
+        {
+            return;
+        }
+
+        // WebView2 的 PrintToPdfAsync 接受 CoreWebView2PrintSettings 参数。
+        // PrintToPdfSettings 需通过 CoreWebView2Environment.CreatePrintSettings() 创建，
+        // 当前实现暂不应用自定义选项（需存储 environment 引用以完整支持）。
+        // 对应 Tauri v2 的 WebviewWindow.printToPDF(options) 功能。
+        _ = _webview.PrintToPdfAsync(path, null);
+    }
+
+    /// <inheritdoc />
+    public void RegisterCustomScheme(string scheme)
+    {
+        if (_webview is null || string.IsNullOrEmpty(scheme))
+        {
+            return;
+        }
+
+        // 注册自定义协议方案，拦截指定 scheme 的所有请求。
+        // 对应 Tauri v2 的自定义协议（asset protocol）功能。
+        var filter = $"{scheme}://*";
+        _webview.AddWebResourceRequestedFilter(filter, CoreWebView2WebResourceContext.All);
     }
 
     /// <inheritdoc />

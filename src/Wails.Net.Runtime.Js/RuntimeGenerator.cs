@@ -139,6 +139,113 @@ public static class RuntimeGenerator
             },
             execJS: function(js) {
               return window._wailsInvoke("window.execJS", { js: js });
+            },
+            // 窗口状态查询方法（对应 Tauri v2 / Wails v3 的窗口读取 API）
+            getSize: function() {
+              return window._wailsInvoke("window.getSize", {});
+            },
+            getPosition: function() {
+              return window._wailsInvoke("window.getPosition", {});
+            },
+            getURL: function() {
+              return window._wailsInvoke("window.getURL", {});
+            },
+            getZoom: function() {
+              return window._wailsInvoke("window.getZoom", {});
+            },
+            isFullscreen: function() {
+              return window._wailsInvoke("window.isFullscreen", {});
+            },
+            isMaximised: function() {
+              return window._wailsInvoke("window.isMaximised", {});
+            },
+            isMinimised: function() {
+              return window._wailsInvoke("window.isMinimised", {});
+            },
+            isVisible: function() {
+              return window._wailsInvoke("window.isVisible", {});
+            },
+            isFocused: function() {
+              return window._wailsInvoke("window.isFocused", {});
+            },
+            // 额外窗口动作方法
+            focus: function() {
+              return window._wailsInvoke("window.focus", {});
+            },
+            restore: function() {
+              return window._wailsInvoke("window.restore", {});
+            },
+            unFullscreen: function() {
+              return window._wailsInvoke("window.unFullscreen", {});
+            },
+            openDevTools: function() {
+              return window._wailsInvoke("window.openDevTools", {});
+            },
+            closeDevTools: function() {
+              return window._wailsInvoke("window.closeDevTools", {});
+            },
+            setZoom: function(zoom) {
+              return window._wailsInvoke("window.setZoom", { zoom: zoom });
+            },
+            goBack: function() {
+              return window._wailsInvoke("window.goBack", {});
+            },
+            goForward: function() {
+              return window._wailsInvoke("window.goForward", {});
+            },
+            reload: function() {
+              return window._wailsInvoke("window.reload", {});
+            },
+            setURL: function(url) {
+              return window._wailsInvoke("window.setURL", { url: url });
+            },
+            setHTML: function(html) {
+              return window._wailsInvoke("window.setHTML", { html: html });
+            },
+            print: function() {
+              return window._wailsInvoke("window.print", {});
+            },
+            printToPDF: function(path, options) {
+              return window._wailsInvoke("window.printToPDF", { path: path, options: options || null });
+            },
+            capturePreview: function() {
+              return window._wailsInvoke("window.capturePreview", {});
+            },
+            registerCustomScheme: function(scheme) {
+              return window._wailsInvoke("window.registerCustomScheme", { scheme: scheme });
+            },
+            setResizable: function(resizable) {
+              return window._wailsInvoke("window.setResizable", { resizable: resizable });
+            },
+            setFrameless: function(frameless) {
+              return window._wailsInvoke("window.setFrameless", { frameless: frameless });
+            },
+            injectCSS: function(css) {
+              return window._wailsInvoke("window.injectCSS", { css: css });
+            },
+            zoomIn: function() {
+              return window._wailsInvoke("window.zoomIn", {});
+            },
+            zoomOut: function() {
+              return window._wailsInvoke("window.zoomOut", {});
+            },
+            zoomReset: function() {
+              return window._wailsInvoke("window.zoomReset", {});
+            }
+          },
+          // 应用级窗口管理 API（对应 Tauri v2 的 getCurrentWindow / getAllWindows）
+          windows: {
+            getCurrent: function() {
+              return window._wailsInvoke("windows.getCurrent", {});
+            },
+            getAll: function() {
+              return window._wailsInvoke("windows.getAll", {});
+            },
+            getByName: function(name) {
+              return window._wailsInvoke("windows.getByName", { name: name });
+            },
+            getById: function(id) {
+              return window._wailsInvoke("windows.getById", { id: id });
             }
           },
           screen: {

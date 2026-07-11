@@ -65,5 +65,31 @@ public class LogPlugin : IPlugin
             var service = ctx.Services.GetService<LogService>();
             service?.Log(level, message);
         }));
+
+        // 结构化日志：带字段字典的日志写入，对应 Tauri plugin-log 的结构化日志扩展。
+        // fieldsJson 为 JSON 对象字符串，解析为字典后传递给 LogStructured。
+        context.Commands.MapCommand("log.logStructured", (Action<ICommandContext, string, string, string>)((ctx, level, message, fieldsJson) =>
+        {
+            var service = ctx.Services.GetService<LogService>();
+            if (service is null)
+            {
+                return;
+            }
+
+            Dictionary<string, object?>? fields = null;
+            if (!string.IsNullOrEmpty(fieldsJson))
+            {
+                try
+                {
+                    fields = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(fieldsJson);
+                }
+                catch
+                {
+                    // 字段解析失败时忽略字段，仅写入消息。
+                }
+            }
+
+            service.LogStructured(level, message, fields ?? new());
+        }));
     }
 }

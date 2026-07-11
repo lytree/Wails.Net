@@ -554,4 +554,28 @@ public interface IWebviewWindowImpl
         // 默认实现：不支持截图，返回 null。
         return Task.FromResult<byte[]?>(null);
     }
+
+    /// <summary>
+    /// 注册自定义协议方案，使 WebView 拦截指定 scheme 的请求。
+    /// 对应 Tauri v2 的自定义协议（asset protocol、自定义 scheme）功能。
+    /// 默认实现为空操作，平台实现可重写以提供实际拦截。
+    /// </summary>
+    /// <param name="scheme">协议方案名称（如 "myapp"）。</param>
+    void RegisterCustomScheme(string scheme)
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 将窗口内容导出为 PDF，使用指定的导出选项。
+    /// 对应 Tauri v2 的 WebviewWindow.printToPDF(options) 功能。
+    /// 默认实现委托到无选项重载，平台实现可重写以支持完整选项。
+    /// </summary>
+    /// <param name="path">PDF 文件保存路径。</param>
+    /// <param name="options">PDF 导出选项，为 null 时使用默认选项。</param>
+    void PrintToPDF(string path, PrintToPdfOptions? options)
+    {
+        // 默认实现：忽略选项，委托到无选项重载。
+        PrintToPDF(path);
+    }
 }

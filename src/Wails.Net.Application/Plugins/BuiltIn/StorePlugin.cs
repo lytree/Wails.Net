@@ -67,5 +67,26 @@ public class StorePlugin : IPlugin
                 service.Delete(key);
             }
         }));
+
+        // 监听键变更：注册回调，当指定键变化时通过事件通知前端。
+        // 对应 Tauri plugin-store 的 onKeyChange 功能。
+        context.Commands.MapCommand("store.watch", (Action<ICommandContext, string>)((ctx, key) =>
+        {
+            var service = ctx.Services.GetService<KvStoreService>();
+            if (service is null)
+            {
+                return;
+            }
+
+            // 订阅 OnKeyChanged 事件，过滤指定键的变更并转发到应用事件。
+            service.OnKeyChanged += (changedKey, value) =>
+            {
+                if (changedKey == key)
+                {
+                    Application.Get()?.Events.Emit(
+                        "store:changed", new { key = changedKey, value }, null);
+                }
+            };
+        }));
     }
 }

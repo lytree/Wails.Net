@@ -316,6 +316,20 @@ public class WebviewWindow
     }
 
     /// <summary>
+    /// 注册自定义协议方案，使 WebView 拦截指定 scheme 的请求。
+    /// 对应 Tauri v2 的自定义协议功能。
+    /// </summary>
+    /// <param name="scheme">协议方案名称（如 "myapp"）。</param>
+    public void RegisterCustomScheme(string scheme) => ImplRequired.RegisterCustomScheme(scheme);
+
+    /// <summary>
+    /// 将窗口内容导出为 PDF，使用指定的导出选项。
+    /// </summary>
+    /// <param name="path">PDF 文件保存路径。</param>
+    /// <param name="options">PDF 导出选项，为 null 时使用默认选项。</param>
+    public void PrintToPDF(string path, PrintToPdfOptions? options) => ImplRequired.PrintToPDF(path, options);
+
+    /// <summary>
     /// 后退导航。
     /// </summary>
     public void GoBack() => ImplRequired.GoBack();

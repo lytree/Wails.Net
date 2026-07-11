@@ -337,8 +337,8 @@ public sealed class BuiltInPluginsExtendedTests
         // 操作
         await Assert.That(() => plugin.Configure(context)).ThrowsNothing();
 
-        // 断言：应注册 6 个 log.* 命令
-        await Assert.That(context.Commands.Count).IsEqualTo(6);
+        // 断言：应注册 7 个 log.* 命令
+        await Assert.That(context.Commands.Count).IsEqualTo(7);
         var names = context.Commands.GetCommandNames().ToList();
         await Assert.That(names.Contains("log.debug")).IsTrue();
         await Assert.That(names.Contains("log.info")).IsTrue();
@@ -346,6 +346,7 @@ public sealed class BuiltInPluginsExtendedTests
         await Assert.That(names.Contains("log.error")).IsTrue();
         await Assert.That(names.Contains("log.trace")).IsTrue();
         await Assert.That(names.Contains("log.log")).IsTrue();
+        await Assert.That(names.Contains("log.logStructured")).IsTrue();
     }
 
     // ---------------------------------------------------------------------
@@ -383,14 +384,15 @@ public sealed class BuiltInPluginsExtendedTests
         // 操作
         await Assert.That(() => plugin.Configure(context)).ThrowsNothing();
 
-        // 断言：应注册 5 个 store.* 命令
-        await Assert.That(context.Commands.Count).IsEqualTo(5);
+        // 断言：应注册 6 个 store.* 命令
+        await Assert.That(context.Commands.Count).IsEqualTo(6);
         var names = context.Commands.GetCommandNames().ToList();
         await Assert.That(names.Contains("store.get")).IsTrue();
         await Assert.That(names.Contains("store.set")).IsTrue();
         await Assert.That(names.Contains("store.delete")).IsTrue();
         await Assert.That(names.Contains("store.keys")).IsTrue();
         await Assert.That(names.Contains("store.clear")).IsTrue();
+        await Assert.That(names.Contains("store.watch")).IsTrue();
     }
 
     // ---------------------------------------------------------------------

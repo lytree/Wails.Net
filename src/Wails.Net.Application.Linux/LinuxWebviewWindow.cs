@@ -165,6 +165,9 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         // 连接 WebKit 信号，使 WebView 生命周期事件可观测。
         ConnectWebViewSignals();
 
+        // 设置文件拖放目标，使窗口能够接收文件拖放操作。
+        SetupFileDropTarget();
+
         // 加载初始 URL 或 HTML。
         if (!string.IsNullOrEmpty(options.URL))
         {
@@ -272,6 +275,75 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         {
             _window.OnNotify += OnWindowNotify;
         }
+    }
+
+    /// <summary>
+    /// 设置文件拖放目标，使窗口能够接收文件拖放操作。
+    /// GTK4 使用 <see cref="Gtk.DropTarget"/> 替代 GTK3 的 drag-data-received 信号。
+    /// 接受 <c>text/uri-list</c> 格式（文件 URI 列表），拖放时解析文件路径并触发
+    /// <see cref="WindowEventType.WindowFileDropped"/> 事件。
+    /// 对应 Wails v3 Go 版本 webview_window_linux.go 中的 drag-data-received 信号处理。
+    /// </summary>
+    private void SetupFileDropTarget()
+    {
+        if (_window is null)
+        {
+            return;
+        }
+
+        // 创建 DropTarget，接受 text/uri-list 格式（文件 URI 列表）。
+        var formats = Gdk.ContentFormats.New(["text/uri-list"]);
+        var dropTarget = Gtk.DropTarget.New(formats, Gdk.DragAction.Copy);
+        dropTarget.OnDrop += OnFileDrop;
+
+        // 将 DropTarget 作为事件控制器附加到窗口。
+        _window.AddController(dropTarget);
+    }
+
+    /// <summary>
+    /// 处理文件拖放事件，从 <see cref="Gdk.FileList"/> 提取文件路径并触发
+    /// <see cref="WindowEventType.WindowFileDropped"/> 事件。
+    /// </summary>
+    /// <param name="sender">触发事件的对象。</param>
+    /// <param name="args">拖放事件参数，包含封装 <see cref="Gdk.FileList"/> 的值。</param>
+    /// <returns>返回 true 表示已处理拖放。</returns>
+    private bool OnFileDrop(Gtk.DropTarget sender, Gtk.DropTarget.DropSignalArgs args)
+    {
+        // 从信号参数值中提取 Gdk.FileList。
+        if (!args.Value.Holds(typeof(Gdk.FileList)))
+        {
+            return false;
+        }
+
+        var fileList = (Gdk.FileList)args.Value.Extract();
+        var files = fileList.GetFiles();
+        if (files is null)
+        {
+            return false;
+        }
+
+        // 遍历文件列表，提取本地文件路径。
+        var paths = new List<string>();
+        foreach (var file in files)
+        {
+            var path = file?.GetPath();
+            if (!string.IsNullOrEmpty(path))
+            {
+                paths.Add(path);
+            }
+        }
+
+        if (paths.Count == 0)
+        {
+            return false;
+        }
+
+        // 直接调用 Events.Emit 传递文件路径数组作为数据负载。
+        // 对应 Win32 实现中的 Events.Emit(KnownEvents.WindowFileDropped, files, windowId)。
+        WailsApplication.Get()?.Events.Emit(
+            KnownEvents.WindowFileDropped, paths.ToArray(), _id);
+
+        return true;
     }
 
     /// <summary>
@@ -1406,6 +1478,22 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         // 对应 C API: webkit_print_operation_run_dialog(print_operation, parent)。
         var printOperation = WebKit.PrintOperation.New(_webView);
         printOperation.RunDialog(_window);
+    }
+
+    /// <inheritdoc />
+    public void PrintToPDF(string path, PrintToPdfOptions? options)
+    {
+        // Linux 实现委托到无选项重载，WebKitGTK 的 PrintOperation 对选项支持有限。
+        // options 中的 Landscape/PrintBackground 等设置可通过 Gtk.PageSetup 应用，此处简化处理。
+        PrintToPDF(path);
+    }
+
+    /// <inheritdoc />
+    public void RegisterCustomScheme(string scheme)
+    {
+        // Linux WebKitGTK 自定义协议需通过 WebContext 的 security 注册。
+        // 简化实现：不拦截自定义 scheme，由 WebKit 使用默认网络栈处理。
+        // 完整实现需使用 webkit_web_context_register_uri_scheme() C API。
     }
 
     /// <inheritdoc />
