@@ -913,7 +913,8 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                 return default;
 
             case WindowsPlatformApp.WmAppSingleInstance:
-                // 单实例通知，暂不处理
+                // 单实例通知：读取新实例传入的命令行参数并分发事件。
+                WindowsPlatformApp.HandleSingleInstanceNotification();
                 return default;
 
             case WmSize:
@@ -1309,12 +1310,30 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     }
 
     /// <summary>
-    /// 设置全屏按钮是否可用。Win32 无原生全屏按钮，此方法为空操作。
+    /// 设置全屏按钮是否可用。对应 Go 版 SetFullscreenButtonEnabled。
+    /// 通过修改窗口样式 WS_MAXIMIZEBOX 控制最大化（全屏）按钮的可用状态。
     /// </summary>
     /// <param name="enabled">是否可用。</param>
     public void SetFullscreenButtonEnabled(bool enabled)
     {
-        // Win32 平台无原生全屏按钮，空操作
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        // 通过切换 WS_MAXIMIZEBOX 样式控制全屏（最大化）按钮的可用状态。
+        var style = GetWindowStyle();
+        if (enabled)
+        {
+            style |= WINDOW_STYLE.WS_MAXIMIZEBOX;
+        }
+        else
+        {
+            style &= ~WINDOW_STYLE.WS_MAXIMIZEBOX;
+        }
+
+        SetWindowStyle(style);
+        ApplyFrameChange();
     }
 
     /// <inheritdoc />
@@ -1654,7 +1673,27 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     /// <inheritdoc />
     public void AttachAsModal(uint parentWindowId)
     {
-        // 简化实现：暂不支持模态窗口
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        // 查找父窗口实例，获取其 Win32 句柄。
+        var parentWindow = Application.Get()?.GetWindow(parentWindowId);
+        if (parentWindow?.Impl is not Win32WebviewWindow parentWin32)
+        {
+            return;
+        }
+
+        var parentHwnd = parentWin32.Hwnd;
+        if (parentHwnd.IsNull)
+        {
+            return;
+        }
+
+        // 禁用父窗口，使其无法接收用户输入（模态行为）。
+        // 对应 Go 版 webview_window_windows.go 中 AttachAsModal 的 EnableWindow 调用。
+        PInvoke.EnableWindow(parentHwnd, false);
     }
 
     /// <inheritdoc />

@@ -584,19 +584,81 @@ public sealed class WindowsPlatformApp : IPlatformApp
 
     /// <summary>
     /// 通知已运行的前一个实例：有新实例尝试启动。
-    /// 通过广播 WM_APP+1 消息通知已有实例（简化实现）。
+    /// 对应 Wails v3 Go 版本 application_single_instance.go 中的 notifySingleInstance 函数。
+    /// 将命令行参数序列化为 JSON 写入临时文件，再通过 PostMessage 通知已运行实例，
+    /// 已运行实例的 WndProc 收到 WM_APP+1 后读取该文件并分发事件。
     /// </summary>
     /// <param name="args">新实例启动时传入的命令行参数。</param>
     public void NotifySingleInstance(string[] args)
     {
-        // 简化实现：广播 WM_APP+1 到所有顶层窗口，已有实例的 WndProc 可响应。
         try
         {
+            // 将命令行参数序列化为 JSON 写入临时文件，供已运行实例读取。
+            var argsFile = GetSingleInstanceArgsFilePath();
+            var json = System.Text.Json.JsonSerializer.Serialize(args);
+            File.WriteAllText(argsFile, json);
+
+            // 广播单实例通知消息到所有顶层窗口，已运行实例的 WndProc 将读取临时文件。
             PInvoke.PostMessage(default, WmAppSingleInstance, default, default);
         }
         catch
         {
             // 通知失败时忽略
+        }
+    }
+
+    /// <summary>
+    /// 获取单实例通知参数临时文件路径。
+    /// 文件名基于应用名称，确保新旧实例使用相同路径。
+    /// </summary>
+    /// <returns>临时文件路径。</returns>
+    private string GetSingleInstanceArgsFilePath()
+    {
+        return Path.Combine(Path.GetTempPath(), $"wailsnet_{_name}_single_instance_args.json");
+    }
+
+    /// <summary>
+    /// 处理单实例通知：读取临时文件中的命令行参数并分发到应用事件系统。
+    /// 由 WndProc 在收到 WM_APP+1（WmAppSingleInstance）时调用。
+    /// 对应 Wails v3 Go 版本中已运行实例收到通知后读取 args 并触发事件的逻辑。
+    /// </summary>
+    internal static void HandleSingleInstanceNotification()
+    {
+        var app = s_current;
+        if (app is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var argsFile = app.GetSingleInstanceArgsFilePath();
+            if (!File.Exists(argsFile))
+            {
+                return;
+            }
+
+            var json = File.ReadAllText(argsFile);
+            var args = System.Text.Json.JsonSerializer.Deserialize<string[]>(json);
+            if (args is not null)
+            {
+                // 通过事件系统分发 SecondInstanceLaunched 事件，携带命令行参数。
+                Application.Get()?.Events.Emit("SecondInstanceLaunched", args, null);
+            }
+
+            // 读取完成后删除临时文件。
+            try
+            {
+                File.Delete(argsFile);
+            }
+            catch
+            {
+                // 临时文件删除失败时忽略
+            }
+        }
+        catch
+        {
+            // 读取或解析失败时忽略
         }
     }
 

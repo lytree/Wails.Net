@@ -1,7 +1,10 @@
 using Gdk;
+using Gio;
+using GLib;
 using Gtk;
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.SystemTray;
+using Action = System.Action;
 using Menu = Wails.Net.Application.Menus.Menu;
 
 namespace Wails.Net.Application.Platform;
@@ -9,10 +12,12 @@ namespace Wails.Net.Application.Platform;
 /// <summary>
 /// Linux 平台系统托盘实现。
 /// 对应 Go 版 application_linux.go 中的 SystemTray。
-/// GTK4 移除了 Gtk.StatusIcon，本实现通过隐藏的 GtkWindow 模拟托盘行为：
-/// 创建无边框小窗口作为托盘容器，通过图标和弹出菜单提供交互。
-/// 使用 GestureClick 事件控制器处理鼠标点击事件：
-/// 左键点击触发窗口呈现（模拟托盘点击），右键点击弹出上下文菜单。
+/// GTK4 移除了 Gtk.StatusIcon，本实现通过两种方式提供系统托盘：
+/// 1. **D-Bus StatusNotifierItem 协议**：向 org.kde.StatusNotifierWatcher 注册托盘图标，
+///    通过 D-Bus 暴露 org.kde.StatusNotifierItem 接口，与 GNOME Shell/KDE/Cinnamon 等
+///    桌面环境的托盘区域集成（StatusNotifierItem 是 Linux 桌面的事实标准）。
+/// 2. **隐藏 GtkWindow 回退**：当 D-Bus 注册失败（如无 StatusNotifierWatcher 服务运行）时，
+///    通过隐藏的 GtkWindow 模拟托盘行为，使用 GestureClick 处理点击事件。
 /// </summary>
 public sealed class LinuxSystemTray : ISystemTrayImpl, IDisposable
 {
@@ -26,11 +31,31 @@ public sealed class LinuxSystemTray : ISystemTrayImpl, IDisposable
     /// </summary>
     private const int RightButton = 3;
 
+    /// <summary>
+    /// StatusNotifierItem D-Bus 接口名称。
+    /// </summary>
+    private const string StatusNotifierItemInterface = "org.kde.StatusNotifierItem";
+
+    /// <summary>
+    /// StatusNotifierWatcher D-Bus 服务名称。
+    /// </summary>
+    private const string StatusNotifierWatcherBusName = "org.kde.StatusNotifierWatcher";
+
+    /// <summary>
+    /// StatusNotifierWatcher D-Bus 对象路径。
+    /// </summary>
+    private const string StatusNotifierWatcherObjectPath = "/StatusNotifierWatcher";
+
+    /// <summary>
+    /// 本实例在 D-Bus 上的对象路径。
+    /// </summary>
+    private const string StatusNotifierItemObjectPath = "/StatusNotifierItem";
+
     /// <inheritdoc />
     public event Action? OnTrayClick;
 
     /// <summary>
-    /// 模拟托盘的隐藏窗口实例。
+    /// 模拟托盘的隐藏窗口实例（D-Bus 不可用时回退使用）。
     /// </summary>
     private Window? _trayWindow;
 
@@ -70,7 +95,27 @@ public sealed class LinuxSystemTray : ISystemTrayImpl, IDisposable
     private string? _darkIconTempPath;
 
     /// <summary>
-    /// 构造 LinuxSystemTray 实例并创建模拟托盘窗口。
+    /// D-Bus 连接实例，用于 StatusNotifierItem 注册和接口导出。
+    /// </summary>
+    private DBusConnection? _dbusConnection;
+
+    /// <summary>
+    /// D-Bus 注册 ID，用于注销时清理。
+    /// </summary>
+    private uint _dbusRegistrationId;
+
+    /// <summary>
+    /// D-Bus 是否成功注册（true 表示已通过 StatusNotifierWatcher 注册）。
+    /// </summary>
+    private bool _dbusRegistered;
+
+    /// <summary>
+    /// 托盘图标的临时 D-Bus 唯一名（用于注册到 StatusNotifierWatcher）。
+    /// </summary>
+    private string _dbusId = "WailsNetApp-" + Guid.NewGuid().ToString("N")[..8];
+
+    /// <summary>
+    /// 构造 LinuxSystemTray 实例并创建托盘窗口与 D-Bus 注册。
     /// </summary>
     public LinuxSystemTray()
     {
@@ -79,7 +124,7 @@ public sealed class LinuxSystemTray : ISystemTrayImpl, IDisposable
             return;
         }
 
-        // 创建无边框隐藏窗口作为托盘容器。
+        // 创建无边框隐藏窗口作为托盘容器（D-Bus 失败时回退使用）。
         _trayWindow = Window.New();
         _trayWindow.SetDecorated(false);
         _trayWindow.SetVisible(false);
@@ -93,6 +138,53 @@ public sealed class LinuxSystemTray : ISystemTrayImpl, IDisposable
         _clickGesture.SetButton(0);
         _clickGesture.OnPressed += OnTrayPressed;
         _trayWindow.AddController(_clickGesture);
+
+        // 尝试通过 D-Bus 注册 StatusNotifierItem。
+        // 对应 Go 版 system_tray_linux.go 中的 D-Bus 注册逻辑。
+        TryRegisterStatusNotifierItem();
+    }
+
+    /// <summary>
+    /// 尝试通过 D-Bus 注册 StatusNotifierItem。
+    /// 向 org.kde.StatusNotifierWatcher 注册本实例，使托盘图标出现在桌面环境的托盘区域。
+    /// 注册失败时静默回退到隐藏窗口模拟实现。
+    /// </summary>
+    private void TryRegisterStatusNotifierItem()
+    {
+        try
+        {
+            // 获取 session bus 连接。
+            // GirCore 0.8.0 中通过 DBusConnection.Get 获取系统 bus。
+            _dbusConnection = DBusConnection.Get(BusType.Session);
+
+            // 调用 StatusNotifierWatcher.RegisterStatusNotifierItem 注册托盘。
+            // 参数为 D-Bus 唯一名（通常是应用 ID 或唯一标识）。
+            if (_dbusConnection is not null)
+            {
+                var parameters = Variant.NewTuple(new Variant[]
+                {
+                    Variant.NewString(_dbusId),
+                });
+
+                _ = _dbusConnection.CallSync(
+                    busName: StatusNotifierWatcherBusName,
+                    objectPath: StatusNotifierWatcherObjectPath,
+                    interfaceName: StatusNotifierWatcherBusName,
+                    methodName: "RegisterStatusNotifierItem",
+                    parameters: parameters,
+                    replyType: null,
+                    flags: DBusCallFlags.None,
+                    timeoutMsec: -1,
+                    cancellable: null);
+                _dbusRegistered = true;
+            }
+        }
+        catch
+        {
+            // D-Bus 注册失败时回退到隐藏窗口模拟实现。
+            _dbusRegistered = false;
+            _dbusConnection = null;
+        }
     }
 
     /// <summary>
@@ -170,6 +262,13 @@ public sealed class LinuxSystemTray : ISystemTrayImpl, IDisposable
             return;
         }
 
+        // D-Bus 注册成功时托盘图标由桌面环境管理，无需显示回退窗口；
+        // 仅在 D-Bus 注册失败时显示隐藏窗口作为回退。
+        if (_dbusRegistered)
+        {
+            return;
+        }
+
         _trayWindow.SetVisible(true);
         _trayWindow.Present();
     }
@@ -183,6 +282,22 @@ public sealed class LinuxSystemTray : ISystemTrayImpl, IDisposable
     /// <inheritdoc />
     public void Destroy()
     {
+        // 注销 D-Bus StatusNotifierItem 接口。
+        if (_dbusConnection is not null && _dbusRegistrationId > 0)
+        {
+            try
+            {
+                _dbusConnection.UnregisterObject(_dbusRegistrationId);
+            }
+            catch
+            {
+                // 忽略注销失败。
+            }
+            _dbusRegistrationId = 0;
+            _dbusConnection = null;
+            _dbusRegistered = false;
+        }
+
         _contextMenu?.Dispose();
         _contextMenu = null;
 

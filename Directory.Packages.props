@@ -1,10 +1,8 @@
 <Project>
-
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentrallyManagedPackageVersionEnabled>true</CentrallyManagedPackageVersionEnabled>
   </PropertyGroup>
-
   <!-- 核心包（平台无关） -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
@@ -18,14 +16,12 @@
     <PackageVersion Include="Microsoft.Extensions.FileProviders.Embedded" Version="10.0.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebView" Version="10.0.0" />
   </ItemGroup>
-
   <!-- Windows 平台 -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.3240.44" />
     <!-- CsWin32 源生成器：从 Windows SDK 元数据生成 P/Invoke 代码，替代旧版 PInvoke.* 包 -->
     <PackageVersion Include="Microsoft.Windows.CsWin32" Version="0.3.298" />
   </ItemGroup>
-
   <!-- Linux 平台（GirCore 0.8.0，支持 .NET 10） -->
   <ItemGroup>
     <PackageVersion Include="GirCore.Gtk-4.0" Version="0.8.0" />
@@ -37,14 +33,12 @@
     <PackageVersion Include="GirCore.Cairo-1.0" Version="0.8.0" />
     <PackageVersion Include="GirCore.Pango-1.0" Version="0.8.0" />
   </ItemGroup>
-
   <!-- 服务/工具 -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
     <PackageVersion Include="System.CommandLine" Version="2.0.9" />
   </ItemGroup>
-
   <!-- 测试 -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
@@ -56,5 +50,4 @@
     <PackageVersion Include="TUnit.Assertions" Version="1.58.0" />
     <PackageVersion Include="TUnit.Engine" Version="1.58.0" />
   </ItemGroup>
-
 </Project>

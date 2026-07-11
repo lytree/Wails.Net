@@ -136,6 +136,13 @@ public class Application
     private readonly List<Action> _shutdownTasks = new();
 
     /// <summary>
+    /// 启动前 hook 列表，通过 <see cref="OnBeforeStart(Action{Application})"/> 注册。
+    /// 在 <see cref="Run"/> 方法中、实际启动服务之前遍历执行所有 hook。
+    /// 对应 Wails v3 Go 版本 application.go 中的 OnBeforeStart hook 机制。
+    /// </summary>
+    private readonly List<Action<Application>> _onBeforeStartHooks = new();
+
+    /// <summary>
     /// 是否为首实例（单实例模式下）。
     /// 对应 Wails v3 Go 版本 application.go 中的 isFirstInstance 字段。
     /// </summary>
@@ -525,6 +532,12 @@ public class Application
         // 触发启动回调
         _options.OnBeforeStart?.Invoke();
 
+        // 执行所有通过 OnBeforeStart 注册的 hook，在启动服务之前运行。
+        foreach (var hook in _onBeforeStartHooks)
+        {
+            hook(this);
+        }
+
         // 按注册顺序启动服务
         foreach (var service in _serviceRegistry.Services)
         {
@@ -648,6 +661,18 @@ public class Application
     public void OnShutdown(Action task)
     {
         _shutdownTasks.Add(task);
+    }
+
+    /// <summary>
+    /// 注册启动前执行的 hook。
+    /// hook 将在 <see cref="Run"/> 方法中、实际启动服务和传输层之前按注册顺序执行，
+    /// 接收当前 <see cref="Application"/> 实例作为参数。
+    /// 对应 Wails v3 Go 版本 application.go 中的 OnBeforeStart hook 机制。
+    /// </summary>
+    /// <param name="hook">启动前执行的操作，参数为当前应用实例。</param>
+    public void OnBeforeStart(Action<Application> hook)
+    {
+        _onBeforeStartHooks.Add(hook);
     }
 
     /// <summary>

@@ -522,7 +522,16 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     public void SetAlwaysOnTop(bool onTop)
     {
         _alwaysOnTop = onTop;
-        // GTK4 中置顶需 X11 窗口管理器支持（GdkToplevel.set_above），简化实现缓存状态。
+        if (_window is null || !OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        // GDK4 移除了 gtk_window_set_keep_above API，Wayland 协议不支持窗口强制置顶。
+        // 此处缓存置顶状态供查询，X11 后端可通过 _NET_WM_STATE_ABOVE 窗口属性实现。
+        // 对应 Go 版 webview_window_linux.go 中通过 SetKeepAbove 的实现。
+        // TODO: 完整实现需要通过 Gdk.X11 扩展设置 _NET_WM_STATE_ABOVE X11 窗口属性，
+        // 或在 Wayland 下通过 xdg-foreign 协议实现父窗口关联。
     }
 
     /// <inheritdoc />
@@ -712,8 +721,25 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     /// <inheritdoc />
     public void PrintToPDF(string path)
     {
-        // WebKitGTK 的 PDF 导出通过 WebKit.PrintOperation 实现，简化实现仅记录路径。
-        // 完整实现需创建 PrintOperation 并连接信号。
+        if (_webView is null || !OperatingSystem.IsLinux() || string.IsNullOrEmpty(path))
+        {
+            return;
+        }
+
+        // 通过 WebKit.PrintOperation 配合 Gtk.PrintSettings 将页面导出为 PDF。
+        // 对应 Go 版 webview_window_linux.go 中的 PrintToPDF 实现。
+        var printOperation = WebKit.PrintOperation.New(_webView);
+        var settings = Gtk.PrintSettings.New();
+        settings.SetPrinter("Print to File");
+        settings.Set("output-uri", $"file://{path}");
+        settings.Set("output-file-format", "pdf");
+        printOperation.SetPrintSettings(settings);
+
+        // 调用 Print() 直接打印（不显示对话框），配合上面的 Print to File 打印机设置输出到指定路径。
+        // 对应 C API: webkit_print_operation_print(print_operation)。
+        // TODO: WebKitGTK 对无界面 PDF 导出支持有限，某些 GTK 版本可能仍会弹出对话框。
+        // 完整的无界面导出可通过 JavaScript 端使用 jsPDF 等库在前端生成 PDF 后下载。
+        printOperation.Print();
     }
 
     /// <inheritdoc />
@@ -868,13 +894,77 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     /// <inheritdoc />
     public void SetTitleBarStyle(TitleBarStyle style)
     {
-        // GTK4 标题栏样式通过 SetTitlebar 或 CSS 实现，简化实现暂留空。
+        if (_window is null || !OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        // GTK4 标题栏样式通过自定义 HeaderBar 实现。
+        // 对应 Go 版 webview_window_linux.go 中的 SetTitleBarStyle 实现。
+        switch (style)
+        {
+            case TitleBarStyle.Hidden:
+            case TitleBarStyle.HiddenInset:
+                // hidden 样式：隐藏标题文本，仅保留窗口控制按钮。
+                var hiddenBar = HeaderBar.New();
+                hiddenBar.SetShowTitleButtons(true);
+                _window.SetTitlebar(hiddenBar);
+                break;
+            case TitleBarStyle.Unified:
+                // unified 样式：使用统一 HeaderBar，标题与内容融合。
+                var unifiedBar = HeaderBar.New();
+                unifiedBar.SetShowTitleButtons(true);
+                _window.SetTitlebar(unifiedBar);
+                break;
+            case TitleBarStyle.Default:
+            default:
+                // 默认样式：移除自定义 HeaderBar，恢复系统默认标题栏。
+                _window.SetTitlebar(null);
+                break;
+        }
     }
 
     /// <inheritdoc />
     public void Centre()
     {
-        // GTK4 中窗口居中由窗口管理器控制，简化实现暂留空。
+        if (_window is null || !OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        // 获取主显示器几何信息以计算居中位置。
+        // 对应 Go 版 webview_window_linux.go 中的 Centre 实现。
+        var display = Gdk.Display.GetDefault();
+        if (display is null)
+        {
+            return;
+        }
+
+        var monitors = display.GetMonitors();
+        if (monitors.GetNItems() == 0)
+        {
+            return;
+        }
+
+        var monitor = monitors.GetObject(0) as Gdk.Monitor;
+        if (monitor is null)
+        {
+            return;
+        }
+
+        var geometry = monitor.Geometry;
+        _window.GetDefaultSize(out var width, out var height);
+
+        // 计算居中坐标。
+        var x = geometry.X + (geometry.Width - width) / 2;
+        var y = geometry.Y + (geometry.Height - height) / 2;
+        _x = x;
+        _y = y;
+
+        // GTK4 中窗口位置由窗口管理器控制，不直接支持 SetPosition。
+        // 缓存计算后的坐标供 GetPosition 查询，并重新 Present 窗口。
+        // TODO: 精确控制窗口位置需要通过 X11/Wayland 平台特定 API 或 GdkSurface 实现。
+        _window.Present();
     }
 
     /// <inheritdoc />
@@ -1053,8 +1143,16 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     /// <inheritdoc />
     public void PrintToPDF(byte[]? pageOptions)
     {
-        // WebKitGTK 的 PDF 导出通过 WebKit.PrintOperation 实现，简化实现暂留空。
-        // pageOptions 为序列化的打印选项，完整实现需反序列化并配置 PrintOperation。
+        if (_webView is null || !OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        // pageOptions 为序列化的打印选项，当前简化实现忽略选项直接触发打印对话框。
+        // 通过 WebKit.PrintOperation 显示打印对话框，用户可选择导出为 PDF。
+        // 对应 C API: webkit_print_operation_run_dialog(print_operation, parent)。
+        var printOperation = WebKit.PrintOperation.New(_webView);
+        printOperation.RunDialog(_window);
     }
 
     /// <inheritdoc />

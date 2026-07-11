@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Drawing;
+using System.IO;
 using System.Runtime.InteropServices;
 using Wails.Net.Application.Menus;
 using Windows.Win32;
@@ -50,6 +52,18 @@ public sealed class Win32Menu : IMenuImpl
     /// 是否已销毁。
     /// </summary>
     private bool _disposed;
+
+    /// <summary>
+    /// 父菜单句柄，当此菜单为子菜单（弹出式）时由父菜单设置，
+    /// 用于 ModifyMenuW 实时更新菜单项。为 default 表示此菜单为顶级菜单栏。
+    /// </summary>
+    private HMENU _parentHmenu;
+
+    /// <summary>
+    /// 此菜单在父菜单中的位置索引（从 0 开始）。
+    /// 用于 ModifyMenuW 的 MF_BYPOSITION 模式定位菜单项。
+    /// </summary>
+    private int _position;
 
     /// <summary>
     /// 构造 Win32Menu 实例。
@@ -157,6 +171,9 @@ public sealed class Win32Menu : IMenuImpl
         // 为子菜单创建独立的 Win32Menu（弹出式）并构建。
         var subImpl = new Win32Menu(submenu, isPopup: true);
         subImpl.Build();
+        // 记录父菜单句柄和位置索引，供 SetBitmap/SetAccelerator 实时更新使用。
+        subImpl._parentHmenu = _hmenu;
+        subImpl._position = (int)PInvoke.GetMenuItemCount(_hmenu);
         AppendPopup(_hmenu, submenu.Label ?? string.Empty, subImpl.Hmenu);
     }
 
@@ -202,12 +219,63 @@ public sealed class Win32Menu : IMenuImpl
     public void SetAccelerator(string accelerator)
     {
         _menu.Accelerator = accelerator;
+
+        // 若未加入父菜单（顶级菜单栏或尚未 Build），仅存储状态，下次 Build 时生效。
+        if (_disposed || _parentHmenu.IsNull || _hmenu.IsNull)
+        {
+            return;
+        }
+
+        try
+        {
+            // 构造包含快捷键的标签文本（标签\t快捷键）。
+            var label = _menu.Label ?? string.Empty;
+            var text = string.IsNullOrEmpty(accelerator) ? label : $"{label}\t{accelerator}";
+
+            // 通过 ModifyMenuW 实时更新菜单项文本，保留弹出式（MF_POPUP）属性。
+            ModifyMenuW(
+                (IntPtr)_parentHmenu,
+                (uint)_position,
+                MENU_ITEM_FLAGS.MF_BYPOSITION | MENU_ITEM_FLAGS.MF_STRING | MENU_ITEM_FLAGS.MF_POPUP,
+                (UIntPtr)(IntPtr)_hmenu,
+                text);
+        }
+        catch
+        {
+            // 实时更新失败时忽略，状态已存储在 _menu.Accelerator，下次 Build 时生效
+        }
     }
 
     /// <inheritdoc />
     public void SetBitmap(byte[]? bitmap)
     {
         _menu.Bitmap = bitmap;
+
+        // 若未加入父菜单（顶级菜单栏或尚未 Build），或位图为空，仅存储状态。
+        if (_disposed || _parentHmenu.IsNull || _hmenu.IsNull || bitmap is null || bitmap.Length == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            // 从字节数据创建 GDI 位图句柄。
+            using var ms = new MemoryStream(bitmap);
+            using var bmp = new Bitmap(ms);
+            var hbitmap = bmp.GetHbitmap();
+
+            // 通过 ModifyMenuW 实时更新菜单项位图，保留弹出式（MF_POPUP）属性。
+            ModifyMenuW(
+                (IntPtr)_parentHmenu,
+                (uint)_position,
+                MENU_ITEM_FLAGS.MF_BYPOSITION | MENU_ITEM_FLAGS.MF_BITMAP | MENU_ITEM_FLAGS.MF_POPUP,
+                (UIntPtr)(IntPtr)_hmenu,
+                hbitmap);
+        }
+        catch
+        {
+            // 实时更新失败时忽略，状态已存储在 _menu.Bitmap，下次 Build 时生效
+        }
     }
 
     /// <summary>
@@ -233,6 +301,9 @@ public sealed class Win32Menu : IMenuImpl
             // 子菜单：递归构建子菜单的 Win32Menu。
             var subImpl = new Win32Menu(item, isPopup: true);
             subImpl.Build();
+            // 记录父菜单句柄和位置索引，供 SetBitmap/SetAccelerator 实时更新使用。
+            subImpl._parentHmenu = parent;
+            subImpl._position = (int)PInvoke.GetMenuItemCount(parent);
             AppendPopup(parent, item.Label ?? string.Empty, subImpl.Hmenu);
             return;
         }
@@ -339,4 +410,34 @@ public sealed class Win32Menu : IMenuImpl
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool AppendMenuW(IntPtr hMenu, MENU_ITEM_FLAGS uFlags, UIntPtr uIDNewItem, string? lpNewItem);
+
+    /// <summary>
+    /// ModifyMenuW P/Invoke 声明（字符串重载）。
+    /// 与 AppendMenuW 同理，手动声明以支持 HMENU 句柄直接传递。
+    /// 用于 SetAccelerator 等需要更新菜单项文本的场景。
+    /// </summary>
+    /// <param name="hMnu">包含待修改项的菜单句柄（IntPtr 形式）。</param>
+    /// <param name="uPosition">待修改项的位置（MF_BYPOSITION）或命令 ID（MF_BYCOMMAND）。</param>
+    /// <param name="uFlags">菜单项标志（MF_* 组合）。</param>
+    /// <param name="uIDNewItem">新的命令 ID 或子菜单句柄。</param>
+    /// <param name="lpNewItem">新的菜单项文本（MF_STRING 时使用）。</param>
+    /// <returns>成功返回 true，否则 false。</returns>
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "ModifyMenuW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ModifyMenuW(IntPtr hMnu, uint uPosition, MENU_ITEM_FLAGS uFlags, UIntPtr uIDNewItem, string? lpNewItem);
+
+    /// <summary>
+    /// ModifyMenuW P/Invoke 声明（位图重载）。
+    /// MF_BITMAP 时 lpNewItem 为 HBITMAP 句柄，使用 IntPtr 重载传递。
+    /// 用于 SetBitmap 等需要更新菜单项位图的场景。
+    /// </summary>
+    /// <param name="hMnu">包含待修改项的菜单句柄（IntPtr 形式）。</param>
+    /// <param name="uPosition">待修改项的位置（MF_BYPOSITION）或命令 ID（MF_BYCOMMAND）。</param>
+    /// <param name="uFlags">菜单项标志（MF_* 组合，含 MF_BITMAP）。</param>
+    /// <param name="uIDNewItem">新的命令 ID 或子菜单句柄。</param>
+    /// <param name="lpNewItem">新的位图句柄（HBITMAP，MF_BITMAP 时使用）。</param>
+    /// <returns>成功返回 true，否则 false。</returns>
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "ModifyMenuW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ModifyMenuW(IntPtr hMnu, uint uPosition, MENU_ITEM_FLAGS uFlags, UIntPtr uIDNewItem, IntPtr lpNewItem);
 }

@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Net.Sockets;
+using System.Text;
 using Gdk;
 using Gio;
 using GLib;
@@ -60,6 +62,17 @@ public sealed class LinuxPlatformApp : IPlatformApp
     /// 单实例锁文件路径，用于派生通知文件路径。
     /// </summary>
     private string? _singleInstanceLockPath;
+
+    /// <summary>
+    /// 单实例 UNIX socket 监听器，首实例启动后监听第二个实例的连接。
+    /// 对应 Go 版 application_single_instance_linux.go 中的 D-Bus 信号通知机制。
+    /// </summary>
+    private System.Net.Sockets.Socket? _singleInstanceSocket;
+
+    /// <summary>
+    /// 单实例 UNIX socket 路径，用于清理。
+    /// </summary>
+    private string? _singleInstanceSocketPath;
 
     /// <summary>
     /// 应用菜单的 LinuxMenu 实例，由 SetApplicationMenu 构建。
@@ -273,6 +286,10 @@ public sealed class LinuxPlatformApp : IPlatformApp
             _singleInstanceLockStream = new FileStream(
                 lockPath, FileMode.Create, FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose);
             _singleInstanceLockPath = lockPath;
+
+            // 启动 UNIX socket 监听，接收后续实例的实时通知。
+            // 对应 Go 版 application_single_instance_linux.go 中的 D-Bus 信号注册。
+            StartSingleInstanceSocket(safeName);
             return true;
         }
         catch
@@ -291,15 +308,94 @@ public sealed class LinuxPlatformApp : IPlatformApp
             return;
         }
 
-        // 简化实现：将命令行参数写入锁文件同目录的通知文件，供首实例轮询读取。
-        var notifyPath = Path.ChangeExtension(_singleInstanceLockPath, ".args");
+        // 通过 UNIX socket 向首实例发送命令行参数，实现实时通知。
+        // 对应 Go 版 application_single_instance_linux.go 中的 notifySingleInstance。
+        var safeName = SanitizeFileName(_name);
+        var socketPath = Path.Combine(Path.GetTempPath(), $"wails-{safeName}.sock");
         try
         {
-            System.IO.File.WriteAllLines(notifyPath, args);
+            using var client = new System.Net.Sockets.Socket(
+                AddressFamily.Unix, System.Net.Sockets.SocketType.Stream, ProtocolType.Unspecified);
+            var endpoint = new UnixDomainSocketEndPoint(socketPath);
+            client.Connect(endpoint);
+
+            // 将 args 以 JSON 数组格式发送，避免参数边界歧义。
+            var json = System.Text.Json.JsonSerializer.Serialize(args);
+            var bytes = Encoding.UTF8.GetBytes(json);
+            client.Send(bytes);
         }
         catch
         {
-            // 忽略通知写入失败（简化实现）。
+            // socket 连接失败时回退到文件通知方式。
+            var notifyPath = Path.ChangeExtension(_singleInstanceLockPath, ".args");
+            try
+            {
+                System.IO.File.WriteAllLines(notifyPath, args);
+            }
+            catch
+            {
+                // 忽略通知写入失败。
+            }
+        }
+    }
+
+    /// <summary>
+    /// 启动单实例 UNIX socket 监听，接收后续实例的命令行参数。
+    /// 在后台线程中 Accept 连接，读取 args 后触发 SecondInstanceLaunched 事件。
+    /// </summary>
+    /// <param name="safeName">安全的应用名称，用于 socket 路径。</param>
+    private void StartSingleInstanceSocket(string safeName)
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        var socketPath = Path.Combine(Path.GetTempPath(), $"wails-{safeName}.sock");
+        try
+        {
+            // 清理可能残留的旧 socket 文件。
+            if (System.IO.File.Exists(socketPath))
+            {
+                System.IO.File.Delete(socketPath);
+            }
+
+            _singleInstanceSocket = new System.Net.Sockets.Socket(
+                AddressFamily.Unix, System.Net.Sockets.SocketType.Stream, ProtocolType.Unspecified);
+            _singleInstanceSocket.Bind(new UnixDomainSocketEndPoint(socketPath));
+            _singleInstanceSocket.Listen(1);
+            _singleInstanceSocketPath = socketPath;
+
+            // 在后台线程中 Accept 连接，避免阻塞主循环。
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                while (_singleInstanceSocket is not null)
+                {
+                    try
+                    {
+                        var client = _singleInstanceSocket.Accept();
+                        using var stream = new NetworkStream(client, ownsSocket: true);
+                        using var reader = new StreamReader(stream, Encoding.UTF8);
+                        var json = reader.ReadToEnd();
+                        var args = System.Text.Json.JsonSerializer.Deserialize<string[]>(json) ?? Array.Empty<string>();
+
+                        // 通过事件系统分发 SecondInstanceLaunched 事件，携带命令行参数。
+                        Application.Get()?.Events.Emit("SecondInstanceLaunched", args, null);
+                    }
+                    catch
+                    {
+                        // socket 关闭或异常时退出循环。
+                        break;
+                    }
+                }
+            });
+        }
+        catch
+        {
+            // socket 创建失败时忽略，回退到文件通知方式。
+            _singleInstanceSocket?.Dispose();
+            _singleInstanceSocket = null;
+            _singleInstanceSocketPath = null;
         }
     }
 
@@ -307,6 +403,13 @@ public sealed class LinuxPlatformApp : IPlatformApp
     public void Destroy()
     {
         _mainLoop?.Quit();
+        _singleInstanceSocket?.Dispose();
+        _singleInstanceSocket = null;
+        if (_singleInstanceSocketPath is not null && System.IO.File.Exists(_singleInstanceSocketPath))
+        {
+            try { System.IO.File.Delete(_singleInstanceSocketPath); } catch { }
+        }
+        _singleInstanceSocketPath = null;
         _singleInstanceLockStream?.Dispose();
         _singleInstanceLockStream = null;
         _singleInstanceLockPath = null;
@@ -634,14 +737,35 @@ public sealed class LinuxPlatformApp : IPlatformApp
     }
 
     /// <summary>
-    /// 调用 gsettings 读取指定 schema 的键值，返回去除引号的原始字符串。
+    /// 通过 Gio.Settings 读取指定 schema 的键值。
     /// 对应 Go 版 application_linux_dbus.go 中通过 D-Bus 读取 portal 设置的逻辑。
+    /// 优先使用 Gio.Settings（GSettings C API 的直接绑定，无需子进程），
+    /// 失败时回退到 gsettings 命令行子进程。
     /// </summary>
     /// <param name="schema">gsettings schema 名称。</param>
     /// <param name="key">键名称。</param>
     /// <returns>读取到的值（已去除首尾引号与空白），失败返回 null。</returns>
     private static string? RunGsettingsGet(string schema, string key)
     {
+        // 优先使用 Gio.Settings 直接读取（避免子进程开销）。
+        try
+        {
+            var settings = Gio.Settings.New(schema);
+            if (settings is not null)
+            {
+                var value = settings.GetString(key);
+                if (!string.IsNullOrEmpty(value))
+                {
+                    return value;
+                }
+            }
+        }
+        catch
+        {
+            // Gio.Settings 不可用（schema 未安装等）时回退到 gsettings 命令行。
+        }
+
+        // 回退：通过 gsettings 命令行子进程读取。
         try
         {
             var psi = new ProcessStartInfo("gsettings", $"get {schema} {key}")

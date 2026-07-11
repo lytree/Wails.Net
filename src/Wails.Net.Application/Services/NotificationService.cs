@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using Wails.Net.Application.Options;
 
 namespace Wails.Net.Application.Services;
@@ -43,7 +44,7 @@ public sealed class NotificationRecord
 /// <summary>
 /// 通知服务，允许应用发送系统通知。
 /// 对应 Wails v3 Go 版本 pkg/services/notifications。
-/// 跨平台支持：Windows 使用 msg.exe 命令，Linux 使用 notify-send 命令。
+/// 跨平台支持：Windows 使用 WinRT Toast 通知（通过 PowerShell 调用），Linux 使用 notify-send 命令（回退到 dbus-send）。
 /// </summary>
 public class NotificationService : IServiceStartup, IServiceShutdown
 {
@@ -64,7 +65,7 @@ public class NotificationService : IServiceStartup, IServiceShutdown
 
     /// <summary>
     /// 通知被点击时触发，参数为通知 ID。
-    /// 注意：简化实现下（msg.exe / notify-send）原生通知不支持点击回调，
+    /// 注意：简化实现下（Toast / notify-send）原生通知不支持点击回调，
     /// 通过 <see cref="TriggerNotificationClick"/> 方法可程序化触发此事件，
     /// 例如前端通过 IPC 回调通知点击。
     /// </summary>
@@ -79,7 +80,7 @@ public class NotificationService : IServiceStartup, IServiceShutdown
     /// <summary>
     /// 获取或设置通知图标的字节数据。
     /// 设置后将在支持图标的平台上使用（Linux 的 notify-send）。
-    /// Windows 的 msg.exe 不支持自定义图标，此属性被忽略。
+    /// Windows 的 Toast 通知暂不支持自定义图标，此属性被忽略。
     /// </summary>
     public byte[]? Icon { get; set; }
 
@@ -223,7 +224,7 @@ public class NotificationService : IServiceStartup, IServiceShutdown
 
     /// <summary>
     /// 取消指定 ID 的通知。
-    /// 简化实现下（msg.exe / notify-send）无法真正撤回已发送的通知，
+    /// 简化实现下（Toast / notify-send）无法真正撤回已发送的通知，
     /// 此方法仅将通知标记为已取消并从内部记录中移除。
     /// </summary>
     /// <param name="id">通知 ID。</param>
@@ -261,7 +262,7 @@ public class NotificationService : IServiceStartup, IServiceShutdown
 
     /// <summary>
     /// 程序化触发通知点击事件。
-    /// 简化实现下（msg.exe / notify-send）原生通知不支持点击回调，
+    /// 简化实现下（Toast / notify-send）原生通知不支持点击回调，
     /// 前端可通过 IPC 调用此方法来模拟通知点击，触发 <see cref="NotificationClicked"/> 事件。
     /// 对应 Wails v3 Go 版本中通过 NotificationActivation 回调触发的方式。
     /// </summary>
@@ -319,6 +320,7 @@ public class NotificationService : IServiceStartup, IServiceShutdown
 
     /// <summary>
     /// 通过 notify-send 命令发送 Linux 桌面通知。
+    /// 当 notify-send 不可用或调用失败时，回退到 dbus-send 直接调用 FreeDesktop 通知接口。
     /// </summary>
     /// <param name="title">通知标题。</param>
     /// <param name="body">通知正文。</param>
@@ -330,16 +332,80 @@ public class NotificationService : IServiceStartup, IServiceShutdown
         {
             FileName = "notify-send",
             UseShellExecute = false,
-            CreateNoWindow = true
+            CreateNoWindow = true,
+            RedirectStandardError = true
         };
+        psi.ArgumentList.Add("--urgency");
+        psi.ArgumentList.Add("normal");
         psi.ArgumentList.Add("--icon");
         psi.ArgumentList.Add(iconArg);
         psi.ArgumentList.Add("--app-name");
         psi.ArgumentList.Add("Wails.Net");
+        psi.ArgumentList.Add("--expire-time");
+        psi.ArgumentList.Add("5000");
         psi.ArgumentList.Add(title);
         psi.ArgumentList.Add(body);
 
-        Process.Start(psi)?.Dispose();
+        try
+        {
+            using var process = Process.Start(psi);
+            if (process is null)
+            {
+                return;
+            }
+
+            // 等待 notify-send 完成，最多 3 秒，超时不阻塞应用。
+            process.WaitForExit(3000);
+
+            // 检查是否成功执行，失败时回退到 dbus-send。
+            if (!process.HasExited || process.ExitCode != 0)
+            {
+                SendLinuxNotificationViaDbus(title, body);
+            }
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            // notify-send 未安装，回退到 dbus-send 直接调用 FreeDesktop 通知接口。
+            SendLinuxNotificationViaDbus(title, body);
+        }
+    }
+
+    /// <summary>
+    /// 通过 dbus-send 调用 FreeDesktop 通知接口发送 Linux 桌面通知。
+    /// 当 notify-send 不可用时作为回退方案使用。
+    /// </summary>
+    /// <param name="title">通知标题。</param>
+    /// <param name="body">通知正文。</param>
+    private void SendLinuxNotificationViaDbus(string title, string body)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = "dbus-send",
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        psi.ArgumentList.Add("--session");
+        psi.ArgumentList.Add("--dest=org.freedesktop.Notifications");
+        psi.ArgumentList.Add("--type=method_call");
+        psi.ArgumentList.Add("/org/freedesktop/Notifications");
+        psi.ArgumentList.Add("org.freedesktop.Notifications.Notify");
+        psi.ArgumentList.Add("string:Wails.Net");
+        psi.ArgumentList.Add("uint32:0");
+        psi.ArgumentList.Add("string:dialog-information");
+        psi.ArgumentList.Add($"string:{title}");
+        psi.ArgumentList.Add($"string:{body}");
+        psi.ArgumentList.Add("array:string:");
+        psi.ArgumentList.Add("dict:string:variant:");
+        psi.ArgumentList.Add("int32:5000");
+
+        try
+        {
+            Process.Start(psi)?.Dispose();
+        }
+        catch
+        {
+            // dbus-send 也不可用时静默忽略，通知发送失败不影响应用运行。
+        }
     }
 
     /// <summary>
@@ -368,26 +434,72 @@ public class NotificationService : IServiceStartup, IServiceShutdown
     }
 
     /// <summary>
-    /// 通过 msg.exe 命令发送 Windows 通知。
-    /// msg.exe 向当前会话的所有用户发送消息弹窗。
-    /// 注意：msg.exe 仅在 Windows Server 和部分 Windows 版本可用。
+    /// 通过 PowerShell 调用 WinRT Toast 通知 API 发送 Windows 10+ 原生 Toast 通知。
+    /// 对应 Wails v3 Go 版本中通过 COM 调用 IToastNotifier 的实现。
+    /// 注意：使用 PowerShell 进程调用 WinRT API 避免引入新的 NuGet 包依赖。
+    /// AppUserModelID 未在系统注册时 Toast 仍可显示，但应用名称和图标可能不正确；
+    /// 完整实现应注册 AUMID 并关联快捷方式以获得正确的应用标识。
     /// </summary>
     /// <param name="title">通知标题。</param>
     /// <param name="body">通知正文。</param>
     private void SendWindowsNotification(string title, string body)
     {
-        // msg.exe 参数：* 表示所有会话，/TIME:10 表示 10 秒后自动关闭
+        var xmlTitle = XmlEscape(title);
+        var xmlBody = XmlEscape(body);
+        var toastXml = $"<toast><visual><binding template=\"ToastText02\"><text id=\"1\">{xmlTitle}</text><text id=\"2\">{xmlBody}</text></binding></visual></toast>";
+
+        // PowerShell 脚本通过 WinRT 投影调用 ToastNotificationManager 显示 Toast 通知。
+        // 使用 -EncodedCommand 传递 Base64 编码的 UTF-16 脚本，避免字符串转义问题。
+        var script = $@"
+$ErrorActionPreference = 'Stop'
+try {{
+    [void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+    [void][Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime]
+    $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
+    $xml.LoadXml('{toastXml}')
+    $toast = New-Object Windows.UI.Notifications.ToastNotification $xml
+    $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Wails.Net')
+    $notifier.Show($toast)
+}} catch {{
+    # WinRT Toast 调用失败时静默忽略
+}}";
+
+        var encodedCommand = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+
         var psi = new ProcessStartInfo
         {
-            FileName = "msg.exe",
+            FileName = "powershell.exe",
             UseShellExecute = false,
-            CreateNoWindow = true
+            CreateNoWindow = true,
+            RedirectStandardError = true,
+            RedirectStandardOutput = true
         };
-        psi.ArgumentList.Add("*");
-        psi.ArgumentList.Add("/TIME:10");
-        psi.ArgumentList.Add($"{title}: {body}");
+        psi.ArgumentList.Add("-NoProfile");
+        psi.ArgumentList.Add("-NonInteractive");
+        psi.ArgumentList.Add("-EncodedCommand");
+        psi.ArgumentList.Add(encodedCommand);
 
-        Process.Start(psi)?.Dispose();
+        using var process = Process.Start(psi);
+        if (process is not null)
+        {
+            // 等待 PowerShell 执行完成，最多 10 秒。
+            process.WaitForExit(10000);
+        }
+    }
+
+    /// <summary>
+    /// 对字符串进行 XML 实体转义，确保可安全嵌入 XML 文本节点。
+    /// </summary>
+    /// <param name="text">需要转义的文本。</param>
+    /// <returns>转义后的字符串。</returns>
+    private static string XmlEscape(string text)
+    {
+        return text
+            .Replace("&", "&amp;")
+            .Replace("<", "&lt;")
+            .Replace(">", "&gt;")
+            .Replace("\"", "&quot;")
+            .Replace("'", "&apos;");
     }
 
     /// <summary>
