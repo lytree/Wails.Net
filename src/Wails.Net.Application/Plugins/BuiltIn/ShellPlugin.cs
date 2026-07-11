@@ -60,6 +60,8 @@ public class ShellPlugin : IPlugin
             await ExecuteAsync(command, args)));
 
         context.Commands.MapCommand("shell.open", (Action<string>)(path => Open(path)));
+
+        context.Commands.MapCommand("shell.openUrl", (Action<string>)(url => Open(url)));
     }
 
     /// <summary>

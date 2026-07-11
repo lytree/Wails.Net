@@ -237,6 +237,12 @@ public static class RuntimeGenerator
             },
             getOpacity: function() {
               return window._wailsInvoke("window.getOpacity", {});
+            },
+            setTaskbarProgress: function(state, completed, total) {
+              return window._wailsInvoke("window.setTaskbarProgress", { state: state, completed: completed || 0, total: total || 100 });
+            },
+            setOverlayIcon: function(iconBytes, description) {
+              return window._wailsInvoke("window.setOverlayIcon", { iconBytes: iconBytes, description: description || "" });
             }
           },
           // 系统托盘 API（对应 Tauri v2 的 tray API 和 Wails v3 的 SystemTray）

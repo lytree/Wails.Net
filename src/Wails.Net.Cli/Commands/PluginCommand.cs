@@ -51,6 +51,8 @@ internal sealed class PluginCommand : CliCommandBase
         ["localhost"] = "Wails.Net.Plugins.Localhost",
         ["fs-watch"] = "Wails.Net.Plugins.FsWatch",
         ["fswatch"] = "Wails.Net.Plugins.FsWatch",
+        ["opener"] = "Wails.Net.Plugins.Opener",
+        ["open"] = "Wails.Net.Plugins.Opener",
     };
 
     /// <summary>

@@ -599,4 +599,61 @@ public interface IWebviewWindowImpl
         // 默认实现：忽略选项，委托到无选项重载。
         PrintToPDF(path);
     }
+
+    /// <summary>
+    /// 设置任务栏进度条状态。
+    /// 对应 Tauri v2 的 window.setProgressBar(progress) 和 Wails v3 的 TaskbarProgress。
+    /// 默认实现为空操作，Windows 平台实现通过 ITaskbarList3 COM 接口提供实际功能。
+    /// </summary>
+    /// <param name="state">进度状态枚举。</param>
+    /// <param name="completed">已完成值（0 ~ total）。</param>
+    /// <param name="total">总值。</param>
+    void SetTaskbarProgress(TaskbarProgressState state, ulong completed, ulong total)
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 设置任务栏叠加图标。
+    /// 对应 Tauri v2 的 window.setOverlayIcon(icon, description)。
+    /// 默认实现为空操作，Windows 平台实现通过 ITaskbarList3 COM 接口提供实际功能。
+    /// </summary>
+    /// <param name="iconBytes">图标字节数据（ICO 格式），为 null 时清除叠加图标。</param>
+    /// <param name="description">无障碍描述文本。</param>
+    void SetOverlayIcon(byte[]? iconBytes, string? description)
+    {
+        // 默认空实现，平台实现可重写。
+    }
+}
+
+/// <summary>
+/// 任务栏进度条状态枚举。
+/// 对应 Windows TBPF（Taskbar Button Progress Flags）和 Tauri v2 的进度状态。
+/// </summary>
+public enum TaskbarProgressState
+{
+    /// <summary>
+    /// 无进度条（TBPF_NOPROGRESS）。
+    /// </summary>
+    None = 0,
+
+    /// <summary>
+    /// 不确定进度（TBPF_INDETERMINATE），显示滚动动画。
+    /// </summary>
+    Indeterminate = 1,
+
+    /// <summary>
+    /// 正常进度（TBPF_NORMAL），显示绿色进度条。
+    /// </summary>
+    Normal = 2,
+
+    /// <summary>
+    /// 错误进度（TBPF_ERROR），显示红色进度条。
+    /// </summary>
+    Error = 4,
+
+    /// <summary>
+    /// 暂停进度（TBPF_PAUSED），显示黄色进度条。
+    /// </summary>
+    Paused = 8,
 }

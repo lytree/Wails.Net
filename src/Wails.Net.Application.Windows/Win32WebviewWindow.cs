@@ -2346,6 +2346,158 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         SetHTML(html);
     }
 
+    /// <summary>
+    /// ITaskbarList3 COM 实例，懒加载。
+    /// 在首次调用任务栏相关方法时创建。
+    /// </summary>
+    private ITaskbarList3? _taskbarList;
+
+    /// <inheritdoc />
+    public void SetTaskbarProgress(TaskbarProgressState state, ulong completed, ulong total)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        var taskbar = GetTaskbarList();
+        if (taskbar is null)
+        {
+            return;
+        }
+
+        try
+        {
+            // 将 TaskbarProgressState 枚举值映射到 Windows TBPF 标志
+            var tbpfFlag = (uint)state;
+
+            unsafe
+            {
+                var hwndPtr = new IntPtr(_hwnd.Value);
+
+                if (state == TaskbarProgressState.None)
+                {
+                    taskbar.SetProgressState(hwndPtr, tbpfFlag);
+                    return;
+                }
+
+                if (state == TaskbarProgressState.Indeterminate)
+                {
+                    taskbar.SetProgressState(hwndPtr, tbpfFlag);
+                    return;
+                }
+
+                // Normal/Paused/Error 需要设置状态和值
+                taskbar.SetProgressState(hwndPtr, tbpfFlag);
+                if (total > 0)
+                {
+                    taskbar.SetProgressValue(hwndPtr, completed, total);
+                }
+            }
+        }
+        catch
+        {
+            // COM 调用失败时静默处理
+        }
+    }
+
+    /// <inheritdoc />
+    public void SetOverlayIcon(byte[]? iconBytes, string? description)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        var taskbar = GetTaskbarList();
+        if (taskbar is null)
+        {
+            return;
+        }
+
+        try
+        {
+            unsafe
+            {
+                var hwndPtr = new IntPtr(_hwnd.Value);
+
+                if (iconBytes is null || iconBytes.Length == 0)
+                {
+                    taskbar.SetOverlayIcon(hwndPtr, IntPtr.Zero, null);
+                    return;
+                }
+
+                // 通过 WindowsPlatformApp 将 ICO 字节加载为 HICON
+                var hIcon = LoadIconFromBytes(iconBytes);
+                if (hIcon == IntPtr.Zero)
+                {
+                    return;
+                }
+
+                taskbar.SetOverlayIcon(hwndPtr, hIcon, description ?? string.Empty);
+
+                // Taskbar 复制了图标，可销毁本地句柄
+                PInvoke.DestroyIcon((HICON)hIcon);
+            }
+        }
+        catch
+        {
+            // COM 调用失败时静默处理
+        }
+    }
+
+    /// <summary>
+    /// 从 ICO 字节数据加载 HICON。
+    /// 复用 WindowsPlatformApp.LoadIconFromBytes 的逻辑。
+    /// </summary>
+    /// <param name="iconBytes">ICO 格式字节数据。</param>
+    /// <returns>HICON 句柄，失败返回 IntPtr.Zero。</returns>
+    private static IntPtr LoadIconFromBytes(byte[] iconBytes)
+    {
+        try
+        {
+            var tempPath = Path.Combine(Path.GetTempPath(), $"wails_overlay_{Guid.NewGuid():N}.ico");
+            try
+            {
+                File.WriteAllBytes(tempPath, iconBytes);
+                var handle = PInvoke.LoadImage(
+                    default,
+                    tempPath,
+                    (GDI_IMAGE_TYPE)1, // IMAGE_ICON = 1
+                    0,
+                    0,
+                    IMAGE_FLAGS.LR_LOADFROMFILE | IMAGE_FLAGS.LR_DEFAULTSIZE);
+
+                var iconPtr = handle.DangerousGetHandle();
+                GC.SuppressFinalize(handle);
+                return iconPtr;
+            }
+            finally
+            {
+                try { File.Delete(tempPath); } catch { /* 忽略 */ }
+            }
+        }
+        catch
+        {
+            return IntPtr.Zero;
+        }
+    }
+
+    /// <summary>
+    /// 获取或创建 ITaskbarList3 COM 实例。
+    /// </summary>
+    /// <returns>ITaskbarList3 实例，失败返回 null。</returns>
+    private ITaskbarList3? GetTaskbarList()
+    {
+        if (_taskbarList is not null)
+        {
+            return _taskbarList;
+        }
+
+        _taskbarList = Win32Taskbar.CreateTaskbarList();
+        return _taskbarList;
+    }
+
     /// <inheritdoc />
     public void Dispose()
     {

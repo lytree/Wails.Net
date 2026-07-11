@@ -343,6 +343,25 @@ public class WebviewWindow
     public float GetOpacity() => ImplRequired.GetOpacity();
 
     /// <summary>
+    /// 设置任务栏进度条状态。
+    /// 对应 Tauri v2 的 window.setProgressBar(progress)。
+    /// </summary>
+    /// <param name="state">进度状态枚举。</param>
+    /// <param name="completed">已完成值（0 ~ total），默认 0。</param>
+    /// <param name="total">总值，默认 100。</param>
+    public void SetTaskbarProgress(TaskbarProgressState state, ulong completed = 0, ulong total = 100)
+        => ImplRequired.SetTaskbarProgress(state, completed, total);
+
+    /// <summary>
+    /// 设置任务栏叠加图标。
+    /// 对应 Tauri v2 的 window.setOverlayIcon(icon, description)。
+    /// </summary>
+    /// <param name="iconBytes">图标字节数据（ICO 格式），为 null 时清除。</param>
+    /// <param name="description">无障碍描述文本。</param>
+    public void SetOverlayIcon(byte[]? iconBytes, string? description = null)
+        => ImplRequired.SetOverlayIcon(iconBytes, description);
+
+    /// <summary>
     /// 后退导航。
     /// </summary>
     public void GoBack() => ImplRequired.GoBack();
