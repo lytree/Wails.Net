@@ -76,4 +76,7 @@ public enum ApplicationEventType : uint
 
     /// <summary>URL 加载失败。</summary>
     URLLoadFailed = 23,
+
+    /// <summary>收到深度链接。</summary>
+    DeepLinkReceived = 24,
 }

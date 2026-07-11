@@ -1115,6 +1115,21 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         }
     }
 
+    /// <summary>
+    /// 将快捷键控制器附加到窗口。
+    /// 由 LinuxKeyBindingManager 调用，将 GTK4 ShortcutController 添加到窗口。
+    /// </summary>
+    /// <param name="controller">GTK4 快捷键控制器。</param>
+    public void AttachShortcutController(Gtk.ShortcutController controller)
+    {
+        if (!OperatingSystem.IsLinux() || _window is null)
+        {
+            return;
+        }
+
+        _window.AddController(controller);
+    }
+
     /// <inheritdoc />
     public string GetURL()
     {

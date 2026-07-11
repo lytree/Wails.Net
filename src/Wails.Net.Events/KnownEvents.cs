@@ -137,6 +137,9 @@ public static class KnownEvents
     /// <summary>URL 加载失败事件。</summary>
     public const string URLLoadFailed = "wails:url:load:failed";
 
+    /// <summary>收到深度链接事件。</summary>
+    public const string DeepLinkReceived = "wails:deeplink:received";
+
     /// <summary>窗口即将卸载事件。</summary>
     public const string WindowBeforeUnload = "wails:window:before:unload";
 
@@ -208,6 +211,7 @@ public static class KnownEvents
         ApplicationEventType.URLStartsLoading => URLStartsLoading,
         ApplicationEventType.URLFinishedLoading => URLFinishedLoading,
         ApplicationEventType.URLLoadFailed => URLLoadFailed,
+        ApplicationEventType.DeepLinkReceived => DeepLinkReceived,
         ApplicationEventType.WindowBeforeUnload => WindowBeforeUnload,
         _ => $"wails:custom:{(uint)type}"
     };

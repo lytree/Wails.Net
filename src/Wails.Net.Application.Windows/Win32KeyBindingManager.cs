@@ -4,7 +4,7 @@ using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.UI.Input.KeyboardAndMouse;
 
-namespace Wails.Net.Application.Windows;
+namespace Wails.Net.Application.Platform;
 
 /// <summary>
 /// Win32 平台快捷键绑定管理器实现。
@@ -81,6 +81,16 @@ public sealed class Win32KeyBindingManager : IKeyBindingManager, IDisposable
     public Win32KeyBindingManager(nint hwnd)
     {
         _hwnd = new HWND(hwnd);
+    }
+
+    /// <summary>
+    /// 构造无窗口句柄的 Win32KeyBindingManager 实例。
+    /// 使用线程级热键注册，WM_HOTKEY 消息投递到线程消息队列，
+    /// 由 WindowsPlatformApp.Run() 的消息循环处理。
+    /// </summary>
+    public Win32KeyBindingManager()
+    {
+        _hwnd = HWND.Null;
     }
 
     /// <inheritdoc />

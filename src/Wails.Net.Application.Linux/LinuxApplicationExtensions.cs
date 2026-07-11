@@ -29,6 +29,9 @@ public static class LinuxApplicationExtensions
         // 注册系统托盘管理器，委托给 LinuxSystemTray 的 GTK4 模拟托盘实现。
         app.SystemTrayManager = new LinuxSystemTrayManager();
 
+        // 注册快捷键绑定管理器，委托给 LinuxKeyBindingManager 的 GTK4 ShortcutController 实现。
+        app.KeyBindingManager = new LinuxKeyBindingManager();
+
         return app;
     }
 

@@ -12,6 +12,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="NSubstitute" />
     <PackageReference Include="TUnit" />
     <PackageReference Include="TUnit.Assertions" />
     <PackageReference Include="TUnit.Engine" />

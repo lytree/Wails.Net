@@ -717,6 +717,17 @@ public class Application
     }
 
     /// <summary>
+    /// 处理平台级事件，将事件 ID 转换为事件名并携带数据通过事件处理器分发。
+    /// </summary>
+    /// <param name="eventId">平台事件 ID。</param>
+    /// <param name="data">事件数据。</param>
+    public void HandlePlatformEvent(uint eventId, object? data)
+    {
+        var eventName = KnownEvents.GetEventName(eventId);
+        _events.Emit(eventName, data, null);
+    }
+
+    /// <summary>
     /// 分发窗口级事件，将事件类型转换为事件名并携带窗口 ID 通过事件处理器分发。
     /// 对应 Wails v3 Go 版本 application.go 中的 dispatchWindowEvent 方法。
     /// </summary>

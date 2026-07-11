@@ -242,9 +242,19 @@ public sealed class WindowsPlatformApp : IPlatformApp
     {
         // 标准 Win32 消息循环：GetMessage 阻塞等待消息，TranslateMessage 转换键盘消息，
         // DispatchMessage 分发到窗口过程。GetMessage 返回 0 表示收到 WM_QUIT，退出循环。
-        // 返回 0 表示成功退出（WM_QUIT 的退出码由 PostQuitMessage 设为 0）。
+        // 线程级热键消息（WM_HOTKEY，hwnd == NULL）不通过 DispatchMessage 分发，
+        // 需在此直接处理，转发到 KeyBindingManager。
+        const uint WmHotkey = 0x0312;
+
         while ((int)PInvoke.GetMessage(out var msg, default, 0, 0) > 0)
         {
+            // 处理线程级热键消息（hwnd 为 NULL 的 WM_HOTKEY）。
+            if (msg.hwnd.IsNull && msg.message == WmHotkey)
+            {
+                Application.Get()?.KeyBindingManager?.HandleHotKey((int)msg.wParam.Value);
+                continue;
+            }
+
             PInvoke.TranslateMessage(in msg);
             PInvoke.DispatchMessage(in msg);
         }

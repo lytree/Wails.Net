@@ -29,6 +29,9 @@ public static class WindowsApplicationExtensions
         // 注册系统托盘管理器，委托给 Win32SystemTray 的 Shell_NotifyIconW 实现。
         app.SystemTrayManager = new WindowsSystemTrayManager();
 
+        // 注册快捷键绑定管理器，委托给 Win32KeyBindingManager 的 RegisterHotKey 实现。
+        app.KeyBindingManager = new Win32KeyBindingManager();
+
         return app;
     }
 
