@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Wails.Net.Application\Wails.Net.Application.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Runtime.Js\Wails.Net.Runtime.Js.csproj" />
   </ItemGroup>
 
 </Project>

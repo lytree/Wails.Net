@@ -143,6 +143,11 @@ public sealed class WindowsPlatformApp : IPlatformApp
     private byte[]? _appIconBytes;
 
     /// <summary>
+    /// 系统级事件监听器，监听电源模式变化和网络连通性变化。
+    /// </summary>
+    private SystemEventWatcher? _systemEventWatcher;
+
+    /// <summary>
     /// 构造 WindowsPlatformApp 实例。
     /// 在构造时设置进程 DPI 感知，确保后续窗口按高 DPI 正确缩放。
     /// </summary>
@@ -240,6 +245,10 @@ public sealed class WindowsPlatformApp : IPlatformApp
     /// <inheritdoc />
     public int Run()
     {
+        // 启动系统级事件监听器（电源模式变化、网络连通性变化）。
+        _systemEventWatcher = new SystemEventWatcher();
+        _systemEventWatcher.Start();
+
         // 标准 Win32 消息循环：GetMessage 阻塞等待消息，TranslateMessage 转换键盘消息，
         // DispatchMessage 分发到窗口过程。GetMessage 返回 0 表示收到 WM_QUIT，退出循环。
         // 线程级热键消息（WM_HOTKEY，hwnd == NULL）不通过 DispatchMessage 分发，
@@ -265,6 +274,10 @@ public sealed class WindowsPlatformApp : IPlatformApp
     /// <inheritdoc />
     public void Destroy()
     {
+        // 停止系统级事件监听器。
+        _systemEventWatcher?.Dispose();
+        _systemEventWatcher = null;
+
         // 销毁应用菜单。
         _applicationMenu?.Destroy();
         _applicationMenu = null;

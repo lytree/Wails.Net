@@ -96,6 +96,18 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     private const uint WmActivate = 0x0006;
 
     /// <summary>
+    /// WM_DISPLAYCHANGE 消息常量（0x007E），显示器配置变化时收到。
+    /// wParam 为每像素位数，lParam 低字为新水平分辨率，高字为新垂直分辨率。
+    /// </summary>
+    private const uint WmDisplayChange = 0x007E;
+
+    /// <summary>
+    /// WM_CLIPBOARDUPDATE 消息常量（0x031D），剪贴板内容变化时收到。
+    /// 需通过 AddClipboardFormatListener 注册窗口后才能接收。
+    /// </summary>
+    private const uint WmClipboardUpdate = 0x031D;
+
+    /// <summary>
     /// SC_CLOSE 系统命令 ID（0xF060）。
     /// </summary>
     private const uint ScClose = 0xF060;
@@ -377,6 +389,10 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         // 启用文件拖放接收，使窗口能够收到 WM_DROPFILES 消息。
         // 对应 Wails v3 Go 版本中的 DragAcceptFiles 调用。
         PInvoke.DragAcceptFiles(_hwnd, true);
+
+        // 注册剪贴板格式监听器，使窗口能够收到 WM_CLIPBOARDUPDATE 消息。
+        // 对应 Wails v3 的 ClipboardChanged 事件监听。
+        PInvoke.AddClipboardFormatListener(_hwnd);
     }
 
     /// <summary>
@@ -1140,6 +1156,20 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                 }
 
                 break;
+
+            case WmDisplayChange:
+                // 显示器配置变化（分辨率改变、显示器热插拔）。
+                // 对应 Wails v3 的 DisplayChanged 事件。
+                Application.Get()?.HandlePlatformEvent(
+                    (uint)ApplicationEventType.DisplayChanged);
+                break;
+
+            case WmClipboardUpdate:
+                // 剪贴板内容变化（需要窗口已通过 AddClipboardFormatListener 注册）。
+                // 对应 Wails v3 的 ClipboardChanged 事件。
+                Application.Get()?.HandlePlatformEvent(
+                    (uint)ApplicationEventType.ClipboardChanged);
+                break;
         }
 
         return PInvoke.DefWindowProc(hWnd, msg, wParam, lParam);
@@ -1385,6 +1415,8 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
 
         if (!_hwnd.IsNull)
         {
+            // 移除剪贴板格式监听器，避免销毁后仍接收 WM_CLIPBOARDUPDATE。
+            PInvoke.RemoveClipboardFormatListener(_hwnd);
             PInvoke.DestroyWindow(_hwnd);
             _hwnd = default;
         }

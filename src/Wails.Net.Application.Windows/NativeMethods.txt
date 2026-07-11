@@ -166,3 +166,5 @@ RemoveProp
 GetParent
 GetAncestor
 EnumChildWindows
+AddClipboardFormatListener
+RemoveClipboardFormatListener

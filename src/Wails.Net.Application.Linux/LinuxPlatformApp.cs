@@ -81,6 +81,11 @@ public sealed class LinuxPlatformApp : IPlatformApp
     private LinuxMenu? _appMenu;
 
     /// <summary>
+    /// 系统级事件监听器，监听网络连通性变化等系统事件。
+    /// </summary>
+    private LinuxSystemEventWatcher? _systemEventWatcher;
+
+    /// <summary>
     /// 构造 LinuxPlatformApp 实例。
     /// </summary>
     /// <param name="options">应用配置选项。</param>
@@ -265,6 +270,10 @@ public sealed class LinuxPlatformApp : IPlatformApp
             throw new PlatformNotSupportedException("GTK 主循环仅在 Linux 上可用。");
         }
 
+        // 启动系统级事件监听器（网络连通性变化）。
+        _systemEventWatcher = new LinuxSystemEventWatcher();
+        _systemEventWatcher.Start();
+
         _mainLoop = MainLoop.New(GLib.Functions.MainContextDefault(), false);
         _mainLoop.Run();
         return 0;
@@ -402,6 +411,10 @@ public sealed class LinuxPlatformApp : IPlatformApp
     /// <inheritdoc />
     public void Destroy()
     {
+        // 停止系统级事件监听器。
+        _systemEventWatcher?.Dispose();
+        _systemEventWatcher = null;
+
         _mainLoop?.Quit();
         _singleInstanceSocket?.Dispose();
         _singleInstanceSocket = null;

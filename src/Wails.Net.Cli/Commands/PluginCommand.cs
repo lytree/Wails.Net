@@ -49,6 +49,8 @@ internal sealed class PluginCommand : CliCommandBase
         ["persisted-scope"] = "Wails.Net.Plugins.PersistedScope",
         ["scope"] = "Wails.Net.Plugins.PersistedScope",
         ["localhost"] = "Wails.Net.Plugins.Localhost",
+        ["fs-watch"] = "Wails.Net.Plugins.FsWatch",
+        ["fswatch"] = "Wails.Net.Plugins.FsWatch",
     };
 
     /// <summary>

@@ -443,6 +443,168 @@ public static class RuntimeGenerator
             listRoutes: function(port) {
               return window._wailsInvoke("localhost.listRoutes", { port: port });
             }
+          },
+          // 文件系统监听 API（对应 Tauri v2 的 @tauri-apps/plugin-fs-watch）
+          fswatch: {
+            watch: function(path, recursive, extensions) {
+              return window._wailsInvoke("fswatch.watch", { path: path, recursive: recursive || false, extensions: extensions || null });
+            },
+            unwatch: function(id) {
+              return window._wailsInvoke("fswatch.unwatch", { id: id });
+            },
+            unwatchAll: function() {
+              return window._wailsInvoke("fswatch.unwatchAll", {});
+            },
+            listWatches: function() {
+              return window._wailsInvoke("fswatch.listWatches", {});
+            },
+            isWatching: function(id) {
+              return window._wailsInvoke("fswatch.isWatching", { id: id });
+            }
+          },
+          // 系统信息 API（对应 Tauri v2 的 @tauri-apps/plugin-os）
+          system: {
+            platform: function() {
+              return window._wailsInvoke("system.platform", {});
+            },
+            arch: function() {
+              return window._wailsInvoke("system.arch", {});
+            },
+            hostname: function() {
+              return window._wailsInvoke("system.hostname", {});
+            },
+            version: function() {
+              return window._wailsInvoke("system.version", {});
+            },
+            type: function() {
+              return window._wailsInvoke("system.type", {});
+            },
+            locale: function() {
+              return window._wailsInvoke("system.locale", {});
+            },
+            timezone: function() {
+              return window._wailsInvoke("system.timezone", {});
+            }
+          },
+          // 电源管理 API（对应 Tauri v2 的 @tauri-apps/plugin-os 电源部分）
+          power: {
+            requestWakeLock: function() {
+              return window._wailsInvoke("power.requestWakeLock", {});
+            },
+            releaseWakeLock: function() {
+              return window._wailsInvoke("power.releaseWakeLock", {});
+            },
+            isWakeLockHeld: function() {
+              return window._wailsInvoke("power.isWakeLockHeld", {});
+            }
+          },
+          // 进程管理 API
+          process: {
+            exit: function(code) {
+              return window._wailsInvoke("process.exit", { code: code || 0 });
+            },
+            restart: function() {
+              return window._wailsInvoke("process.restart", {});
+            },
+            getPid: function() {
+              return window._wailsInvoke("process.getPid", {});
+            }
+          },
+          // 文件系统 API（对应 Tauri v2 的 @tauri-apps/plugin-fs）
+          fs: {
+            readTextFile: function(path) {
+              return window._wailsInvoke("fs.readTextFile", { path: path });
+            },
+            writeTextFile: function(path, content) {
+              return window._wailsInvoke("fs.writeTextFile", { path: path, content: content });
+            },
+            readBinaryFile: function(path) {
+              return window._wailsInvoke("fs.readBinaryFile", { path: path });
+            },
+            writeBinaryFile: function(path, data) {
+              return window._wailsInvoke("fs.writeBinaryFile", { path: path, data: data });
+            },
+            exists: function(path) {
+              return window._wailsInvoke("fs.exists", { path: path });
+            },
+            mkdir: function(path, recursive) {
+              return window._wailsInvoke("fs.mkdir", { path: path, recursive: recursive || false });
+            },
+            remove: function(path) {
+              return window._wailsInvoke("fs.remove", { path: path });
+            },
+            rename: function(oldPath, newPath) {
+              return window._wailsInvoke("fs.rename", { oldPath: oldPath, newPath: newPath });
+            },
+            copy: function(src, dst) {
+              return window._wailsInvoke("fs.copy", { src: src, dst: dst });
+            },
+            readDir: function(path) {
+              return window._wailsInvoke("fs.readDir", { path: path });
+            }
+          },
+          // Shell API（对应 Tauri v2 的 @tauri-apps/plugin-shell）
+          shell: {
+            execute: function(command, args, cwd) {
+              return window._wailsInvoke("shell.execute", { command: command, args: args || [], cwd: cwd || null });
+            },
+            open: function(path) {
+              return window._wailsInvoke("shell.open", { path: path });
+            },
+            openUrl: function(url) {
+              return window._wailsInvoke("shell.openUrl", { url: url });
+            }
+          },
+          // 通知 API（对应 Tauri v2 的 @tauri-apps/plugin-notification）
+          notification: {
+            show: function(title, body) {
+              return window._wailsInvoke("notification.show", { title: title, body: body });
+            },
+            requestPermission: function() {
+              return window._wailsInvoke("notification.requestPermission", {});
+            },
+            hasPermission: function() {
+              return window._wailsInvoke("notification.hasPermission", {});
+            }
+          },
+          // 存储插件 API（对应 Tauri v2 的 @tauri-apps/plugin-store）
+          store: {
+            get: function(key) {
+              return window._wailsInvoke("store.get", { key: key });
+            },
+            set: function(key, value) {
+              return window._wailsInvoke("store.set", { key: key, value: value });
+            },
+            delete: function(key) {
+              return window._wailsInvoke("store.delete", { key: key });
+            },
+            keys: function() {
+              return window._wailsInvoke("store.keys", {});
+            },
+            clear: function() {
+              return window._wailsInvoke("store.clear", {});
+            },
+            has: function(key) {
+              return window._wailsInvoke("store.has", { key: key });
+            }
+          },
+          // 日志 API（对应 Tauri v2 的 @tauri-apps/plugin-log）
+          log: {
+            debug: function(message) {
+              return window._wailsInvoke("log.debug", { message: message });
+            },
+            info: function(message) {
+              return window._wailsInvoke("log.info", { message: message });
+            },
+            warn: function(message) {
+              return window._wailsInvoke("log.warn", { message: message });
+            },
+            error: function(message) {
+              return window._wailsInvoke("log.error", { message: message });
+            },
+            trace: function(message) {
+              return window._wailsInvoke("log.trace", { message: message });
+            }
           }
         };
         """;
