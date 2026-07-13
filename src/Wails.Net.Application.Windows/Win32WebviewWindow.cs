@@ -532,9 +532,15 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
             // 对应 Wails v3 Go 版本中的 WebMessageReceived 事件处理。
             _webview.WebMessageReceived += OnWebMessageReceived;
 
-            // 注册 NavigationCompleted 事件，导航完成后注入运行时 JS。
+            // 注册 NavigationCompleted 事件，导航完成后注入拖拽区域等辅助脚本。
             // 对应 Wails v3 Go 版本中的 NavigationCompleted 事件处理。
             _webview.NavigationCompleted += OnNavigationCompleted;
+
+            // 注入 Wails 运行时 JS（必须在导航之前！）
+            // 使用 AddScriptToExecuteOnDocumentCreatedAsync 注册的脚本会在页面脚本执行前运行，
+            // 确保 window.wails 在页面脚本中可用。
+            // 若放在导航之后，页面脚本已执行完，wails 会是 undefined。
+            InjectRuntimeJs();
 
             // 设置 URL（若有）。
             if (!string.IsNullOrEmpty(_options.URL))
@@ -606,10 +612,13 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     /// 拦截 http(s)://wails.localhost/* 的请求：
     /// - /wails/call、/wails/event、/wails/drag：转发到 MessageProcessor 进行 IPC 消息处理。
     /// - 其他路径：由 AssetServer 提供静态资源服务。
+    /// 重要：必须使用同步方法（非 async/await），因为 Win32 消息循环无 SynchronizationContext，
+    /// await 后的 continuation 会在线程池线程运行，而 WebView2 要求 CoreWebView2 成员
+    /// 只能在 UI 线程访问（否则抛出 InvalidOperationException）。
     /// </summary>
     /// <param name="sender">事件发送者。</param>
     /// <param name="args">WebResourceRequested 事件参数。</param>
-    private async void OnWebResourceRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs args)
+    private void OnWebResourceRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs args)
     {
         var deferral = args.GetDeferral();
         try
@@ -625,19 +634,21 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                  path.Equals("/wails/event", StringComparison.OrdinalIgnoreCase) ||
                  path.Equals("/wails/drag", StringComparison.OrdinalIgnoreCase)))
             {
+                // 同步读取请求体，避免 await 导致后续在线程池线程执行
                 string body = string.Empty;
                 if (args.Request.Content is { } contentStream)
                 {
                     using var reader = new StreamReader(contentStream);
-                    body = await reader.ReadToEndAsync();
+                    body = reader.ReadToEnd();
                 }
 
-                // 调用后端处理消息并获取响应，将响应序列化为 JSON 返回给前端。
-                // 前端通过 fetch().then(r => r.json()) 获取响应。
+                // 同步调用后端处理消息并获取响应。
+                // HandleMessageFromFrontend 主要是 CPU 密集型（反射调用），
+                // 阻塞 UI 线程的时间通常很短，可接受。
                 string responseJson = "{\"result\":null,\"error\":null}";
                 if (app is not null)
                 {
-                    var response = await app.HandleMessageFromFrontend(body);
+                    var response = app.HandleMessageFromFrontend(body).GetAwaiter().GetResult();
                     if (response is not null)
                     {
                         responseJson = JsonSerializer.Serialize(response, _jsonOptions);
@@ -661,7 +672,8 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                     assetPath = "index.html";
                 }
 
-                var content = await assetServer.ServeAsync(assetPath);
+                // 同步读取资源，避免 await 导致后续在线程池线程执行
+                var content = assetServer.ServeAsync(assetPath).GetAwaiter().GetResult();
                 if (content is not null && content.Length > 0)
                 {
                     // 使用 assetPath（已规范化为 index.html 等）而非原始 path（可能是 "/"）
@@ -680,7 +692,7 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                     !assetPath.Equals("index.html", StringComparison.OrdinalIgnoreCase) &&
                     !Path.HasExtension(assetPath))
                 {
-                    var fallbackContent = await assetServer.ServeAsync("index.html");
+                    var fallbackContent = assetServer.ServeAsync("index.html").GetAwaiter().GetResult();
                     if (fallbackContent is not null && fallbackContent.Length > 0)
                     {
                         var ms = new MemoryStream(fallbackContent);
@@ -808,14 +820,15 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
             return;
         }
 
-        InjectRuntimeJs();
+        // 运行时 JS 已在 InitializeWebViewAsync 中通过 AddScriptToExecuteOnDocumentCreatedAsync
+        // 注入，无需在此重复注入。
 
         // 无边框窗口注入 CSS 拖拽区域脚本，支持 -webkit-app-region: drag。
         // 对应 Tauri v2 / Electron 的 frameless window drag region 实现。
         if (_options.Frameless)
         {
             // 先注册全局拖拽回调，再注入拖拽区域监听脚本。
-            // 顺序很重要：监听脚本会在 mousedown 时调用 window.__wails_startDrag__，
+            // 顺序很重要：监听脚本会在 mousedown 时调用 window.__wails_start_drag__，
             // 因此回调必须先于监听脚本注入。
             _ = _webview.ExecuteScriptAsync(DragRegionHelper.GetStartDragCallbackScript(_id));
             _ = _webview.ExecuteScriptAsync(DragRegionHelper.GetDragRegionScript());
@@ -830,6 +843,8 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     /// 注入 Wails 运行时 JavaScript 代码到 WebView2。
     /// 对应 Wails v3 Go 版本中的 injectRuntimeJs 方法。
     /// 通过 Application.GenerateRuntimeJs 生成运行时代码并执行。
+    /// 使用 AddScriptToExecuteOnDocumentCreatedAsync 注入，
+    /// 确保运行时在页面任何脚本执行前就绪（否则页面脚本访问 wails 时会得到 undefined）。
     /// 仅注入一次，后续导航不重复注入。
     /// </summary>
     private void InjectRuntimeJs()
@@ -850,7 +865,10 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
             var js = app.GenerateRuntimeJs(false);
             if (!string.IsNullOrEmpty(js))
             {
-                _ = _webview.ExecuteScriptAsync(js);
+                // AddScriptToExecuteOnDocumentCreatedAsync 会在每个新文档创建时、
+                // 页面脚本执行前注入 JS，确保 window.wails 在页面脚本中可用。
+                // ExecuteScriptAsync 只在调用时执行一次，页面已加载完，时机太晚。
+                _ = _webview.AddScriptToExecuteOnDocumentCreatedAsync(js);
                 _runtimeInjected = true;
             }
         }
