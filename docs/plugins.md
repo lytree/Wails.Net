@@ -259,7 +259,7 @@ builder.UsePlugin<NotificationPlugin>();
 
 ```javascript
 // 发送通知
-await wails.call('notification.send', [{
+await wails.call('notification.show', [{
     title: '我的应用',
     body: '操作已完成！'
 }]);

@@ -8,6 +8,12 @@ using Wails.Net.Application.Plugins;
 using Wails.Net.Application.Plugins.BuiltIn;
 using Wails.Net.Demo.Vue.Plugins;
 using Wails.Net.Demo.Vue.Services;
+using Wails.Net.Generated;
+
+// 显式调用源生成器生成的注册方法，作为 [ModuleInitializer] 的安全网。
+// 在某些场景下 ModuleInitializer 可能未按预期运行（如 Assembly.LoadFrom 加载的程序集），
+// 此处显式调用确保 GeneratedBindingRegistry 在应用启动前已填充。
+GeneratedBindingsRegistration.Register();
 
 // 创建桌面应用构建器（使用 Generic Host 模式）
 var builder = DesktopApplicationBuilder.CreateBuilder(args);

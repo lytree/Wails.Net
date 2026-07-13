@@ -249,7 +249,7 @@ function initSystemPanel() {
         const text = document.getElementById('notificationInput').value;
         if (!text) return;
         try {
-            await wails.call('notification.send', [{ title: 'Wails.Net Demo', body: text }]);
+            await wails.call('notification.show', [{ title: 'Wails.Net Demo', body: text }]);
         } catch (err) {
             console.error('通知失败:', err);
         }

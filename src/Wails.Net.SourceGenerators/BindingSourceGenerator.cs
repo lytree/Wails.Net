@@ -182,9 +182,11 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
             // 生成唯一的调用器方法名
             var invokerMethodName = MakeUniqueName($"{typeName}_{methodName}", usedNames);
 
+            // CustomName 存储特性中原始指定的自定义名称（可能为 null），
+            // 用于决定是否额外注册别名。
             methodInfos.Add(new MethodSymbolInfo(
                 methodSymbol, fullTypeName, typeName, methodName, namespaceName,
-                fullName, shortName, bindingName, isCommand, invokerMethodName));
+                fullName, shortName, marker.CustomName, isCommand, invokerMethodName));
         }
 
         if (methodInfos.Count == 0)
@@ -238,12 +240,26 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
                 sb.AppendLine($"                \"{EscapeString(typeFullNameStr)}\");");
             }
 
-            // 对于 [Command] 特性的方法，命令名已与 fullName 相同（直接使用自定义名）
-            // 但如果指定了自定义名，同时注册 "ClassName.MethodName" 短名称作为别名
-            if (info.IsCommand && info.CustomName != info.ShortName)
+            // 对于 [Command] 特性的方法，命令名已与 fullName 相同（直接使用自定义名）。
+            // 仅当命令显式指定了名称（CustomName 非 null）且与短名称不同时，
+            // 同时注册 "ClassName.MethodName" 短名称作为别名。
+            if (info.IsCommand && info.CustomName is not null && info.CustomName != info.ShortName)
             {
                 sb.AppendLine($"            GeneratedBindingRegistry.Register(");
                 sb.AppendLine($"                \"{EscapeString(info.ShortName)}\",");
+                sb.AppendLine($"                {info.InvokerMethodName},");
+                sb.AppendLine($"                \"{EscapeString(typeFullNameStr)}\");");
+            }
+
+            // 对于 [Binding(Name = "custom.name")] 特性的方法，自定义名称与
+            // 全限定名和短名称都不同时，额外注册自定义名称作为别名，
+            // 使前端可通过自定义名称调用。
+            if (!info.IsCommand && info.CustomName is not null
+                && info.CustomName != info.FullName
+                && info.CustomName != info.ShortName)
+            {
+                sb.AppendLine($"            GeneratedBindingRegistry.Register(");
+                sb.AppendLine($"                \"{EscapeString(info.CustomName)}\",");
                 sb.AppendLine($"                {info.InvokerMethodName},");
                 sb.AppendLine($"                \"{EscapeString(typeFullNameStr)}\");");
             }
@@ -666,7 +682,7 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
         string NamespaceName,
         string FullName,
         string ShortName,
-        string CustomName,
+        string? CustomName,
         bool IsCommand,
         string InvokerMethodName);
 

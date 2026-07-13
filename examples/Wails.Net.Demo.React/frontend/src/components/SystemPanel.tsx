@@ -52,7 +52,7 @@ export default function SystemPanel() {
   const onNotify = async () => {
     try {
       const body = info ? `服务运行中，共 ${Object.keys(info).length} 项信息` : '服务器信息未加载'
-      await window.wails.call('notification.send', [
+      await window.wails.call('notification.show', [
         { title: 'Wails.Net React Demo', body },
       ])
       setNotifyResult('通知已发送')

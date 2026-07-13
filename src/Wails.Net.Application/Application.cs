@@ -58,6 +58,12 @@ public class Application
     private CommandDispatcher? _commandDispatcher;
 
     /// <summary>
+    /// DI 服务容器，由 <see cref="InitializeFromServiceProvider"/> 注入。
+    /// 传递给 <see cref="MessageProcessor"/>，使命令上下文能携带 WindowId 传递到插件命令。
+    /// </summary>
+    private IServiceProvider? _serviceProvider;
+
+    /// <summary>
     /// 资源服务器实例。
     /// </summary>
     private Wails.Net.AssetServer.AssetServer? _assetServer;
@@ -194,6 +200,9 @@ public class Application
     /// <param name="serviceProvider">DI 容器。</param>
     internal void InitializeFromServiceProvider(IServiceProvider serviceProvider)
     {
+        // 保存 DI 容器引用，供 MessageProcessor 创建带 WindowId 的命令上下文
+        _serviceProvider = serviceProvider;
+
         // 平台依赖的管理器（非只读字段，可从 DI 替换）
         var windowManager = serviceProvider.GetService<WindowManager>();
         if (windowManager is not null)
@@ -769,7 +778,7 @@ public class Application
     /// <returns>响应消息，若无需响应则返回 null。</returns>
     public async Task<ResponseMessage?> HandleMessageFromFrontend(string message, uint? windowId = null)
     {
-        _messageProcessor ??= new MessageProcessor(_bindings, _events, id => GetWindow(id), _commandDispatcher);
+        _messageProcessor ??= new MessageProcessor(_bindings, _events, id => GetWindow(id), _commandDispatcher, _serviceProvider);
         var parsed = _messageProcessor.ParseMessage(message);
         if (parsed is null)
         {

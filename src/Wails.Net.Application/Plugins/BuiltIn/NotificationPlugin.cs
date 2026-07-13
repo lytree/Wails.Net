@@ -24,14 +24,16 @@ public class NotificationPlugin : IPlugin
 
     /// <summary>
     /// 配置插件，注册通知相关命令。
+    /// 前端通过 <code>wails.call('notification.show', [{ title: '标题', body: '正文' }])</code>
+    /// 调用，参数数组第一项被绑定到 <see cref="NotificationOptions"/> 对象。
     /// </summary>
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
-        context.Commands.MapCommand("notification.show", (Action<ICommandContext, string, string>)((ctx, title, body) =>
+        context.Commands.MapCommand("notification.show", (Action<ICommandContext, NotificationOptions>)((ctx, options) =>
         {
             var service = ctx.Services.GetService<NotificationService>();
-            service?.SendNotification(title, body);
+            service?.SendNotification(options.Title, options.Body);
         }));
 
         // 请求通知权限。简化实现下始终返回 true（已授权）。
@@ -48,10 +50,23 @@ public class NotificationPlugin : IPlugin
         }));
 
         // 显示通知并返回通知 ID，可用于后续取消操作。
-        context.Commands.MapCommand("notification.showWithId", (Func<ICommandContext, string, string, string>)((ctx, title, body) =>
+        context.Commands.MapCommand("notification.showWithId", (Func<ICommandContext, NotificationOptions, string>)((ctx, options) =>
         {
             var service = ctx.Services.GetService<NotificationService>();
-            return service?.ShowNotification(title, body, null) ?? string.Empty;
+            return service?.ShowNotification(options.Title, options.Body, null) ?? string.Empty;
         }));
     }
+}
+
+/// <summary>
+/// 通知选项，作为 <c>notification.show</c> 和 <c>notification.showWithId</c> 命令的参数。
+/// 前端传入 <code>{ title: '标题', body: '正文' }</code> 对象会被反序列化为此类型。
+/// </summary>
+public sealed class NotificationOptions
+{
+    /// <summary>通知标题。</summary>
+    public string Title { get; set; } = string.Empty;
+
+    /// <summary>通知正文。</summary>
+    public string Body { get; set; } = string.Empty;
 }

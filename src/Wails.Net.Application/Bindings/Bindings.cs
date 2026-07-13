@@ -173,6 +173,13 @@ public class BindingManager
             return await method.Call(args, cancellationToken);
         }
 
+        // 诊断日志：输出注册表状态，便于排查 ModuleInitializer 未运行等问题
+        System.Console.Error.WriteLine(
+            $"[BindingManager] 未找到方法 '{fullName}'。GeneratedBindingRegistry.Count={GeneratedBindingRegistry.Count}, " +
+            $"TryGetInvoker={GeneratedBindingRegistry.TryGetInvoker(fullName, out _)}, " +
+            $"已注册实例数={_instancesByTypeName.Count}, " +
+            $"反射方法数={_boundMethods.Count}");
+
         var error = new CallError($"未找到名为 '{fullName}' 的绑定方法", null, CallErrorKind.ReferenceError);
         return new Dictionary<string, object?>
         {

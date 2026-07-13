@@ -21,6 +21,11 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Wails.Net.Application\Wails.Net.Application.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Runtime.Js\Wails.Net.Runtime.Js.csproj" />
+    <!-- 源代码生成器：扫描 [Binding] / [Command] 特性，生成强类型调用器。
+         用于测试生成器调用器路径（GeneratedBindingRegistry）的端到端流程。 -->
+    <ProjectReference Include="..\..\src\Wails.Net.SourceGenerators\Wails.Net.SourceGenerators.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

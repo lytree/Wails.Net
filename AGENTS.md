@@ -29,7 +29,7 @@
 | 测试框架 | TUnit 1.58.0 | **禁止使用 MSTest/xUnit/NUnit** |
 | 脚本语言 | F# (.fsx) | **严禁使用 Python (.py)** |
 
-### 1.1.1 架构融合策略
+### 1.1.1 架构融合策略(必须遵守)
 
 - **Host/DI/Config/Logging** → 学 ASP.NET Core（Microsoft.Extensions.* 全栈）
 - **Runtime/Window/IPC** → 学 Wails v3（对象模型、IPC、多窗口、事件总线）
@@ -179,6 +179,10 @@ catch (TargetInvocationException ex) when (ex.InnerException is not null)
         inner is ArgumentException ? CallErrorKind.TypeError : CallErrorKind.RuntimeError);
 }
 ```
+
+### 3.4  前后端交互
+
+- 禁止使用反射获取对应方法。C# 使用源代码生成器，以Command的形式调用实现
 
 ---
 

@@ -60,6 +60,11 @@ public class MessageProcessor
     private readonly CommandDispatcher? _commands;
 
     /// <summary>
+    /// DI 服务容器（可选），用于创建命令上下文以传递 WindowId。
+    /// </summary>
+    private readonly IServiceProvider? _services;
+
+    /// <summary>
     /// 事件处理器实例。
     /// </summary>
     private readonly EventProcessor _events;
@@ -128,6 +133,29 @@ public class MessageProcessor
         _events = events;
         _windowLookup = windowLookup;
         _commands = commands;
+    }
+
+    /// <summary>
+    /// 使用指定的绑定管理器、事件处理器、窗口查找器、命令调度器和 DI 服务容器构造 MessageProcessor 实例。
+    /// DI 服务容器用于创建命令上下文，使窗口命令能识别目标窗口 ID。
+    /// </summary>
+    /// <param name="bindings">绑定管理器。</param>
+    /// <param name="events">事件处理器。</param>
+    /// <param name="windowLookup">窗口查找器，根据窗口 ID 返回对应的窗口实例。</param>
+    /// <param name="commands">命令调度器，可为 null；为 null 时不进行命令回退。</param>
+    /// <param name="services">DI 服务容器，用于创建命令上下文。</param>
+    public MessageProcessor(
+        BindingManager bindings,
+        EventProcessor events,
+        Func<uint, WebviewWindow?> windowLookup,
+        CommandDispatcher? commands,
+        IServiceProvider? services)
+    {
+        _bindings = bindings;
+        _events = events;
+        _windowLookup = windowLookup;
+        _commands = commands;
+        _services = services;
     }
 
     /// <summary>
@@ -214,8 +242,14 @@ public class MessageProcessor
             MessageTypes.Query => ProcessQuery(message),
             MessageTypes.Drag => ProcessDrag(message),
             MessageTypes.ContextMenu => ProcessContextMenu(message),
-            MessageTypes.Window => ProcessWindow(message),
-            _ => null
+            // 窗口操作优先走 CommandDispatcher（WindowPlugin 命令路径），
+            // 若命令未找到则回退到 ProcessWindow 内部的 DispatchWindowAction 硬编码分发（向后兼容）。
+            MessageTypes.Window => await ProcessWindowAsync(message),
+            // 未识别的命名空间（如 "notification.show"、"application.hide"、"tray.setIcon"）
+            // 回退到 CommandDispatcher 查找命令，借鉴 Tauri v2 的 "核心即插件" 哲学：
+            // 所有系统操作都以插件命令形式注册，前端 wails.<namespace>.<method>() 调用
+            // 通过此回退路径路由到对应插件命令。
+            _ => await ProcessCommandFallbackAsync(message)
         };
     }
 
@@ -280,17 +314,69 @@ public class MessageProcessor
     }
 
     /// <summary>
-    /// 判断 BindingManager 返回的结果是否为 "未找到方法"。
+    /// 处理未识别命名空间的消息，回退到 CommandDispatcher 查找命令。
+    /// 借鉴 Tauri v2 的 "核心即插件" 哲学：所有系统原生操作（窗口、应用、托盘、菜单、剪贴板等）
+    /// 都以插件命令形式注册。前端通过 <c>wails.&lt;namespace&gt;.&lt;method&gt;(args)</c> 调用时，
+    /// 消息类型为 <c>"namespace.method"</c>，此方法将其作为命令名派发到 CommandDispatcher。
+    /// </summary>
+    /// <param name="message">未识别命名空间的消息，<see cref="Message.Type"/> 作为命令名。</param>
+    /// <returns>命令调用结果响应；若 CommandDispatcher 未配置或命令不存在则返回 null。</returns>
+    private async Task<ResponseMessage?> ProcessCommandFallbackAsync(Message message)
+    {
+        // CommandDispatcher 未配置时（如单元测试场景），保持向后兼容返回 null
+        if (_commands is null)
+        {
+            return null;
+        }
+
+        // 将消息类型作为命令名（如 "notification.show"），原始 payload 作为参数对象
+        // CommandDispatcher 会从 parametersElement 反序列化命令方法参数
+        var request = new InvokeRequest(Guid.NewGuid(), message.Type, message.Payload);
+
+        // 创建带 WindowId 的上下文，使窗口命令能识别目标窗口
+        var ctx = _services is not null
+            ? new CommandContext(_services, message.WindowId, _cts.Token)
+            : null;
+
+        var response = await _commands.DispatchAsync(request, ctx);
+
+        if (!response.Success)
+        {
+            // 命令未找到或执行失败时返回 null，保持与 _ => null 的向后兼容
+            return null;
+        }
+
+        return new ResponseMessage
+        {
+            Id = message.Id,
+            Type = MessageTypes.Response,
+            Result = new Dictionary<string, object?>
+            {
+                ["result"] = response.Result,
+                ["error"] = null
+            }
+        };
+    }
+
+    /// <summary>
+    /// 判断 BindingManager 返回的结果是否为 "未找到方法" 错误。
+    /// 直接检查错误字典的 message 字段，避免 JSON 序列化转义非 ASCII 字符导致字符串匹配失败。
     /// </summary>
     /// <param name="result">BindingManager 返回的结果字典。</param>
     /// <param name="name">方法名（用于校验错误信息）。</param>
-    /// <returns>若结果中包含 "未找到" 错误则返回 true。</returns>
+    /// <returns>若结果中包含 "未找到" 错误且错误信息提及该方法名则返回 true。</returns>
     private static bool IsNotFoundResult(Dictionary<string, object?> result, string name)
     {
         if (result.TryGetValue("error", out var errorObj) && errorObj is not null)
         {
-            var errorJson = JsonSerializer.Serialize(errorObj, JsonOptions.DefaultSerializerOptions);
-            return errorJson.Contains("未找到") && errorJson.Contains(name);
+            // errorObj 为 CallError.ToJson() 返回的 Dictionary<string, object?>，
+            // 包含 message、cause、kind 三个字段。直接检查 message 字段。
+            if (errorObj is Dictionary<string, object?> errorDict
+                && errorDict.TryGetValue("message", out var msgObj)
+                && msgObj is string msg)
+            {
+                return msg.Contains("未找到") && msg.Contains(name);
+            }
         }
 
         return false;
@@ -333,8 +419,13 @@ public class MessageProcessor
 
             var request = new InvokeRequest(Guid.NewGuid(), commandName, parametersElement);
 
-            // 传入 context 为 null，DispatchAsync 会使用自身的 _services 创建默认上下文
-            var response = await _commands!.DispatchAsync(request, context: null);
+            // 创建带 WindowId 的上下文，使窗口命令能识别目标窗口。
+            // 借鉴 ASP.NET Core 的 DI 模式：CommandDispatcher 从 _services 获取依赖，
+            // 命令方法通过 ICommandContext.WindowId 定位目标 WebviewWindow。
+            var ctx = _services is not null
+                ? new CommandContext(_services, windowId, _cts.Token)
+                : null;
+            var response = await _commands!.DispatchAsync(request, ctx);
 
             if (response.Success)
             {
@@ -418,13 +509,14 @@ public class MessageProcessor
 
     /// <summary>
     /// 处理窗口操作消息。
-    /// 从消息类型中提取操作名（如 "window.setTitle" 中的 "setTitle"），
-    /// 查找目标窗口实例并调用对应的窗口方法。
+    /// 优先将消息派发到 <see cref="CommandDispatcher"/>（走 WindowPlugin 注册的 <c>window.*</c> 命令路径，
+    /// 借鉴 Tauri v2 的 "核心即插件" 哲学）；若 CommandDispatcher 未配置或命令未找到，
+    /// 回退到 <see cref="DispatchWindowAction"/> 硬编码分发（向后兼容，未注册 WindowPlugin 时仍可用）。
     /// 同时将窗口操作事件转发为标准的 Wails 事件进行广播。
     /// </summary>
     /// <param name="message">窗口操作消息，类型为 "window" 或 "window.&lt;action&gt;"。</param>
     /// <returns>包含操作结果的响应消息，若无法处理则返回错误响应。</returns>
-    private ResponseMessage? ProcessWindow(Message message)
+    private async Task<ResponseMessage?> ProcessWindowAsync(Message message)
     {
         // 从消息类型中提取操作名：支持 "window"（使用 WindowPayload.Action）和 "window.<action>" 两种格式
         var action = ExtractActionFromType(message.Type, MessageTypes.Window);
@@ -440,6 +532,20 @@ public class MessageProcessor
         if (string.IsNullOrEmpty(action))
         {
             return CreateErrorResponse(message.Id, "窗口消息未指定操作类型", CallErrorKind.TypeError);
+        }
+
+        // 优先尝试 CommandDispatcher（WindowPlugin 命令路径）。
+        // ProcessCommandFallbackAsync 将 message.Type（如 "window.setTitle"）作为命令名派发，
+        // 若 WindowPlugin 已注册则命中对应命令；若命令未找到则返回 null，继续走硬编码回退。
+        if (_commands is not null)
+        {
+            var commandResponse = await ProcessCommandFallbackAsync(message);
+            if (commandResponse is not null)
+            {
+                // 命中插件命令：广播事件并返回响应
+                _events.Emit($"wails:window:{action}", payload, message.WindowId);
+                return commandResponse;
+            }
         }
 
         // 窗口查找器未配置时，仅广播事件并返回 null（保持向后兼容）
@@ -472,7 +578,7 @@ public class MessageProcessor
             return CreateErrorResponse(message.Id, $"找不到 ID 为 {windowId} 的窗口", CallErrorKind.ReferenceError);
         }
 
-        // 分发到对应的窗口方法
+        // 回退到硬编码分发（向后兼容：未注册 WindowPlugin 或命令未注册时使用）
         object? result;
         try
         {
