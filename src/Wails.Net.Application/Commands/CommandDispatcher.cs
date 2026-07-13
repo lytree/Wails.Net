@@ -178,32 +178,42 @@ public sealed class CommandDispatcher
     {
         try
         {
-            // 反射调用，参数绑定
-            var parameters = entry.Method.GetParameters();
-            var args = new object?[parameters.Length];
+            object? result;
 
-            for (var i = 0; i < parameters.Length; i++)
+            // 优先使用编译后的强类型调用器（零反射）
+            if (entry.Invoker is not null)
             {
-                if (parameters[i].ParameterType == typeof(ICommandContext))
-                {
-                    args[i] = ctx;
-                }
-                else if (parameters[i].ParameterType == typeof(CancellationToken))
-                {
-                    args[i] = ctx.CancellationToken;
-                }
-                else if (parameters[i].ParameterType == typeof(IServiceProvider))
-                {
-                    args[i] = ctx.Services;
-                }
-                else
-                {
-                    // 从 JSON 参数绑定
-                    args[i] = request.Parameters.Deserialize(parameters[i].ParameterType);
-                }
+                result = entry.Invoker(entry.Instance, request.Parameters, ctx);
             }
+            else
+            {
+                // 回退到反射调用（编译失败或特殊场景）
+                var parameters = entry.Method.GetParameters();
+                var args = new object?[parameters.Length];
 
-            var result = entry.Method.Invoke(entry.Instance, args);
+                for (var i = 0; i < parameters.Length; i++)
+                {
+                    if (parameters[i].ParameterType == typeof(ICommandContext))
+                    {
+                        args[i] = ctx;
+                    }
+                    else if (parameters[i].ParameterType == typeof(CancellationToken))
+                    {
+                        args[i] = ctx.CancellationToken;
+                    }
+                    else if (parameters[i].ParameterType == typeof(IServiceProvider))
+                    {
+                        args[i] = ctx.Services;
+                    }
+                    else
+                    {
+                        // 从 JSON 参数绑定
+                        args[i] = request.Parameters.Deserialize(parameters[i].ParameterType);
+                    }
+                }
+
+                result = entry.Method.Invoke(entry.Instance, args);
+            }
 
             // 处理异步方法
             object? returnValue;
@@ -231,6 +241,7 @@ public sealed class CommandDispatcher
         }
         catch (TargetInvocationException ex) when (ex.InnerException != null)
         {
+            // 仅反射回退路径可能抛出 TargetInvocationException
             _logger?.LogError(ex.InnerException, "命令执行异常: {Method}", request.Method);
             return new InvokeResponse(request.Id, false, null, ex.InnerException.Message);
         }

@@ -23,13 +23,16 @@ public sealed class CommandRegistry
 
     /// <summary>
     /// 注册命令。
+    /// 在注册时通过 <see cref="CommandInvokerCompiler.Compile"/> 编译表达式树，
+    /// 生成强类型调用器，运行时零反射调用。
     /// </summary>
     /// <param name="name">命令名称。</param>
     /// <param name="instance">命令所属实例。</param>
     /// <param name="method">命令方法反射信息。</param>
     public void Register(string name, object instance, MethodInfo method)
     {
-        _commands[name] = new CommandEntry(name, instance, method);
+        var invoker = CommandInvokerCompiler.Compile(method);
+        _commands[name] = new CommandEntry(name, instance, method, invoker);
     }
 
     /// <summary>
@@ -95,10 +98,17 @@ public sealed class CommandRegistry
     public IEnumerable<string> GetCommandNames() => _commands.Keys;
 
     /// <summary>
-    /// 命令条目，记录命令名、实例和方法信息。
+    /// 命令条目，记录命令名、实例、方法信息和编译后的调用器。
+    /// <see cref="Invoker"/> 为表达式树编译的强类型委托，运行时零反射调用；
+    /// <see cref="Method"/> 保留用于权限校验等元数据查询。
     /// </summary>
     /// <param name="Name">命令名称。</param>
     /// <param name="Instance">命令所属实例。</param>
-    /// <param name="Method">命令方法反射信息。</param>
-    public sealed record CommandEntry(string Name, object Instance, MethodInfo Method);
+    /// <param name="Method">命令方法反射信息（仅用于权限校验等，不用于调用）。</param>
+    /// <param name="Invoker">编译后的强类型调用器，可为 null（编译失败时回退到反射）。</param>
+    public sealed record CommandEntry(
+        string Name,
+        object Instance,
+        MethodInfo Method,
+        CompiledCommandInvoker? Invoker);
 }
