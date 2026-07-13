@@ -24,7 +24,7 @@ public static class RuntimeGenerator
     /// <summary>
     /// 生成完整的运行时 JavaScript 代码。
     /// 根据 <see cref="RuntimeOptions.IsServerMode" /> 选择桌面或 Server 运行时，
-    /// 并组合运行时模板、传输层模板与平台运行时代码。
+    /// 并组合标志对象、API 对象、传输层模板与平台运行时代码。
     /// </summary>
     /// <param name="options">运行时生成选项。</param>
     /// <returns>生成的完整运行时 JavaScript 代码字符串。</returns>
@@ -32,13 +32,14 @@ public static class RuntimeGenerator
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        var runtime = LoadTemplate(RuntimeTemplateFileName, options);
+        var flags = GenerateFlags(options);
+        var api = GenerateApi(options);
         var transport = LoadTemplate(TransportTemplateFileName, options);
         var platformRuntime = options.IsServerMode
             ? ServerRuntime.Generate(options)
             : DesktopRuntime.Generate(options);
 
-        return $"{runtime}\n{transport}\n{platformRuntime}";
+        return $"{flags}\n{api}\n{transport}\n{platformRuntime}";
     }
 
     /// <summary>
@@ -78,15 +79,25 @@ public static class RuntimeGenerator
 
         return """
         window.wails = {
+          // 便捷调用方法：通过绑定名称调用后端方法
+          // 用法：const result = await wails.call("GreetingService.Greet", ["张三"]);
+          call: function(name, args) {
+            return window._wailsInvoke("call", { name: name, args: args || [] });
+          },
           bindings: {
+            // 按绑定 ID 调用后端方法。使用 "call" 类型，CallPayload 支持按 id 调用。
             call: function(bindingId, args) {
-              return window._wailsInvoke("binding.call", { id: bindingId, args: args });
+              return window._wailsInvoke("call", { id: bindingId, args: args });
             }
           },
           events: {
+            // 注册本地事件回调。
+            // 事件由后端通过 ExecuteScriptAsync 调用 _wailsEmitEvent(name, data) 推送。
+            // 返回取消订阅函数。
             on: function(eventName, callback) {
-              return window._wailsInvoke("event.on", { name: eventName, callback: callback });
+              return window._wailsOnEvent(eventName, callback);
             },
+            // 向后端发布事件，由 EventProcessor 广播到所有窗口。
             emit: function(eventName, data) {
               return window._wailsInvoke("event.emit", { name: eventName, data: data });
             }

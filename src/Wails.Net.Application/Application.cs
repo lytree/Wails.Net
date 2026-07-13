@@ -746,14 +746,21 @@ public class Application
     /// 支持 call、event、query、drag、contextmenu、window 等消息类型。
     /// </summary>
     /// <param name="message">JSON 格式的消息字符串。</param>
+    /// <param name="windowId">发送消息的窗口 ID，用于窗口操作消息的分发。可为 null。</param>
     /// <returns>响应消息，若无需响应则返回 null。</returns>
-    public async Task<ResponseMessage?> HandleMessageFromFrontend(string message)
+    public async Task<ResponseMessage?> HandleMessageFromFrontend(string message, uint? windowId = null)
     {
-        _messageProcessor ??= new MessageProcessor(_bindings, _events);
+        _messageProcessor ??= new MessageProcessor(_bindings, _events, id => GetWindow(id));
         var parsed = _messageProcessor.ParseMessage(message);
         if (parsed is null)
         {
             return null;
+        }
+
+        // 若调用方提供了窗口 ID 且消息中未显式指定，则注入窗口 ID
+        if (windowId is not null && parsed.WindowId is null)
+        {
+            parsed.WindowId = windowId;
         }
 
         return await _messageProcessor.ProcessAsync(parsed);

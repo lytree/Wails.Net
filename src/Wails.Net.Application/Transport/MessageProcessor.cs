@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Wails.Net.Application.Bindings;
 using Wails.Net.Application.Events;
+using Wails.Net.Application.Windows;
 using Wails.Net.Errors;
 
 namespace Wails.Net.Application.Transport;
@@ -58,6 +59,12 @@ public class MessageProcessor
     private readonly EventProcessor _events;
 
     /// <summary>
+    /// 窗口查找器，根据窗口 ID 获取 <see cref="WebviewWindow"/> 实例。
+    /// 用于窗口操作消息的分发。可为 null（在测试或无窗口环境中）。
+    /// </summary>
+    private readonly Func<uint, WebviewWindow?>? _windowLookup;
+
+    /// <summary>
     /// 异步消息处理队列。
     /// </summary>
     private readonly BlockingCollection<Message> _queue = new(new ConcurrentQueue<Message>());
@@ -81,6 +88,20 @@ public class MessageProcessor
     {
         _bindings = bindings;
         _events = events;
+    }
+
+    /// <summary>
+    /// 使用指定的绑定管理器、事件处理器和窗口查找器构造 MessageProcessor 实例。
+    /// 窗口查找器用于将窗口操作消息（type 为 "window.*"）分发到对应的 <see cref="WebviewWindow"/> 方法。
+    /// </summary>
+    /// <param name="bindings">绑定管理器。</param>
+    /// <param name="events">事件处理器。</param>
+    /// <param name="windowLookup">窗口查找器，根据窗口 ID 返回对应的窗口实例。</param>
+    public MessageProcessor(BindingManager bindings, EventProcessor events, Func<uint, WebviewWindow?> windowLookup)
+    {
+        _bindings = bindings;
+        _events = events;
+        _windowLookup = windowLookup;
     }
 
     /// <summary>
@@ -145,12 +166,22 @@ public class MessageProcessor
     /// 同步处理单条消息并返回响应。
     /// 此方法主要用于测试和需要立即响应的场景。
     /// 支持 call、event、query、drag、contextmenu、window 等消息类型。
+    /// 对于带命名空间的消息（如 "window.setTitle"），自动提取基础类型进行路由。
     /// </summary>
     /// <param name="message">要处理的消息。</param>
     /// <returns>响应消息，若无需响应则返回 null。</returns>
     public async Task<ResponseMessage?> ProcessAsync(Message message)
     {
-        return message.Type switch
+        // 支持 "namespace.action" 格式的消息类型（如 "window.setTitle"、"event.emit"）。
+        // 提取基础命名空间进行路由，具体动作由对应的处理方法解析。
+        var baseType = message.Type;
+        var dotIndex = message.Type.IndexOf('.');
+        if (dotIndex > 0)
+        {
+            baseType = message.Type[..dotIndex];
+        }
+
+        return baseType switch
         {
             MessageTypes.Call => await ProcessCallAsync(message),
             MessageTypes.Event => ProcessEvent(message),
@@ -266,21 +297,343 @@ public class MessageProcessor
 
     /// <summary>
     /// 处理窗口操作消息。
-    /// 将窗口操作事件转发为标准的 Wails 事件进行广播。
+    /// 从消息类型中提取操作名（如 "window.setTitle" 中的 "setTitle"），
+    /// 查找目标窗口实例并调用对应的窗口方法。
+    /// 同时将窗口操作事件转发为标准的 Wails 事件进行广播。
     /// </summary>
-    /// <param name="message">窗口操作消息。</param>
-    /// <returns>始终返回 null（窗口操作事件无需响应）。</returns>
+    /// <param name="message">窗口操作消息，类型为 "window" 或 "window.&lt;action&gt;"。</param>
+    /// <returns>包含操作结果的响应消息，若无法处理则返回错误响应。</returns>
     private ResponseMessage? ProcessWindow(Message message)
     {
-        var windowPayload = message.Payload.Deserialize<WindowPayload>(JsonOptions.DefaultSerializerOptions);
-        if (windowPayload is null)
+        // 从消息类型中提取操作名：支持 "window"（使用 WindowPayload.Action）和 "window.<action>" 两种格式
+        var action = ExtractActionFromType(message.Type, MessageTypes.Window);
+        var payload = message.Payload;
+
+        // 若类型中未包含 action，则尝试从 WindowPayload.Action 读取（向后兼容）
+        if (string.IsNullOrEmpty(action))
         {
+            var windowPayload = payload.Deserialize<WindowPayload>(JsonOptions.DefaultSerializerOptions);
+            action = windowPayload?.Action ?? string.Empty;
+        }
+
+        if (string.IsNullOrEmpty(action))
+        {
+            return CreateErrorResponse(message.Id, "窗口消息未指定操作类型", CallErrorKind.TypeError);
+        }
+
+        // 窗口查找器未配置时，仅广播事件并返回 null（保持向后兼容）
+        if (_windowLookup is null)
+        {
+            _events.Emit($"wails:window:{action}", payload, message.WindowId);
             return null;
         }
 
-        // 将窗口操作事件转发为标准事件广播
-        _events.Emit($"wails:window:{windowPayload.Action}", windowPayload, message.WindowId);
-        return null;
+        // 确定目标窗口 ID：优先使用 message.WindowId
+        var windowId = message.WindowId;
+        if (windowId is null)
+        {
+            // 尝试从载荷中读取 windowId
+            if (payload.TryGetProperty("windowId", out var widElement) &&
+                widElement.TryGetUInt32(out var wid))
+            {
+                windowId = wid;
+            }
+        }
+
+        if (windowId is null)
+        {
+            return CreateErrorResponse(message.Id, "窗口消息未指定目标窗口 ID", CallErrorKind.TypeError);
+        }
+
+        var window = _windowLookup(windowId.Value);
+        if (window is null)
+        {
+            return CreateErrorResponse(message.Id, $"找不到 ID 为 {windowId} 的窗口", CallErrorKind.ReferenceError);
+        }
+
+        // 分发到对应的窗口方法
+        object? result;
+        try
+        {
+            result = DispatchWindowAction(window, action.ToLowerInvariant(), payload);
+        }
+        catch (Exception ex)
+        {
+            return CreateErrorResponse(message.Id, ex.Message, CallErrorKind.RuntimeError);
+        }
+
+        // 同时广播窗口操作事件，便于其他监听者感知窗口变化
+        _events.Emit($"wails:window:{action}", payload, message.WindowId);
+
+        return new ResponseMessage
+        {
+            Id = message.Id,
+            Type = MessageTypes.Response,
+            Result = new Dictionary<string, object?>
+            {
+                ["result"] = result,
+                ["error"] = null
+            }
+        };
+    }
+
+    /// <summary>
+    /// 从消息类型字符串中提取操作名。
+    /// 例如 "window.setTitle" 提取出 "setTitle"，"window" 返回空字符串。
+    /// </summary>
+    /// <param name="type">消息类型字符串。</param>
+    /// <param name="namespace">命名空间前缀（如 "window"）。</param>
+    /// <returns>操作名，若类型不包含子操作则返回空字符串。</returns>
+    private static string ExtractActionFromType(string type, string @namespace)
+    {
+        var prefix = @namespace + ".";
+        if (type.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+            type.Length > prefix.Length)
+        {
+            return type[prefix.Length..];
+        }
+
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// 根据操作名分发到对应的 <see cref="WebviewWindow"/> 方法。
+    /// 对应 Wails v3 前端的 window 命名空间 API。
+    /// </summary>
+    /// <param name="window">目标窗口实例。</param>
+    /// <param name="action">小写操作名（如 "settitle"、"minimize"）。</param>
+    /// <param name="payload">消息载荷，包含操作参数。</param>
+    /// <returns>操作返回值（查询类操作），无返回值的操作返回 null。</returns>
+    private static object? DispatchWindowAction(WebviewWindow window, string action, JsonElement payload)
+    {
+        switch (action)
+        {
+            // 标题与尺寸
+            case "settitle":
+                window.SetTitle(payload.GetProperty("title").GetString()!);
+                return null;
+            case "setsize":
+                window.SetSize(GetInt(payload, "width"), GetInt(payload, "height"));
+                return null;
+            case "setminsize":
+                window.SetMinSize(GetInt(payload, "width"), GetInt(payload, "height"));
+                return null;
+            case "setmaxsize":
+                window.SetMaxSize(GetInt(payload, "width"), GetInt(payload, "height"));
+                return null;
+            case "setposition":
+                window.SetPosition(GetInt(payload, "x"), GetInt(payload, "y"));
+                return null;
+
+            // 显示/隐藏/状态
+            case "close":
+                window.Close();
+                return null;
+            case "minimize":
+                window.Minimise();
+                return null;
+            case "maximize":
+                window.Maximise();
+                return null;
+            case "unminimize":
+                window.UnMinimise();
+                return null;
+            case "unmaximize":
+                window.UnMaximise();
+                return null;
+            case "show":
+                window.Show();
+                return null;
+            case "hide":
+                window.Hide();
+                return null;
+            case "centre":
+                window.Centre();
+                return null;
+            case "restore":
+                window.Restore();
+                return null;
+            case "focus":
+                window.Focus();
+                return null;
+
+            // 全屏与置顶
+            case "setalwayson top":
+            case "setalwaysontop":
+                window.SetAlwaysOnTop(GetBool(payload, "onTop"));
+                return null;
+            case "setfullscreen":
+                if (GetBool(payload, "fullscreen"))
+                {
+                    window.Fullscreen();
+                }
+                else
+                {
+                    window.UnFullscreen();
+                }
+
+                return null;
+            case "unfullscreen":
+                window.UnFullscreen();
+                return null;
+            case "setframeless":
+                window.SetFrameless(GetBool(payload, "frameless"));
+                return null;
+
+            // DevTools
+            case "opendevtools":
+                window.OpenDevTools();
+                return null;
+            case "closedevtools":
+                window.CloseDevTools();
+                return null;
+
+            // 缩放
+            case "setzoom":
+                window.SetZoom((float)GetDouble(payload, "zoom"));
+                return null;
+            case "zoomin":
+                window.ZoomIn();
+                return null;
+            case "zoomout":
+                window.ZoomOut();
+                return null;
+            case "zoomreset":
+                window.SetZoom(1.0f);
+                return null;
+
+            // 导航
+            case "goback":
+                window.GoBack();
+                return null;
+            case "goforward":
+                window.GoForward();
+                return null;
+            case "reload":
+                window.Reload();
+                return null;
+            case "seturl":
+                window.SetURL(payload.GetProperty("url").GetString()!);
+                return null;
+            case "sethtml":
+                window.SetHTML(payload.GetProperty("html").GetString()!);
+                return null;
+
+            // 打印与导出
+            case "print":
+                window.Print();
+                return null;
+            case "printtopdf":
+                var pdfPath = payload.GetProperty("path").GetString()!;
+                if (payload.TryGetProperty("options", out var pdfOptsEl) && pdfOptsEl.ValueKind == JsonValueKind.Object)
+                {
+                    var pdfOpts = pdfOptsEl.Deserialize<PrintToPdfOptions>(JsonOptions.DefaultSerializerOptions);
+                    window.PrintToPDF(pdfPath, pdfOpts);
+                }
+                else
+                {
+                    window.PrintToPDF(pdfPath);
+                }
+
+                return null;
+
+            // 执行 JS 与注入 CSS
+            case "execjs":
+                window.ExecJS(payload.GetProperty("js").GetString()!);
+                return null;
+            case "injectcss":
+                window.InjectCSS(payload.GetProperty("css").GetString()!);
+                return null;
+
+            // 透明度
+            case "setopacity":
+                window.SetOpacity((float)GetDouble(payload, "opacity"));
+                return null;
+            case "getopacity":
+                return window.GetOpacity();
+
+            // 可调整大小
+            case "setresizable":
+                window.SetResizable(GetBool(payload, "resizable"));
+                return null;
+
+            // 自定义协议
+            case "registercustomscheme":
+                window.RegisterCustomScheme(payload.GetProperty("scheme").GetString()!);
+                return null;
+
+            // 任务栏
+            case "setskiptaskbar":
+                window.SetSkipTaskbar(GetBool(payload, "skip"));
+                return null;
+            case "setignorecursorevents":
+                window.SetIgnoreCursorEvents(GetBool(payload, "ignore"));
+                return null;
+            case "setbadgecount":
+                window.SetBadgeCount(GetInt(payload, "count"));
+                return null;
+            case "setbadgelabel":
+                window.SetBadgeLabel(payload.TryGetProperty("label", out var lblEl) ? lblEl.GetString() : null);
+                return null;
+            case "setvisibleonallworkspaces":
+                window.SetVisibleOnAllWorkspaces(GetBool(payload, "visible"));
+                return null;
+            case "setbordercolor":
+                window.SetBorderColor(payload.TryGetProperty("color", out var colorEl) ? colorEl.GetString() : null);
+                return null;
+            case "setfiledropenabled":
+                window.SetFileDropEnabled(GetBool(payload, "enabled"));
+                return null;
+
+            // 查询类操作（有返回值）
+            case "getsize":
+                var (sw, sh) = window.GetSize();
+                return new Dictionary<string, object?> { ["width"] = sw, ["height"] = sh };
+            case "getposition":
+                var (px, py) = window.GetPosition();
+                return new Dictionary<string, object?> { ["x"] = px, ["y"] = py };
+            case "geturl":
+                return window.GetURL();
+            case "getzoom":
+                return window.GetZoom();
+            case "isfullscreen":
+                return window.IsFullscreen();
+            case "ismaximised":
+                return window.IsMaximised();
+            case "isminimised":
+                return window.IsMinimised();
+            case "isvisible":
+                return window.IsVisible();
+            case "isfocused":
+                return window.IsFocused();
+
+            default:
+                throw new InvalidOperationException($"未知的窗口操作: {action}");
+        }
+    }
+
+    /// <summary>
+    /// 从 JSON 载荷中安全获取 int 值。
+    /// </summary>
+    private static int GetInt(JsonElement element, string name)
+    {
+        return element.TryGetProperty(name, out var prop) ? prop.GetInt32() : 0;
+    }
+
+    /// <summary>
+    /// 从 JSON 载荷中安全获取 bool 值。
+    /// </summary>
+    private static bool GetBool(JsonElement element, string name)
+    {
+        return element.TryGetProperty(name, out var prop) && prop.GetBoolean();
+    }
+
+    /// <summary>
+    /// 从 JSON 载荷中安全获取 double 值。
+    /// </summary>
+    private static double GetDouble(JsonElement element, string name)
+    {
+        return element.TryGetProperty(name, out var prop) ? prop.GetDouble() : 0.0;
     }
 
     /// <summary>

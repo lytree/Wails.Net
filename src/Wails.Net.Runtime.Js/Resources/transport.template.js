@@ -4,10 +4,12 @@
   var _callCounter = 0;
   // 挂起的 Promise resolver，键为调用 ID
   var _pending = {};
+  // 本地事件回调注册表，键为事件名，值为回调函数数组
+  var _eventCallbacks = {};
 
-  // 通过 HTTP fetch 调用后端方法
-  // method: 消息类型（call、event）
-  // params: 调用载荷（{name/id, args} 或 {name, data}）
+  // 通过 HTTP fetch 调用后端方法。
+  // method: 消息类型（call、event.emit、window.setTitle 等）
+  // params: 调用载荷
   window._wailsInvoke = function(method, params) {
     return new Promise(function(resolve, reject) {
       var id = ++_callCounter;
@@ -37,7 +39,18 @@
         if (data && data.error) {
           reject(new Error(data.error.message || data.error));
         } else {
-          resolve(data ? data.result : undefined);
+          // 后端响应格式: { id, type, result: { result: <value>, error: null } }
+          // 解包嵌套的 result 结构，将实际值传给前端
+          var outer = data ? data.result : undefined;
+          if (outer && typeof outer === "object" && "result" in outer && "error" in outer) {
+            if (outer.error) {
+              reject(new Error(outer.error.message || outer.error));
+            } else {
+              resolve(outer.result);
+            }
+          } else {
+            resolve(outer);
+          }
         }
       }).catch(function(err) {
         delete _pending[id];
@@ -45,5 +58,41 @@
         reject(err);
       });
     });
+  };
+
+  // 注册本地事件回调。
+  // eventName: 事件名称
+  // callback: 回调函数，接收事件数据
+  // 返回取消订阅函数
+  window._wailsOnEvent = function(eventName, callback) {
+    if (!_eventCallbacks[eventName]) {
+      _eventCallbacks[eventName] = [];
+    }
+    _eventCallbacks[eventName].push(callback);
+    return function() {
+      var arr = _eventCallbacks[eventName];
+      if (arr) {
+        var idx = arr.indexOf(callback);
+        if (idx >= 0) {
+          arr.splice(idx, 1);
+        }
+      }
+    };
+  };
+
+  // 触发本地事件回调（由后端推送事件时调用）。
+  // eventName: 事件名称
+  // data: 事件数据
+  window._wailsEmitEvent = function(eventName, data) {
+    var arr = _eventCallbacks[eventName];
+    if (arr) {
+      for (var i = 0; i < arr.length; i++) {
+        try {
+          arr[i](data);
+        } catch (e) {
+          console.error("[Wails] 事件回调异常:", e);
+        }
+      }
+    }
   };
 })();

@@ -628,11 +628,11 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
             var method = args.Request.Method;
             var app = Application.Get();
 
-            // IPC 消息端点：/wails/call、/wails/event、/wails/drag
+            // IPC 消息端点：拦截所有 POST /wails/* 请求
+            // 运行时 API（window/dialog/clipboard 等）通过 _wailsInvoke 发送到 /wails/<type> 端点，
+            // 全部由 MessageProcessor 统一分发处理。
             if (method.Equals("POST", StringComparison.OrdinalIgnoreCase) &&
-                (path.Equals("/wails/call", StringComparison.OrdinalIgnoreCase) ||
-                 path.Equals("/wails/event", StringComparison.OrdinalIgnoreCase) ||
-                 path.Equals("/wails/drag", StringComparison.OrdinalIgnoreCase)))
+                path.StartsWith("/wails/", StringComparison.OrdinalIgnoreCase))
             {
                 // 同步读取请求体，避免 await 导致后续在线程池线程执行
                 string body = string.Empty;
@@ -645,10 +645,11 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                 // 同步调用后端处理消息并获取响应。
                 // HandleMessageFromFrontend 主要是 CPU 密集型（反射调用），
                 // 阻塞 UI 线程的时间通常很短，可接受。
+                // 传递当前窗口 ID，使窗口操作消息能分发到对应的 WebviewWindow 实例。
                 string responseJson = "{\"result\":null,\"error\":null}";
                 if (app is not null)
                 {
-                    var response = app.HandleMessageFromFrontend(body).GetAwaiter().GetResult();
+                    var response = app.HandleMessageFromFrontend(body, _id).GetAwaiter().GetResult();
                     if (response is not null)
                     {
                         responseJson = JsonSerializer.Serialize(response, _jsonOptions);
@@ -748,7 +749,7 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
             var app = Application.Get();
             if (app is not null)
             {
-                await app.HandleMessageFromFrontend(message);
+                await app.HandleMessageFromFrontend(message, _id);
             }
         }
         catch
