@@ -746,15 +746,17 @@ public class Application
     /// 支持 call、event、query、drag、contextmenu、window 等消息类型。
     /// </summary>
     /// <param name="message">JSON 格式的消息字符串。</param>
-    /// <returns>表示处理操作的异步任务。</returns>
-    public async Task HandleMessageFromFrontend(string message)
+    /// <returns>响应消息，若无需响应则返回 null。</returns>
+    public async Task<ResponseMessage?> HandleMessageFromFrontend(string message)
     {
         _messageProcessor ??= new MessageProcessor(_bindings, _events);
         var parsed = _messageProcessor.ParseMessage(message);
-        if (parsed is not null)
+        if (parsed is null)
         {
-            await _messageProcessor.ProcessAsync(parsed);
+            return null;
         }
+
+        return await _messageProcessor.ProcessAsync(parsed);
     }
 
     /// <summary>

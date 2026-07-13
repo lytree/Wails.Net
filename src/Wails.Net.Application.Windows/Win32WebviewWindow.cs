@@ -109,6 +109,21 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     private const uint WmClipboardUpdate = 0x031D;
 
     /// <summary>
+    /// WM_KEYDOWN 消息常量（0x0100），键盘按键按下时收到。
+    /// </summary>
+    private const uint WmKeyDown = 0x0100;
+
+    /// <summary>
+    /// WM_CONTEXTMENU 消息常量（0x007B），窗口收到右键菜单请求时触发。
+    /// </summary>
+    private const uint WmContextMenu = 0x007B;
+
+    /// <summary>
+    /// VK_F12 虚拟键码（0x7B），用于打开 DevTools。
+    /// </summary>
+    private const uint VkF12 = 0x7B;
+
+    /// <summary>
     /// SC_CLOSE 系统命令 ID（0xF060）。
     /// </summary>
     private const uint ScClose = 0xF060;
@@ -163,6 +178,15 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     /// 全局窗口实例表，按 HWND 句柄索引，用于窗口过程分发。
     /// </summary>
     private static readonly Dictionary<IntPtr, Win32WebviewWindow> _instancesByHwnd = new();
+
+    /// <summary>
+    /// JSON 序列化选项，用于 IPC 响应序列化。
+    /// </summary>
+    private static readonly JsonSerializerOptions _jsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true
+    };
 
     /// <summary>
     /// 全局实例表锁，保护 _instancesByHwnd 字典。
@@ -608,13 +632,22 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                     body = await reader.ReadToEndAsync();
                 }
 
+                // 调用后端处理消息并获取响应，将响应序列化为 JSON 返回给前端。
+                // 前端通过 fetch().then(r => r.json()) 获取响应。
+                string responseJson = "{\"result\":null,\"error\":null}";
                 if (app is not null)
                 {
-                    await app.HandleMessageFromFrontend(body);
+                    var response = await app.HandleMessageFromFrontend(body);
+                    if (response is not null)
+                    {
+                        responseJson = JsonSerializer.Serialize(response, _jsonOptions);
+                    }
                 }
 
+                var responseBytes = System.Text.Encoding.UTF8.GetBytes(responseJson);
+                var responseStream = new MemoryStream(responseBytes);
                 args.Response = _webview?.Environment.CreateWebResourceResponse(
-                    null, 200, "OK", "Content-Type: application/json\r\n");
+                    responseStream, 200, "OK", "Content-Type: application/json\r\n");
                 return;
             }
 
@@ -1210,10 +1243,118 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                 Application.Get()?.HandlePlatformEvent(
                     (uint)ApplicationEventType.ClipboardChanged);
                 break;
+
+            case WmKeyDown:
+                // 监听 F12 键打开 DevTools，对应 Wails v3 / Tauri v2 / 浏览器的开发者工具快捷键。
+                // wParam 为虚拟键码。
+                if (instance is not null && (uint)wParam.Value == VkF12)
+                {
+                    instance.OpenDevTools();
+                    return default; // 已处理，不传递给 DefWindowProc
+                }
+
+                break;
+
+            case WmContextMenu:
+                // 右键上下文菜单请求。
+                // 若应用启用了默认上下文菜单（EnableDefaultContextMenu），则弹出内置菜单，
+                // 包含"检查元素"（Inspect Element）和"重新加载"（Reload）选项。
+                // 对应 Wails v3 / Tauri v2 的右键菜单功能。
+                if (instance is not null)
+                {
+                    var app = Application.Get();
+                    if (app?.Options.EnableDefaultContextMenu == true)
+                    {
+                        // lParam 低字为 X 坐标，高字为 Y 坐标（屏幕坐标）
+                        var x = unchecked((short)(lParam.Value & 0xFFFF));
+                        var y = unchecked((short)((lParam.Value >> 16) & 0xFFFF));
+                        instance.ShowDefaultContextMenu(x, y);
+                        return default;
+                    }
+                }
+
+                break;
         }
 
         return PInvoke.DefWindowProc(hWnd, msg, wParam, lParam);
     }
+
+    /// <summary>
+    /// 显示默认的右键上下文菜单，包含 DevTools 和重新加载选项。
+    /// 对应 Tauri v2 的默认右键菜单和 Wails v3 的上下文菜单功能。
+    /// 使用 CreatePopupMenu + AppendMenuW + TrackPopupMenu 构建 Win32 弹出菜单。
+    /// </summary>
+    /// <param name="screenX">屏幕 X 坐标。</param>
+    /// <param name="screenY">屏幕 Y 坐标。</param>
+    private unsafe void ShowDefaultContextMenu(int screenX, int screenY)
+    {
+        // 创建弹出式菜单
+        var hMenu = PInvoke.CreatePopupMenu();
+        if (hMenu.IsNull)
+        {
+            return;
+        }
+
+        try
+        {
+            // 追加菜单项（使用手动 P/Invoke 声明的 AppendMenuW，因为 CsWin32 生成的重载仅接受 SafeHandle）
+            // ID 1: 开发者工具（F12）
+            // ID 2: 重新加载
+            // ID 3: 分隔符
+            // ID 4: 检查元素（Inspect Element）
+            AppendMenuW((IntPtr)hMenu, MENU_ITEM_FLAGS.MF_STRING, (UIntPtr)1, "开发者工具 (F12)");
+            AppendMenuW((IntPtr)hMenu, MENU_ITEM_FLAGS.MF_STRING, (UIntPtr)2, "重新加载");
+            AppendMenuW((IntPtr)hMenu, MENU_ITEM_FLAGS.MF_SEPARATOR, UIntPtr.Zero, null);
+            AppendMenuW((IntPtr)hMenu, MENU_ITEM_FLAGS.MF_STRING, (UIntPtr)4, "检查元素");
+
+            // 弹出菜单前必须将所有者窗口设为前台，否则菜单可能无法正常关闭。
+            PInvoke.SetForegroundWindow(_hwnd);
+
+            // 显示菜单并获取用户选择
+            // TPM_RETURNCMD 使 TrackPopupMenu 返回用户选择的菜单项 ID 而非 BOOL
+            var cmd = PInvoke.TrackPopupMenu(
+                hMenu,
+                TRACK_POPUP_MENU_FLAGS.TPM_LEFTALIGN | TRACK_POPUP_MENU_FLAGS.TPM_TOPALIGN |
+                TRACK_POPUP_MENU_FLAGS.TPM_RETURNCMD | TRACK_POPUP_MENU_FLAGS.TPM_NONOTIFY,
+                screenX, screenY, 0, _hwnd, null);
+
+            // TrackPopupMenu 返回 BOOL，但使用 TPM_RETURNCMD 时实际返回命令 ID（int）。
+            var selectedId = *(int*)&cmd;
+
+            // 处理用户选择
+            switch (selectedId)
+            {
+                case 1:
+                    OpenDevTools();
+                    break;
+                case 2:
+                    _webview?.Reload();
+                    break;
+                case 4:
+                    // 检查元素：直接打开 DevTools
+                    _webview?.OpenDevToolsWindow();
+                    break;
+            }
+        }
+        finally
+        {
+            PInvoke.DestroyMenu(hMenu);
+        }
+    }
+
+    /// <summary>
+    /// AppendMenuW P/Invoke 声明。
+    /// CsWin32 生成的 AppendMenu 重载仅接受 SafeHandle，无法直接传入 HMENU，
+    /// 此处手动声明以支持 HMENU 句柄（通过 IntPtr 传递）。
+    /// </summary>
+    /// <param name="hMenu">父菜单句柄（IntPtr 形式）。</param>
+    /// <param name="uFlags">菜单项标志（MF_* 组合）。</param>
+    /// <param name="uIDNewItem">命令 ID 或子菜单句柄（MF_POPUP 时为菜单句柄）。</param>
+    /// <param name="lpNewItem">菜单项文本，分隔符时为 null。</param>
+    /// <returns>成功返回 true，否则 false。</returns>
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool AppendMenuW(IntPtr hMenu, MENU_ITEM_FLAGS uFlags, UIntPtr uIDNewItem, string? lpNewItem);
 
     /// <summary>
     /// 清除窗口菜单（设置为 null 并重绘菜单栏）。
