@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform;
+using Wails.Net.AssetServer;
 
 namespace Wails.Net.Application.Hosting;
 
@@ -141,6 +142,22 @@ public sealed class DesktopApplicationBuilder
 
         // 从 DI 容器初始化 Application 的管理器，替换 DI 已注册的实例
         application.InitializeFromServiceProvider(host.Services);
+
+        // 自动创建 AssetServer（仿 Wails v3 静态资源处理）
+        // 当配置了 Assets.RootPath 时，创建 FileAssetServer 并设置到 Application.AssetServer
+        // 窗口将自动导航到 http://wails.localhost/ 加载前端资源
+        if (!string.IsNullOrWhiteSpace(desktopOpts.Assets.RootPath))
+        {
+            var rootPath = Path.IsPathRooted(desktopOpts.Assets.RootPath)
+                ? desktopOpts.Assets.RootPath
+                : Path.Combine(AppContext.BaseDirectory, desktopOpts.Assets.RootPath);
+
+            if (Directory.Exists(rootPath))
+            {
+                var fileAssetServer = new FileAssetServer(rootPath);
+                application.AssetServer = fileAssetServer;
+            }
+        }
 
         return new DesktopApplication(host, application, desktopOpts.ApplicationName);
     }

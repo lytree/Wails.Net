@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/demo/">
+    <Project Path="examples/Wails.Net.Demo/Wails.Net.Demo.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Wails.Net.Application/Wails.Net.Application.csproj" />
     <Project Path="src/Wails.Net.Application.Windows/Wails.Net.Application.Windows.csproj" />

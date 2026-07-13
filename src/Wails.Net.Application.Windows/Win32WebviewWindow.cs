@@ -522,6 +522,19 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
             {
                 _webview.NavigateToString(_options.HTML);
             }
+            else
+            {
+                // 未设置 URL 或 HTML 时，若 Application 已配置 AssetServer，
+                // 自动导航到 http://wails.localhost/ 加载静态资源（仿 Wails v3）。
+                // 避免使用 file:// 协议导致的权限问题。
+                var app = Application.Get();
+                if (app?.AssetServer is not null)
+                {
+                    const string wailsUrl = "http://wails.localhost/";
+                    _webview.Navigate(wailsUrl);
+                    _currentUrl = wailsUrl;
+                }
+            }
 
             // 注入 JS（若有）。
             if (!string.IsNullOrEmpty(_options.JS))
@@ -623,6 +636,22 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                     args.Response = _webview?.Environment.CreateWebResourceResponse(
                         ms, 200, "OK", $"Content-Type: {mimeType}\r\n");
                     return;
+                }
+
+                // SPA 路由回退：当资源不存在时，回退到 index.html。
+                // 适用于 Vue/React/Angular 等前端框架的客户端路由。
+                if (!string.IsNullOrEmpty(assetPath) &&
+                    !assetPath.Equals("index.html", StringComparison.OrdinalIgnoreCase) &&
+                    !Path.HasExtension(assetPath))
+                {
+                    var fallbackContent = await assetServer.ServeAsync("index.html");
+                    if (fallbackContent is not null && fallbackContent.Length > 0)
+                    {
+                        var ms = new MemoryStream(fallbackContent);
+                        args.Response = _webview?.Environment.CreateWebResourceResponse(
+                            ms, 200, "OK", "Content-Type: text/html\r\n");
+                        return;
+                    }
                 }
             }
 

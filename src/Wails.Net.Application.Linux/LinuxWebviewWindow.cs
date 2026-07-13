@@ -1,4 +1,6 @@
 using System.Runtime.InteropServices;
+using Gio;
+using GLib;
 using Gtk;
 using WebKit;
 using Wails.Net.Application.Menus;
@@ -86,6 +88,11 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     /// 当前 URL。
     /// </summary>
     private string _currentUrl = string.Empty;
+
+    /// <summary>
+    /// wails 自定义 URI scheme 是否已注册（全局，所有窗口共享同一 WebContext）。
+    /// </summary>
+    private static bool _wailsSchemeRegistered;
 
     /// <summary>
     /// 最小宽度（GTK4 通过LayoutManager 约束，此处缓存以便查询）。
@@ -215,6 +222,20 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         {
             _webView?.LoadHtml(options.HTML, "about:blank");
         }
+        else
+        {
+            // 未设置 URL 或 HTML 时，若 Application 已配置 AssetServer，
+            // 注册 wails 自定义 URI scheme 并导航到 wails://localhost/（仿 Wails v3）。
+            // 避免使用 file:// 协议导致的权限问题。
+            var app = WailsApplication.Get();
+            if (app?.AssetServer is not null)
+            {
+                EnsureWailsSchemeRegistered();
+                const string wailsUrl = "wails://localhost/";
+                _webView?.LoadUri(wailsUrl);
+                _currentUrl = wailsUrl;
+            }
+        }
 
         // 若不隐藏，则显示窗口。
         if (!options.Hidden)
@@ -284,6 +305,117 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
             settings.SetEnableJavascript(true);
             settings.SetEnableDeveloperExtras(true);
         }
+    }
+
+    /// <summary>
+    /// 注册 wails 自定义 URI scheme 到 WebKit WebContext。
+    /// 通过 <see cref="WebContext.RegisterUriScheme"/> 注册后，所有
+    /// <c>wails://localhost/...</c> 请求将由 <see cref="OnWailsSchemeRequest"/> 处理。
+    /// 仿照 Wails v3 / Tauri v2 的静态资源处理方式，避免使用 file:// 协议。
+    /// 全局只注册一次（所有窗口共享同一 WebContext）。
+    /// </summary>
+    private void EnsureWailsSchemeRegistered()
+    {
+        if (_wailsSchemeRegistered || _webView is null)
+        {
+            return;
+        }
+
+        _wailsSchemeRegistered = true;
+        var context = _webView.GetContext();
+        context.RegisterUriScheme("wails", OnWailsSchemeRequest);
+    }
+
+    /// <summary>
+    /// 处理 wails:// URI scheme 请求。
+    /// 从 <see cref="WailsApplication.AssetServer"/> 读取静态资源并返回给 WebView。
+    /// 使用 <see cref="URISchemeResponse"/> 设置状态码与 Content-Type，
+    /// 避免直接构造 <see cref="GLib.Error"/>（GirCore 0.8.0 未公开便利构造器）。
+    /// 支持 SPA 路由回退：当请求的资源不存在且路径无扩展名时，回退到 index.html。
+    /// </summary>
+    /// <param name="request">URI scheme 请求对象。</param>
+    private void OnWailsSchemeRequest(URISchemeRequest request)
+    {
+        try
+        {
+            var path = request.GetPath().TrimStart('/');
+            if (string.IsNullOrEmpty(path))
+            {
+                path = "index.html";
+            }
+
+            var app = WailsApplication.Get();
+            var assetServer = app?.AssetServer;
+            if (assetServer is null)
+            {
+                FinishWithStatus(request, 500, "AssetServer not configured");
+                return;
+            }
+
+            var content = assetServer.ServeAsync(path).GetAwaiter().GetResult();
+            if (content is null || content.Length == 0)
+            {
+                // SPA 路由回退：当资源不存在时，回退到 index.html。
+                if (!string.IsNullOrEmpty(path)
+                    && !path.Equals("index.html", StringComparison.OrdinalIgnoreCase)
+                    && !Path.HasExtension(path))
+                {
+                    content = assetServer.ServeAsync("index.html").GetAwaiter().GetResult();
+                    if (content is not null && content.Length > 0)
+                    {
+                        FinishResponse(request, content, "text/html", 200, "OK");
+                        return;
+                    }
+                }
+
+                FinishWithStatus(request, 404, "Not Found");
+                return;
+            }
+
+            var mimeType = assetServer.GetMimeType(path);
+            FinishResponse(request, content, mimeType, 200, "OK");
+        }
+        catch (Exception ex)
+        {
+            FinishWithStatus(request, 500, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// 使用 <see cref="URISchemeResponse"/> 构造并完成请求响应。
+    /// 通过 <c>MemoryInputStream</c> 包装字节数组，并设置状态码与 Content-Type。
+    /// </summary>
+    /// <param name="request">URI scheme 请求对象。</param>
+    /// <param name="content">响应体字节。</param>
+    /// <param name="contentType">MIME 类型。</param>
+    /// <param name="statusCode">HTTP 状态码。</param>
+    /// <param name="reasonPhrase">状态描述。</param>
+    private static void FinishResponse(URISchemeRequest request, byte[] content, string contentType, uint statusCode, string reasonPhrase)
+    {
+        var bytes = GLib.Bytes.New(content);
+        var stream = MemoryInputStream.NewFromBytes(bytes);
+        var response = URISchemeResponse.New(stream, content.Length);
+        response.SetContentType(contentType);
+        response.SetStatus(statusCode, reasonPhrase);
+        request.FinishWithResponse(response);
+    }
+
+    /// <summary>
+    /// 使用空响应体完成请求，仅设置状态码与原因短语。
+    /// 用于 404/500 等错误响应，避免构造 <see cref="GLib.Error"/>。
+    /// </summary>
+    /// <param name="request">URI scheme 请求对象。</param>
+    /// <param name="statusCode">HTTP 状态码。</param>
+    /// <param name="reasonPhrase">状态描述。</param>
+    private static void FinishWithStatus(URISchemeRequest request, uint statusCode, string reasonPhrase)
+    {
+        var empty = Array.Empty<byte>();
+        var bytes = GLib.Bytes.New(empty);
+        var stream = MemoryInputStream.NewFromBytes(bytes);
+        var response = URISchemeResponse.New(stream, 0);
+        response.SetContentType("text/plain");
+        response.SetStatus(statusCode, reasonPhrase);
+        request.FinishWithResponse(response);
     }
 
     /// <summary>
