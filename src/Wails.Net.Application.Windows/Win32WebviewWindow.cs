@@ -631,7 +631,10 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                 var content = await assetServer.ServeAsync(assetPath);
                 if (content is not null && content.Length > 0)
                 {
-                    var mimeType = assetServer.GetMimeType(path);
+                    // 使用 assetPath（已规范化为 index.html 等）而非原始 path（可能是 "/"）
+                    // 计算 MIME 类型，否则根路径请求会得到 application/octet-stream，
+                    // 导致 WebView2 把 HTML 当作下载文件而非网页渲染（白屏 + 下载按钮）。
+                    var mimeType = assetServer.GetMimeType(assetPath);
                     var ms = new MemoryStream(content);
                     args.Response = _webview?.Environment.CreateWebResourceResponse(
                         ms, 200, "OK", $"Content-Type: {mimeType}\r\n");

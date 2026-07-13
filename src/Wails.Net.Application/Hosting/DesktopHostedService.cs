@@ -12,6 +12,7 @@ internal sealed class DesktopHostedService : IHostedService, IDisposable
 {
     private readonly ILogger<DesktopHostedService> _logger;
     private readonly Application _application;
+    private readonly IHostApplicationLifetime _lifetime;
     private Thread? _uiThread;
     private readonly TaskCompletionSource _startedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -20,10 +21,15 @@ internal sealed class DesktopHostedService : IHostedService, IDisposable
     /// </summary>
     /// <param name="logger">日志记录器。</param>
     /// <param name="application">兼容层 Application 实例。</param>
-    public DesktopHostedService(ILogger<DesktopHostedService> logger, Application application)
+    /// <param name="lifetime">Host 应用生命周期，用于在 UI 线程退出后通知 Host 停止。</param>
+    public DesktopHostedService(
+        ILogger<DesktopHostedService> logger,
+        Application application,
+        IHostApplicationLifetime lifetime)
     {
         _logger = logger;
         _application = application;
+        _lifetime = lifetime;
     }
 
     /// <summary>
@@ -35,6 +41,10 @@ internal sealed class DesktopHostedService : IHostedService, IDisposable
     public Task StartAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("桌面应用启动中...");
+
+        // 注册全局异常处理器，捕获未处理的异常和未观察的 Task 异常。
+        // 防止应用因未捕获异常而静默崩溃，便于诊断问题。
+        RegisterGlobalExceptionHandlers();
 
         // 在专用 STA 线程运行 Application.Run()（因为它是阻塞的，且需要 STA 线程）
         _uiThread = new Thread(() =>
@@ -51,6 +61,16 @@ internal sealed class DesktopHostedService : IHostedService, IDisposable
             finally
             {
                 _startedTcs.TrySetResult();
+                // UI 线程退出后通知 Generic Host 停止，否则 Host 会一直等待导致进程不退出。
+                // 对应窗口关闭按钮触发 PostQuitMessage(0) → 消息循环退出 → Application.Run() 返回的场景。
+                try
+                {
+                    _lifetime.StopApplication();
+                }
+                catch
+                {
+                    // 通知 Host 停止失败时忽略，避免掩盖原始异常
+                }
             }
         })
         {
@@ -65,6 +85,29 @@ internal sealed class DesktopHostedService : IHostedService, IDisposable
         _uiThread.Start();
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// 注册全局异常处理器，捕获两类未处理异常：
+    /// 1. <see cref="AppDomain.UnhandledException"/> — CLR 未捕获的异常（所有线程）。
+    /// 2. <see cref="TaskScheduler.UnobservedTaskException"/> — 未观察的 Task 异常。
+    /// 所有异常通过 <see cref="ILogger"/> 记录为错误级别日志，便于诊断问题。
+    /// </summary>
+    private void RegisterGlobalExceptionHandlers()
+    {
+        // AppDomain 级未处理异常：捕获所有线程抛出的未处理异常。
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            var ex = e.ExceptionObject as Exception;
+            _logger.LogError(ex, "全局未处理异常 (IsTerminating={IsTerminating})", e.IsTerminating);
+        };
+
+        // TaskScheduler 未观察异常：Task 中抛出但未被 await/检查 的异常。
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            _logger.LogError(e.Exception, "未观察的 Task 异常");
+            e.SetObserved(); // 标记已观察，防止进程被强制终止
+        };
     }
 
     /// <summary>
