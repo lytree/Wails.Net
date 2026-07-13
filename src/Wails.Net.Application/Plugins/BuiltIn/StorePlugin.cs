@@ -47,6 +47,13 @@ public class StorePlugin : IPlugin
             return service?.Delete(key) ?? false;
         }));
 
+        // 检查键是否存在（与前端 wails.store.has API 一致）
+        context.Commands.MapCommand("store.has", (Func<ICommandContext, string, bool>)((ctx, key) =>
+        {
+            var service = ctx.Services.GetService<KvStoreService>();
+            return service?.Get(key) is not null;
+        }));
+
         context.Commands.MapCommand("store.keys", (Func<ICommandContext, string[]>)(ctx =>
         {
             var service = ctx.Services.GetService<KvStoreService>();

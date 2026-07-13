@@ -69,12 +69,13 @@ public sealed class BuiltInPluginsExtendedTests
         // 操作
         await Assert.That(() => plugin.Configure(context)).ThrowsNothing();
 
-        // 断言：应注册 process.exit、process.restart、process.relaunch 三个命令
-        await Assert.That(context.Commands.Count).IsEqualTo(3);
+        // 断言：应注册 process.exit、process.restart、process.relaunch、process.getPid 四个命令
+        await Assert.That(context.Commands.Count).IsEqualTo(4);
         var names = context.Commands.GetCommandNames().ToList();
         await Assert.That(names.Contains("process.exit")).IsTrue();
         await Assert.That(names.Contains("process.restart")).IsTrue();
         await Assert.That(names.Contains("process.relaunch")).IsTrue();
+        await Assert.That(names.Contains("process.getPid")).IsTrue();
     }
 
     // ---------------------------------------------------------------------
@@ -393,8 +394,8 @@ public sealed class BuiltInPluginsExtendedTests
         // 操作
         await Assert.That(() => plugin.Configure(context)).ThrowsNothing();
 
-        // 断言：应注册 6 个 store.* 命令
-        await Assert.That(context.Commands.Count).IsEqualTo(6);
+        // 断言：应注册 7 个 store.* 命令（含 store.has 前端 API 别名）
+        await Assert.That(context.Commands.Count).IsEqualTo(7);
         var names = context.Commands.GetCommandNames().ToList();
         await Assert.That(names.Contains("store.get")).IsTrue();
         await Assert.That(names.Contains("store.set")).IsTrue();
@@ -402,6 +403,7 @@ public sealed class BuiltInPluginsExtendedTests
         await Assert.That(names.Contains("store.keys")).IsTrue();
         await Assert.That(names.Contains("store.clear")).IsTrue();
         await Assert.That(names.Contains("store.watch")).IsTrue();
+        await Assert.That(names.Contains("store.has")).IsTrue();
     }
 
     // ---------------------------------------------------------------------
@@ -483,12 +485,13 @@ public sealed class BuiltInPluginsExtendedTests
         // 操作
         await Assert.That(() => plugin.Configure(context)).ThrowsNothing();
 
-        // 断言：应注册 5 个 notification.* 命令
-        await Assert.That(context.Commands.Count).IsEqualTo(5);
+        // 断言：应注册 6 个 notification.* 命令（含 notification.hasPermission 前端 API 别名）
+        await Assert.That(context.Commands.Count).IsEqualTo(6);
         var names = context.Commands.GetCommandNames().ToList();
         await Assert.That(names.Contains("notification.show")).IsTrue();
         await Assert.That(names.Contains("notification.requestPermission")).IsTrue();
         await Assert.That(names.Contains("notification.isPermissionGranted")).IsTrue();
+        await Assert.That(names.Contains("notification.hasPermission")).IsTrue();
         await Assert.That(names.Contains("notification.cancel")).IsTrue();
         await Assert.That(names.Contains("notification.showWithId")).IsTrue();
     }

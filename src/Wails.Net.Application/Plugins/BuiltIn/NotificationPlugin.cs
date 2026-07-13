@@ -40,7 +40,9 @@ public class NotificationPlugin : IPlugin
         context.Commands.MapCommand("notification.requestPermission", (Func<ICommandContext, bool>)(ctx => true));
 
         // 查询通知权限是否已授予。简化实现下始终返回 true。
+        // 同时注册两个别名：isPermissionGranted（历史名）和 hasPermission（前端 API 名）
         context.Commands.MapCommand("notification.isPermissionGranted", (Func<ICommandContext, bool>)(ctx => true));
+        context.Commands.MapCommand("notification.hasPermission", (Func<ICommandContext, bool>)(ctx => true));
 
         // 取消指定 ID 的通知，返回是否取消成功。
         context.Commands.MapCommand("notification.cancel", (Func<ICommandContext, string, bool>)((ctx, id) =>

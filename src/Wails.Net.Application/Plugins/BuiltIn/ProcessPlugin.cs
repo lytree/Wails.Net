@@ -42,6 +42,9 @@ public class ProcessPlugin : IPlugin
         {
             Restart();
         }));
+
+        // 获取当前进程 ID（与前端 wails.process.getPid API 一致）
+        context.Commands.MapCommand("process.getPid", (Func<ICommandContext, int>)(_ => Environment.ProcessId));
     }
 
     /// <summary>

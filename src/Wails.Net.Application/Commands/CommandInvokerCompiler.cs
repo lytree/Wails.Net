@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
-using Wails.Net.Application.Bindings;
 
 namespace Wails.Net.Application.Commands;
 
@@ -142,29 +141,5 @@ public static class CommandInvokerCompiler
             ctxParam);
 
         return lambda.Compile();
-    }
-
-    /// <summary>
-    /// 尝试从 <see cref="GeneratedBindingRegistry"/> 获取源生成器调用器，
-    /// 并包装为 <see cref="CompiledCommandInvoker"/>。
-    /// 仅适用于 <c>[Command]</c> 或 <c>[Binding]</c> 标记的方法。
-    /// </summary>
-    /// <param name="commandName">命令名（如 "counter.increment"）。</param>
-    /// <returns>包装后的调用器，若源生成器未注册则返回 null。</returns>
-    public static CompiledCommandInvoker? TryGetGeneratedInvoker(string commandName)
-    {
-        if (!GeneratedBindingRegistry.TryGetInvoker(commandName, out var generated) || generated is null)
-        {
-            return null;
-        }
-
-        // 将 GeneratedInvoker (instance, JsonElement[], CancellationToken) 包装为 CompiledCommandInvoker
-        return (instance, parameters, ctx) =>
-        {
-            // GeneratedInvoker 接受 JsonElement[] 数组
-            // 将单个 JsonElement 包装为数组（保持与 BindingManager 调用约定一致）
-            var argsArray = new[] { parameters };
-            return generated(instance, argsArray, ctx?.CancellationToken ?? CancellationToken.None);
-        };
     }
 }

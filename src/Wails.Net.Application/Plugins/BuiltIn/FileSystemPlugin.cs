@@ -45,17 +45,27 @@ public class FileSystemPlugin : IPlugin
 
     /// <summary>
     /// 配置插件，注册文件系统相关命令。
+    /// 同时注册短名（fs.read）和前端 API 名（fs.readTextFile）两套命令，保持向后兼容。
     /// </summary>
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
-        // 文件操作
+        // 文件操作（短名，向后兼容）
         context.Commands.MapCommand("fs.read", (Func<string, string>)(path => File.ReadAllText(GetSafePath(path))));
         context.Commands.MapCommand("fs.write", (Action<string, string>)((path, content) => File.WriteAllText(GetSafePath(path), content)));
         context.Commands.MapCommand("fs.exists", (Func<string, bool>)(path => File.Exists(GetSafePath(path))));
         context.Commands.MapCommand("fs.delete", (Action<string>)(path => File.Delete(GetSafePath(path))));
         context.Commands.MapCommand("fs.readBinary", (Func<string, byte[]>)(path => File.ReadAllBytes(GetSafePath(path))));
         context.Commands.MapCommand("fs.writeBinary", (Action<string, byte[]>)((path, data) => File.WriteAllBytes(GetSafePath(path), data)));
+
+        // 文件操作（前端 wails.fs.* API 名，与 RuntimeGenerator 一致）
+        context.Commands.MapCommand("fs.readTextFile", (Func<string, string>)(path => File.ReadAllText(GetSafePath(path))));
+        context.Commands.MapCommand("fs.writeTextFile", (Action<string, string>)((path, content) => File.WriteAllText(GetSafePath(path), content)));
+        context.Commands.MapCommand("fs.readBinaryFile", (Func<string, byte[]>)(path => File.ReadAllBytes(GetSafePath(path))));
+        context.Commands.MapCommand("fs.writeBinaryFile", (Action<string, byte[]>)((path, data) => File.WriteAllBytes(GetSafePath(path), data)));
+        context.Commands.MapCommand("fs.remove", (Action<string>)(path => File.Delete(GetSafePath(path))));
+
+        // 其他文件操作
         context.Commands.MapCommand("fs.copy", (Action<string, string>)((src, dest) => File.Copy(GetSafePath(src), GetSafePath(dest), true)));
         context.Commands.MapCommand("fs.rename", (Action<string, string>)((src, dest) => File.Move(GetSafePath(src), GetSafePath(dest))));
         context.Commands.MapCommand("fs.stat", (Func<string, FileStat>)(path => GetFileStat(GetSafePath(path))));

@@ -53,11 +53,14 @@ public static class PlatformFactory
 
     /// <summary>
     /// 创建平台特定的 Webview 窗口实现。
+    /// 仅 Server 模式下返回 <see cref="ServerWebviewWindow"/> 占位实现；
+    /// 桌面平台的窗口创建由平台特定的 <see cref="IPlatformApp"/> 通过反射加载，
+    /// 不由此工厂方法处理。
     /// </summary>
     /// <param name="id">窗口 ID。</param>
     /// <param name="options">窗口配置选项。</param>
-    /// <returns>Webview 窗口实现实例。</returns>
-    /// <exception cref="PlatformNotSupportedException">当平台尚未实现或不支持时抛出。</exception>
+    /// <returns>Server 模式下返回 <see cref="ServerWebviewWindow"/>。</returns>
+    /// <exception cref="PlatformNotSupportedException">非 Server 模式时抛出，提示使用平台特定的 IPlatformApp。</exception>
     public static IWebviewWindowImpl CreateWebviewWindowImpl(uint id, WebviewWindowOptions options)
     {
         if (IsServerMode())
@@ -65,19 +68,9 @@ public static class PlatformFactory
             return new ServerWebviewWindow();
         }
 
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            // TODO: 将在后续实现完整的 WebView2 集成
-            throw new NotImplementedException("WebView2 窗口创建将在后续实现");
-        }
-
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-        {
-            // TODO: 将在后续实现完整的 WebKitGTK 集成
-            throw new NotImplementedException("WebKitGTK 窗口创建将在后续实现");
-        }
-
-        throw new PlatformNotSupportedException($"不支持的平台: {RuntimeInformation.OSDescription}");
+        throw new PlatformNotSupportedException(
+            "桌面平台的 Webview 窗口创建由平台特定的 IPlatformApp 实现，" +
+            "请通过 Application.Get().NewWebviewWindow 创建窗口。");
     }
 
     /// <summary>

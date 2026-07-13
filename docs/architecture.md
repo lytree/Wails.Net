@@ -185,23 +185,28 @@ public interface IPlugin
 
 ### 8. 资源服务器
 
-内置 HTTP 服务器提供静态文件和运行时 JS 注入：
+内置 HTTP 服务器提供静态文件服务，运行时 JS 通过 WebView2 的
+`AddScriptToExecuteOnDocumentCreatedAsync` 在页面脚本执行前注入：
 
 ```
-HTTP 请求
+HTTP 请求 (http://wails.localhost/*)
     │
     ├── 中间件管道 (IMiddleware)
     │     ├── 日志
     │     ├── CORS
     │     └── 缓存
     │
-    ├── 路由匹配
-    │     ├── /wails/runtime.js → RuntimeJsRoute (运行时 JS API)
-    │     ├── /wails/transport.js → TransportJsRoute (传输层 JS)
-    │     ├── /wails/custom.js → CustomJsRoute (自定义脚本)
-    │     └── /* → 静态文件
+    ├── 静态文件读取 (FileAssetServer / BundledAssetServer)
+    │     └── /* → 前端静态资源（含 SPA 路由回退）
     │
     └── 响应
+
+运行时 JS 注入（不经过 HTTP）：
+    Win32WebviewWindow.InjectRuntimeJs()
+        └── Application.GenerateRuntimeJs()
+            └── RuntimeGenerator.Generate(options)
+                └── AddScriptToExecuteOnDocumentCreatedAsync(js)
+                    （在页面任何脚本执行前注入 window.wails API）
 ```
 
 ### 9. 安全与权限
