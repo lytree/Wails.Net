@@ -40,8 +40,15 @@ public sealed class LinuxPlatformApp : IPlatformApp
 
     /// <summary>
     /// 主线程 ID，用于 IsOnMainThread 判断。
+    /// 在 <see cref="Run"/> 方法启动时设置，因为 UI 线程可能不是构造时的线程。
     /// </summary>
-    private readonly int _mainThreadId;
+    private int _mainThreadId;
+
+    /// <summary>
+    /// GTK 是否已初始化的标志（0=未初始化，1=已初始化）。
+    /// 使用 Interlocked 确保线程安全的单次初始化。
+    /// </summary>
+    private static int _gtkInitialized;
 
     /// <summary>
     /// GTK 主循环实例，Run() 时创建，Destroy() 时退出。
@@ -92,7 +99,6 @@ public sealed class LinuxPlatformApp : IPlatformApp
     public LinuxPlatformApp(ApplicationOptions options)
     {
         _name = options.Name;
-        _mainThreadId = Environment.CurrentManagedThreadId;
     }
 
     /// <inheritdoc />
@@ -270,6 +276,12 @@ public sealed class LinuxPlatformApp : IPlatformApp
             throw new PlatformNotSupportedException("GTK 主循环仅在 Linux 上可用。");
         }
 
+        // 在 UI 线程启动时记录线程 ID。
+        _mainThreadId = Environment.CurrentManagedThreadId;
+
+        // 确保 GTK 已初始化（在 UI 线程上）。
+        EnsureGtkInitialized();
+
         // 启动系统级事件监听器（网络连通性变化）。
         _systemEventWatcher = new LinuxSystemEventWatcher();
         _systemEventWatcher.Start();
@@ -277,6 +289,20 @@ public sealed class LinuxPlatformApp : IPlatformApp
         _mainLoop = MainLoop.New(GLib.Functions.MainContextDefault(), false);
         _mainLoop.Run();
         return 0;
+    }
+
+    /// <summary>
+    /// 确保 GTK 已初始化。使用 Interlocked 实现线程安全的单次初始化。
+    /// 必须在创建任何 GTK 窗口或控件之前调用。
+    /// </summary>
+    internal static void EnsureGtkInitialized()
+    {
+        if (Interlocked.Exchange(ref _gtkInitialized, 1) == 0)
+        {
+            // GTK4 初始化，内部调用 gtk_init()。
+            // 必须在创建任何窗口或控件之前调用，且后续所有 GTK 操作须在同一线程。
+            Gtk.Functions.Init();
+        }
     }
 
     /// <inheritdoc />
@@ -602,6 +628,10 @@ public sealed class LinuxPlatformApp : IPlatformApp
         {
             window.SetApplicationMenu(_appMenu.MenuModel, _appMenu.ActionGroup);
         }
+
+        // 显示窗口。GTK 窗口创建后默认不可见，必须显式调用 Present() 才能显示。
+        // 对应 Wails v3 Go 版本中窗口创建后立即显示的行为。
+        window.Show();
     }
 
     /// <inheritdoc />

@@ -191,6 +191,11 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         _maxWidth = options.MaxWidth;
         _maxHeight = options.MaxHeight;
 
+        // 确保 GTK 已初始化（在创建任何窗口或控件之前）。
+        // OnAfterStart 回调在 _platformApp.Run() 之前触发，因此 GTK 可能尚未初始化。
+        // 使用静态标志确保只初始化一次，且在当前线程（UI 线程）上初始化。
+        LinuxPlatformApp.EnsureGtkInitialized();
+
         CreateNativeWindow();
         CreateWebView();
 
