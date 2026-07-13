@@ -36,6 +36,7 @@ builder.Services.AddSingleton<TodoService>();
 
 // 使用内置插件（每个插件提供一组前端可调用的命令）
 builder.UsePlugin<WindowPlugin>();           // 窗口操作（将 wails.window.* 转为插件命令）
+builder.UsePlugin<WindowsPlugin>();          // 窗口查询（将 wails.windows.* 转为插件命令）
 builder.UsePlugin<ApplicationPlugin>();      // 应用级操作（将 wails.application.* 转为插件命令）
 builder.UsePlugin<TrayPlugin>();            // 系统托盘（将 wails.tray.* 转为插件命令）
 builder.UsePlugin<MenuPlugin>();            // 菜单（将 wails.menu.* 转为插件命令）

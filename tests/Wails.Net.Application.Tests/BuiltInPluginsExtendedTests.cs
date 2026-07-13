@@ -200,15 +200,24 @@ public sealed class BuiltInPluginsExtendedTests
         // 操作
         await Assert.That(() => plugin.Configure(context)).ThrowsNothing();
 
-        // 断言：应注册 6 个 os.* 命令
-        await Assert.That(context.Commands.Count).IsEqualTo(6);
+        // 断言：应注册 13 个命令（6 个 os.* + 7 个 system.*，system.* 与前端 wails.system.* API 一致）
+        await Assert.That(context.Commands.Count).IsEqualTo(13);
         var names = context.Commands.GetCommandNames().ToList();
+        // os.* 命令（历史名，向后兼容）
         await Assert.That(names.Contains("os.platform")).IsTrue();
         await Assert.That(names.Contains("os.hostname")).IsTrue();
         await Assert.That(names.Contains("os.arch")).IsTrue();
         await Assert.That(names.Contains("os.locale")).IsTrue();
         await Assert.That(names.Contains("os.version")).IsTrue();
         await Assert.That(names.Contains("os.type")).IsTrue();
+        // system.* 命令（与前端 wails.system.* API 一致）
+        await Assert.That(names.Contains("system.platform")).IsTrue();
+        await Assert.That(names.Contains("system.hostname")).IsTrue();
+        await Assert.That(names.Contains("system.arch")).IsTrue();
+        await Assert.That(names.Contains("system.locale")).IsTrue();
+        await Assert.That(names.Contains("system.version")).IsTrue();
+        await Assert.That(names.Contains("system.type")).IsTrue();
+        await Assert.That(names.Contains("system.timezone")).IsTrue();
     }
 
     // ---------------------------------------------------------------------
