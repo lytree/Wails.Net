@@ -12,6 +12,9 @@
     <RootNamespace>Wails.Net.SourceGenerators</RootNamespace>
     <AssemblyName>Wails.Net.SourceGenerators</AssemblyName>
     <NoWarn>RS1041</NoWarn>
+    <PackageId>Wails.Net.SourceGenerators</PackageId>
+    <Description>Wails.Net 源代码生成器：编译期扫描 [Binding]/[Command] 特性，生成强类型调用器替代反射，支持 AOT 裁剪。</Description>
+    <DevelopmentDependency>true</DevelopmentDependency>
   </PropertyGroup>
 
   <ItemGroup>

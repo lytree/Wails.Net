@@ -4,7 +4,9 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <IsPackable>false</IsPackable>
+    <IsPackable>true</IsPackable>
+    <PackageId>Wails.Net.Runtime.Js</PackageId>
+    <Description>Wails.Net 前端运行时 JS 生成器：window.wails API 注入模板。</Description>
   </PropertyGroup>
 
   <ItemGroup>

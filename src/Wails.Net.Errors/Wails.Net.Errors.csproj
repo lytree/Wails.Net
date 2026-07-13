@@ -1,9 +1,11 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <PackageId>Wails.Net.Errors</PackageId>
+    <Description>Wails.Net 错误类型：CallError、ErrorCodes、WailsError。</Description>
   </PropertyGroup>
 
 </Project>

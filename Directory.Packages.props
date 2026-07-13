@@ -39,6 +39,11 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
     <PackageVersion Include="System.CommandLine" Version="2.0.9" />
   </ItemGroup>
+  <!-- 源码映射（SourceLink） -->
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
+    <PackageVersion Include="Microsoft.SourceLink.GitLab" Version="8.0.0" />
+  </ItemGroup>
   <!-- 测试 -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />

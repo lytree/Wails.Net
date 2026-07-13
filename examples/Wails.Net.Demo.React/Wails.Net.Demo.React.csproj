@@ -8,7 +8,7 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <RootNamespace>Wails.Net.Demo.React</RootNamespace>
     <AssemblyName>Wails.Net.Demo.React</AssemblyName>
-    <Version>1.0.0</Version>
+    <!-- 版本号从 Directory.Build.props 继承，便于统一管理 -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <NoDefaultExcludes>true</NoDefaultExcludes>
   </PropertyGroup>

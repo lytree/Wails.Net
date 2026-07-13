@@ -1,4 +1,5 @@
 using Wails.Net.Application.Managers;
+using Wails.Net.Application.Menus;
 using Wails.Net.Application.Platform;
 using Wails.Net.Application.SystemTray;
 

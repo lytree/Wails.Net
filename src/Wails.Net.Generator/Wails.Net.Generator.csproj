@@ -3,6 +3,8 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <IsPackable>true</IsPackable>
+    <PackageId>Wails.Net.Generator</PackageId>
+    <Description>Wails.Net 代码生成器：TypeScript 绑定生成、FNV-1a 哈希、事件枚举生成。</Description>
   </PropertyGroup>
 
   <ItemGroup>

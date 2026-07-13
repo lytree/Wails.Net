@@ -49,3 +49,6 @@ Thumbs.db
 
 # npm 锁文件（使用 pnpm，pnpm-lock.yaml 会被跟踪）
 package-lock.json
+
+# CI/CD 构建产物
+artifacts/

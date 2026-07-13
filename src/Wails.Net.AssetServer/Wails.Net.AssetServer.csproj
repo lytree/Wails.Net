@@ -4,7 +4,9 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <IsPackable>false</IsPackable>
+    <IsPackable>true</IsPackable>
+    <PackageId>Wails.Net.AssetServer</PackageId>
+    <Description>Wails.Net 资源服务器：静态文件服务、中间件管道、SPA 路由回退。</Description>
   </PropertyGroup>
 
 </Project>

@@ -1,0 +1,183 @@
+# ============================================================================
+# Wails.Net GitLab CI/CD 配置
+# ----------------------------------------------------------------------------
+# 流水线阶段：restore → build → test → pack → publish
+#
+# 运行环境要求：
+#   - Windows runner（tags: windows）用于构建全部项目与 Windows 测试
+#   - Linux runner（tags: linux）用于运行 Linux 平台测试（需 GTK4 原生库）
+#
+# 版本号管理：
+#   版本号集中在 Directory.Build.props 的 WailsNetVersion 属性中维护。
+#   发布新版本时，修改 WailsNetVersion 后打 Git tag（如 v0.1.0-alpha.1），
+#   触发 publish 阶段推送 NuGet 包到 nuget.org。
+# ============================================================================
+
+stages:
+  - restore
+  - build
+  - test
+  - pack
+  - publish
+
+variables:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  # 标记为 CI 构建，启用 ContinuousIntegrationBuild 与确定性构建
+  CI: "true"
+  # 解决方案文件
+  SOLUTION: "Wails.Net.slnx"
+  # 打包输出目录
+  PACKAGE_OUTPUT: "artifacts/packages"
+
+# 缓存 NuGet 全局包缓存
+cache:
+  key:
+    files:
+      - Directory.Packages.props
+    prefix: nuget-$CI_COMMIT_REF_SLUG
+  paths:
+    - .nuget/packages/
+  policy: pull-push
+
+# ============================================================================
+# 阶段 1：还原 NuGet 包
+# ============================================================================
+restore:
+  stage: restore
+  tags:
+    - windows
+  script:
+    - dotnet restore $SOLUTION
+  artifacts:
+    paths:
+      - "**/obj/project.assets.json"
+      - "**/obj/*.csproj.nuget.*"
+    expire_in: 1 day
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+# ============================================================================
+# 阶段 2：构建（Windows runner 构建全部项目，包括 Linux 平台项目）
+# ============================================================================
+build:
+  stage: build
+  tags:
+    - windows
+  needs:
+    - restore
+  script:
+    - dotnet build $SOLUTION -c Release --no-restore -p:SkipFrontendBuild=true
+  artifacts:
+    paths:
+      - "src/**/bin/Release/"
+      - "tests/**/bin/Release/"
+    exclude:
+      - "src/**/*.nupkg"
+      - "src/**/*.snupkg"
+    expire_in: 1 day
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+# ============================================================================
+# 阶段 3：测试
+# ============================================================================
+# 跨平台测试（Application + CLI），在 Windows runner 上运行
+test:application:
+  stage: test
+  tags:
+    - windows
+  needs:
+    - build
+  script:
+    # Application 测试（TUnit，使用 dotnet run 而非 dotnet test）
+    - dotnet run --project tests/Wails.Net.Application.Tests/Wails.Net.Application.Tests.csproj --no-build -c Release
+    # CLI 测试
+    - dotnet run --project tests/Wails.Net.Cli.Tests/Wails.Net.Cli.Tests.csproj --no-build -c Release
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+# Windows 平台测试（依赖 Win32 API、注册表、WinForms 剪贴板）
+test:windows:
+  stage: test
+  tags:
+    - windows
+  needs:
+    - build
+  script:
+    - dotnet run --project tests/Wails.Net.Application.Windows.Tests/Wails.Net.Application.Windows.Tests.csproj --no-build -c Release
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+# Linux 平台测试（依赖 GirCore/GTK4 原生库，需在 Linux runner 上运行）
+test:linux:
+  stage: test
+  tags:
+    - linux
+  needs:
+    - build
+  image: mcr.microsoft.com/dotnet/sdk:10.0
+  before_script:
+    # 安装 GTK4 + WebKitGTK 6.0 原生库（Debian/Ubuntu 系）
+    - apt-get update -y
+    - apt-get install -y libgtk-4-1 libwebkitgtk-6.0-4 || apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+    - dotnet restore $SOLUTION
+  script:
+    # 在 Linux 上重新构建 Linux 平台项目（之前的构建在 Windows 上完成）
+    - dotnet build tests/Wails.Net.Application.Linux.Tests/Wails.Net.Application.Linux.Tests.csproj -c Release
+    - dotnet run --project tests/Wails.Net.Application.Linux.Tests/Wails.Net.Application.Linux.Tests.csproj --no-build -c Release
+  allow_failure: true  # Linux 原生库环境可能不稳定，允许失败
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+# ============================================================================
+# 阶段 4：打包 NuGet 包
+# ============================================================================
+pack:
+  stage: pack
+  tags:
+    - windows
+  needs:
+    - test:application
+    - test:windows
+  script:
+    - New-Item -ItemType Directory -Force -Path $PACKAGE_OUTPUT
+    # 打包所有 src/ 下的可发布项目
+    - dotnet pack $SOLUTION -c Release --no-build -o $PACKAGE_OUTPUT -p:SkipFrontendBuild=true
+    # 列出生成的包
+    - Get-ChildItem $PACKAGE_OUTPUT -Filter "*.nupkg" | Format-Table Name, Length
+  artifacts:
+    paths:
+      - $PACKAGE_OUTPUT/*.nupkg
+      - $PACKAGE_OUTPUT/*.snupkg
+    expire_in: 7 days
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG
+
+# ============================================================================
+# 阶段 5：发布到 NuGet.org（仅 tag 触发）
+# ============================================================================
+publish:nuget:
+  stage: publish
+  tags:
+    - windows
+  needs:
+    - pack
+  script:
+    - |
+      Get-ChildItem $PACKAGE_OUTPUT -Filter "*.nupkg" | ForEach-Object {
+        Write-Host "推送包: $($_.Name)"
+        dotnet nuget push $_.FullName --api-key $NUGET_API_KEY --source https://api.nuget.org/v3/index.json --skip-duplicate
+      }
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
+      when: on_success
+  environment:
+    name: nuget-org
+    url: https://www.nuget.org/packages/Wails.Net.Application

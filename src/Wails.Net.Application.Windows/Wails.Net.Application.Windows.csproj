@@ -12,6 +12,8 @@
     <IsPackable>true</IsPackable>
     <!-- CsWin32 生成的类型包含指针字段，需要 unsafe 上下文 -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PackageId>Wails.Net.Application.Windows</PackageId>
+    <Description>Wails.Net Windows 平台实现：WebView2 + Win32（CsWin32 源生成器）。</Description>
   </PropertyGroup>
 
   <ItemGroup>

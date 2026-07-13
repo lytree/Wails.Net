@@ -14,6 +14,47 @@
     <RepositoryType>git</RepositoryType>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentrallyManagedPackageVersionEnabled>true</CentrallyManagedPackageVersionEnabled>
+
+    <!--
+      版本号集中管理（手动维护）
+      发布新版本时，仅修改下方 WailsNetVersion 属性即可，所有 src/ 下的
+      程序集与 NuGet 包将自动派生以下属性：
+        Version / PackageVersion / InformationalVersion  含预发布标签
+        AssemblyVersion / FileVersion                  4 段数字（剥离预发布标签）
+      版本号遵循 Semantic Versioning 2.0：MAJOR.MINOR.PATCH 后接可选预发布标签
+      示例：1.0.0 / 1.0.0-alpha.1 / 1.0.0-beta.2 / 1.0.0-rc.1
+    -->
+    <WailsNetVersion>0.1.0-alpha.1</WailsNetVersion>
+
+    <!-- 派生属性：NuGet 包版本与 InformationalVersion 保留预发布标签 -->
+    <Version>$(WailsNetVersion)</Version>
+    <PackageVersion>$(WailsNetVersion)</PackageVersion>
+    <InformationalVersion>$(WailsNetVersion)</InformationalVersion>
+
+    <!-- 派生属性：程序集与文件版本必须是 4 段数字，剥离预发布标签 -->
+    <AssemblyVersion>$(WailsNetVersion.Split('-')[0]).0</AssemblyVersion>
+    <FileVersion>$(WailsNetVersion.Split('-')[0]).0</FileVersion>
+
+    <!-- NuGet 包通用元数据 -->
+    <PackageProjectUrl>https://github.com/wailsapp/wails.net</PackageProjectUrl>
+    <PackageTags>wails;dotnet;webview;gtk;cross-platform;desktop</PackageTags>
+    <PackageReleaseNotes>https://github.com/wailsapp/wails.net/releases</PackageReleaseNotes>
+
+    <!-- 生成符号包（snupkg），便于调试 -->
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
+    <!-- 源码映射（SourceLink），便于调试符号定位到源码 -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
+
+  <!-- SourceLink：在 GitLab CI 中生成源码映射，便于调试符号定位 -->
+  <ItemGroup Condition="'$(IsPackable)' != 'false'">
+    <PackageReference Include="Microsoft.SourceLink.GitLab" PrivateAssets="all" />
+    <SourceLinkGitLabHost Include="gitlab.com" />
+  </ItemGroup>
 
 </Project>

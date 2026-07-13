@@ -11,6 +11,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <PackageId>Wails.Net.Application</PackageId>
+    <Description>Wails.Net 核心应用框架：Generic Host 集成、绑定系统、命令调度、插件框架、平台抽象。</Description>
   </PropertyGroup>
 
   <ItemGroup>

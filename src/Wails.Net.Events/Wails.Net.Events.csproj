@@ -1,9 +1,11 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <PackageId>Wails.Net.Events</PackageId>
+    <Description>Wails.Net 事件类型定义：ApplicationEventType、WindowEventType、CommonEvents、KnownEvents。</Description>
   </PropertyGroup>
 
 </Project>
