@@ -52,6 +52,12 @@ public sealed class AndroidPlatformApp : IPlatformApp
     private readonly Looper? _mainLooper;
 
     /// <summary>
+    /// 静态资源服务器引用，可为 null（未配置 AssetServer 时）。
+    /// 创建 WebviewWindow 时注入到窗口实例，用于资源拦截。
+    /// </summary>
+    private Wails.Net.AssetServer.AssetServer? _assetServer;
+
+    /// <summary>
     /// 构造 AndroidPlatformApp 实例。
     /// </summary>
     /// <param name="options">应用配置选项。</param>
@@ -60,6 +66,20 @@ public sealed class AndroidPlatformApp : IPlatformApp
         _name = options.Name;
         _mainThreadId = Environment.CurrentManagedThreadId;
         _mainLooper = Looper.MainLooper;
+
+        // 从全局 Application 实例获取 AssetServer 引用（若已配置）。
+        // Application 可能在构造 PlatformApp 之前已经配置了 AssetServer。
+        _assetServer = WailsApplication.Get()?.AssetServer;
+    }
+
+    /// <summary>
+    /// 设置静态资源服务器引用。
+    /// 当 Application.AssetServer 在 PlatformApp 构造后才配置时调用此方法。
+    /// </summary>
+    /// <param name="assetServer">AssetServer 实例。</param>
+    public void SetAssetServer(Wails.Net.AssetServer.AssetServer? assetServer)
+    {
+        _assetServer = assetServer;
     }
 
     /// <inheritdoc />
@@ -279,7 +299,7 @@ public sealed class AndroidPlatformApp : IPlatformApp
     /// <inheritdoc />
     public void CreateWebviewWindow(uint id, WebviewWindowOptions options)
     {
-        var window = new AndroidWebviewWindow(id, options, this);
+        var window = new AndroidWebviewWindow(id, options, this, _assetServer);
         _windows[id] = window;
         window.Show();
     }

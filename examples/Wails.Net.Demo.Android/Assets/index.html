@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Wails.Net Demo - Android</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            min-height: 100vh;
+            padding: 16px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 24px;
+            font-size: 24px;
+            font-weight: 600;
+        }
+        .card {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            opacity: 0.9;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            margin-bottom: 12px;
+            background: rgba(255, 255, 255, 0.95);
+            color: #333;
+        }
+        button {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            color: #764ba2;
+            background: #fff;
+            cursor: pointer;
+            transition: transform 0.1s, opacity 0.2s;
+        }
+        button:active {
+            transform: scale(0.98);
+            opacity: 0.9;
+        }
+        .result {
+            margin-top: 12px;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            font-family: "Cascadia Code", Consolas, monospace;
+            font-size: 14px;
+            word-break: break-all;
+            white-space: pre-wrap;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 8px 12px;
+            font-size: 14px;
+        }
+        .info-grid .key {
+            opacity: 0.7;
+        }
+        .info-grid .value {
+            font-family: "Cascadia Code", Consolas, monospace;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Wails.Net Demo</h1>
+
+        <div class="card">
+            <div class="card-title">问候服务</div>
+            <input type="text" id="nameInput" placeholder="输入你的名字" value="World">
+            <button onclick="callGreet()">打招呼</button>
+            <div class="result" id="greetResult">点击按钮调用 GreetingService.Greet()</div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">当前时间</div>
+            <button onclick="callGetTime()">获取时间</button>
+            <div class="result" id="timeResult">点击按钮调用 GreetingService.GetCurrentTimeAsync()</div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">加法运算</div>
+            <input type="text" id="numA" placeholder="数字 A" value="42">
+            <input type="text" id="numB" placeholder="数字 B" value="58">
+            <button onclick="callAdd()">计算 A + B</button>
+            <div class="result" id="addResult">点击按钮调用 GreetingService.Add()</div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">设备信息</div>
+            <button onclick="callGetDeviceInfo()">获取设备信息</button>
+            <div class="result" id="deviceResult">点击按钮调用 GreetingService.GetDeviceInfo()</div>
+        </div>
+    </div>
+
+    <script>
+        // Wails.Net IPC 桥接：通过 window.WailsBridge.postMessage 与后端通信
+        // 这是 Android 平台的 IPC 入口，由 AddJavascriptInterface 注入
+
+        // 简化示例：直接通过 fetch 调用绑定方法（完整实现需通过 IPC 桥）
+        async function callBinding(methodName, args) {
+            // 实际实现中，这里应通过 WailsBridge.postMessage 发送 JSON-RPC 请求
+            // 骨架 Demo 简化为直接调用后端方法（需要完整 IPC 实现）
+            try {
+                const response = await fetch(`http://wails.localhost/api/${methodName}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(args || [])
+                });
+                if (response.ok) {
+                    return await response.text();
+                }
+                return `错误: ${response.status}`;
+            } catch (e) {
+                // IPC 桥尚未完全实现时，返回提示信息
+                return `IPC 未就绪: ${e.message}`;
+            }
+        }
+
+        async function callGreet() {
+            const name = document.getElementById('nameInput').value;
+            const result = await callBinding('GreetingService.Greet', [name]);
+            document.getElementById('greetResult').textContent = result;
+        }
+
+        async function callGetTime() {
+            const result = await callBinding('GreetingService.GetCurrentTimeAsync', []);
+            document.getElementById('timeResult').textContent = result;
+        }
+
+        async function callAdd() {
+            const a = parseInt(document.getElementById('numA').value) || 0;
+            const b = parseInt(document.getElementById('numB').value) || 0;
+            const result = await callBinding('GreetingService.Add', [a, b]);
+            document.getElementById('addResult').textContent = `${a} + ${b} = ${result}`;
+        }
+
+        async function callGetDeviceInfo() {
+            const result = await callBinding('GreetingService.GetDeviceInfo', []);
+            const resultEl = document.getElementById('deviceResult');
+            try {
+                const info = JSON.parse(result);
+                let html = '<div class="info-grid">';
+                for (const [key, value] of Object.entries(info)) {
+                    html += `<div class="key">${key}:</div><div class="value">${value}</div>`;
+                }
+                html += '</div>';
+                resultEl.innerHTML = html;
+            } catch {
+                resultEl.textContent = result;
+            }
+        }
+    </script>
+</body>
+</html>

@@ -4,6 +4,7 @@ using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform;
 using Menu = Wails.Net.Application.Menus.Menu;
+using WailsApplication = Wails.Net.Application.Application;
 
 namespace Wails.Net.Application.Windows;
 
@@ -30,6 +31,11 @@ public sealed class AndroidWebviewWindow : IWebviewWindowImpl
     private readonly AndroidPlatformApp _app;
 
     /// <summary>
+    /// 静态资源服务器引用，用于 <see cref="WailsWebViewClient"/> 拦截请求。
+    /// </summary>
+    private readonly Wails.Net.AssetServer.AssetServer? _assetServer;
+
+    /// <summary>
     /// Android WebView 原生实例，延迟创建。
     /// </summary>
     private WebView? _webView;
@@ -38,6 +44,11 @@ public sealed class AndroidWebviewWindow : IWebviewWindowImpl
     /// 自定义 WebViewClient，用于资源拦截。
     /// </summary>
     private WailsWebViewClient? _webViewClient;
+
+    /// <summary>
+    /// IPC 桥的 WebMessageListener 句柄，用于接收前端 postMessage 消息。
+    /// </summary>
+    private WailsWebMessageListener? _messageListener;
 
     /// <summary>
     /// 窗口是否可见（Android WebView 无直接查询方法，通过跟踪状态实现）。
@@ -111,10 +122,23 @@ public sealed class AndroidWebviewWindow : IWebviewWindowImpl
     /// <param name="options">窗口配置选项。</param>
     /// <param name="app">所属的 Android 平台应用实例。</param>
     public AndroidWebviewWindow(uint id, WebviewWindowOptions options, AndroidPlatformApp app)
+        : this(id, options, app, assetServer: null)
+    {
+    }
+
+    /// <summary>
+    /// 构造 AndroidWebviewWindow 实例，注入 AssetServer 用于资源拦截。
+    /// </summary>
+    /// <param name="id">窗口 ID。</param>
+    /// <param name="options">窗口配置选项。</param>
+    /// <param name="app">所属的 Android 平台应用实例。</param>
+    /// <param name="assetServer">静态资源服务器引用，可为 null。</param>
+    public AndroidWebviewWindow(uint id, WebviewWindowOptions options, AndroidPlatformApp app, Wails.Net.AssetServer.AssetServer? assetServer)
     {
         _id = id;
         _options = options;
         _app = app;
+        _assetServer = assetServer;
         _width = options.Width;
         _height = options.Height;
         _minWidth = options.MinWidth;
@@ -177,6 +201,8 @@ public sealed class AndroidWebviewWindow : IWebviewWindowImpl
     /// <summary>
     /// 在主线程创建并初始化 WebView 实例。
     /// 对应 ADR-0002 §5：通过 Android.Webkit.WebView 承载 Web 内容。
+    /// 注入 <see cref="WailsWebViewClient"/> 实现资源拦截，
+    /// 注入 <see cref="WailsWebMessageListener"/> 实现 IPC 桥接。
     /// </summary>
     private void CreateWebView()
     {
@@ -199,14 +225,15 @@ public sealed class AndroidWebviewWindow : IWebviewWindowImpl
         WebView.SetWebContentsDebuggingEnabled(true);
 
         // 设置自定义 WebViewClient 用于资源拦截
-        _webViewClient = new WailsWebViewClient();
+        _webViewClient = new WailsWebViewClient(_assetServer);
         webView.SetWebViewClient(_webViewClient);
 
-        // TODO: 注册 WebMessageListener 用于 IPC 桥接（API 23+）
-        // 完整实现需创建 IWebMessageListener 子类，在 OnPostMessage 中
-        // 调用 WailsApplication.Get()?.HandleMessageFromFrontend(data, _id)
-        // 示例：
-        // webView.AddWebMessageListener(new WailsMessageListener(this), new[] { "*" });
+        // 注册 IPC 桥接对象，通过 AddJavascriptInterface 注入到 JS 全局。
+        // 对应 ADR-0002 §5：前端通过 window.WailsBridge.postMessage(json) 调用后端。
+        // 注：.NET Android 工作负载的 Android.Webkit.WebView 不直接提供 AddWebMessageListener
+        // （该方法属于 AndroidX WebKit 扩展），改用 AddJavascriptInterface 是标准做法。
+        _messageListener = new WailsWebMessageListener(_id);
+        webView.AddJavascriptInterface(_messageListener, "WailsBridge");
 
         _webView = webView;
         _visible = true;

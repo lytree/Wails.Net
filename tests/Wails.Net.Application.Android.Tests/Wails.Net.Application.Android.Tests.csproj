@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Android 测试项目必须使用 android TFM，因为代码引用 Android.* 命名空间 -->
+    <TargetFramework>net10.0-android36.0</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- TUnit 使用 Microsoft.Testing.Platform (MTP) 运行器 -->
+    <EnableMSTestRunner>false</EnableMSTestRunner>
+    <OutputType>Exe</OutputType>
+    <!-- 禁用 ILLink 裁剪：TUnit 的 DynamicDependencyAttribute 引用 FSharp.Core，但测试项目未引用 -->
+    <PublishTrimmed>false</PublishTrimmed>
+    <AndroidLinkMode>None</AndroidLinkMode>
+    <TrimMode>partial</TrimMode>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TUnit" />
+    <PackageReference Include="TUnit.Assertions" />
+    <PackageReference Include="TUnit.Engine" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Wails.Net.Application.Android\Wails.Net.Application.Android.csproj" />
+  </ItemGroup>
+
+</Project>

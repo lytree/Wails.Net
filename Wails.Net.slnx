@@ -3,6 +3,7 @@
     <Project Path="examples/Wails.Net.Demo.React/Wails.Net.Demo.React.csproj" />
     <Project Path="examples/Wails.Net.Demo.Vue/Wails.Net.Demo.Vue.csproj" />
     <Project Path="examples/Wails.Net.Demo/Wails.Net.Demo.csproj" />
+    <Project Path="examples/Wails.Net.Demo.Android/Wails.Net.Demo.Android.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Wails.Net.Application/Wails.Net.Application.csproj" />
@@ -29,6 +30,7 @@
     <Project Path="tests/Wails.Net.Application.Tests/Wails.Net.Application.Tests.csproj" />
     <Project Path="tests/Wails.Net.Application.Windows.Tests/Wails.Net.Application.Windows.Tests.csproj" />
     <Project Path="tests/Wails.Net.Application.Linux.Tests/Wails.Net.Application.Linux.Tests.csproj" />
+    <Project Path="tests/Wails.Net.Application.Android.Tests/Wails.Net.Application.Android.Tests.csproj" />
     <Project Path="tests/Wails.Net.Cli.Tests/Wails.Net.Cli.Tests.csproj" />
   </Folder>
 </Solution>
