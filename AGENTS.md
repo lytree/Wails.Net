@@ -9,7 +9,7 @@
 
 - **项目**：Wails.Net — Wails v3 (Go) 的 .NET 10 移植实现
 - **参考版本**：`wails v3.0.0-alpha.102`
-- **目标平台**：Windows、Linux（macOS/iOS/Android 暂不实现）
+- **目标平台**：Windows、Linux、Android（macOS/iOS 暂不实现）
 - **实施计划**：详见 `.trae/documents/wails-net-dotnet10-implementation-plan.md`
 
 ### 1.1 技术选型（已确定，不可更改）
@@ -25,6 +25,9 @@
 | Windows Webview | Microsoft.Web.WebView2 1.0.3240.44 | WebView2 Runtime |
 | Win32 互操作 | Microsoft.Windows.CsWin32 0.3.298 | 源生成器，**禁止使用 PInvoke.\*** |
 | Linux GTK | GirCore 0.8.0 | **禁止使用 Xamarin.Forms、GtkSharp** |
+| Android 工作负载 | `android` 36.1.43 | .NET Android SDK，**禁止引入 MAUI Controls** |
+| Android Webview | Android.Webkit.WebView | 通过 .NET Android 互操作直接调用 |
+| Android TFM | `net10.0-android24.0` | 最低 API Level 24（Android 7.0） |
 | CLI 解析 | System.CommandLine 2.0.9 | **禁止使用 McMaster.Extensions.CommandLineUtils** |
 | 测试框架 | TUnit 1.58.0 | **禁止使用 MSTest/xUnit/NUnit** |
 | 脚本语言 | F# (.fsx) | **严禁使用 Python (.py)** |
@@ -40,7 +43,9 @@
 采用 **Managed Wrappers（托管封装）** 策略：
 - Windows：通过 CsWin32 源生成器调用 Win32 API
 - Linux：通过 GirCore 调用 GTK4/WebKitGTK/GIO 原生库
+- Android：通过 .NET Android 工作负载（Java 互操作）调用 `Android.Webkit.WebView` 等原生 API
 - 不使用 C++/CLI 混合模式
+- 不引入完整 GUI 框架（MAUI Controls / Avalonia）
 
 ---
 
@@ -48,7 +53,7 @@
 
 ### 2.1 阶段递进原则
 
-项目按 7 个阶段递进实现，**必须严格按顺序进行**：
+项目按 8 个阶段递进实现，**必须严格按顺序进行**：
 
 1. **阶段 1** ✅ 基础架构与项目骨架
 2. **阶段 2** ✅ 绑定系统与事件系统
@@ -57,6 +62,7 @@
 5. **阶段 5** ✅ Windows 平台实现
 6. **阶段 6** ✅ Linux 平台实现（GirCore 0.8.0）
 7. **阶段 7** ✅ CLI 工具与代码生成器
+8. **阶段 8** 🔄 Android 平台实现与三平台自包含构建（.NET Android + WebView）
 
 ### 2.2 每阶段交付标准（Definition of Done）
 
@@ -258,6 +264,11 @@ dotnet run --project tests/Wails.Net.Application.Tests/Wails.Net.Application.Tes
   # 在 WSL 中运行
   wsl -d kali-linux -- bash -c "cd /mnt/f/Code/Dotnet/Wails.Net && dotnet run --project tests/Wails.Net.Application.Linux.Tests/Wails.Net.Application.Linux.Tests.csproj"
   ```
+- **Android 测试**：必须在已安装 `android` 工作负载的 Windows 上运行单元测试；插桩测试需 Android 模拟器或真机
+  ```bash
+  # 单元测试（Mock Android API，无需设备）
+  dotnet run --project tests/Wails.Net.Application.Android.Tests/Wails.Net.Application.Android.Tests.csproj
+  ```
 - **CLI 测试**：跨平台，验证生成器、脚手架、构建器逻辑
   ```bash
   dotnet run --project tests/Wails.Net.Cli.Tests/Wails.Net.Cli.Tests.csproj
@@ -347,6 +358,7 @@ Wails.Net.Application.Transport# 传输层
 Wails.Net.Application.Platform # 平台抽象
 Wails.Net.Application.Windows  # Windows 实现
 Wails.Net.Application.Linux    # Linux 实现
+Wails.Net.Application.Android  # Android 实现
 Wails.Net.Errors               # 错误类型
 Wails.Net.Events               # 事件类型定义
 ```
@@ -419,6 +431,7 @@ dotnet fsi script.fsx
 |------|------|
 | Wails v3 源码 | https://github.com/wailsapp/wails/tree/v3.0.0-alpha.102 |
 | GirCore | https://github.com/gircore/gir.core |
+| .NET Android | https://learn.microsoft.com/dotnet/android/ |
 | TUnit | https://github.com/thomhurst/TUnit |
 | CsWin32 | https://github.com/microsoft/CsWin32 |
 | System.CommandLine | https://github.com/dotnet/command-line-api |
@@ -433,4 +446,4 @@ dotnet fsi script.fsx
 
 ---
 
-**最后更新**：2026-07-10（阶段 7 完成）
+**最后更新**：2026-07-13（阶段 8 启动：Android 平台实现）

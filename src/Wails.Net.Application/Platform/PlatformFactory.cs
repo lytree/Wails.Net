@@ -48,6 +48,17 @@ public static class PlatformFactory
             return (IPlatformApp)Activator.CreateInstance(type, options)!;
         }
 
+        if (OperatingSystem.IsAndroid())
+        {
+            // 通过反射加载 Android 平台实现，避免核心项目直接依赖 Android 平台程序集
+            // 注：RuntimeInformation.IsOSPlatform 不存在 OSPlatform.Android 枚举值，
+            // 因此使用 OperatingSystem.IsAndroid()（.NET 标准 API）检测 Android 运行时
+            var assembly = Assembly.Load("Wails.Net.Application.Android");
+            var type = assembly.GetType("Wails.Net.Application.Platform.AndroidPlatformApp")
+                ?? throw new PlatformNotSupportedException("无法找到 AndroidPlatformApp 类型");
+            return (IPlatformApp)Activator.CreateInstance(type, options)!;
+        }
+
         throw new PlatformNotSupportedException($"不支持的平台: {RuntimeInformation.OSDescription}");
     }
 
@@ -100,6 +111,15 @@ public static class PlatformFactory
             var assembly = Assembly.Load("Wails.Net.Application.Linux");
             var type = assembly.GetType("Wails.Net.Application.Clipboard.LinuxClipboard")
                 ?? throw new PlatformNotSupportedException("无法找到 LinuxClipboard 类型");
+            return (IClipboardImpl)Activator.CreateInstance(type)!;
+        }
+
+        if (OperatingSystem.IsAndroid())
+        {
+            // 通过反射加载 Android 平台剪贴板实现
+            var assembly = Assembly.Load("Wails.Net.Application.Android");
+            var type = assembly.GetType("Wails.Net.Application.Clipboard.AndroidClipboard")
+                ?? throw new PlatformNotSupportedException("无法找到 AndroidClipboard 类型");
             return (IClipboardImpl)Activator.CreateInstance(type)!;
         }
 

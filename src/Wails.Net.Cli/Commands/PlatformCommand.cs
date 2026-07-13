@@ -22,6 +22,10 @@ internal sealed class PlatformCommand : CliCommandBase
         "linux-arm64",
         "linux-musl-x64",
         "linux-musl-arm64",
+        "android-arm64",
+        "android-x64",
+        "android-arm",
+        "android-x86",
     ];
 
     /// <summary>
@@ -226,6 +230,12 @@ internal sealed class PlatformCommand : CliCommandBase
         if (rid.StartsWith("win-", StringComparison.OrdinalIgnoreCase))
         {
             return "maui-windows";
+        }
+
+        // Android 平台需要 android 工作负载（.NET Android SDK）
+        if (rid.StartsWith("android-", StringComparison.OrdinalIgnoreCase))
+        {
+            return "android";
         }
 
         // Linux 平台无需额外工作负载

@@ -18,6 +18,7 @@ stages:
   - build
   - test
   - pack
+  - dist
   - publish
 
 variables:
@@ -29,6 +30,8 @@ variables:
   SOLUTION: "Wails.Net.slnx"
   # 打包输出目录
   PACKAGE_OUTPUT: "artifacts/packages"
+  # 自包含构建产物目录
+  DIST_OUTPUT: "artifacts/dist"
 
 # 缓存 NuGet 全局包缓存
 cache:
@@ -170,7 +173,73 @@ pack:
     - if: $CI_COMMIT_TAG
 
 # ============================================================================
-# 阶段 5：发布到 NuGet.org（仅 tag 触发）
+# 阶段 5：三平台自包含构建（Windows / Linux / Android）
+# ============================================================================
+# 调用 F# 脚本生成自包含可执行文件，无需终端用户安装 .NET 运行时
+# - Windows: 输出 .exe + .zip（自包含）
+# - Linux: 输出二进制 + .tar.gz（自包含，.deb 包需 dpkg-deb 可选）
+# - Android: 输出 .apk（需 android 工作负载）
+dist:windows:
+  stage: dist
+  tags:
+    - windows
+  needs:
+    - pack
+  script:
+    - New-Item -ItemType Directory -Force -Path $DIST_OUTPUT
+    # 调用 F# 脚本构建 Windows 自包含可执行
+    - dotnet fsi scripts/build/BuildWindows.fsx -- --configuration Release --output $DIST_OUTPUT/windows
+    - Get-ChildItem $DIST_OUTPUT/windows -Recurse | Format-Table FullName, Length
+  artifacts:
+    paths:
+      - $DIST_OUTPUT/windows/
+    expire_in: 7 days
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG
+
+dist:linux:
+  stage: dist
+  tags:
+    - windows
+  needs:
+    - pack
+  script:
+    - New-Item -ItemType Directory -Force -Path $DIST_OUTPUT
+    # 调用 F# 脚本交叉编译 Linux 自包含二进制
+    - dotnet fsi scripts/build/BuildLinux.fsx -- --configuration Release --output $DIST_OUTPUT/linux
+    - Get-ChildItem $DIST_OUTPUT/linux -Recurse | Format-Table FullName, Length
+  artifacts:
+    paths:
+      - $DIST_OUTPUT/linux/
+    expire_in: 7 days
+  allow_failure: true  # Linux 在 Windows runner 上交叉编译可能失败
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG
+
+dist:android:
+  stage: dist
+  tags:
+    - windows
+  needs:
+    - pack
+  script:
+    - New-Item -ItemType Directory -Force -Path $DIST_OUTPUT
+    # 调用 F# 脚本构建 Android APK（需 android 工作负载 + Android SDK + Java JDK）
+    - dotnet fsi scripts/build/BuildAndroid.fsx -- --configuration Release --output $DIST_OUTPUT/android
+    - Get-ChildItem $DIST_OUTPUT/android -Recurse | Format-Table FullName, Length
+  artifacts:
+    paths:
+      - $DIST_OUTPUT/android/
+    expire_in: 7 days
+  allow_failure: true  # Android 构建需要完整 Android SDK 配置
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG
+
+# ============================================================================
+# 阶段 6：发布到 NuGet.org（仅 tag 触发）
 # ============================================================================
 publish:nuget:
   stage: publish

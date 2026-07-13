@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- 覆盖 Directory.Build.props 中的 net10.0，使用 Android 特定 TFM -->
+    <!-- 使用 SDK 已安装的平台版本 36.0 编译，通过 SupportedOSPlatformVersion 控制最低运行 API Level -->
+    <TargetFramework>net10.0-android36.0</TargetFramework>
+    <!-- 最低 Android API Level 24（Android 7.0），覆盖 95%+ 设备 -->
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <IsPackable>true</IsPackable>
+    <PackageId>Wails.Net.Application.Android</PackageId>
+    <Description>Wails.Net Android 平台实现：.NET Android SDK + Android.Webkit.WebView。</Description>
+  </PropertyGroup>
+
+  <!-- 标记整个程序集为 Android 平台特定，消除 CA1416 平台兼容性警告 -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatformAttribute">
+      <_Parameter1>android</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <!--
+    .NET Android SDK 工作负载自动提供 Android.* 命名空间（Android.App、Android.Content、
+    Android.OS、Android.Webkit 等），无需额外 PackageReference。
+    对应 ADR-0002 §1：选择 android 工作负载，不引入 maui-android。
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Wails.Net.Application\Wails.Net.Application.csproj" />
+  </ItemGroup>
+
+</Project>

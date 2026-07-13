@@ -8,6 +8,7 @@
     <Project Path="src/Wails.Net.Application/Wails.Net.Application.csproj" />
     <Project Path="src/Wails.Net.Application.Windows/Wails.Net.Application.Windows.csproj" />
     <Project Path="src/Wails.Net.Application.Linux/Wails.Net.Application.Linux.csproj" />
+    <Project Path="src/Wails.Net.Application.Android/Wails.Net.Application.Android.csproj" />
     <Project Path="src/Wails.Net.Errors/Wails.Net.Errors.csproj" />
     <Project Path="src/Wails.Net.Events/Wails.Net.Events.csproj" />
     <Project Path="src/Wails.Net.Generator/Wails.Net.Generator.csproj" />
@@ -17,6 +18,7 @@
     <Project Path="src/Wails.Net.Runtime.Js/Wails.Net.Runtime.Js.csproj" />
     <Project Path="src/Wails.Net.Bundle.Windows/Wails.Net.Bundle.Windows.csproj" />
     <Project Path="src/Wails.Net.Bundle.Linux/Wails.Net.Bundle.Linux.csproj" />
+    <Project Path="src/Wails.Net.Bundle.Android/Wails.Net.Bundle.Android.csproj" />
     <!--
       Wails.Net.Templates 不在 sln 中（dotnet pack 会因 NU5017 误报失败），
       通过 src/Wails.Net.Templates/Wails.Net.Templates.csproj 单独打包。
