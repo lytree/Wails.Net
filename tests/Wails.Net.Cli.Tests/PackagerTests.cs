@@ -442,6 +442,7 @@ public sealed class PackagerTests
     {
         if (!OperatingSystem.IsWindows())
         {
+            Skip.Test("仅在 Windows 上运行");
             return;
         }
 

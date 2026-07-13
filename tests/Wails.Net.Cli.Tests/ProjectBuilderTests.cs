@@ -24,7 +24,8 @@ public sealed class ProjectBuilderTests
 
         if (!File.Exists(projectPath))
         {
-            // 路径推断失败时跳过
+            // 路径推断失败时显式跳过，避免静默通过给出虚假信心
+            Skip.Test($"测试项目路径不可用: {projectPath}");
             return;
         }
 
@@ -105,6 +106,7 @@ public sealed class ProjectBuilderTests
 
         if (!File.Exists(projectPath))
         {
+            Skip.Test($"测试项目路径不可用: {projectPath}");
             return;
         }
 
@@ -128,6 +130,7 @@ public sealed class ProjectBuilderTests
 
         if (!File.Exists(projectPath))
         {
+            Skip.Test($"测试项目路径不可用: {projectPath}");
             return;
         }
 

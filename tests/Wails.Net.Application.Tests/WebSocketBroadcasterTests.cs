@@ -108,7 +108,7 @@ public sealed class WebSocketBroadcasterTests
     {
         var broadcaster = new WebSocketBroadcaster();
 
-        await broadcaster.BroadcastEventAsync("test-event", "data");
+        await Assert.That(async () => await broadcaster.BroadcastEventAsync("test-event", "data")).ThrowsNothing();
     }
 
     [Test]
@@ -175,8 +175,8 @@ public sealed class WebSocketBroadcasterTests
     {
         var broadcaster = new WebSocketBroadcaster();
 
-        await broadcaster.StopAsync();
-        await broadcaster.StopAsync();
+        await Assert.That(async () => await broadcaster.StopAsync()).ThrowsNothing();
+        await Assert.That(async () => await broadcaster.StopAsync()).ThrowsNothing();
     }
 
     [Test]

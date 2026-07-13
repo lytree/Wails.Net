@@ -306,8 +306,11 @@ public sealed class SystemEventsAndFsWatchTests
     }
 
     [Test]
-    public async Task FsWatchPlugin_Watch_DetectsFileCreation()
+    public async Task FsWatchPlugin_Watch_RemainsActiveAfterFileCreation()
     {
+        // 注意：此测试验证监听器在文件创建后仍然活跃，不验证事件触发回调。
+        // FsWatchPlugin 的事件机制是内部的，无公共事件订阅 API，
+        // 事件触发的端到端验证需要通过前端集成测试完成。
         var plugin = new FsWatchPlugin();
         var context = CreatePluginContext();
         plugin.Configure(context);

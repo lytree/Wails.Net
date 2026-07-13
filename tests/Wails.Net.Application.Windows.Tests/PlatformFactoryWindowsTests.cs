@@ -1,4 +1,5 @@
 using TUnit.Core;
+using Wails.Net.Application.Clipboard;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform;
 
@@ -40,9 +41,9 @@ public sealed class PlatformFactoryWindowsTests
         // 操作：通过工厂创建平台应用
         var result = PlatformFactory.CreatePlatformApp(new ApplicationOptions());
 
-        // 断言：返回非空且类型名包含 WindowsPlatformApp
+        // 断言：返回非空且类型为 WindowsPlatformApp（强类型检查，避免字符串匹配误判）
         await Assert.That(result).IsNotNull();
-        await Assert.That(result!.GetType().Name.Contains("WindowsPlatformApp")).IsTrue();
+        await Assert.That(result is WindowsPlatformApp).IsTrue();
     }
 
     [Test]
@@ -51,9 +52,9 @@ public sealed class PlatformFactoryWindowsTests
         // 操作：通过工厂创建剪贴板
         var result = PlatformFactory.CreateClipboard();
 
-        // 断言：返回非空且类型名包含 WindowsClipboard
+        // 断言：返回非空且类型为 WindowsClipboard（强类型检查，避免字符串匹配误判）
         await Assert.That(result).IsNotNull();
-        await Assert.That(result!.GetType().Name.Contains("WindowsClipboard")).IsTrue();
+        await Assert.That(result is WindowsClipboard).IsTrue();
     }
 
     [Test]

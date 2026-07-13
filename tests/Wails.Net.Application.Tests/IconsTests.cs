@@ -219,9 +219,6 @@ public sealed class IconsTests
 
         // Assert: 16 比 32 更接近 24... 实际上 |16-24|=8, |32-24|=8，取第一个匹配
         await Assert.That(result).IsNotNull();
-        var diff16 = Math.Abs(16 - 24);
-        var diff32 = Math.Abs(32 - 24);
-        await Assert.That(diff16).IsEqualTo(diff32); // 8 == 8
         // 应该返回 16（第一个遇到的最近匹配）
         await Assert.That(result!.ActualWidth).IsEqualTo(16);
     }

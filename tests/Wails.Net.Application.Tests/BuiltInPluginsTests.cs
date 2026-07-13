@@ -74,9 +74,10 @@ public sealed class BuiltInPluginsTests
     [Test]
     public async Task RegisterScheme_OnWindows_DoesNotThrow()
     {
-        // 跳过非 Windows 平台
+        // 非目标平台显式跳过，避免静默通过给出虚假信心
         if (!OperatingSystem.IsWindows())
         {
+            Skip.Test("仅在 Windows 上运行");
             return;
         }
 
@@ -99,9 +100,10 @@ public sealed class BuiltInPluginsTests
     [Test]
     public async Task UnregisterScheme_OnWindows_DoesNotThrow()
     {
-        // 跳过非 Windows 平台
+        // 非目标平台显式跳过，避免静默通过给出虚假信心
         if (!OperatingSystem.IsWindows())
         {
+            Skip.Test("仅在 Windows 上运行");
             return;
         }
 
@@ -229,9 +231,10 @@ public sealed class BuiltInPluginsTests
     [Test]
     public async Task RequestWakeLock_OnWindows_ReturnsTrue()
     {
-        // 跳过非 Windows 平台
+        // 非目标平台显式跳过，避免静默通过给出虚假信心
         if (!OperatingSystem.IsWindows())
         {
+            Skip.Test("仅在 Windows 上运行");
             return;
         }
 
@@ -256,9 +259,10 @@ public sealed class BuiltInPluginsTests
     [Test]
     public async Task ReleaseWakeLock_OnWindows_ReturnsTrue()
     {
-        // 跳过非 Windows 平台
+        // 非目标平台显式跳过，避免静默通过给出虚假信心
         if (!OperatingSystem.IsWindows())
         {
+            Skip.Test("仅在 Windows 上运行");
             return;
         }
 

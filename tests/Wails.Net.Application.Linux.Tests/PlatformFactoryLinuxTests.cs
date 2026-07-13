@@ -1,6 +1,8 @@
 using TUnit.Core;
+using Wails.Net.Application.Clipboard;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform;
+using Wails.Net.Application.Platform.ServerMode;
 
 namespace Wails.Net.Application.Linux.Tests;
 
@@ -40,9 +42,9 @@ public sealed class PlatformFactoryLinuxTests
         // 操作：通过工厂创建平台应用
         var result = PlatformFactory.CreatePlatformApp(new ApplicationOptions());
 
-        // 断言：返回非空且类型名包含 LinuxPlatformApp
+        // 断言：返回非空且类型为 LinuxPlatformApp（强类型检查，避免字符串匹配误判）
         await Assert.That(result).IsNotNull();
-        await Assert.That(result!.GetType().Name.Contains("LinuxPlatformApp")).IsTrue();
+        await Assert.That(result is LinuxPlatformApp).IsTrue();
     }
 
     [Test]
@@ -51,9 +53,9 @@ public sealed class PlatformFactoryLinuxTests
         // 操作：通过工厂创建剪贴板
         var result = PlatformFactory.CreateClipboard();
 
-        // 断言：返回非空且类型名包含 LinuxClipboard
+        // 断言：返回非空且类型为 LinuxClipboard（强类型检查，避免字符串匹配误判）
         await Assert.That(result).IsNotNull();
-        await Assert.That(result!.GetType().Name.Contains("LinuxClipboard")).IsTrue();
+        await Assert.That(result is LinuxClipboard).IsTrue();
     }
 
     [Test]
@@ -94,9 +96,9 @@ public sealed class PlatformFactoryLinuxTests
         // 操作：通过工厂创建平台应用
         var result = PlatformFactory.CreatePlatformApp(new ApplicationOptions());
 
-        // 断言：返回 ServerPlatformApp 类型
+        // 断言：返回 ServerPlatformApp 类型（强类型检查）
         await Assert.That(result).IsNotNull();
-        await Assert.That(result!.GetType().Name.Contains("ServerPlatformApp")).IsTrue();
+        await Assert.That(result is ServerPlatformApp).IsTrue();
     }
 
     [Test]
@@ -108,8 +110,8 @@ public sealed class PlatformFactoryLinuxTests
         // 操作：通过工厂创建剪贴板
         var result = PlatformFactory.CreateClipboard();
 
-        // 断言：返回 ServerClipboard 类型
+        // 断言：返回 ServerClipboard 类型（强类型检查）
         await Assert.That(result).IsNotNull();
-        await Assert.That(result!.GetType().Name.Contains("ServerClipboard")).IsTrue();
+        await Assert.That(result is ServerClipboard).IsTrue();
     }
 }
