@@ -1013,6 +1013,13 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                         instance._id, (uint)WindowEventType.WindowClosed);
                 }
 
+                // 当所有窗口都关闭时，退出消息循环使应用退出。
+                // 对应 Wails v3 Go 版本中最后一个窗口关闭时调用 application.Quit() 的行为。
+                if (_instancesByHwnd.Count == 0)
+                {
+                    PInvoke.PostQuitMessage(0);
+                }
+
                 break;
 
             case WmClose:

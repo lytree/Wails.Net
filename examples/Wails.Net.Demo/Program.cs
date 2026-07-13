@@ -60,6 +60,11 @@ app.RegisterService(new TodoService());
 // 应用启动后创建主窗口
 app.Options.OnAfterStart = () =>
 {
+    // 构建前端 index.html 的 file:// URL
+    // frontend 目录已通过 csproj 配置复制到输出目录
+    var frontendPath = Path.Combine(AppContext.BaseDirectory, "frontend", "index.html");
+    var frontendUrl = "file:///" + frontendPath.Replace('\\', '/');
+
     app.CreateWebviewWindow(new WebviewWindowOptions
     {
         Name = "main",
@@ -72,6 +77,7 @@ app.Options.OnAfterStart = () =>
         Maximisable = true,
         Minimisable = true,
         Fullscreen = false,
+        URL = frontendUrl,
     });
 };
 
