@@ -1,6 +1,8 @@
 using Wails.Net.Application.Managers;
+using Wails.Net.Application.Menus;
 using Wails.Net.Application.Platform;
 using Wails.Net.Application.SystemTray;
+using Menu = Wails.Net.Application.Menus.Menu;
 
 namespace Wails.Net.Application;
 
@@ -58,6 +60,66 @@ public static class WindowsApplicationExtensions
             {
                 win32Tray.Destroy();
             }
+        }
+
+        /// <inheritdoc />
+        public void SetIcon(object tray, byte[]? iconData)
+        {
+            if (tray is Win32SystemTray win32Tray && iconData is not null)
+            {
+                win32Tray.SetIcon(iconData);
+            }
+        }
+
+        /// <inheritdoc />
+        public void SetLabel(object tray, string label)
+        {
+            if (tray is Win32SystemTray win32Tray)
+            {
+                win32Tray.SetLabel(label);
+            }
+        }
+
+        /// <inheritdoc />
+        public void SetMenu(object tray, Menu? menu)
+        {
+            if (tray is Win32SystemTray win32Tray)
+            {
+                win32Tray.SetMenu(menu);
+            }
+        }
+
+        /// <inheritdoc />
+        public void SetTooltip(object tray, string tooltip)
+        {
+            if (tray is Win32SystemTray win32Tray)
+            {
+                win32Tray.SetTooltip(tooltip);
+            }
+        }
+
+        /// <inheritdoc />
+        public void Show(object tray)
+        {
+            if (tray is Win32SystemTray win32Tray)
+            {
+                win32Tray.Show();
+            }
+        }
+
+        /// <inheritdoc />
+        public void Hide(object tray)
+        {
+            if (tray is Win32SystemTray win32Tray)
+            {
+                win32Tray.Hide();
+            }
+        }
+
+        /// <inheritdoc />
+        public bool IsVisible(object tray)
+        {
+            return tray is Win32SystemTray win32Tray && win32Tray.IsVisible;
         }
     }
 }

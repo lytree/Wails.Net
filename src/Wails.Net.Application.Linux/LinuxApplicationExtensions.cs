@@ -59,5 +59,66 @@ public static class LinuxApplicationExtensions
                 linuxTray.Destroy();
             }
         }
+
+        /// <inheritdoc />
+        public void SetIcon(object tray, byte[]? iconData)
+        {
+            if (tray is LinuxSystemTray linuxTray && iconData is not null)
+            {
+                linuxTray.SetIcon(iconData);
+            }
+        }
+
+        /// <inheritdoc />
+        public void SetLabel(object tray, string label)
+        {
+            if (tray is LinuxSystemTray linuxTray)
+            {
+                linuxTray.SetLabel(label);
+            }
+        }
+
+        /// <inheritdoc />
+        public void SetMenu(object tray, Menu? menu)
+        {
+            if (tray is LinuxSystemTray linuxTray)
+            {
+                linuxTray.SetMenu(menu);
+            }
+        }
+
+        /// <inheritdoc />
+        public void SetTooltip(object tray, string tooltip)
+        {
+            if (tray is LinuxSystemTray linuxTray)
+            {
+                linuxTray.SetTooltip(tooltip);
+            }
+        }
+
+        /// <inheritdoc />
+        public void Show(object tray)
+        {
+            if (tray is LinuxSystemTray linuxTray)
+            {
+                linuxTray.Show();
+            }
+        }
+
+        /// <inheritdoc />
+        public void Hide(object tray)
+        {
+            if (tray is LinuxSystemTray linuxTray)
+            {
+                linuxTray.Hide();
+            }
+        }
+
+        /// <inheritdoc />
+        public bool IsVisible(object tray)
+        {
+            // Linux 托盘可见性由桌面环境管理，D-Bus 注册成功即视为可见
+            return tray is LinuxSystemTray;
+        }
     }
 }

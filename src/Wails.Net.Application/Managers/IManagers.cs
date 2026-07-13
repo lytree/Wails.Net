@@ -212,6 +212,8 @@ public interface IScreenManager
 
 /// <summary>
 /// 系统托盘管理器接口。
+/// 借鉴 Tauri v2 的 tray 插件设计：托盘是单实例资源，
+/// 通过管理器统一管理其生命周期和属性。
 /// </summary>
 public interface ISystemTrayManager
 {
@@ -227,6 +229,53 @@ public interface ISystemTrayManager
     /// </summary>
     /// <param name="tray">系统托盘实例。</param>
     void DestroySystemTray(object tray);
+
+    /// <summary>
+    /// 设置托盘图标。
+    /// </summary>
+    /// <param name="tray">托盘实例。</param>
+    /// <param name="iconData">图标字节数据。</param>
+    void SetIcon(object tray, byte[]? iconData);
+
+    /// <summary>
+    /// 设置托盘标签（部分平台仅显示图标，标签可能不可见）。
+    /// </summary>
+    /// <param name="tray">托盘实例。</param>
+    /// <param name="label">标签文本。</param>
+    void SetLabel(object tray, string label);
+
+    /// <summary>
+    /// 设置托盘右键菜单。
+    /// </summary>
+    /// <param name="tray">托盘实例。</param>
+    /// <param name="menu">菜单实例，可为 null。</param>
+    void SetMenu(object tray, Menu? menu);
+
+    /// <summary>
+    /// 设置托盘提示文本。
+    /// </summary>
+    /// <param name="tray">托盘实例。</param>
+    /// <param name="tooltip">提示文本。</param>
+    void SetTooltip(object tray, string tooltip);
+
+    /// <summary>
+    /// 显示托盘。
+    /// </summary>
+    /// <param name="tray">托盘实例。</param>
+    void Show(object tray);
+
+    /// <summary>
+    /// 隐藏托盘。
+    /// </summary>
+    /// <param name="tray">托盘实例。</param>
+    void Hide(object tray);
+
+    /// <summary>
+    /// 判断托盘是否可见。
+    /// </summary>
+    /// <param name="tray">托盘实例。</param>
+    /// <returns>可见返回 true，否则 false。</returns>
+    bool IsVisible(object tray);
 }
 
 /// <summary>

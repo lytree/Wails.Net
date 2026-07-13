@@ -118,6 +118,11 @@ public sealed class Win32SystemTray : ISystemTrayImpl, IDisposable
     private bool _visible;
 
     /// <summary>
+    /// 获取托盘是否可见。
+    /// </summary>
+    public bool IsVisible => _visible;
+
+    /// <summary>
     /// 是否已释放。
     /// </summary>
     private bool _disposed;
