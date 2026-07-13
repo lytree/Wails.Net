@@ -1,54 +1,33 @@
 using System.Reflection;
+using Wails.Net.Application.Bindings;
 using Wails.Net.Generator.Models;
 
 namespace Wails.Net.Generator;
 
 /// <summary>
-/// 绑定分析器，分析 C# 程序集并提取可暴露给前端的绑定方法。
+/// 绑定分析器，从 <see cref="GeneratedBindingsMetadata"/> 读取编译期生成的绑定方法元数据。
 /// 对应 Wails v3 Go 版本 internal/generator/analyse.go。
-/// 采用基于反射的分析策略，与运行时 BindingManager 保持一致的方法筛选规则。
 /// </summary>
+/// <remarks>
+/// 此实现完全基于源代码生成器在编译期填充的元数据，
+/// 不再使用 <see cref="System.Reflection"/> 进行运行时分析。
+/// 当目标程序集加载到进程时，其 <c>[ModuleInitializer]</c> 会自动注册元数据。
+/// </remarks>
 public class BindingAnalyzer
 {
     /// <summary>
-    /// 需要排除的服务内部方法名称集合（与 BindingManager 一致）。
+    /// 分析指定程序集中所有可暴露给前端的绑定方法。
     /// </summary>
-    private static readonly HashSet<string> ExcludedMethodNames = new(StringComparer.Ordinal)
-    {
-        "ServiceName",
-        "ServiceStartup",
-        "ServiceShutdown"
-    };
-
-    /// <summary>
-    /// 分析指定程序集，提取所有可暴露给前端的绑定方法。
-    /// </summary>
-    /// <param name="assembly">要分析的程序集。</param>
+    /// <param name="assembly">要分析的程序集。程序集加载时其 <c>[ModuleInitializer]</c> 已注册元数据。</param>
     /// <returns>绑定方法模型列表。</returns>
+    /// <remarks>
+    /// 此方法返回 <see cref="GeneratedBindingsMetadata.Methods"/> 中已注册的所有方法。
+    /// 由于元数据由源生成器在编译期填充，运行时无法区分方法来自哪个程序集——
+    /// 实践中调用方一次只分析一个目标程序集，所有可访问的绑定方法均来自该程序集及其引用。
+    /// </remarks>
     public List<BoundMethodModel> AnalyzeAssembly(Assembly assembly)
     {
-        var models = new List<BoundMethodModel>();
-
-        foreach (var type in assembly.GetExportedTypes())
-        {
-            // 跳过接口、委托等非类/结构体类型
-            if (!type.IsClass && !type.IsValueType)
-            {
-                continue;
-            }
-
-            // 跳过抽象类和泛型类型定义（无法实例化）
-            if (type.IsAbstract || type.IsGenericTypeDefinition)
-            {
-                continue;
-            }
-
-            // 分析所有公共非抽象类的实例方法
-            var methods = AnalyzeType(type);
-            models.AddRange(methods);
-        }
-
-        return models;
+        return GeneratedBindingsMetadata.Methods.Select(ToModel).ToList();
     }
 
     /// <summary>
@@ -63,148 +42,38 @@ public class BindingAnalyzer
     }
 
     /// <summary>
-    /// 分析指定类型，提取其所有可暴露给前端的公共方法。
+    /// 分析指定类型，从 <see cref="GeneratedBindingsMetadata"/> 中筛选其绑定方法。
     /// </summary>
     /// <param name="type">要分析的类型。</param>
     /// <returns>绑定方法模型列表。</returns>
     public List<BoundMethodModel> AnalyzeType(Type type)
     {
-        var models = new List<BoundMethodModel>();
+        // 构造期望的类型全名（Namespace.ClassName）
+        var fullTypeName = string.IsNullOrEmpty(type.Namespace)
+            ? type.Name
+            : $"{type.Namespace}.{type.Name}";
 
-        var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
-        foreach (var method in methods)
-        {
-            if (!ShouldIncludeMethod(method))
-            {
-                continue;
-            }
-
-            var model = CreateModel(method);
-            if (model is not null)
-            {
-                models.Add(model);
-            }
-        }
-
-        return models;
+        return GeneratedBindingsMetadata.Methods
+            .Where(m => $"{m.Namespace}.{m.ClassName}" == fullTypeName)
+            .Select(ToModel)
+            .ToList();
     }
 
     /// <summary>
-    /// 判断方法是否应包含在绑定中。
-    /// 与运行时 BindingManager 的筛选规则保持一致。
+    /// 将 <see cref="BoundMethodInfo"/> 转换为 <see cref="BoundMethodModel"/>。
     /// </summary>
-    /// <param name="method">方法反射信息。</param>
-    /// <returns>是否包含。</returns>
-    private static bool ShouldIncludeMethod(MethodInfo method)
+    private static BoundMethodModel ToModel(BoundMethodInfo info)
     {
-        // 排除服务内部方法
-        if (ExcludedMethodNames.Contains(method.Name))
-        {
-            return false;
-        }
-
-        // 排除特殊方法（属性 getter/setter、运算符等）
-        if (method.IsSpecialName)
-        {
-            return false;
-        }
-
-        // 排除 Object 继承的方法
-        if (method.DeclaringType == typeof(object))
-        {
-            return false;
-        }
-
-        // 排除泛型方法定义（无法在运行时无类型参数地反射调用）
-        if (method.IsGenericMethodDefinition)
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// 根据方法反射信息创建绑定方法模型。
-    /// </summary>
-    /// <param name="method">方法反射信息。</param>
-    /// <returns>绑定方法模型，若无法创建则返回 null。</returns>
-    private static BoundMethodModel? CreateModel(MethodInfo method)
-    {
-        var declaringType = method.DeclaringType;
-        if (declaringType is null)
-        {
-            return null;
-        }
-
-        var @namespace = declaringType.Namespace ?? string.Empty;
-        var className = declaringType.Name;
-        var methodName = method.Name;
-        var fullName = BindingIdGenerator.GetFullName(@namespace, className, methodName);
-        var id = BindingIdGenerator.Generate(fullName);
-
-        var parameters = CreateParameterModels(method);
-        var (returnTypeName, isAsync) = GetReturnTypeInfo(method.ReturnType);
-
         return new BoundMethodModel(
-            fullName,
-            id,
-            @namespace,
-            className,
-            methodName,
-            parameters,
-            returnTypeName,
-            isAsync);
-    }
-
-    /// <summary>
-    /// 根据方法参数创建参数模型列表。
-    /// </summary>
-    /// <param name="method">方法反射信息。</param>
-    /// <returns>参数模型列表。</returns>
-    private static List<ParameterModel> CreateParameterModels(MethodInfo method)
-    {
-        var models = new List<ParameterModel>();
-        var parameters = method.GetParameters();
-
-        foreach (var param in parameters)
-        {
-            // CancellationToken 不暴露给前端
-            var isCancellationToken = param.ParameterType == typeof(CancellationToken);
-
-            // 检查是否为可变参数（params 关键字）
-            var isVariadic = param.GetCustomAttribute<ParamArrayAttribute>() is not null;
-
-            var typeName = TypeScriptTypeMapper.MapType(param.ParameterType);
-
-            models.Add(new ParameterModel(
-                param.Name ?? "arg",
-                typeName,
-                isVariadic,
-                isCancellationToken));
-        }
-
-        return models;
-    }
-
-    /// <summary>
-    /// 获取方法返回类型的 TypeScript 类型字符串和异步标记。
-    /// </summary>
-    /// <param name="returnType">C# 返回类型。</param>
-    /// <returns>元组：(TypeScript 类型, 是否异步)。</returns>
-    private static (string typeName, bool isAsync) GetReturnTypeInfo(Type returnType)
-    {
-        if (returnType == typeof(void))
-        {
-            return ("void", false);
-        }
-
-        if (TypeScriptTypeMapper.IsTaskType(returnType))
-        {
-            var tsType = TypeScriptTypeMapper.MapType(returnType);
-            return (tsType, true);
-        }
-
-        return (TypeScriptTypeMapper.MapType(returnType), false);
+            fullName: info.FullName,
+            id: info.Id,
+            @namespace: info.Namespace,
+            className: info.ClassName,
+            methodName: info.MethodName,
+            parameters: info.Parameters
+                .Select(p => new ParameterModel(p.Name, p.TypeName, p.IsVariadic, p.IsCancellationToken))
+                .ToList(),
+            returnTypeName: info.ReturnTypeName,
+            isAsync: info.IsAsync);
     }
 }

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Wails.Net.Application.Bindings;
+using Wails.Net.Application.Commands;
 using Wails.Net.Application.Events;
 using Wails.Net.Application.Windows;
 using Wails.Net.Errors;
@@ -54,6 +55,11 @@ public class MessageProcessor
     private readonly BindingManager _bindings;
 
     /// <summary>
+    /// 命令调度器实例（可选），用于在 BindingManager 未找到方法时回退到命令路径。
+    /// </summary>
+    private readonly CommandDispatcher? _commands;
+
+    /// <summary>
     /// 事件处理器实例。
     /// </summary>
     private readonly EventProcessor _events;
@@ -102,6 +108,26 @@ public class MessageProcessor
         _bindings = bindings;
         _events = events;
         _windowLookup = windowLookup;
+    }
+
+    /// <summary>
+    /// 使用指定的绑定管理器、事件处理器、窗口查找器和命令调度器构造 MessageProcessor 实例。
+    /// 命令调度器用于在前端调用方法名在 BindingManager 中未找到时（如 "counter.increment"）回退查找命令。
+    /// </summary>
+    /// <param name="bindings">绑定管理器。</param>
+    /// <param name="events">事件处理器。</param>
+    /// <param name="windowLookup">窗口查找器，根据窗口 ID 返回对应的窗口实例。</param>
+    /// <param name="commands">命令调度器，可为 null；为 null 时不进行命令回退。</param>
+    public MessageProcessor(
+        BindingManager bindings,
+        EventProcessor events,
+        Func<uint, WebviewWindow?> windowLookup,
+        CommandDispatcher? commands)
+    {
+        _bindings = bindings;
+        _events = events;
+        _windowLookup = windowLookup;
+        _commands = commands;
     }
 
     /// <summary>
@@ -195,6 +221,8 @@ public class MessageProcessor
 
     /// <summary>
     /// 处理绑定调用消息。
+    /// 调用顺序：BindingManager（含源生成器调用器） → CommandDispatcher（命令路径）。
+    /// 当 BindingManager 未找到方法且 CommandDispatcher 已配置时，回退到命令调度器查找。
     /// </summary>
     /// <param name="message">绑定调用消息。</param>
     /// <returns>包含调用结果的响应消息。</returns>
@@ -226,6 +254,17 @@ public class MessageProcessor
         else if (!string.IsNullOrEmpty(callPayload.Name))
         {
             result = await _bindings.Call(callPayload.Name!, args, _cts.Token);
+
+            // 若 BindingManager 未找到方法（且未通过源生成器注册），
+            // 尝试回退到 CommandDispatcher 查找命令（如 "counter.increment"、"notification.show"）
+            if (IsNotFoundResult(result, callPayload.Name!) && _commands is not null)
+            {
+                var commandResult = await TryDispatchCommandAsync(callPayload.Name!, args, message.WindowId);
+                if (commandResult is not null)
+                {
+                    result = commandResult;
+                }
+            }
         }
         else
         {
@@ -238,6 +277,88 @@ public class MessageProcessor
             Type = MessageTypes.Response,
             Result = result
         };
+    }
+
+    /// <summary>
+    /// 判断 BindingManager 返回的结果是否为 "未找到方法"。
+    /// </summary>
+    /// <param name="result">BindingManager 返回的结果字典。</param>
+    /// <param name="name">方法名（用于校验错误信息）。</param>
+    /// <returns>若结果中包含 "未找到" 错误则返回 true。</returns>
+    private static bool IsNotFoundResult(Dictionary<string, object?> result, string name)
+    {
+        if (result.TryGetValue("error", out var errorObj) && errorObj is not null)
+        {
+            var errorJson = JsonSerializer.Serialize(errorObj, JsonOptions.DefaultSerializerOptions);
+            return errorJson.Contains("未找到") && errorJson.Contains(name);
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 尝试通过 CommandDispatcher 派发命令。
+    /// 将 JSON 参数数组转换为 CommandDispatcher 期望的 JsonElement 参数形式。
+    /// </summary>
+    /// <param name="commandName">命令名称。</param>
+    /// <param name="args">JSON 参数数组。</param>
+    /// <param name="windowId">窗口 ID（可为 null）。</param>
+    /// <returns>调用结果字典；若命令派发抛出异常则返回包含错误的字典。</returns>
+    private async Task<Dictionary<string, object?>?> TryDispatchCommandAsync(
+        string commandName,
+        JsonElement[] args,
+        uint? windowId)
+    {
+        try
+        {
+            // 将参数数组转换为 JsonElement（用于 CommandDispatcher 参数绑定）
+            // CommandDispatcher 会从 Parameters 中按方法参数类型逐个反序列化
+            JsonElement parametersElement;
+            if (args.Length == 1)
+            {
+                // 单参数场景：使用第一个参数
+                parametersElement = args[0];
+            }
+            else if (args.Length > 1)
+            {
+                // 多参数场景：包装为数组
+                var bytes = JsonSerializer.SerializeToUtf8Bytes(args, JsonOptions.DefaultSerializerOptions);
+                parametersElement = JsonDocument.Parse(bytes).RootElement.Clone();
+            }
+            else
+            {
+                // 无参数场景：使用空对象
+                parametersElement = default;
+            }
+
+            var request = new InvokeRequest(Guid.NewGuid(), commandName, parametersElement);
+
+            // 传入 context 为 null，DispatchAsync 会使用自身的 _services 创建默认上下文
+            var response = await _commands!.DispatchAsync(request, context: null);
+
+            if (response.Success)
+            {
+                return new Dictionary<string, object?>
+                {
+                    ["result"] = response.Result,
+                    ["error"] = null
+                };
+            }
+
+            return new Dictionary<string, object?>
+            {
+                ["result"] = null,
+                ["error"] = new CallError(response.Error ?? "命令调用失败", null, CallErrorKind.RuntimeError).ToJson()
+            };
+        }
+        catch (Exception ex)
+        {
+            return new Dictionary<string, object?>
+            {
+                ["result"] = null,
+                ["error"] = new CallError(ex.Message, null, CallErrorKind.RuntimeError).ToJson()
+            };
+        }
     }
 
     /// <summary>

@@ -56,9 +56,14 @@ var app = desktopApp.Application;
 app.Options.EnableDefaultContextMenu = true;
 app.Options.DragAndDrop = true;
 
-// 注册绑定服务到 Application（公共方法通过反射暴露给前端）
+// 注册绑定服务到 Application（标记 [Binding] 的方法由源代码生成器生成强类型调用器）
 app.RegisterService(new GreetingService());
 app.RegisterService(new TodoService());
+
+// 注册 CounterService 实例到 BindingManager
+// CounterService 的方法标记了 [Command] 特性，由源代码生成器生成强类型调用器，
+// 需要将实例注册到 BindingManager 才能在调用时查找实例
+app.RegisterService(desktopApp.Services.GetRequiredService<CounterService>());
 
 // 应用启动后创建主窗口
 app.Options.OnAfterStart = () =>

@@ -2,6 +2,7 @@ using System.Reflection;
 using TUnit.Assertions;
 using TUnit.Assertions.Extensions;
 using TUnit.Core;
+using Wails.Net.Application.Bindings;
 using Wails.Net.Generator;
 
 namespace Wails.Net.Cli.Tests;
@@ -269,10 +270,12 @@ public sealed class BindingGenerationPipelineTests
 
 public sealed class PipelineSampleService
 {
+    [Binding]
     public string GetName() => "Wails";
 }
 
 public sealed class PipelineAnotherService
 {
+    [Binding]
     public int GetValue() => 42;
 }

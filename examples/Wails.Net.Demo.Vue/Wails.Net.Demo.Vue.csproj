@@ -28,6 +28,10 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Wails.Net.Application\Wails.Net.Application.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Application.Windows\Wails.Net.Application.Windows.csproj" />
+    <!-- 源代码生成器：扫描 [Binding] / [Command] 特性，生成强类型调用器 -->
+    <ProjectReference Include="..\..\src\Wails.Net.SourceGenerators\Wails.Net.SourceGenerators.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>

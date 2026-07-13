@@ -11,6 +11,8 @@ public static class PluginBuilderExtensions
 {
     /// <summary>
     /// 使用指定插件类型（使用无参构造函数创建实例）。
+    /// 立即调用插件的 <see cref="IPlugin.ConfigureServices"/> 注册 DI 服务，
+    /// 并将插件添加到构建器跟踪列表，在 <see cref="DesktopApplicationBuilder.Build"/> 时统一调用 <see cref="IPlugin.Configure"/>。
     /// </summary>
     /// <typeparam name="TPlugin">插件类型，必须有无参构造函数。</typeparam>
     /// <param name="builder">桌面应用构建器。</param>
@@ -24,12 +26,20 @@ public static class PluginBuilderExtensions
 
     /// <summary>
     /// 使用插件实例。将插件注册到 DI 容器，并确保 PluginManager 已注册。
+    /// 立即调用插件的 <see cref="IPlugin.ConfigureServices"/> 注册 DI 服务，
+    /// 并将插件添加到构建器跟踪列表，在 <see cref="DesktopApplicationBuilder.Build"/> 时统一调用 <see cref="IPlugin.Configure"/>。
     /// </summary>
     /// <param name="builder">桌面应用构建器。</param>
     /// <param name="plugin">插件实例。</param>
     /// <returns>当前构建器实例，用于链式调用。</returns>
     public static DesktopApplicationBuilder UsePlugin(this DesktopApplicationBuilder builder, IPlugin plugin)
     {
+        // 立即调用 ConfigureServices，在 Host 构建之前注册 DI 服务
+        plugin.ConfigureServices(builder.Services);
+
+        // 添加到构建器跟踪列表，在 Build() 时调用 Configure()
+        builder.AddPlugin(plugin);
+
         // 注册插件实例到 DI 容器（作为 IPlugin 服务）
         builder.Services.AddSingleton<IPlugin>(plugin);
 
@@ -41,6 +51,7 @@ public static class PluginBuilderExtensions
 
     /// <summary>
     /// 从程序集自动发现插件并注册到 DI 容器。
+    /// 发现的插件同样会立即调用 <see cref="IPlugin.ConfigureServices"/> 并添加到构建器跟踪列表。
     /// </summary>
     /// <param name="builder">桌面应用构建器。</param>
     /// <param name="assembly">要扫描的程序集，为 null 时使用入口程序集。</param>
@@ -64,11 +75,8 @@ public static class PluginBuilderExtensions
         foreach (var type in pluginTypes)
         {
             var plugin = (IPlugin)Activator.CreateInstance(type)!;
-            builder.Services.AddSingleton<IPlugin>(plugin);
+            UsePlugin(builder, plugin);
         }
-
-        // 确保 PluginManager 已注册为单例
-        EnsurePluginManagerRegistered(builder.Services);
 
         return builder;
     }

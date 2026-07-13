@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <GetTargetPathDependsOn>$(GetTargetPathDependsOn);GetTargetPathForRoslynComponent</GetTargetPathDependsOn>
+    <RootNamespace>Wails.Net.SourceGenerators</RootNamespace>
+    <AssemblyName>Wails.Net.SourceGenerators</AssemblyName>
+    <NoWarn>RS1041</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!--
+    显式定义 GetTargetPathForRoslynComponent 目标。
+    某些 SDK 版本下此目标未被自动生成，需手动添加，否则 dotnet build 报错 MSB4057。
+    注意：不能依赖 GetTargetPath，否则会循环依赖。
+  -->
+  <Target Name="GetTargetPathForRoslynComponent" Returns="$(TargetPath)" />
+
+</Project>

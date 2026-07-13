@@ -7,11 +7,13 @@ namespace Wails.Net.Application.Bindings;
 /// <summary>
 /// 绑定管理器，负责注册和调用绑定方法。
 /// 对应 Wails v3 Go 版本 bindings.go 中的 Bindings 结构。
+/// 优先使用由源代码生成器生成的强类型调用器（<see cref="GeneratedBindingRegistry"/>），
+/// 仅当目标方法未被生成器处理时回退到反射调用。
 /// </summary>
 public class BindingManager
 {
     /// <summary>
-    /// 按全限定名索引的绑定方法字典。
+    /// 按全限定名索引的绑定方法字典（仅含反射路径使用的方法）。
     /// </summary>
     private readonly Dictionary<string, BoundMethod> _boundMethods = new();
 
@@ -19,6 +21,12 @@ public class BindingManager
     /// 按 FNV-1a 哈希 ID 索引的绑定方法字典。
     /// </summary>
     private readonly Dictionary<uint, BoundMethod> _boundByID = new();
+
+    /// <summary>
+    /// 按类型全名（Namespace.ClassName）索引的实例字典。
+    /// 用于在调用由源生成器生成的调用器时查找正确的实例。
+    /// </summary>
+    private readonly Dictionary<string, object> _instancesByTypeName = new(StringComparer.Ordinal);
 
     /// <summary>
     /// 需要排除的服务内部方法名称集合。
@@ -44,11 +52,17 @@ public class BindingManager
     /// <summary>
     /// 注册指定实例的所有公共方法。
     /// 排除服务内部方法（ServiceName、ServiceStartup、ServiceShutdown）。
+    /// 同时将实例登记到 <see cref="_instancesByTypeName"/>，供源生成器调用器使用。
     /// </summary>
     /// <param name="instance">要注册的实例。</param>
     public void Add(object instance)
     {
         var type = instance.GetType();
+        var typeFullName = GetFullTypeName(type);
+
+        // 登记实例，供源生成器调用器查找
+        _instancesByTypeName[typeFullName] = instance;
+
         var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
 
         foreach (var method in methods)
@@ -115,6 +129,7 @@ public class BindingManager
 
     /// <summary>
     /// 按 ID 调用绑定方法。
+    /// 优先使用反射注册的绑定方法（按 ID 路径仅支持反射，因为 ID 是 FNV-1a 哈希）。
     /// </summary>
     /// <param name="id">绑定方法的 FNV-1a 哈希 ID。</param>
     /// <param name="args">JSON 参数数组。</param>
@@ -122,39 +137,144 @@ public class BindingManager
     /// <returns>包含调用结果或错误的字典。</returns>
     public async Task<Dictionary<string, object?>> Call(uint id, JsonElement[] args, CancellationToken cancellationToken = default)
     {
-        if (!_boundByID.TryGetValue(id, out var method))
+        if (_boundByID.TryGetValue(id, out var method))
         {
-            var error = new CallError($"未找到 ID 为 {id} 的绑定方法", null, CallErrorKind.ReferenceError);
-            return new Dictionary<string, object?>
-            {
-                ["result"] = null,
-                ["error"] = error.ToJson()
-            };
+            return await method.Call(args, cancellationToken);
         }
 
-        return await method.Call(args, cancellationToken);
+        var error = new CallError($"未找到 ID 为 {id} 的绑定方法", null, CallErrorKind.ReferenceError);
+        return new Dictionary<string, object?>
+        {
+            ["result"] = null,
+            ["error"] = error.ToJson()
+        };
     }
 
     /// <summary>
     /// 按全限定名调用绑定方法。
+    /// 优先使用源生成器生成的强类型调用器（<see cref="GeneratedBindingRegistry"/>），
+    /// 若未找到则回退到反射注册的 <see cref="BoundMethod"/>。
     /// </summary>
-    /// <param name="fullName">方法全限定名。</param>
+    /// <param name="fullName">方法全限定名或命令名。</param>
     /// <param name="args">JSON 参数数组。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>包含调用结果或错误的字典。</returns>
     public async Task<Dictionary<string, object?>> Call(string fullName, JsonElement[] args, CancellationToken cancellationToken = default)
     {
-        if (!_boundMethods.TryGetValue(fullName, out var method))
+        // 1. 优先使用源生成器生成的强类型调用器
+        if (GeneratedBindingRegistry.TryGetInvoker(fullName, out var invoker) && invoker is not null)
         {
-            var error = new CallError($"未找到名为 '{fullName}' 的绑定方法", null, CallErrorKind.ReferenceError);
-            return new Dictionary<string, object?>
-            {
-                ["result"] = null,
-                ["error"] = error.ToJson()
-            };
+            return await InvokeGeneratedAsync(fullName, invoker, args, cancellationToken);
         }
 
-        return await method.Call(args, cancellationToken);
+        // 2. 回退到反射注册的绑定方法
+        if (_boundMethods.TryGetValue(fullName, out var method))
+        {
+            return await method.Call(args, cancellationToken);
+        }
+
+        var error = new CallError($"未找到名为 '{fullName}' 的绑定方法", null, CallErrorKind.ReferenceError);
+        return new Dictionary<string, object?>
+        {
+            ["result"] = null,
+            ["error"] = error.ToJson()
+        };
+    }
+
+    /// <summary>
+    /// 调用源生成器生成的调用器并处理返回值（包括 Task / Task&lt;T&gt;）。
+    /// </summary>
+    /// <param name="fullName">方法全名（用于错误信息）。</param>
+    /// <param name="invoker">生成的调用器委托。</param>
+    /// <param name="args">JSON 参数数组。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>包含调用结果或错误的字典。</returns>
+    private async Task<Dictionary<string, object?>> InvokeGeneratedAsync(
+        string fullName,
+        GeneratedInvoker invoker,
+        JsonElement[] args,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // 查找实例
+            if (!GeneratedBindingRegistry.TryGetTypeFullName(fullName, out var typeFullName) || typeFullName is null)
+            {
+                return ErrorResult($"未找到方法 '{fullName}' 的类型信息", Errors.CallErrorKind.ReferenceError);
+            }
+
+            if (!_instancesByTypeName.TryGetValue(typeFullName, out var instance))
+            {
+                return ErrorResult($"未找到类型 '{typeFullName}' 的注册实例", Errors.CallErrorKind.ReferenceError);
+            }
+
+            var result = invoker(instance, args ?? Array.Empty<JsonElement>(), cancellationToken);
+
+            // 若方法返回 Task，则等待其完成并提取结果
+            if (result is Task task)
+            {
+                await task.ConfigureAwait(false);
+
+                // 若是 Task<T>，提取 Result
+                var taskType = task.GetType();
+                if (taskType.IsGenericType)
+                {
+                    var resultProperty = taskType.GetProperty("Result");
+                    var taskResult = resultProperty?.GetValue(task);
+                    return SuccessResult(taskResult);
+                }
+
+                return SuccessResult(null);
+            }
+
+            return SuccessResult(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return ErrorResult(ex.Message, Errors.CallErrorKind.RuntimeError);
+        }
+        catch (ArgumentException ex)
+        {
+            return ErrorResult(ex.Message, Errors.CallErrorKind.TypeError);
+        }
+        catch (JsonException ex)
+        {
+            return ErrorResult($"参数反序列化失败: {ex.Message}", Errors.CallErrorKind.TypeError);
+        }
+        catch (Exception ex)
+        {
+            return ErrorResult(ex.Message, Errors.CallErrorKind.RuntimeError);
+        }
+    }
+
+    /// <summary>
+    /// 构建成功结果的字典。
+    /// </summary>
+    /// <param name="result">调用结果。</param>
+    /// <returns>包含结果的字典。</returns>
+    private static Dictionary<string, object?> SuccessResult(object? result)
+    {
+        return new Dictionary<string, object?>
+        {
+            ["result"] = result,
+            ["error"] = null
+        };
+    }
+
+    /// <summary>
+    /// 构建错误结果的字典。
+    /// </summary>
+    /// <param name="message">错误消息。</param>
+    /// <param name="kind">错误类型。</param>
+    /// <returns>包含错误的字典。</returns>
+    private static Dictionary<string, object?> ErrorResult(string message, Errors.CallErrorKind kind)
+    {
+        var error = new Errors.CallError(message, null, kind);
+        return new Dictionary<string, object?>
+        {
+            ["result"] = null,
+            ["error"] = error.ToJson()
+        };
     }
 
     /// <summary>
@@ -197,6 +317,19 @@ public class BindingManager
         var namespaceName = declaringType?.Namespace ?? "";
         var className = declaringType?.Name ?? "";
         return $"{namespaceName}.{className}.{methodInfo.Name}";
+    }
+
+    /// <summary>
+    /// 获取类型的全名（Namespace.ClassName）。
+    /// 与源生成器生成的 typeFullName 字符串保持一致，用于在 <see cref="_instancesByTypeName"/> 中查找实例。
+    /// </summary>
+    /// <param name="type">类型。</param>
+    /// <returns>类型全名。</returns>
+    private static string GetFullTypeName(Type type)
+    {
+        var namespaceName = type.Namespace ?? "";
+        var className = type.Name ?? "";
+        return namespaceName.Length > 0 ? $"{namespaceName}.{className}" : className;
     }
 
     /// <summary>

@@ -19,6 +19,10 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Wails.Net.Cli\Wails.Net.Cli.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Generator\Wails.Net.Generator.csproj" />
+    <!-- 显式声明源代码生成器为分析器，确保 [Binding] / [Command] 在测试程序集中被扫描 -->
+    <ProjectReference Include="..\..\src\Wails.Net.SourceGenerators\Wails.Net.SourceGenerators.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

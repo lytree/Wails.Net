@@ -56,7 +56,7 @@ export default defineComponent({
       const text = notificationInput.value
       if (!text) return
       try {
-        await window.wails.call('notification.send', [
+        await window.wails.call('notification.show', [
           { title: 'Wails.Net Vue Demo', body: text },
         ])
       } catch (e) {

@@ -11,6 +11,7 @@
     <Project Path="src/Wails.Net.Errors/Wails.Net.Errors.csproj" />
     <Project Path="src/Wails.Net.Events/Wails.Net.Events.csproj" />
     <Project Path="src/Wails.Net.Generator/Wails.Net.Generator.csproj" />
+    <Project Path="src/Wails.Net.SourceGenerators/Wails.Net.SourceGenerators.csproj" />
     <Project Path="src/Wails.Net.Cli/Wails.Net.Cli.csproj" />
     <Project Path="src/Wails.Net.AssetServer/Wails.Net.AssetServer.csproj" />
     <Project Path="src/Wails.Net.Runtime.Js/Wails.Net.Runtime.Js.csproj" />

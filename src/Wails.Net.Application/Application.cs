@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Wails.Net.Application.Bindings;
+using Wails.Net.Application.Commands;
 using Wails.Net.Application.Events;
 using Wails.Net.Application.Managers;
 using Wails.Net.Application.Menus;
@@ -48,6 +49,13 @@ public class Application
     /// 用于 <see cref="HandleMessageFromFrontend"/> 解析和处理前端消息。
     /// </summary>
     private MessageProcessor? _messageProcessor;
+
+    /// <summary>
+    /// 命令调度器实例，由 <see cref="DesktopApplicationBuilder.Build"/> 注入。
+    /// 用于在前端调用方法名未在 <see cref="BindingManager"/> 中找到时回退查找命令。
+    /// 对应 Wails v3 中通过 MapCommand 注册的命令路径。
+    /// </summary>
+    private CommandDispatcher? _commandDispatcher;
 
     /// <summary>
     /// 资源服务器实例。
@@ -278,6 +286,17 @@ public class Application
     {
         get => _transport;
         set => _transport = value;
+    }
+
+    /// <summary>
+    /// 获取或设置命令调度器实例。
+    /// 由 <see cref="Hosting.DesktopApplicationBuilder.Build"/> 在构建完成后注入。
+    /// 用于前端调用方法名未在 <see cref="BindingManager"/> 中找到时回退查找命令。
+    /// </summary>
+    public CommandDispatcher? CommandDispatcher
+    {
+        get => _commandDispatcher;
+        internal set => _commandDispatcher = value;
     }
 
     /// <summary>
@@ -750,7 +769,7 @@ public class Application
     /// <returns>响应消息，若无需响应则返回 null。</returns>
     public async Task<ResponseMessage?> HandleMessageFromFrontend(string message, uint? windowId = null)
     {
-        _messageProcessor ??= new MessageProcessor(_bindings, _events, id => GetWindow(id));
+        _messageProcessor ??= new MessageProcessor(_bindings, _events, id => GetWindow(id), _commandDispatcher);
         var parsed = _messageProcessor.ParseMessage(message);
         if (parsed is null)
         {

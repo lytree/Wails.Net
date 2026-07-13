@@ -3,8 +3,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Wails.Net.Application.Commands;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform;
+using Wails.Net.Application.Plugins;
 using Wails.Net.AssetServer;
 
 namespace Wails.Net.Application.Hosting;
@@ -19,6 +21,17 @@ public sealed class DesktopApplicationBuilder
     private Action<DesktopHostOptions>? _configureOptions;
     private Action<IPlatformApp>? _configurePlatform;
 
+    /// <summary>
+    /// 已注册的插件列表，在 <see cref="Build"/> 时统一初始化。
+    /// 由 <see cref="PluginBuilderExtensions.UsePlugin"/> 添加。
+    /// </summary>
+    private readonly List<IPlugin> _plugins = new();
+
+    /// <summary>
+    /// 命令注册表，在 <see cref="Build"/> 时传入插件上下文，由插件通过 MapCommand 注册命令。
+    /// </summary>
+    private readonly CommandRegistry _commandRegistry = new();
+
     /// <summary>DI 服务集合</summary>
     public IServiceCollection Services => _hostBuilder.Services;
 
@@ -27,6 +40,12 @@ public sealed class DesktopApplicationBuilder
 
     /// <summary>日志构建器</summary>
     public ILoggingBuilder Logging => _hostBuilder.Logging;
+
+    /// <summary>
+    /// 添加插件实例到跟踪列表。由 <see cref="PluginBuilderExtensions.UsePlugin"/> 调用。
+    /// </summary>
+    /// <param name="plugin">插件实例。</param>
+    internal void AddPlugin(IPlugin plugin) => _plugins.Add(plugin);
 
     /// <summary>
     /// 内部构造函数，初始化 HostApplicationBuilder 并注册默认服务。
@@ -115,6 +134,8 @@ public sealed class DesktopApplicationBuilder
 
     /// <summary>
     /// 构建桌面应用实例。
+    /// 在构建 Host 之前初始化所有插件（调用 <see cref="IPlugin.Configure"/>），
+    /// 在构建 Host 之后创建 <see cref="CommandDispatcher"/> 并注入到 <see cref="Application"/>。
     /// </summary>
     /// <returns>构建完成的 <see cref="DesktopApplication"/> 实例。</returns>
     public DesktopApplication Build()
@@ -124,6 +145,14 @@ public sealed class DesktopApplicationBuilder
         {
             Services.Configure(_configureOptions);
         }
+
+        // 在构建 Host 之前初始化插件：
+        // 此时 IServiceCollection 仍可用，插件可通过 ConfigureServices 注册 DI 服务，
+        // 通过 PluginContext.Commands 注册命令（MapCommand 方式）。
+        InitializePlugins();
+
+        // 将 CommandRegistry 注册为单例，供 CommandDispatcher 使用
+        Services.AddSingleton(_commandRegistry);
 
         // 构建 Host
         var host = _hostBuilder.Build();
@@ -143,6 +172,14 @@ public sealed class DesktopApplicationBuilder
         // 从 DI 容器初始化 Application 的管理器，替换 DI 已注册的实例
         application.InitializeFromServiceProvider(host.Services);
 
+        // 创建 CommandDispatcher 并注入到 Application
+        // CommandDispatcher 需要 CommandRegistry（已由插件填充）和 IServiceProvider（已构建）
+        var commandDispatcher = new CommandDispatcher(
+            _commandRegistry,
+            host.Services,
+            host.Services.GetService<ILogger<CommandDispatcher>>());
+        application.CommandDispatcher = commandDispatcher;
+
         // 自动创建 AssetServer（仿 Wails v3 静态资源处理）
         // 当配置了 Assets.RootPath 时，创建 FileAssetServer 并设置到 Application.AssetServer
         // 窗口将自动导航到 http://wails.localhost/ 加载前端资源
@@ -160,6 +197,36 @@ public sealed class DesktopApplicationBuilder
         }
 
         return new DesktopApplication(host, application, desktopOpts.ApplicationName);
+    }
+
+    /// <summary>
+    /// 初始化所有已注册的插件。
+    /// 对每个插件依次调用 <see cref="IPlugin.Configure(IPluginContext)"/>，
+    /// 使插件可以通过 <see cref="IPluginContext.Commands"/> 注册命令。
+    /// </summary>
+    private void InitializePlugins()
+    {
+        if (_plugins.Count == 0)
+        {
+            return;
+        }
+
+        // 注意：此时尚未构建 Host，无法从 IServiceProvider 获取 LoggerFactory。
+        // 构建临时 ServiceProvider 仅用于获取已注册的 LoggerFactory，
+        // 不影响后续 Host 构建。使用 NullLoggerFactory.Instance 作为兜底。
+        var tempProvider = _hostBuilder.Services.BuildServiceProvider();
+        var loggerFactory = tempProvider.GetService<ILoggerFactory>()
+            ?? Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance;
+        var context = new PluginContext(
+            _hostBuilder.Services,
+            _commandRegistry,
+            _hostBuilder.Configuration,
+            loggerFactory);
+
+        foreach (var plugin in _plugins)
+        {
+            plugin.Configure(context);
+        }
     }
 
     /// <summary>

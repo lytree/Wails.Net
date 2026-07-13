@@ -409,7 +409,7 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     /// <param name="reasonPhrase">状态描述。</param>
     private static void FinishWithStatus(URISchemeRequest request, uint statusCode, string reasonPhrase)
     {
-        var empty = Array.Empty<byte>();
+        var empty = System.Array.Empty<byte>();
         var bytes = GLib.Bytes.New(empty);
         var stream = MemoryInputStream.NewFromBytes(bytes);
         var response = URISchemeResponse.New(stream, 0);
@@ -1119,11 +1119,11 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     }
 
     /// <inheritdoc />
-    public Task<byte[]?> CapturePreviewAsync()
+    public System.Threading.Tasks.Task<byte[]?> CapturePreviewAsync()
     {
         // WebKitGTK 无直接的 CapturePreview API，返回 null 表示不支持。
         // 可通过 GTK 截图功能间接实现。
-        return Task.FromResult<byte[]?>(null);
+        return System.Threading.Tasks.Task.FromResult<byte[]?>(null);
     }
 
     /// <inheritdoc />
@@ -1711,7 +1711,7 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     }
 
     /// <inheritdoc />
-    public void Run(Action callback)
+    public void Run(System.Action callback)
     {
         // 窗口就绪后立即执行回调；GTK4 中窗口在 Present 后即可交互。
         callback();

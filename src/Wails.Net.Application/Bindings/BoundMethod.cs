@@ -242,8 +242,9 @@ public class BoundMethod
 
 /// <summary>
 /// JSON 序列化选项的默认配置。
+/// 源代码生成器生成的代码也使用此选项。
 /// </summary>
-internal static class JsonOptions
+public static class JsonOptions
 {
     /// <summary>
     /// 默认的 JSON 序列化选项（驼峰命名、不区分大小写反序列化）。
