@@ -77,6 +77,8 @@ public class BindingManager
 
     /// <summary>
     /// 注册单个方法。
+    /// 同时注册全限定名（Namespace.ClassName.MethodName）和短名称（ClassName.MethodName），
+    /// 前端可使用任一格式调用。对应 Wails v3 Go 版本中包名作为前缀的做法。
     /// </summary>
     /// <param name="instance">方法所属实例。</param>
     /// <param name="methodInfo">方法反射信息。</param>
@@ -84,7 +86,9 @@ public class BindingManager
     private BoundMethod AddMethod(object instance, MethodInfo methodInfo)
     {
         var fullName = GetFullMethodName(methodInfo);
+        var shortName = GetShortMethodName(methodInfo);
         var id = FNV1aHash(fullName);
+        var shortId = FNV1aHash(shortName);
 
         var parameters = methodInfo.GetParameters();
         var parameterTypes = new Type[parameters.Length];
@@ -98,8 +102,13 @@ public class BindingManager
 
         var boundMethod = new BoundMethod(fullName, id, instance, methodInfo, parameterTypes, isVariadic, hasCancellationToken);
 
+        // 注册全限定名（Namespace.ClassName.MethodName）
         _boundMethods[fullName] = boundMethod;
         _boundByID[id] = boundMethod;
+
+        // 注册短名称（ClassName.MethodName）作为别名，便于前端调用
+        _boundMethods[shortName] = boundMethod;
+        _boundByID[shortId] = boundMethod;
 
         return boundMethod;
     }
@@ -188,6 +197,19 @@ public class BindingManager
         var namespaceName = declaringType?.Namespace ?? "";
         var className = declaringType?.Name ?? "";
         return $"{namespaceName}.{className}.{methodInfo.Name}";
+    }
+
+    /// <summary>
+    /// 获取绑定方法的短名称（ClassName.MethodName）。
+    /// 对应 Wails v3 Go 版本中省略包路径、仅用结构名与方法名的做法。
+    /// </summary>
+    /// <param name="methodInfo">方法反射信息。</param>
+    /// <returns>短名称。</returns>
+    private static string GetShortMethodName(MethodInfo methodInfo)
+    {
+        var declaringType = methodInfo.DeclaringType;
+        var className = declaringType?.Name ?? "";
+        return $"{className}.{methodInfo.Name}";
     }
 
     /// <summary>

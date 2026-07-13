@@ -36,3 +36,15 @@ Thumbs.db
 
 # Trae 文档（计划文件，不提交）
 .trae/
+
+# 前端构建产物与依赖
+/examples/Wails.Net.Demo.React/frontend/node_modules/
+/examples/Wails.Net.Demo.React/frontend/dist/
+/examples/Wails.Net.Demo.Vue/frontend/node_modules/
+/examples/Wails.Net.Demo.Vue/frontend/dist/
+
+# TypeScript 增量构建缓存
+*.tsbuildinfo
+
+# npm 锁文件（使用 pnpm，pnpm-lock.yaml 会被跟踪）
+package-lock.json

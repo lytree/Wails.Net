@@ -125,6 +125,44 @@ public sealed class BindingsTests
     }
 
     [Test]
+    public async Task Add_RegistersShortName()
+    {
+        var bindings = new BindingManager();
+        bindings.Add(new TestService());
+
+        // 短名称（ClassName.MethodName）应同时注册
+        await Assert.That(bindings.BoundMethods.ContainsKey("TestService.GetName")).IsTrue();
+        await Assert.That(bindings.BoundMethods.ContainsKey("TestService.Add")).IsTrue();
+    }
+
+    [Test]
+    public async Task Call_ByShortName_ReturnsCorrectResult()
+    {
+        var bindings = new BindingManager();
+        bindings.Add(new TestService());
+
+        var args = Array.Empty<JsonElement>();
+        var result = await bindings.Call("TestService.GetName", args);
+
+        await Assert.That(result["error"]).IsNull();
+        await Assert.That(result["result"]?.ToString()).IsEqualTo("Wails.Net");
+    }
+
+    [Test]
+    public async Task Call_ByShortNameID_ReturnsCorrectResult()
+    {
+        var bindings = new BindingManager();
+        bindings.Add(new TestService());
+
+        var id = BindingManager.FNV1aHash("TestService.Greet");
+        var args = new[] { JsonSerializer.SerializeToElement("World") };
+        var result = await bindings.Call(id, args);
+
+        await Assert.That(result["error"]).IsNull();
+        await Assert.That(result["result"]?.ToString()).IsEqualTo("Hello, World!");
+    }
+
+    [Test]
     public async Task Call_ByID_ReturnsCorrectResult()
     {
         var bindings = new BindingManager();

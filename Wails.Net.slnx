@@ -1,5 +1,7 @@
 <Solution>
   <Folder Name="/demo/">
+    <Project Path="examples/Wails.Net.Demo.React/Wails.Net.Demo.React.csproj" />
+    <Project Path="examples/Wails.Net.Demo.Vue/Wails.Net.Demo.Vue.csproj" />
     <Project Path="examples/Wails.Net.Demo/Wails.Net.Demo.csproj" />
   </Folder>
   <Folder Name="/src/">
