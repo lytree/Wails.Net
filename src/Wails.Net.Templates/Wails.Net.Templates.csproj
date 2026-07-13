@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      使用 netstandard2.0 作为模板包的 TFM，与 Microsoft 官方 dotnet new 模板包惯例一致。
+      netstandard2.0 不会在 nuspec 中生成空 dependencies group，避免 NU5017 错误。
+      模板包本身不输出程序集（IncludeBuildOutput=false），TFM 仅用于满足 SDK 项目要求。
+    -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <IsPackable>true</IsPackable>
+    <PackageId>Wails.Net.Templates</PackageId>
+    <Description>Wails.Net dotnet new 项目模板：快速创建 Wails.Net 桌面应用。</Description>
+    <PackageType>Template</PackageType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+    <!-- 抑制 content/ 下 .cs 文件的编译（它们是模板源文件，不是本项目代码） -->
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
+    <!-- NoDefaultExcludes 允许打包 .template.config 等以 . 开头的目录 -->
+    <NoDefaultExcludes>true</NoDefaultExcludes>
+    <!--
+      模板包无运行时依赖，抑制 nuspec 中生成空的 dependencies group。
+      NU5017 错误源于空依赖组与无 lib 程序集的组合。
+    -->
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      显式打包 content/ 下所有文件作为模板内容（PackagePath=content\）。
+      使用 Content item（SDK 默认 Pack=true）确保被 _GetPackageFiles target 识别。
+    -->
+    <Content Include="content\**\*" Exclude="content\**\bin\**;content\**\obj\**">
+      <Pack>true</Pack>
+      <PackagePath>content\</PackagePath>
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Content>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

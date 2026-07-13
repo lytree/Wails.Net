@@ -147,14 +147,27 @@ dotnet build Wails.Net.slnx -c Release
 dotnet run --project tests/Wails.Net.Application.Tests/Wails.Net.Application.Tests.csproj
 dotnet run --project tests/Wails.Net.Cli.Tests/Wails.Net.Cli.Tests.csproj
 
-# 3. 打包 NuGet 包
-dotnet pack Wails.Net.slnx -c Release -o artifacts/packages
+# 3. 打包 NuGet 包（slnx 内所有可打包项目）
+dotnet pack Wails.Net.slnx -c Release -o artifacts/packages -p:SkipFrontendBuild=true
 
-# 4. 验证包内容
+# 4. 单独打包 Templates 项目
+#    Templates 不在 slnx 中（dotnet pack 会因 NU5017 误报退出码 1，但 nupkg 实际正确生成）
+dotnet pack src/Wails.Net.Templates/Wails.Net.Templates.csproj -c Release -o artifacts/packages
+
+# 5. 验证包内容
 dotnet nuget push --dry-run artifacts/packages/Wails.Net.Application.0.1.0-alpha.1.nupkg
 ```
 
 ## NuGet 包清单
+
+### 平台聚合包（推荐使用）
+
+| 包名 | 说明 |
+|------|------|
+| `Wails.Net.Bundle.Windows` | Windows 平台聚合包：一键引用 Windows 开发所需全部 Wails.Net 包 |
+| `Wails.Net.Bundle.Linux` | Linux 平台聚合包：一键引用 Linux 开发所需全部 Wails.Net 包 |
+
+### 核心运行时包
 
 | 包名 | 说明 |
 |------|------|
@@ -168,6 +181,52 @@ dotnet nuget push --dry-run artifacts/packages/Wails.Net.Application.0.1.0-alpha
 | `Wails.Net.Generator` | 代码生成器 |
 | `Wails.Net.SourceGenerators` | 源代码生成器（analyzer） |
 | `Wails.Net.Cli` | CLI 工具（global tool） |
+
+### 项目模板包
+
+| 包名 | 说明 |
+|------|------|
+| `Wails.Net.Templates` | dotnet new 项目模板：提供 `wails-net-app` 短名模板 |
+
+## SDK 使用方式
+
+### 方式一：聚合包（推荐）
+
+```xml
+<!-- 仅需一行 PackageReference 即可获得 Windows 平台全部依赖 -->
+<PackageReference Include="Wails.Net.Bundle.Windows" />
+<PackageReference Include="Wails.Net.Bundle.Linux" />
+```
+
+聚合包是 meta-package，本身不输出程序集，仅通过传递依赖方式引入对应平台所需的全部 Wails.Net 包。
+版本由 `Directory.Packages.props` (CPM) 集中管理，无需指定版本号。
+
+### 方式二：项目模板快速创建
+
+```bash
+# 安装模板包
+dotnet new install Wails.Net.Templates
+
+# 创建新项目
+dotnet new wails-net-app -n MyCompany.MyApp -o MyCompany.MyApp
+
+# 模板内容包含：
+# - Program.cs（含 DesktopApplicationBuilder、Service 注册、Plugin 配置）
+# - Services/GreetingService.cs（[Binding] 示例服务）
+# - frontend/index.html + app.js + styles.css（前端三件套）
+# - appsettings.json、app.manifest（DPI 感知 PerMonitorV2）
+# - 引用 Wails.Net.Bundle.Windows 聚合包
+```
+
+### 方式三：CLI 工具
+
+```bash
+# 全局安装 CLI 工具
+dotnet tool install -g Wails.Net.Cli
+
+# 使用 CLI 生成绑定代码、脚手架等
+wails-net --help
+```
 
 ## SourceLink 调试支持
 

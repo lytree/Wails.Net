@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json.schemastore.org/template",
+  "author": "Wails.Net",
+  "classifications": [
+    "Desktop",
+    "Wails",
+    "WebView",
+    "Windows",
+    "Cross-platform"
+  ],
+  "name": "Wails.Net App",
+  "description": "基于 Wails.Net 的桌面应用模板（HTML/JS 前端，Windows 平台）。",
+  "identity": "Wails.Net.App.CSharp",
+  "groupIdentity": "Wails.Net.App",
+  "shortName": "wails-net-app",
+  "tags": {
+    "language": "C#",
+    "type": "project"
+  },
+  "sourceName": "Company.AppName",
+  "preferNameDirectory": true,
+  "sources": [
+    {
+      "modifiers": [
+        {
+          "exclude": [
+            "**/bin/**",
+            "**/obj/**",
+            "**/.vs/**"
+          ]
+        }
+      ]
+    }
+  ],
+  "primaryOutputs": [
+    {
+      "path": "Company.AppName.csproj"
+    }
+  ],
+  "defaultName": "Wails.Net.App"
+}

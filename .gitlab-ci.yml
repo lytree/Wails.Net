@@ -147,8 +147,17 @@ pack:
     - test:windows
   script:
     - New-Item -ItemType Directory -Force -Path $PACKAGE_OUTPUT
-    # 打包所有 src/ 下的可发布项目
+    # 打包所有 src/ 下的可发布项目（slnx 中包含 Bundle.Windows / Bundle.Linux）
     - dotnet pack $SOLUTION -c Release --no-build -o $PACKAGE_OUTPUT -p:SkipFrontendBuild=true
+    # 单独打包 Templates 项目
+    # Templates 不在 slnx 中（dotnet pack 会因 NU5017 误报退出码 1，但 nupkg 实际正确生成）
+    - $templatesExit = 0
+    - dotnet pack src/Wails.Net.Templates/Wails.Net.Templates.csproj -c Release -o $PACKAGE_OUTPUT
+    - if ($LASTEXITCODE -ne 0) { $templatesExit = $LASTEXITCODE; Write-Host "Templates 打包返回非零退出码 $templatesExit（NU5017 误报，nupkg 已生成）" }
+    # 验证 Templates nupkg 实际生成
+    - $templatesPkg = Get-ChildItem $PACKAGE_OUTPUT -Filter "Wails.Net.Templates.*.nupkg" -ErrorAction SilentlyContinue
+    - if (-not $templatesPkg) { Write-Host "错误：Templates 包未生成"; exit 1 }
+    - Write-Host "Templates 包已生成: $($templatesPkg.Name)"
     # 列出生成的包
     - Get-ChildItem $PACKAGE_OUTPUT -Filter "*.nupkg" | Format-Table Name, Length
   artifacts:

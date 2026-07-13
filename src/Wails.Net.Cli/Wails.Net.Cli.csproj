@@ -16,6 +16,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Wails.Net.Generator\Wails.Net.Generator.csproj" />
     <ProjectReference Include="..\Wails.Net.Application\Wails.Net.Application.csproj" />
     <ProjectReference Include="..\Wails.Net.Events\Wails.Net.Events.csproj" />

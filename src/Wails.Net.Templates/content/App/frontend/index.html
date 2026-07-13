@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Company.AppName</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <main class="container">
+        <h1>Wails.Net 桌面应用</h1>
+        <p class="subtitle">从 dotnet new wails-net-app 模板创建</p>
+
+        <section class="card">
+            <h2>问候</h2>
+            <div class="row">
+                <input id="nameInput" type="text" value="World" placeholder="输入名字" />
+                <button id="greetBtn">问候</button>
+            </div>
+            <p id="greetResult" class="result">点击"问候"按钮</p>
+        </section>
+
+        <section class="card">
+            <h2>计数器</h2>
+            <div class="row">
+                <button id="decBtn">-</button>
+                <span id="counterValue" class="counter">0</span>
+                <button id="incBtn">+</button>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>窗口操作</h2>
+            <div class="row">
+                <button id="minBtn">最小化</button>
+                <button id="maxBtn">最大化/还原</button>
+                <button id="closeBtn">关闭</button>
+            </div>
+        </section>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>

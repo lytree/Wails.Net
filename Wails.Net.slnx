@@ -15,6 +15,13 @@
     <Project Path="src/Wails.Net.Cli/Wails.Net.Cli.csproj" />
     <Project Path="src/Wails.Net.AssetServer/Wails.Net.AssetServer.csproj" />
     <Project Path="src/Wails.Net.Runtime.Js/Wails.Net.Runtime.Js.csproj" />
+    <Project Path="src/Wails.Net.Bundle.Windows/Wails.Net.Bundle.Windows.csproj" />
+    <Project Path="src/Wails.Net.Bundle.Linux/Wails.Net.Bundle.Linux.csproj" />
+    <!--
+      Wails.Net.Templates 不在 sln 中（dotnet pack 会因 NU5017 误报失败），
+      通过 src/Wails.Net.Templates/Wails.Net.Templates.csproj 单独打包。
+      CI 流水线已配置专门的 templates 打包步骤。
+    -->
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Wails.Net.Application.Tests/Wails.Net.Application.Tests.csproj" />

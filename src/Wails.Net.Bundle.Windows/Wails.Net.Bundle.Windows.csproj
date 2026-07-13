@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Wails.Net.Bundle.Windows
+    Windows 平台聚合包（meta-package）。
+    引用 Windows 平台开发所需的全部 Wails.Net 包，用户安装此包即可获得：
+
+      - Wails.Net.Application          核心应用框架（绑定、命令、插件、平台抽象）
+      - Wails.Net.Application.Windows  Windows 平台实现（WebView2 + CsWin32）
+      - Wails.Net.AssetServer          静态资源服务器
+      - Wails.Net.Runtime.Js           前端运行时 JS 注入
+      - Wails.Net.Errors               错误类型
+      - Wails.Net.Events               事件类型定义
+      - Wails.Net.SourceGenerators     源代码生成器（[Binding]/[Command]）
+
+    使用方式：
+      <PackageReference Include="Wails.Net.Bundle.Windows" Version="x.y.z" />
+
+    不包含（按需单独引用）：
+      - Wails.Net.Cli        CLI 工具（dotnet tool install）
+      - Wails.Net.Generator  TypeScript 绑定生成器库
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>false</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <IsPackable>true</IsPackable>
+    <PackageId>Wails.Net.Bundle.Windows</PackageId>
+    <Description>Wails.Net Windows 平台聚合包：一键引用 Windows 平台开发所需的全部 Wails.Net 包。</Description>
+    <!-- 聚合包本身不输出程序集，仅传递依赖 -->
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <!-- 聚合包无 lib/ref 程序集，抑制 NU5128（无 lib 文件夹警告） -->
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    ProjectReference 在 dotnet pack 时会自动转换为 PackageReference 写入 nuspec。
+    不设置 PrivateAssets，确保依赖项传递给最终消费者。
+    Wails.Net.SourceGenerators 作为 analyzer 项目，需用 OutputItemType=Analyzer 引用。
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Wails.Net.Application\Wails.Net.Application.csproj" />
+    <ProjectReference Include="..\Wails.Net.Application.Windows\Wails.Net.Application.Windows.csproj" />
+    <ProjectReference Include="..\Wails.Net.AssetServer\Wails.Net.AssetServer.csproj" />
+    <ProjectReference Include="..\Wails.Net.Runtime.Js\Wails.Net.Runtime.Js.csproj" />
+    <ProjectReference Include="..\Wails.Net.Errors\Wails.Net.Errors.csproj" />
+    <ProjectReference Include="..\Wails.Net.Events\Wails.Net.Events.csproj" />
+    <ProjectReference Include="..\Wails.Net.SourceGenerators\Wails.Net.SourceGenerators.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>

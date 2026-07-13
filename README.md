@@ -43,6 +43,60 @@ dotnet build
 dotnet run --project tests/Wails.Net.Application.Tests/Wails.Net.Application.Tests.csproj
 ```
 
+## 通过 NuGet 使用 SDK
+
+发布到 nuget.org 后，无需克隆源码即可在自有项目中使用。
+
+### 方式一：平台聚合包（推荐）
+
+在你的项目 `.csproj` 中添加一行 `PackageReference`：
+
+```xml
+<!-- Windows 平台 -->
+<PackageReference Include="Wails.Net.Bundle.Windows" />
+
+<!-- Linux 平台 -->
+<PackageReference Include="Wails.Net.Bundle.Linux" />
+```
+
+聚合包是 meta-package，本身不输出程序集，会通过传递依赖引入对应平台所需的全部 Wails.Net 包（Application、平台实现、AssetServer、Runtime.Js、Errors、Events、SourceGenerators）。
+
+### 方式二：项目模板快速创建
+
+```bash
+# 安装模板包
+dotnet new install Wails.Net.Templates
+
+# 创建新项目
+dotnet new wails-net-app -n MyCompany.MyApp -o MyCompany.MyApp
+
+cd MyCompany.MyApp
+dotnet run
+```
+
+模板包含：`Program.cs`（含 `DesktopApplicationBuilder` 配置）、`Services/GreetingService.cs`（`[Binding]` 示例）、`frontend/` 前端三件套、`appsettings.json`、`app.manifest`（DPI 感知 PerMonitorV2）。
+
+### 方式三：CLI 全局工具
+
+```bash
+# 全局安装 CLI 工具
+dotnet tool install -g Wails.Net.Cli
+
+# 环境诊断
+wails-net doctor
+
+# 生成 TypeScript 绑定
+wails-net generate --assembly path/to/MyApp.dll --output bindings
+
+# 脚手架新项目
+wails-net new MyApp --template vue-ts
+
+# 构建项目
+wails-net build --project path/to/MyApp.csproj
+```
+
+详细的 NuGet 包清单与 SDK 使用方式见 [发布指南](docs/development/release-guide.md)。
+
 ### CLI 工具
 
 ```bash
@@ -90,7 +144,8 @@ public class GreetingService
 | Windows | WebView2 | 骨架已实现（主题/剪贴板/自启动/环境信息） |
 | Linux | WebKitGTK 6.0 (GirCore) | 骨架已实现（主题/剪贴板/自启动/环境信息） |
 | macOS | — | 暂不支持 |
-| iOS/Android | — | 暂不支持 |
+| Android | — | 规划中（第四阶段，.NET MAUI Android + WebView） |
+| iOS | — | 暂不支持 |
 
 ## 解决方案结构
 
@@ -106,7 +161,11 @@ Wails.Net/
 │   ├── Wails.Net.Updater/              # 自动更新
 │   ├── Wails.Net.Events/               # 事件类型定义
 │   ├── Wails.Net.Errors/               # 错误类型
-│   └── Wails.Net.Generator/            # 代码生成器核心库
+│   ├── Wails.Net.Generator/            # 代码生成器核心库
+│   ├── Wails.Net.SourceGenerators/     # 源代码生成器（AOT 友好）
+│   ├── Wails.Net.Bundle.Windows/       # Windows 平台聚合包（meta-package）
+│   ├── Wails.Net.Bundle.Linux/         # Linux 平台聚合包（meta-package）
+│   └── Wails.Net.Templates/            # dotnet new 项目模板包
 ├── tools/
 │   └── Wails.Net.Cli/                  # CLI 工具（dotnet tool）
 ├── tests/                              # 单元测试
