@@ -45,6 +45,7 @@ Thumbs.db
 
 # TypeScript 增量构建缓存
 *.tsbuildinfo
+**/dist-tsbuildinfo/
 
 # npm 锁文件（使用 pnpm，pnpm-lock.yaml 会被跟踪）
 package-lock.json
