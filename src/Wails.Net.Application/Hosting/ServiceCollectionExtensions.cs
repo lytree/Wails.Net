@@ -4,6 +4,7 @@ using Wails.Net.Application.Bindings;
 using Wails.Net.Application.Events;
 using Wails.Net.Application.Managers;
 using Wails.Net.Application.Platform;
+using Wails.Net.Application.Security;
 using Wails.Net.Application.Services;
 
 namespace Wails.Net.Application.Hosting;
@@ -36,6 +37,13 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IWindowManager>(sp => sp.GetRequiredService<WindowManager>());
         services.AddSingleton<IDialogManager>(sp => sp.GetRequiredService<DialogManager>());
         services.AddSingleton<IScreenManager>(sp => sp.GetRequiredService<ScreenManager>());
+
+        // 注册权限管理器（默认从 Wails:Permissions 配置节绑定，Enabled 默认 false 向后兼容）。
+        // 对应主题 C：将 PermissionManager 接入 DI，使 CommandDispatcher 可自动注入权限校验。
+        // 用户可通过显式调用 AddPermissions(configure) 或 EnablePermissions() 覆盖默认配置。
+        services.AddOptions<PermissionOptions>()
+            .BindConfiguration("Wails:Permissions");
+        services.AddSingleton<PermissionManager>();
 
         return services;
     }

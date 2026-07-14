@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Wails.Net.Application.Bindings;
 using Wails.Net.Application.Events;
+using Wails.Net.Application.Security;
 
 namespace Wails.Net.Application.Transport;
 
@@ -75,6 +76,20 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
     /// 是否已启动。
     /// </summary>
     public bool IsRunning { get; private set; }
+
+    /// <summary>
+    /// 获取或设置 CORS 配置选项。
+    /// 设置后替换硬编码的 <c>Access-Control-Allow-Origin: *</c>，改用白名单回显。
+    /// 对应主题 C：CORS 配置化。
+    /// </summary>
+    public CorsOptions? CorsOptions { get; set; }
+
+    /// <summary>
+    /// 获取或设置 IPC 来源校验器。
+    /// 设置后在 WebSocket 升级请求时校验 Origin 是否可信，拒绝非白名单来源的连接。
+    /// 对应主题 C：IpcOriginValidator 接入传输层。
+    /// </summary>
+    public IpcOriginValidator? OriginValidator { get; set; }
 
     /// <summary>
     /// 使用指定的消息处理器和事件广播器构造 WebSocketTransport 实例。
@@ -215,8 +230,8 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
         var request = context.Request;
         var response = context.Response;
 
-        // 添加 CORS 响应头
-        response.Headers["Access-Control-Allow-Origin"] = "*";
+        // 添加 CORS 响应头（使用 CorsOptions 若已设置，否则回退到默认 *）
+        ApplyCorsHeaders(request, response);
 
         // 处理 OPTIONS 预检请求
         if (string.Equals(request.HttpMethod, "OPTIONS", StringComparison.OrdinalIgnoreCase))
@@ -231,6 +246,15 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
         // WebSocket 升级请求
         if (string.Equals(request.Headers["Upgrade"], "websocket", StringComparison.OrdinalIgnoreCase))
         {
+            // IPC 来源校验：若设置了 OriginValidator 且校验失败则拒绝连接。
+            // 对应主题 C：IpcOriginValidator 接入传输层。
+            if (OriginValidator is not null && !OriginValidator.Validate(request.Headers["Origin"]))
+            {
+                response.StatusCode = 403;
+                response.Close();
+                return;
+            }
+
             await HandleWebSocketAsync(context, cancellationToken);
             return;
         }
@@ -366,6 +390,39 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
             var json = JsonSerializer.Serialize(result, JsonOptions.DefaultSerializerOptions);
             await _broadcaster.SendToClientAsync(clientId, json);
         }
+    }
+
+    /// <summary>
+    /// 应用 CORS 响应头。
+    /// 若设置了 <see cref="CorsOptions"/>，使用白名单回显 Origin（仅允许的 Origin 返回）；
+    /// 否则回退到默认的通配符 <c>*</c>（向后兼容）。
+    /// 对应主题 C：CORS 配置化，替代硬编码的 <c>Access-Control-Allow-Origin: *</c>。
+    /// </summary>
+    /// <param name="request">HTTP 请求对象，用于读取 Origin 头。</param>
+    /// <param name="response">HTTP 响应对象。</param>
+    private void ApplyCorsHeaders(HttpListenerRequest request, HttpListenerResponse response)
+    {
+        var origin = request.Headers["Origin"];
+
+        if (CorsOptions is { Enabled: true } cors)
+        {
+            var allowedOrigin = cors.ResolveAllowedOrigin(origin);
+            if (allowedOrigin is not null)
+            {
+                response.Headers["Access-Control-Allow-Origin"] = allowedOrigin;
+                response.Headers["Access-Control-Allow-Methods"] = cors.AllowedMethods;
+                response.Headers["Access-Control-Allow-Headers"] = cors.AllowedHeaders;
+                if (cors.AllowCredentials)
+                {
+                    response.Headers["Access-Control-Allow-Credentials"] = "true";
+                }
+                response.Headers["Access-Control-Max-Age"] = cors.MaxAgeSeconds.ToString();
+            }
+            return;
+        }
+
+        // 回退：默认通配符（向后兼容）
+        response.Headers["Access-Control-Allow-Origin"] = "*";
     }
 
     /// <summary>

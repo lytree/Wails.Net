@@ -1,3 +1,5 @@
+using Wails.Net.Application.Security;
+
 namespace Wails.Net.Application.Options;
 
 /// <summary>
@@ -95,7 +97,7 @@ public class ApplicationOptions
     /// 获取或设置应用的能力声明列表，用于权限控制。
     /// 对应 Tauri v2 的 Capabilities 配置。
     /// </summary>
-    public List<Capability> Capabilities { get; set; } = new();
+    public List<Security.Capability> Capabilities { get; set; } = new();
 
     /// <summary>
     /// 关闭时执行的任务列表。

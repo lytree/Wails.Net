@@ -7,6 +7,7 @@ using Wails.Net.Application.Commands;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform;
 using Wails.Net.Application.Plugins;
+using Wails.Net.Application.Security;
 using Wails.Net.AssetServer;
 
 namespace Wails.Net.Application.Hosting;
@@ -178,10 +179,13 @@ public sealed class DesktopApplicationBuilder
 
         // 创建 CommandDispatcher 并注入到 Application
         // CommandDispatcher 需要 CommandRegistry（已由插件填充）和 IServiceProvider（已构建）
+        // 自动从 DI 获取 PermissionManager（已由 AddWailsManagers 默认注册，Enabled 默认 false）
+        // 对应主题 C：将权限校验接入命令调度链。
         var commandDispatcher = new CommandDispatcher(
             _commandRegistry,
             host.Services,
-            host.Services.GetService<ILogger<CommandDispatcher>>());
+            host.Services.GetService<ILogger<CommandDispatcher>>(),
+            host.Services.GetService<PermissionManager>());
         application.CommandDispatcher = commandDispatcher;
 
         // 自动创建 AssetServer（仿 Wails v3 静态资源处理）

@@ -1,16 +1,27 @@
 namespace Wails.Net.Application.Security;
 
 /// <summary>
-/// 权限配置选项，从 appsettings.json 的 "Desktop:Permissions" 节读取。
+/// 权限配置选项，从 appsettings.json 的 "Wails:Permissions" 节读取。
+/// 对应 AGENTS.md §1.1.1 统一配置节命名：根节为 <c>Wails</c>。
 /// </summary>
 public class PermissionOptions
 {
-    /// <summary>已授权的能力列表</summary>
+    /// <summary>
+    /// 获取或设置已授权的权限标识列表。
+    /// 权限标识可以是细粒度权限（如 "fs:allow-read"）或命名权限集（如 "core:default"）。
+    /// </summary>
     public List<string> Permissions { get; set; } = new();
 
-    /// <summary>是否启用权限检查（默认 false，向后兼容）</summary>
+    /// <summary>
+    /// 获取或设置是否启用权限检查（默认 false，向后兼容）。
+    /// </summary>
     public bool Enabled { get; set; } = false;
 
-    /// <summary>默认拒绝策略：未声明的能力是否拒绝</summary>
+    /// <summary>
+    /// 获取或设置默认拒绝策略（默认 true）。
+    /// 当 <see cref="Enabled"/> 为 true 时：
+    /// - DenyByDefault=true：未授权的权限一律拒绝（最小权限原则，对应 Tauri v2 默认行为）。
+    /// - DenyByDefault=false：未授权的权限默认放行（仅在显式撤销时拒绝）。
+    /// </summary>
     public bool DenyByDefault { get; set; } = true;
 }
