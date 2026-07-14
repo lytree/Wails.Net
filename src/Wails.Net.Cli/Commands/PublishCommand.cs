@@ -1,12 +1,14 @@
 using System.CommandLine;
 using Wails.Net.Cli.Build;
+using Wails.Net.Cli.Config;
 
 namespace Wails.Net.Cli.Commands;
 
 /// <summary>
 /// publish 命令：发布 Wails.Net 项目为可分发应用。
 /// 对应 Wails v3 Go 版本 cmd/wails3/build.go 中的发布逻辑。
-/// 调用 dotnet publish 生成可执行文件与资源。
+/// 调用 dotnet publish 生成可执行文件与资源，
+/// 并支持从 wails.json 加载 beforeBuildCommand / afterBuildCommand 钩子。
 /// </summary>
 internal sealed class PublishCommand : CliCommandBase
 {
@@ -33,12 +35,22 @@ internal sealed class PublishCommand : CliCommandBase
         var outputOption = new Option<DirectoryInfo?>("--output");
         outputOption.Description = "输出目录（默认为项目 bin/Release/publish）";
 
+        var skipHooksOption = new Option<bool>("--skip-hooks");
+        skipHooksOption.Description = "跳过 wails.json 中的 beforeBuildCommand / afterBuildCommand 钩子";
+        skipHooksOption.DefaultValueFactory = _ => false;
+
+        var skipFrontendOption = new Option<bool>("--skip-frontend");
+        skipFrontendOption.Description = "跳过前端构建（frontend.buildCommand / installCommand）";
+        skipFrontendOption.DefaultValueFactory = _ => false;
+
         var command = new Command("publish", "发布 Wails.Net 项目为可分发应用");
         command.Options.Add(projectOption);
         command.Options.Add(configurationOption);
         command.Options.Add(runtimeOption);
         command.Options.Add(selfContainedOption);
         command.Options.Add(outputOption);
+        command.Options.Add(skipHooksOption);
+        command.Options.Add(skipFrontendOption);
 
         command.Action = AsyncAction.Create(async (parseResult, _) =>
         {
@@ -47,9 +59,11 @@ internal sealed class PublishCommand : CliCommandBase
             var runtime = parseResult.GetValue(runtimeOption);
             var selfContained = parseResult.GetValue(selfContainedOption);
             var output = parseResult.GetValue(outputOption);
+            var skipHooks = parseResult.GetValue(skipHooksOption);
+            var skipFrontend = parseResult.GetValue(skipFrontendOption);
 
             var cmd = new PublishCommand();
-            return await cmd.ExecuteAsync(project, configuration, runtime, selfContained, output);
+            return await cmd.ExecuteAsync(project, configuration, runtime, selfContained, output, skipHooks, skipFrontend);
         });
 
         return command;
@@ -63,19 +77,32 @@ internal sealed class PublishCommand : CliCommandBase
     /// <param name="runtime">运行时标识。</param>
     /// <param name="selfContained">是否自包含。</param>
     /// <param name="output">输出目录。</param>
+    /// <param name="skipHooks">是否跳过构建钩子。</param>
+    /// <param name="skipFrontend">是否跳过前端构建。</param>
     /// <returns>退出码。</returns>
     private async Task<int> ExecuteAsync(
         FileInfo? project,
         string configuration,
         string? runtime,
         bool selfContained,
-        DirectoryInfo? output)
+        DirectoryInfo? output,
+        bool skipHooks = false,
+        bool skipFrontend = false)
     {
         var projectPath = ResolveProjectPath(project);
         if (projectPath is null)
         {
             Error("未找到项目文件，请通过 --project 指定，或在项目目录中运行");
             return 1;
+        }
+
+        var workingDir = Path.GetDirectoryName(projectPath.FullName) ?? Directory.GetCurrentDirectory();
+
+        // 加载 wails.json（若存在）
+        var (config, configPath) = await ProjectConfig.FindAndLoadAsync(projectPath.FullName);
+        if (config is not null)
+        {
+            Info($"加载配置：{configPath}");
         }
 
         Info($"发布项目：{projectPath.FullName}");
@@ -85,6 +112,60 @@ internal sealed class PublishCommand : CliCommandBase
             Info($"运行时：{runtime}");
         }
         Info($"自包含：{(selfContained ? "是" : "否")}");
+
+        // 执行前端构建（install + build）
+        if (!skipFrontend && config?.Frontend is { } frontend)
+        {
+            var frontendDir = Path.Combine(workingDir, frontend.Dir);
+            if (Directory.Exists(frontendDir))
+            {
+                if (!string.IsNullOrWhiteSpace(frontend.InstallCommand))
+                {
+                    Info($"安装前端依赖：{frontend.InstallCommand}");
+                    var installResult = await BuildHooks.ExecuteAsync(frontend.InstallCommand, frontendDir);
+                    if (!installResult.Success)
+                    {
+                        Error($"前端依赖安装失败：{installResult.ErrorMessage}");
+                        if (!string.IsNullOrEmpty(installResult.Output))
+                        {
+                            Info(installResult.Output);
+                        }
+                        return 3;
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(frontend.BuildCommand))
+                {
+                    Info($"构建前端：{frontend.BuildCommand}");
+                    var frontendBuild = await BuildHooks.ExecuteAsync(frontend.BuildCommand, frontendDir);
+                    if (!frontendBuild.Success)
+                    {
+                        Error($"前端构建失败：{frontendBuild.ErrorMessage}");
+                        if (!string.IsNullOrEmpty(frontendBuild.Output))
+                        {
+                            Info(frontendBuild.Output);
+                        }
+                        return 3;
+                    }
+                }
+            }
+        }
+
+        // 执行 beforeBuildCommand 钩子
+        if (!skipHooks && !string.IsNullOrWhiteSpace(config?.BeforeBuildCommand))
+        {
+            Info($"执行 beforeBuildCommand：{config!.BeforeBuildCommand}");
+            var beforeResult = await BuildHooks.ExecuteAsync(config.BeforeBuildCommand, workingDir);
+            if (!beforeResult.Success)
+            {
+                Error($"beforeBuildCommand 失败：{beforeResult.ErrorMessage}");
+                if (!string.IsNullOrEmpty(beforeResult.Output))
+                {
+                    Info(beforeResult.Output);
+                }
+                return 4;
+            }
+        }
 
         var builder = new ProjectBuilder();
         var result = await builder.PublishAsync(
@@ -102,6 +183,22 @@ internal sealed class PublishCommand : CliCommandBase
                 Info(result.BuildLog);
             }
             return 2;
+        }
+
+        // 执行 afterBuildCommand 钩子
+        if (!skipHooks && !string.IsNullOrWhiteSpace(config?.AfterBuildCommand))
+        {
+            Info($"执行 afterBuildCommand：{config!.AfterBuildCommand}");
+            var afterResult = await BuildHooks.ExecuteAsync(config.AfterBuildCommand, workingDir);
+            if (!afterResult.Success)
+            {
+                Warn($"afterBuildCommand 失败：{afterResult.ErrorMessage}");
+                if (!string.IsNullOrEmpty(afterResult.Output))
+                {
+                    Info(afterResult.Output);
+                }
+                // afterBuildCommand 失败不视为发布失败
+            }
         }
 
         Success($"发布成功：{result.OutputPath}");

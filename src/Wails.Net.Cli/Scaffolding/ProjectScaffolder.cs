@@ -210,9 +210,17 @@ public sealed class ProjectScaffolder
           "name": "{{projectName}}",
           "version": "0.1.0",
           "template": "{{template}}",
+          "assetDir": "frontend/dist",
+          "outputFilename": "{{projectName}}",
+          "wailsJsDir": "frontend/src/wails",
+          "beforeBuildCommand": "",
+          "afterBuildCommand": "",
+          "beforeDevCommand": "",
+          "afterDevCommand": "",
           "frontend": {
             "dir": "frontend",
             "devServerUrl": "http://localhost:5173",
+            "installCommand": "npm install",
             "buildCommand": "npm run build",
             "outputDir": "frontend/dist"
           },

@@ -1,5 +1,6 @@
 using System.CommandLine;
 using Wails.Net.Cli.Build;
+using Wails.Net.Cli.Config;
 
 namespace Wails.Net.Cli.Commands;
 
@@ -7,6 +8,7 @@ namespace Wails.Net.Cli.Commands;
 /// pack 命令：打包 Wails.Net 项目为可分发应用。
 /// 对应 Wails v3 Go 版本 cmd/wails3/package.go 中的打包逻辑。
 /// 先调用 dotnet publish 生成产物，再打包为压缩包或安装程序。
+/// 支持从 wails.json 加载应用名称、版本与构建钩子。
 /// </summary>
 internal sealed class PackCommand : CliCommandBase
 {
@@ -37,13 +39,19 @@ internal sealed class PackCommand : CliCommandBase
         var outputOption = new Option<DirectoryInfo?>("--output");
         outputOption.Description = "打包输出目录（默认为 bin/packages）";
 
-        var appNameOption = new Option<string>("--app-name");
-        appNameOption.Description = "应用名称";
-        appNameOption.DefaultValueFactory = _ => "WailsApp";
+        var appNameOption = new Option<string?>("--app-name");
+        appNameOption.Description = "应用名称（默认取 wails.json 的 name 字段）";
 
-        var versionOption = new Option<string>("--version");
-        versionOption.Description = "版本号";
-        versionOption.DefaultValueFactory = _ => "1.0.0";
+        var versionOption = new Option<string?>("--version");
+        versionOption.Description = "版本号（默认取 wails.json 的 version 字段）";
+
+        var skipHooksOption = new Option<bool>("--skip-hooks");
+        skipHooksOption.Description = "跳过 wails.json 中的 beforeBuildCommand / afterBuildCommand 钩子";
+        skipHooksOption.DefaultValueFactory = _ => false;
+
+        var skipFrontendOption = new Option<bool>("--skip-frontend");
+        skipFrontendOption.Description = "跳过前端构建（frontend.buildCommand / installCommand）";
+        skipFrontendOption.DefaultValueFactory = _ => false;
 
         var command = new Command("pack", "打包 Wails.Net 项目为可分发应用");
         command.Options.Add(projectOption);
@@ -54,6 +62,8 @@ internal sealed class PackCommand : CliCommandBase
         command.Options.Add(outputOption);
         command.Options.Add(appNameOption);
         command.Options.Add(versionOption);
+        command.Options.Add(skipHooksOption);
+        command.Options.Add(skipFrontendOption);
 
         command.Action = AsyncAction.Create(async (parseResult, _) =>
         {
@@ -63,11 +73,13 @@ internal sealed class PackCommand : CliCommandBase
             var selfContained = parseResult.GetValue(selfContainedOption);
             var format = parseResult.GetValue(formatOption) ?? (OperatingSystem.IsWindows() ? "zip" : "targz");
             var output = parseResult.GetValue(outputOption);
-            var appName = parseResult.GetValue(appNameOption) ?? "WailsApp";
-            var version = parseResult.GetValue(versionOption) ?? "1.0.0";
+            var appName = parseResult.GetValue(appNameOption);
+            var version = parseResult.GetValue(versionOption);
+            var skipHooks = parseResult.GetValue(skipHooksOption);
+            var skipFrontend = parseResult.GetValue(skipFrontendOption);
 
             var cmd = new PackCommand();
-            return await cmd.ExecuteAsync(project, configuration, runtime, selfContained, format, output, appName, version);
+            return await cmd.ExecuteAsync(project, configuration, runtime, selfContained, format, output, appName, version, skipHooks, skipFrontend);
         });
 
         return command;
@@ -82,8 +94,10 @@ internal sealed class PackCommand : CliCommandBase
     /// <param name="selfContained">是否自包含。</param>
     /// <param name="format">打包格式字符串。</param>
     /// <param name="output">输出目录。</param>
-    /// <param name="appName">应用名称。</param>
-    /// <param name="version">版本号。</param>
+    /// <param name="appName">应用名称（若为 null，则从 wails.json 读取）。</param>
+    /// <param name="version">版本号（若为 null，则从 wails.json 读取）。</param>
+    /// <param name="skipHooks">是否跳过构建钩子。</param>
+    /// <param name="skipFrontend">是否跳过前端构建。</param>
     /// <returns>退出码。</returns>
     private async Task<int> ExecuteAsync(
         FileInfo? project,
@@ -92,8 +106,10 @@ internal sealed class PackCommand : CliCommandBase
         bool selfContained,
         string format,
         DirectoryInfo? output,
-        string appName,
-        string version)
+        string? appName,
+        string? version,
+        bool skipHooks = false,
+        bool skipFrontend = false)
     {
         var projectPath = ResolveProjectPath(project);
         if (projectPath is null)
@@ -108,6 +124,18 @@ internal sealed class PackCommand : CliCommandBase
             return 1;
         }
 
+        var workingDir = Path.GetDirectoryName(projectPath.FullName) ?? Directory.GetCurrentDirectory();
+
+        // 加载 wails.json（若存在），并从中解析默认应用名称与版本
+        var (config, configPath) = await ProjectConfig.FindAndLoadAsync(projectPath.FullName);
+        if (config is not null)
+        {
+            Info($"加载配置：{configPath}");
+        }
+
+        appName ??= !string.IsNullOrWhiteSpace(config?.Name) ? config!.Name : "WailsApp";
+        version ??= !string.IsNullOrWhiteSpace(config?.Version) ? config!.Version : "1.0.0";
+
         Info($"打包项目：{projectPath.FullName}");
         Info($"配置：{configuration}");
         if (!string.IsNullOrEmpty(runtime))
@@ -118,6 +146,60 @@ internal sealed class PackCommand : CliCommandBase
         Info($"打包格式：{packageFormat}");
         Info($"应用名称：{appName}");
         Info($"版本号：{version}");
+
+        // 执行前端构建（install + build）
+        if (!skipFrontend && config?.Frontend is { } frontend)
+        {
+            var frontendDir = Path.Combine(workingDir, frontend.Dir);
+            if (Directory.Exists(frontendDir))
+            {
+                if (!string.IsNullOrWhiteSpace(frontend.InstallCommand))
+                {
+                    Info($"安装前端依赖：{frontend.InstallCommand}");
+                    var installResult = await BuildHooks.ExecuteAsync(frontend.InstallCommand, frontendDir);
+                    if (!installResult.Success)
+                    {
+                        Error($"前端依赖安装失败：{installResult.ErrorMessage}");
+                        if (!string.IsNullOrEmpty(installResult.Output))
+                        {
+                            Info(installResult.Output);
+                        }
+                        return 3;
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(frontend.BuildCommand))
+                {
+                    Info($"构建前端：{frontend.BuildCommand}");
+                    var frontendBuild = await BuildHooks.ExecuteAsync(frontend.BuildCommand, frontendDir);
+                    if (!frontendBuild.Success)
+                    {
+                        Error($"前端构建失败：{frontendBuild.ErrorMessage}");
+                        if (!string.IsNullOrEmpty(frontendBuild.Output))
+                        {
+                            Info(frontendBuild.Output);
+                        }
+                        return 3;
+                    }
+                }
+            }
+        }
+
+        // 执行 beforeBuildCommand 钩子
+        if (!skipHooks && !string.IsNullOrWhiteSpace(config?.BeforeBuildCommand))
+        {
+            Info($"执行 beforeBuildCommand：{config!.BeforeBuildCommand}");
+            var beforeResult = await BuildHooks.ExecuteAsync(config.BeforeBuildCommand, workingDir);
+            if (!beforeResult.Success)
+            {
+                Error($"beforeBuildCommand 失败：{beforeResult.ErrorMessage}");
+                if (!string.IsNullOrEmpty(beforeResult.Output))
+                {
+                    Info(beforeResult.Output);
+                }
+                return 4;
+            }
+        }
 
         // 第一步：发布项目
         var builder = new ProjectBuilder();
@@ -138,6 +220,22 @@ internal sealed class PackCommand : CliCommandBase
         }
 
         Success($"发布成功：{publishResult.OutputPath}");
+
+        // 执行 afterBuildCommand 钩子
+        if (!skipHooks && !string.IsNullOrWhiteSpace(config?.AfterBuildCommand))
+        {
+            Info($"执行 afterBuildCommand：{config!.AfterBuildCommand}");
+            var afterResult = await BuildHooks.ExecuteAsync(config.AfterBuildCommand, workingDir);
+            if (!afterResult.Success)
+            {
+                Warn($"afterBuildCommand 失败：{afterResult.ErrorMessage}");
+                if (!string.IsNullOrEmpty(afterResult.Output))
+                {
+                    Info(afterResult.Output);
+                }
+                // afterBuildCommand 失败不视为打包失败
+            }
+        }
 
         // 第二步：打包发布产物
         var options = new PackageOptions
