@@ -8,6 +8,7 @@ using Wails.Net.Application.Managers;
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform;
+using Wails.Net.Application.Plugins;
 using Wails.Net.Application.Screens;
 using Wails.Net.Application.Services;
 using Wails.Net.Application.Transport;
@@ -153,6 +154,14 @@ public class Application
     private IHostApplicationLifetime? _lifetime;
 
     /// <summary>
+    /// 插件管理器实例，由 <see cref="InitializeFromServiceProvider"/> 注入。
+    /// 用于在 <see cref="Run"/> 中调用 <see cref="PluginManager.StartupPluginsAsync"/>
+    /// 和在 <see cref="Shutdown"/> 中调用 <see cref="PluginManager.ShutdownPluginsAsync"/>。
+    /// 对应 Wails v3 Go 版本的 Plugin 生命周期管理和 Tauri v2 的 setup/on_drop 钩子。
+    /// </summary>
+    private PluginManager? _pluginManager;
+
+    /// <summary>
     /// 关闭任务列表，包含 <see cref="ApplicationOptions.ShutdownTasks"/> 和通过
     /// <see cref="OnShutdown(Action)"/> 注册的任务。
     /// 对应 Wails v3 Go 版本 application.go 中的 shutdownTasks 字段。
@@ -291,6 +300,12 @@ public class Application
         {
             _events.SetWailsEventListener(listener);
         }
+
+        // 从 DI 容器获取 PluginManager 并收集已注册的插件实例。
+        // 对应主题 B：插件生命周期对齐。PluginManager 由 UsePlugin 注册为单例，
+        // RegisterFromServices 从 IEnumerable<IPlugin> 收集所有插件实例。
+        _pluginManager = serviceProvider.GetService<PluginManager>();
+        _pluginManager?.RegisterFromServices();
     }
 
     /// <summary>
@@ -307,6 +322,13 @@ public class Application
     /// 获取事件处理器。
     /// </summary>
     public EventProcessor Events => _events;
+
+    /// <summary>
+    /// 获取插件管理器实例（当通过 <see cref="DesktopApplicationBuilder.Build"/> 初始化时可用）。
+    /// 用于访问已注册的插件列表和插件生命周期管理。
+    /// 对应主题 B：插件生命周期对齐。
+    /// </summary>
+    public PluginManager? Plugins => _pluginManager;
 
     /// <summary>
     /// 获取或设置传输层实例。
@@ -640,6 +662,11 @@ public class Application
         _options.OnStartup?.Invoke();
         _options.OnAfterStart?.Invoke();
 
+        // 启动所有插件（调用 IPlugin.StartupAsync）。
+        // 对应 Wails v3 的 Startup() 和 Tauri v2 的 setup() 钩子。
+        // 在 OnAfterStart 之后、平台主循环之前调用，确保插件资源在窗口显示前就绪。
+        _pluginManager?.StartupPluginsAsync(_cts.Token).GetAwaiter().GetResult();
+
         // 注：IHostApplicationLifetime.ApplicationStarted 事件由宿主基础设施触发，
         // 此处不手动调用。当 Application 由 DesktopHostedService 驱动时，
         // host.StartAsync() 会自动触发 ApplicationStarted；
@@ -716,6 +743,11 @@ public class Application
         {
             assetShutdown.ServiceShutdown(CancellationToken.None).GetAwaiter().GetResult();
         }
+
+        // 关闭所有插件（调用 IPlugin.ShutdownAsync，按注册逆序）。
+        // 对应 Wails v3 的 Shutdown() 和 Tauri v2 的 on_drop 钩子。
+        // 在服务逆序关闭之前调用，确保插件能在服务仍然可用时释放资源。
+        _pluginManager?.ShutdownPluginsAsync(CancellationToken.None).GetAwaiter().GetResult();
 
         // 逆序关闭服务
         var services = _serviceRegistry.Services.ToList();

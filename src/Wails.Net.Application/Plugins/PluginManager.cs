@@ -106,6 +106,57 @@ public sealed class PluginManager
     }
 
     /// <summary>
+    /// 启动所有插件（按注册顺序）。
+    /// 在 <see cref="Application.Run"/> 中、OnAfterStart 回调之后调用。
+    /// 对应 Wails v3 的 Startup() 和 Tauri v2 的 setup() 钩子。
+    /// 单个插件启动失败不影响其他插件，但会记录错误日志。
+    /// </summary>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>表示异步启动操作的任务。</returns>
+    public async Task StartupPluginsAsync(CancellationToken cancellationToken = default)
+    {
+        foreach (var plugin in _plugins)
+        {
+            try
+            {
+                await plugin.StartupAsync(cancellationToken).ConfigureAwait(false);
+                _logger?.LogInformation("插件已启动: {Name}", plugin.Name);
+            }
+            catch (Exception ex)
+            {
+                // 单个插件启动失败不应中断其他插件的启动
+                _logger?.LogError(ex, "插件启动失败: {Name}", plugin.Name);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 关闭所有插件（按注册的逆序）。
+    /// 在 <see cref="Application.Shutdown"/> 中、关闭任务执行之后调用。
+    /// 对应 Wails v3 的 Shutdown() 和 Tauri v2 的 on_drop 钩子。
+    /// 单个插件关闭失败不影响其他插件，但会记录错误日志。
+    /// </summary>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>表示异步关闭操作的任务。</returns>
+    public async Task ShutdownPluginsAsync(CancellationToken cancellationToken = default)
+    {
+        // 逆序关闭，确保依赖关系正确（后注册的插件先关闭）
+        for (var i = _plugins.Count - 1; i >= 0; i--)
+        {
+            try
+            {
+                await _plugins[i].ShutdownAsync(cancellationToken).ConfigureAwait(false);
+                _logger?.LogInformation("插件已关闭: {Name}", _plugins[i].Name);
+            }
+            catch (Exception ex)
+            {
+                // 单个插件关闭失败不应中断其他插件的关闭
+                _logger?.LogError(ex, "插件关闭失败: {Name}", _plugins[i].Name);
+            }
+        }
+    }
+
+    /// <summary>
     /// 从程序集自动发现并加载插件（使用无参构造函数创建实例）。
     /// </summary>
     /// <param name="assembly">要扫描的程序集。</param>
