@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Wails.Net.Application.Hosting;
@@ -6,6 +7,7 @@ namespace Wails.Net.Application.Hosting;
 /// <summary>
 /// 桌面应用接口，封装 Microsoft.Extensions.Hosting.IHost。
 /// 提供应用生命周期管理和 DI 容器访问。
+/// 对应 AGENTS.md §1.1.1 技术选型：宿主统一使用 <c>Microsoft.Extensions.Hosting</c>。
 /// </summary>
 public interface IDesktopApplication : IAsyncDisposable
 {
@@ -20,6 +22,13 @@ public interface IDesktopApplication : IAsyncDisposable
 
     /// <summary>日志工厂</summary>
     ILoggerFactory LoggerFactory { get; }
+
+    /// <summary>
+    /// Host 应用生命周期，用于注册 Started/Stopping/Stopped 回调。
+    /// 对应 ASP.NET Core 的 <c>IHostApplicationLifetime</c>，
+    /// 让用户代码可以接入标准生命周期钩子。
+    /// </summary>
+    IHostApplicationLifetime Lifetime { get; }
 
     /// <summary>底层 Application 实例（兼容层）</summary>
     Application Application { get; }

@@ -1,46 +1,18 @@
 using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Wails.Net.Application.Options;
 
 namespace Wails.Net.Application.Services;
 
 /// <summary>
-/// 日志级别枚举，按严重程度递增。
-/// </summary>
-public enum LogLevel
-{
-    /// <summary>
-    /// 调试级别，最低级别。
-    /// </summary>
-    Debug = 0,
-
-    /// <summary>
-    /// 信息级别。
-    /// </summary>
-    Info = 1,
-
-    /// <summary>
-    /// 警告级别。
-    /// </summary>
-    Warning = 2,
-
-    /// <summary>
-    /// 错误级别。
-    /// </summary>
-    Error = 3,
-
-    /// <summary>
-    /// 致命级别，最高级别。
-    /// </summary>
-    Fatal = 4
-}
-
-/// <summary>
 /// 日志条目记录。
+/// Level 字段使用 <see cref="Microsoft.Extensions.Logging.LogLevel"/>，
+/// 对应 AGENTS.md §1.1.1 的技术选型要求：日志统一使用 <c>Microsoft.Extensions.Logging.ILogger&lt;T&gt;</c> 抽象。
 /// </summary>
 public sealed class LogEntry
 {
     /// <summary>
-    /// 获取日志级别。
+    /// 获取日志级别（基于 <see cref="Microsoft.Extensions.Logging.LogLevel"/>）。
     /// </summary>
     public LogLevel Level { get; init; }
 
@@ -59,7 +31,7 @@ public sealed class LogEntry
 /// 自定义日志处理委托。
 /// 日志写入时依次调用所有已注册的处理器，可据此接入外部日志管线（如 ILogger）。
 /// </summary>
-/// <param name="level">日志级别字符串（Debug/Info/Warning/Error/Fatal）。</param>
+/// <param name="level">日志级别字符串（Debug/Information/Warning/Error/Critical 或兼容别名 Info/Fatal）。</param>
 /// <param name="message">日志消息。</param>
 /// <param name="exception">异常实例，可为 null。</param>
 /// <param name="fields">结构化字段字典，可为 null。</param>
@@ -69,6 +41,7 @@ public delegate void LogHandler(string level, string message, Exception? excepti
 /// 日志服务，允许前端写入日志并支持级别过滤。
 /// 对应 Wails v3 Go 版本 pkg/services/log。
 /// 日志写入 System.Diagnostics.Trace 并可选写入文件。
+/// 统一使用 <see cref="Microsoft.Extensions.Logging.LogLevel"/> 枚举，与 ASP.NET Core 日志抽象保持一致。
 /// </summary>
 public class LogService : IServiceStartup, IServiceShutdown
 {
@@ -95,7 +68,8 @@ public class LogService : IServiceStartup, IServiceShutdown
 
     /// <summary>
     /// 获取或设置最低日志级别，低于此级别的日志将被忽略。
-    /// 默认为 Debug（记录所有级别）。
+    /// 默认为 <see cref="LogLevel.Debug"/>（记录所有级别）。
+    /// 对应 <c>Microsoft.Extensions.Logging.LogLevel</c> 枚举。
     /// </summary>
     public LogLevel MinimumLevel { get; set; } = LogLevel.Debug;
 
@@ -159,8 +133,10 @@ public class LogService : IServiceStartup, IServiceShutdown
     /// <summary>
     /// 写入指定级别的日志。
     /// 若级别低于最低级别则忽略。
+    /// 支持的 level 字符串：Trace/Debug/Information/Warning/Error/Critical/None，
+    /// 以及向后兼容的别名 Info→Information、Fatal→Critical。
     /// </summary>
-    /// <param name="level">日志级别字符串（Debug/Info/Warning/Error/Fatal）。</param>
+    /// <param name="level">日志级别字符串。</param>
     /// <param name="message">日志消息。</param>
     public void Log(string level, string message)
     {
@@ -177,10 +153,11 @@ public class LogService : IServiceStartup, IServiceShutdown
     public void Debug(string message) => Log(LogLevel.Debug, message);
 
     /// <summary>
-    /// 写入信息级别日志。
+    /// 写入信息级别日志（对应 <see cref="LogLevel.Information"/>）。
+    /// 方法名保留 Info 以保持向后兼容。
     /// </summary>
     /// <param name="message">日志消息。</param>
-    public void Info(string message) => Log(LogLevel.Info, message);
+    public void Info(string message) => Log(LogLevel.Information, message);
 
     /// <summary>
     /// 写入警告级别日志。
@@ -195,10 +172,11 @@ public class LogService : IServiceStartup, IServiceShutdown
     public void Error(string message) => Log(LogLevel.Error, message);
 
     /// <summary>
-    /// 写入致命级别日志。
+    /// 写入致命级别日志（对应 <see cref="LogLevel.Critical"/>）。
+    /// 方法名保留 Fatal 以保持向后兼容。
     /// </summary>
     /// <param name="message">日志消息。</param>
-    public void Fatal(string message) => Log(LogLevel.Fatal, message);
+    public void Fatal(string message) => Log(LogLevel.Critical, message);
 
     /// <summary>
     /// 注册自定义日志处理器。
@@ -219,7 +197,7 @@ public class LogService : IServiceStartup, IServiceShutdown
     /// 对应结构化日志模型（类似 ILogger 的 LogScope + Log 模式），
     /// 字段字典会传递给所有已注册的 handler。
     /// </summary>
-    /// <param name="level">日志级别字符串（Debug/Info/Warning/Error/Fatal）。</param>
+    /// <param name="level">日志级别字符串（Trace/Debug/Information/Warning/Error/Critical，或别名 Info/Fatal）。</param>
     /// <param name="message">日志消息。</param>
     /// <param name="fields">结构化字段字典。</param>
     public void LogStructured(string level, string message, Dictionary<string, object?> fields)
@@ -300,13 +278,33 @@ public class LogService : IServiceStartup, IServiceShutdown
     }
 
     /// <summary>
-    /// 将字符串解析为日志级别，不区分大小写。
+    /// 将字符串解析为 <see cref="LogLevel"/>，不区分大小写。
+    /// 支持标准枚举名（Trace/Debug/Information/Warning/Error/Critical/None），
+    /// 以及向后兼容的别名：Info → Information、Fatal → Critical、Warn → Warning。
     /// </summary>
     /// <param name="level">级别字符串。</param>
     /// <param name="result">解析结果。</param>
     /// <returns>解析成功返回 true，否则返回 false。</returns>
     private static bool TryParseLevel(string level, out LogLevel result)
     {
-        return Enum.TryParse(level, ignoreCase: true, out result);
+        if (Enum.TryParse(level, ignoreCase: true, out result))
+        {
+            return true;
+        }
+
+        // 向后兼容别名映射
+        return level.ToLowerInvariant() switch
+        {
+            "info" => SetResult(LogLevel.Information, out result),
+            "fatal" => SetResult(LogLevel.Critical, out result),
+            "warn" => SetResult(LogLevel.Warning, out result),
+            _ => SetResult(default, out result),
+        };
+    }
+
+    private static bool SetResult(LogLevel value, out LogLevel result)
+    {
+        result = value;
+        return true;
     }
 }

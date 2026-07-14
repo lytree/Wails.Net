@@ -1,4 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Wails.Net.Application.Bindings;
 using Wails.Net.Application.Commands;
 using Wails.Net.Application.Events;
@@ -136,11 +138,19 @@ public class Application
     private IEnvironmentManager? _environmentManager;
 
     /// <summary>
-    /// 日志回调，由外部设置。由于项目未直接引用 Microsoft.Extensions.Logging，
-    /// 此处使用 <see cref="Action{T}"/> 委托替代 <c>ILogger</c> 接口。
+    /// 日志记录器字段，由 <see cref="InitializeFromServiceProvider"/> 或显式 <see cref="Logger"/> 属性注入。
+    /// 对应 AGENTS.md §1.1.1 技术选型要求：日志统一使用 <c>Microsoft.Extensions.Logging.ILogger&lt;T&gt;</c> 抽象。
     /// 对应 Wails v3 Go 版本 application.go 中的 logger 字段。
     /// </summary>
-    private Action<string>? _logger;
+    private ILogger<Application>? _logger;
+
+    /// <summary>
+    /// Host 应用生命周期实例，由 <see cref="InitializeFromServiceProvider"/> 注入。
+    /// 用于在 <see cref="Run"/> 和 <see cref="Shutdown"/> 中触发 Started/Stopping/Stopped 事件，
+    /// 让用户代码可以通过 <c>Lifetime.ApplicationStarted.Register(...)</c> 接入标准生命周期钩子。
+    /// 对应 ASP.NET Core 的 <c>IHostApplicationLifetime</c> 集成。
+    /// </summary>
+    private IHostApplicationLifetime? _lifetime;
 
     /// <summary>
     /// 关闭任务列表，包含 <see cref="ApplicationOptions.ShutdownTasks"/> 和通过
@@ -202,6 +212,16 @@ public class Application
     {
         // 保存 DI 容器引用，供 MessageProcessor 创建带 WindowId 的命令上下文
         _serviceProvider = serviceProvider;
+
+        // 自动从 DI 容器获取 ILogger<Application>，若用户未显式设置则使用 DI 注册的实例。
+        // 对应 AGENTS.md §1.1.1 技术选型：日志统一使用 Microsoft.Extensions.Logging 抽象。
+        if (_logger is null)
+        {
+            _logger = serviceProvider.GetService<ILogger<Application>>();
+        }
+
+        // 自动从 DI 容器获取 IHostApplicationLifetime，用于在 Run/Shutdown 中触发标准生命周期事件。
+        _lifetime = serviceProvider.GetService<IHostApplicationLifetime>();
 
         // 平台依赖的管理器（非只读字段，可从 DI 替换）
         var windowManager = serviceProvider.GetService<WindowManager>();
@@ -406,12 +426,11 @@ public class Application
     }
 
     /// <summary>
-    /// 获取或设置日志回调。
-    /// 由于项目未直接引用 Microsoft.Extensions.Logging 包，
-    /// 使用 <see cref="Action{T}"/> 委托替代 ILogger 接口。
+    /// 获取或设置日志记录器。
+    /// 对应 AGENTS.md §1.1.1 技术选型要求：日志统一使用 <c>Microsoft.Extensions.Logging.ILogger&lt;T&gt;</c> 抽象。
     /// 对应 Wails v3 Go 版本 application.go 中的 logger 字段。
     /// </summary>
-    public Action<string>? Logger
+    public ILogger<Application>? Logger
     {
         get => _logger;
         set => _logger = value;
@@ -461,6 +480,36 @@ public class Application
     {
         _serviceRegistry.Register(service);
         _bindings.Add(service);
+    }
+
+    /// <summary>
+    /// 从 DI 容器获取指定类型的服务实例，并注册到绑定管理器。
+    /// 对应 ASP.NET Core 风格的 DI 集成，避免双重注册（DI + RegisterService）。
+    ///
+    /// 使用示例：
+    /// <code>
+    /// builder.Services.AddSingleton&lt;GreetingService&gt;();
+    /// // ...
+    /// var app = builder.Build().Application;
+    /// app.RegisterBindings&lt;GreetingService&gt;();  // 从 DI 获取实例
+    /// </code>
+    /// </summary>
+    /// <typeparam name="T">服务类型，必须已注册到 DI 容器。</typeparam>
+    /// <returns>从 DI 容器获取的服务实例。</returns>
+    /// <exception cref="InvalidOperationException">
+    /// 当 <see cref="InitializeFromServiceProvider"/> 未被调用或 DI 容器中未注册 <typeparamref name="T"/> 时抛出。
+    /// </exception>
+    public virtual T RegisterBindings<T>() where T : class
+    {
+        if (_serviceProvider is null)
+        {
+            throw new InvalidOperationException(
+                "Application 尚未从 DI 容器初始化。请先调用 DesktopApplicationBuilder.Build()。");
+        }
+
+        var service = _serviceProvider.GetRequiredService<T>();
+        _bindings.Add(service);
+        return service;
     }
 
     /// <summary>
@@ -591,6 +640,11 @@ public class Application
         _options.OnStartup?.Invoke();
         _options.OnAfterStart?.Invoke();
 
+        // 注：IHostApplicationLifetime.ApplicationStarted 事件由宿主基础设施触发，
+        // 此处不手动调用。当 Application 由 DesktopHostedService 驱动时，
+        // host.StartAsync() 会自动触发 ApplicationStarted；
+        // 当 Application 独立运行（无 Host）时，_lifetime 为 null。
+
         // 进入平台主循环（阻塞直到退出）
         if (_platformApp is not null)
         {
@@ -613,6 +667,10 @@ public class Application
         {
             return;
         }
+
+        // 触发 IHostApplicationLifetime.ApplicationStopping 事件。
+        // 对应 ASP.NET Core 的优雅关闭钩子，让用户代码可以注册 Stopping 回调。
+        _lifetime?.StopApplication();
 
         // 取消应用级取消令牌
         _cts.Cancel();
@@ -671,6 +729,10 @@ public class Application
 
         _platformApp?.Destroy();
         _isRunning = false;
+
+        // 注：IHostApplicationLifetime.ApplicationStopped 事件由 StopApplication() 内部触发，
+        // 此处不再手动调用。StopApplication() 会先触发 ApplicationStopping，
+        // 然后在所有 hosted service 停止后触发 ApplicationStopped。
     }
 
     /// <summary>

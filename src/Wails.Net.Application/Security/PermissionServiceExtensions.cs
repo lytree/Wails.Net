@@ -10,8 +10,9 @@ public static class PermissionServiceExtensions
 {
     /// <summary>
     /// 添加权限管理服务。
-    /// 从 "Desktop:Permissions" 配置节绑定 <see cref="PermissionOptions"/>，
+    /// 从 "Wails:Permissions" 配置节绑定 <see cref="PermissionOptions"/>，
     /// 并注册 <see cref="PermissionManager"/> 为单例。
+    /// 对应 AGENTS.md §1.1.1 统一配置节命名：根节为 <c>Wails</c>。
     /// </summary>
     /// <param name="services">服务集合。</param>
     /// <param name="configure">可选的覆盖配置回调。</param>
@@ -19,7 +20,7 @@ public static class PermissionServiceExtensions
     public static IServiceCollection AddPermissions(this IServiceCollection services, Action<PermissionOptions>? configure = null)
     {
         services.AddOptions<PermissionOptions>()
-            .BindConfiguration("Desktop:Permissions");
+            .BindConfiguration("Wails:Permissions");
 
         if (configure != null)
         {

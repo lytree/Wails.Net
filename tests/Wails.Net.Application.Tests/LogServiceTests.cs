@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using TUnit.Core;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Services;
@@ -23,7 +24,7 @@ public sealed class LogServiceTests
         // 断言
         var entries = service.GetEntries();
         await Assert.That(entries.Count).IsEqualTo(1);
-        await Assert.That(entries[0].Level).IsEqualTo(LogLevel.Info);
+        await Assert.That(entries[0].Level).IsEqualTo(LogLevel.Information);
         await Assert.That(entries[0].Message).IsEqualTo("test info message");
     }
 
@@ -84,7 +85,7 @@ public sealed class LogServiceTests
         // 断言
         var entries = service.GetEntries();
         await Assert.That(entries.Count).IsEqualTo(1);
-        await Assert.That(entries[0].Level).IsEqualTo(LogLevel.Fatal);
+        await Assert.That(entries[0].Level).IsEqualTo(LogLevel.Critical);
     }
 
     [Test]

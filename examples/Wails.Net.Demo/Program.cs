@@ -67,9 +67,10 @@ var app = desktopApp.Application;
 app.Options.EnableDefaultContextMenu = true;
 app.Options.DragAndDrop = true;
 
-// 注册绑定服务到 Application（公共方法通过反射暴露给前端）
-app.RegisterService(new GreetingService());
-app.RegisterService(new TodoService());
+// 从 DI 容器获取绑定服务并注册到 BindingManager。
+// 对应 ASP.NET Core 风格：DI 是单一注册点，避免双重实例。
+app.RegisterBindings<GreetingService>();
+app.RegisterBindings<TodoService>();
 
 // 应用启动后创建主窗口
 app.Options.OnAfterStart = () =>

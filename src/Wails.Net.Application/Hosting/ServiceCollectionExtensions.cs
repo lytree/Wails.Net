@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Wails.Net.Application.Bindings;
 using Wails.Net.Application.Events;
 using Wails.Net.Application.Managers;
@@ -9,6 +10,7 @@ namespace Wails.Net.Application.Hosting;
 
 /// <summary>
 /// 服务集合扩展方法，注册 Wails.Net 核心服务和管理器到 DI 容器。
+/// 对应 AGENTS.md §1.1.1 技术选型：DI 统一使用 <c>Microsoft.Extensions.DependencyInjection</c>。
 /// </summary>
 public static class ServiceCollectionExtensions
 {
@@ -68,4 +70,28 @@ public static class ServiceCollectionExtensions
             .AddWailsManagers()
             .AddWailsServices();
     }
+
+    /// <summary>
+    /// 添加 Wails.Net 全部服务到 DI 容器，一站式入口。
+    /// 等效于 <see cref="AddWailsCore"/>，并提供未来扩展点（默认日志提供程序、
+    /// 生命周期钩子、配置默认值等）。
+    ///
+    /// 对应 ASP.NET Core 的 <c>AddMvc</c> / <c>AddRazorPages</c> 风格入口，
+    /// 是用户在 <c>Program.cs</c> 中首选的注册方法。
+    ///
+    /// 使用示例：
+    /// <code>
+    /// var builder = DesktopApplicationBuilder.CreateBuilder(args);
+    /// builder.Services.AddWails();
+    /// </code>
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <returns>当前服务集合，用于链式调用。</returns>
+    public static IServiceCollection AddWails(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        return services.AddWailsCore();
+    }
 }
+

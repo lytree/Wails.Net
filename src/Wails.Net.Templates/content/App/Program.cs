@@ -47,8 +47,9 @@ builder.UsePlatform<WindowsPlatformApp>();
 var desktopApp = builder.Build();
 var app = desktopApp.Application;
 
-// 注册绑定服务到 Application（公共方法通过源代码生成器暴露给前端）
-app.RegisterService(new GreetingService());
+// 从 DI 容器获取绑定服务并注册到 BindingManager。
+// 对应 ASP.NET Core 风格：DI 是单一注册点，避免双重实例。
+app.RegisterBindings<GreetingService>();
 
 // 应用启动后创建主窗口
 app.Options.OnAfterStart = () =>

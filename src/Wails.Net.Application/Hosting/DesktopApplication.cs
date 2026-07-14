@@ -27,6 +27,12 @@ public sealed class DesktopApplication : IDesktopApplication
     /// <summary>日志工厂</summary>
     public ILoggerFactory LoggerFactory => _host.Services.GetRequiredService<ILoggerFactory>();
 
+    /// <summary>
+    /// Host 应用生命周期，用于注册 Started/Stopping/Stopped 回调。
+    /// 对应 ASP.NET Core 的 <c>IHostApplicationLifetime</c>。
+    /// </summary>
+    public IHostApplicationLifetime Lifetime => _host.Services.GetRequiredService<IHostApplicationLifetime>();
+
     /// <summary>底层 Application 实例（兼容层）</summary>
     public Application Application => _application;
 

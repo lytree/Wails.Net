@@ -2,7 +2,7 @@ namespace Wails.Net.Application.Hosting;
 
 /// <summary>
 /// 桌面应用宿主配置选项。
-/// 对应 appsettings.json 中的 "Desktop" 节。
+/// 对应 appsettings.json 中的 "Wails" 节。
 /// </summary>
 public class DesktopHostOptions
 {

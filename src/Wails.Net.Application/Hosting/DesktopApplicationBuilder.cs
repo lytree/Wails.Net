@@ -68,18 +68,20 @@ public sealed class DesktopApplicationBuilder
     /// </summary>
     private void ConfigureServices()
     {
-        // 注册 DesktopHostOptions，绑定 appsettings.json 的 "Desktop" 节
+        // 注册 DesktopHostOptions，绑定 appsettings.json 的 "Wails" 节。
+        // 对应 AGENTS.md §1.1.1 统一配置节命名：根节为 "Wails"。
         Services.AddOptions<DesktopHostOptions>()
-            .Bind(Configuration.GetSection("Desktop"));
+            .Bind(Configuration.GetSection("Wails"));
 
         // 注册 Wails.Net 核心管理器（EventProcessor、BindingManager、WindowManager 等）和内置服务
         Services.AddWailsCore();
 
-        // 注册 ApplicationOptions 为工厂单例，从 DesktopHostOptions 映射字段
-        // 平台应用（如 WindowsPlatformApp）通过构造函数注入此实例
+        // 注册 ApplicationOptions 为工厂单例，从 IOptionsMonitor<DesktopHostOptions> 映射字段。
+        // 使用 IOptionsMonitor<T> 而非 IOptions<T>，支持配置热重载（OnChange 通知）。
+        // 对应 AGENTS.md §1.1.1 技术选型：配置使用 Microsoft.Extensions.Options 全栈。
         Services.AddSingleton(sp =>
         {
-            var desktopOpts = sp.GetRequiredService<IOptions<DesktopHostOptions>>().Value;
+            var desktopOpts = sp.GetRequiredService<IOptionsMonitor<DesktopHostOptions>>().CurrentValue;
             return new ApplicationOptions
             {
                 Name = desktopOpts.ApplicationName,
@@ -157,8 +159,10 @@ public sealed class DesktopApplicationBuilder
         // 构建 Host
         var host = _hostBuilder.Build();
 
-        // 获取配置选项和 Application 单例
-        var desktopOpts = host.Services.GetRequiredService<IOptions<DesktopHostOptions>>().Value;
+        // 获取配置选项和 Application 单例。
+        // 使用 IOptionsMonitor<T>.CurrentValue 而非 IOptions<T>.Value，
+        // 确保读取到最新的配置值（支持热重载）。
+        var desktopOpts = host.Services.GetRequiredService<IOptionsMonitor<DesktopHostOptions>>().CurrentValue;
         var application = host.Services.GetRequiredService<Application>();
 
         // 设置平台应用（若已注册）
