@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Wails.Net.Sdk.props
+  在消费者项目评估早期自动导入，设置 Wails.Net 所需的 MSBuild 属性。
+
+  此文件由 NuGet 自动导入（位于 build/ 目录），无需消费者手动 Import。
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <!-- 标记 Wails.Net.Sdk 已导入，防止重复导入 -->
+  <PropertyGroup>
+    <WailsNetSdkImported>true</WailsNetSdkImported>
+  </PropertyGroup>
+
+  <!--
+    根据 TargetFramework 推断 WailsNetPlatform 属性。
+    消费者可通过显式设置 WailsNetPlatform 覆盖此推断。
+  -->
+  <PropertyGroup Condition="'$(WailsNetPlatform)' == ''">
+    <WailsNetPlatform Condition="$(TargetFramework.Contains('windows'))">windows</WailsNetPlatform>
+    <WailsNetPlatform Condition="$(TargetFramework.Contains('android'))">android</WailsNetPlatform>
+    <!-- 无平台后缀的 TFM（如 net10.0）默认为 linux -->
+    <WailsNetPlatform Condition="'$(WailsNetPlatform)' == '' AND !$(TargetFramework.Contains('windows')) AND !$(TargetFramework.Contains('android'))">linux</WailsNetPlatform>
+  </PropertyGroup>
+
+  <!--
+    Windows 平台：自动启用 WindowsForms（剪贴板等 Win32 互操作需要）。
+    仅当消费者未显式设置时才自动启用。
+  -->
+  <PropertyGroup Condition="'$(WailsNetPlatform)' == 'windows'">
+    <UseWindowsForms Condition="'$(UseWindowsForms)' == ''">true</UseWindowsForms>
+    <EnableWindowsTargeting Condition="'$(EnableWindowsTargeting)' == ''">true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <!--
+    调试辅助：当 WailsNetPlatform 与构建 OS 不匹配时发出警告。
+    例如，在 Windows 上构建但 TFM 为 net10.0（推断为 linux）时，
+    提示开发者可能需要使用 net10.0-windows TFM。
+    可通过设置 WailsNetSkipPlatformCheck=true 跳过此检查。
+  -->
+  <PropertyGroup Condition="'$(WailsNetSkipPlatformCheck)' != 'true' AND '$(WailsNetPlatform)' == 'linux' AND '$(OS)' == 'Windows_NT'">
+    <WailsNetPlatformMismatchWarning>Wails.Net 警告：当前在 Windows 上构建，但 TargetFramework 为 $(TargetFramework)（推断平台为 linux）。如需在 Windows 上调试，请将 TargetFramework 改为 net10.0-windows10.0.19041.0，或设置 &lt;WailsNetPlatform&gt;windows&lt;/WailsNetPlatform&gt; 强制使用 Windows 平台。</WailsNetPlatformMismatchWarning>
+  </PropertyGroup>
+
+  <!--
+    发布调试信息：输出当前 WailsNetPlatform 便于诊断。
+    可通过设置 WailsNetVerbose=true 启用详细输出。
+  -->
+  <Target Name="WailsNetReportPlatform" BeforeTargets="BeforeBuild" Condition="'$(WailsNetVerbose)' == 'true'">
+    <Message Importance="High" Text="Wails.Net SDK: WailsNetPlatform=$(WailsNetPlatform), TargetFramework=$(TargetFramework), OS=$(OS)" />
+  </Target>
+
+</Project>

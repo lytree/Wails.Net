@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Wails.Net.Sdk.targets
+  在消费者项目评估后期自动导入，处理 Wails.Net 相关的构建目标。
+
+  此文件由 NuGet 自动导入（位于 build/ 目录），无需消费者手动 Import。
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <!--
+    平台不匹配警告：在构建开始前输出警告信息。
+    用于在 Windows 上构建 Linux TFM 项目时提示开发者。
+  -->
+  <Target Name="WailsNetWarnPlatformMismatch" BeforeTargets="BeforeBuild" Condition="'$(WailsNetPlatformMismatchWarning)' != ''">
+    <Warning Text="$(WailsNetPlatformMismatchWarning)" />
+  </Target>
+
+</Project>

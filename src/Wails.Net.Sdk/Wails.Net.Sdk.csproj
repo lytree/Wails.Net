@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Wails.Net.Sdk
+    统一 SDK 聚合包：根据 TargetFramework 自动选择平台实现。
+
+    消费者只需引用此包，NuGet 会根据项目的 TFM 自动解析对应的平台 Bundle 包：
+      - net10.0-windows10.0.19041.0  → Wails.Net.Bundle.Windows（WebView2 + CsWin32）
+      - net10.0                       → Wails.Net.Bundle.Linux（GTK4 + WebKitGTK via GirCore）
+
+    Android 平台有独立的 Wails.Net.Bundle.Android 包（因 TFM 为 net10.0-android），
+    需在 Android 项目中单独引用。
+
+    使用方式：
+      <PackageReference Include="Wails.Net.Sdk" Version="x.y.z" />
+
+    消费者项目设置 TargetFramework 即可自动选择平台：
+      - Windows: <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+      - Linux:   <TargetFramework>net10.0</TargetFramework>
+
+    也可通过 WailsNetPlatform 属性强制指定平台（覆盖 TFM 推断）：
+      <PropertyGroup>
+        <WailsNetPlatform>windows</WailsNetPlatform>
+      </PropertyGroup>
+  -->
+
+  <PropertyGroup>
+    <TargetFrameworks>net10.0;net10.0-windows10.0.19041.0</TargetFrameworks>
+    <IsPackable>true</IsPackable>
+    <PackageId>Wails.Net.Sdk</PackageId>
+    <Description>Wails.Net 统一 SDK：根据 TargetFramework 自动引用对应平台实现包，一站式引用 Wails.Net 全部能力。</Description>
+    <!-- 聚合包本身不输出程序集，仅传递依赖 -->
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <!-- 聚合包无 lib/ref 程序集，抑制 NU5128（无 lib 文件夹警告） -->
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+  </PropertyGroup>
+
+  <!-- Windows TFM：引用 Windows 平台 Bundle 包 -->
+  <ItemGroup Condition="$(TargetFramework.Contains('windows'))">
+    <ProjectReference Include="..\Wails.Net.Bundle.Windows\Wails.Net.Bundle.Windows.csproj" />
+  </ItemGroup>
+
+  <!-- Linux TFM（net10.0 无平台后缀）：引用 Linux 平台 Bundle 包 -->
+  <ItemGroup Condition="!$(TargetFramework.Contains('windows'))">
+    <ProjectReference Include="..\Wails.Net.Bundle.Linux\Wails.Net.Bundle.Linux.csproj" />
+  </ItemGroup>
+
+  <!-- 将 build/ 目录下的 props/targets 打包到 NuGet 包中，消费者会自动导入 -->
+  <ItemGroup>
+    <None Include="build\**" Pack="true" PackagePath="build\" />
+  </ItemGroup>
+
+</Project>

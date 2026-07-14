@@ -9,6 +9,7 @@ namespace Wails.Net.Application.Platform;
 
 /// <summary>
 /// 平台工厂，根据运行时操作系统创建平台特定的实现。
+/// 对应 Wails v3 Go 版本 platform.go 中的平台检测与初始化逻辑。
 /// </summary>
 public static class PlatformFactory
 {
@@ -16,6 +17,25 @@ public static class PlatformFactory
     /// 用于启用 Server（无界面）模式的环境变量名称。
     /// </summary>
     private const string ServerModeEnvVar = "WAILS_SERVER_MODE";
+
+    /// <summary>
+    /// 用于强制指定平台的环境变量名称。
+    /// 设置为 <c>windows</c>、<c>linux</c> 或 <c>android</c> 可覆盖自动检测。
+    /// </summary>
+    private const string PlatformEnvVar = "WAILS_PLATFORM";
+
+    /// <summary>
+    /// 用于启用调试日志的环境变量名称。
+    /// 设置为 <c>true</c>（不区分大小写）时，平台工厂会输出诊断信息到控制台。
+    /// </summary>
+    private const string DebugEnvVar = "WAILS_DEBUG";
+
+    /// <summary>
+    /// 支持的平台名称常量。
+    /// </summary>
+    private const string PlatformWindows = "windows";
+    private const string PlatformLinux = "linux";
+    private const string PlatformAndroid = "android";
 
     /// <summary>
     /// 创建平台特定的应用实例。
@@ -27,39 +47,16 @@ public static class PlatformFactory
     {
         if (IsServerMode())
         {
+            LogDebug("Server 模式已启用，使用 ServerPlatformApp（无 GUI 占位实现）");
             return new ServerPlatformApp(options);
         }
 
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            // 通过反射加载 Windows 平台实现，避免核心项目直接依赖 Windows 平台程序集
-            var assembly = Assembly.Load("Wails.Net.Application.Windows");
-            var type = assembly.GetType("Wails.Net.Application.Platform.WindowsPlatformApp")
-                ?? throw new PlatformNotSupportedException("无法找到 WindowsPlatformApp 类型");
-            return (IPlatformApp)Activator.CreateInstance(type, options)!;
-        }
-
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-        {
-            // 通过反射加载 Linux 平台实现，避免核心项目直接依赖 Linux 平台程序集
-            var assembly = Assembly.Load("Wails.Net.Application.Linux");
-            var type = assembly.GetType("Wails.Net.Application.Platform.LinuxPlatformApp")
-                ?? throw new PlatformNotSupportedException("无法找到 LinuxPlatformApp 类型");
-            return (IPlatformApp)Activator.CreateInstance(type, options)!;
-        }
-
-        if (OperatingSystem.IsAndroid())
-        {
-            // 通过反射加载 Android 平台实现，避免核心项目直接依赖 Android 平台程序集
-            // 注：RuntimeInformation.IsOSPlatform 不存在 OSPlatform.Android 枚举值，
-            // 因此使用 OperatingSystem.IsAndroid()（.NET 标准 API）检测 Android 运行时
-            var assembly = Assembly.Load("Wails.Net.Application.Android");
-            var type = assembly.GetType("Wails.Net.Application.Platform.AndroidPlatformApp")
-                ?? throw new PlatformNotSupportedException("无法找到 AndroidPlatformApp 类型");
-            return (IPlatformApp)Activator.CreateInstance(type, options)!;
-        }
-
-        throw new PlatformNotSupportedException($"不支持的平台: {RuntimeInformation.OSDescription}");
+        var platform = DetectPlatform();
+        return (IPlatformApp)CreatePlatformInstance(
+            platform,
+            assemblyName: $"Wails.Net.Application.{Capitalize(platform)}",
+            typeName: $"Wails.Net.Application.Platform.{Capitalize(platform)}PlatformApp",
+            args: [options]);
     }
 
     /// <summary>
@@ -93,37 +90,16 @@ public static class PlatformFactory
     {
         if (IsServerMode())
         {
+            LogDebug("Server 模式已启用，使用 ServerClipboard（无 GUI 占位实现）");
             return new ServerClipboard();
         }
 
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            // 通过反射加载 Windows 平台剪贴板实现，避免核心项目直接依赖 Windows 平台程序集
-            var assembly = Assembly.Load("Wails.Net.Application.Windows");
-            var type = assembly.GetType("Wails.Net.Application.Clipboard.WindowsClipboard")
-                ?? throw new PlatformNotSupportedException("无法找到 WindowsClipboard 类型");
-            return (IClipboardImpl)Activator.CreateInstance(type)!;
-        }
-
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-        {
-            // 通过反射加载 Linux 平台剪贴板实现，避免核心项目直接依赖 Linux 平台程序集
-            var assembly = Assembly.Load("Wails.Net.Application.Linux");
-            var type = assembly.GetType("Wails.Net.Application.Clipboard.LinuxClipboard")
-                ?? throw new PlatformNotSupportedException("无法找到 LinuxClipboard 类型");
-            return (IClipboardImpl)Activator.CreateInstance(type)!;
-        }
-
-        if (OperatingSystem.IsAndroid())
-        {
-            // 通过反射加载 Android 平台剪贴板实现
-            var assembly = Assembly.Load("Wails.Net.Application.Android");
-            var type = assembly.GetType("Wails.Net.Application.Clipboard.AndroidClipboard")
-                ?? throw new PlatformNotSupportedException("无法找到 AndroidClipboard 类型");
-            return (IClipboardImpl)Activator.CreateInstance(type)!;
-        }
-
-        throw new PlatformNotSupportedException($"不支持的平台: {RuntimeInformation.OSDescription}");
+        var platform = DetectPlatform();
+        return (IClipboardImpl)CreatePlatformInstance(
+            platform,
+            assemblyName: $"Wails.Net.Application.{Capitalize(platform)}",
+            typeName: $"Wails.Net.Application.Clipboard.{Capitalize(platform)}Clipboard",
+            args: null);
     }
 
     /// <summary>
@@ -134,5 +110,105 @@ public static class PlatformFactory
     {
         var value = Environment.GetEnvironmentVariable(ServerModeEnvVar);
         return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 检查是否启用了调试日志。
+    /// </summary>
+    /// <returns>如果 WAILS_DEBUG 环境变量为 "true"（不区分大小写）则返回 true。</returns>
+    public static bool IsDebugEnabled()
+    {
+        var value = Environment.GetEnvironmentVariable(DebugEnvVar);
+        return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 检测当前运行时平台。
+    /// 优先使用 <see cref="PlatformEnvVar"/> 环境变量强制指定的平台；
+    /// 未设置时根据运行时操作系统自动检测。
+    /// </summary>
+    /// <returns>平台名称（windows/linux/android）。</returns>
+    /// <exception cref="PlatformNotSupportedException">当平台不支持时抛出。</exception>
+    private static string DetectPlatform()
+    {
+        // 优先级 1：环境变量强制指定
+        var forced = Environment.GetEnvironmentVariable(PlatformEnvVar);
+        if (!string.IsNullOrEmpty(forced))
+        {
+            var normalized = forced.ToLowerInvariant().Trim();
+            if (normalized is PlatformWindows or PlatformLinux or PlatformAndroid)
+            {
+                LogDebug($"平台由环境变量 {PlatformEnvVar}={normalized} 强制指定");
+                return normalized;
+            }
+
+            LogDebug($"环境变量 {PlatformEnvVar}={forced} 值无效（应为 windows/linux/android），将使用自动检测");
+        }
+
+        // 优先级 2：运行时自动检测
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            LogDebug("自动检测到 Windows 平台");
+            return PlatformWindows;
+        }
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            LogDebug("自动检测到 Linux 平台");
+            return PlatformLinux;
+        }
+
+        if (OperatingSystem.IsAndroid())
+        {
+            LogDebug("自动检测到 Android 平台");
+            return PlatformAndroid;
+        }
+
+        throw new PlatformNotSupportedException($"不支持的平台: {RuntimeInformation.OSDescription}");
+    }
+
+    /// <summary>
+    /// 通过反射加载平台程序集并创建指定类型的实例。
+    /// </summary>
+    /// <param name="platform">平台名称（用于日志）。</param>
+    /// <param name="assemblyName">程序集名称。</param>
+    /// <param name="typeName">要实例化的类型全名。</param>
+    /// <param name="args">构造函数参数；为 null 时使用无参构造。</param>
+    /// <returns>平台实现实例。</returns>
+    /// <exception cref="PlatformNotSupportedException">当程序集或类型无法加载时抛出。</exception>
+    private static object CreatePlatformInstance(string platform, string assemblyName, string typeName, object[]? args)
+    {
+        LogDebug($"加载平台程序集: {assemblyName}");
+        var assembly = Assembly.Load(assemblyName);
+        var type = assembly.GetType(typeName)
+            ?? throw new PlatformNotSupportedException($"无法找到 {typeName} 类型");
+        LogDebug($"实例化平台类型: {typeName}");
+        return args is null
+            ? Activator.CreateInstance(type)!
+            : Activator.CreateInstance(type, args)!;
+    }
+
+    /// <summary>
+    /// 将字符串首字母大写（用于将平台名称转换为类型名前缀）。
+    /// </summary>
+    /// <param name="value">要转换的字符串。</param>
+    /// <returns>首字母大写的字符串。</returns>
+    private static string Capitalize(string value)
+    {
+        return string.IsNullOrEmpty(value)
+            ? value
+            : char.ToUpperInvariant(value[0]) + value[1..];
+    }
+
+    /// <summary>
+    /// 当调试模式启用时，输出诊断信息到控制台。
+    /// </summary>
+    /// <param name="message">诊断信息。</param>
+    private static void LogDebug(string message)
+    {
+        if (IsDebugEnabled())
+        {
+            Console.WriteLine($"[Wails.Net PlatformFactory] {message}");
+        }
     }
 }

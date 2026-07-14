@@ -1,7 +1,7 @@
 # ============================================================================
 # Wails.Net GitLab CI/CD 配置
 # ----------------------------------------------------------------------------
-# 流水线阶段：restore → build → test → pack → publish
+# 流水线阶段：restore → build → test → pack → dist → publish
 #
 # 运行环境要求：
 #   - Windows runner（tags: windows）用于构建全部项目与 Windows 测试
@@ -11,6 +11,17 @@
 #   版本号集中在 Directory.Build.props 的 WailsNetVersion 属性中维护。
 #   发布新版本时，修改 WailsNetVersion 后打 Git tag（如 v0.1.0-alpha.1），
 #   触发 publish 阶段推送 NuGet 包到 nuget.org。
+#
+# 统一 SDK（Wails.Net.Sdk）：
+#   - multi-target net10.0;net10.0-windows10.0.19041.0，根据 TFM 自动选择平台 Bundle
+#   - 包含 build/ props/targets，消费者自动导入平台相关 MSBuild 属性
+#   - pack 阶段会验证 build/ 目录已正确打包到 nupkg
+#
+# 多 RID 自包含构建：
+#   - dist 阶段调用 BuildAll.fsx，通过 --rid all 一键构建该平台全部架构
+#   - Windows: win-x64, win-x86, win-arm64（主构建，必须成功）
+#   - Linux:   linux-x64, linux-arm64（交叉编译，允许失败）
+#   - Android: android-arm64, android-x64, android-arm（需 Android SDK，允许失败）
 # ============================================================================
 
 stages:
@@ -150,7 +161,7 @@ pack:
     - test:windows
   script:
     - New-Item -ItemType Directory -Force -Path $PACKAGE_OUTPUT
-    # 打包所有 src/ 下的可发布项目（slnx 中包含 Bundle.Windows / Bundle.Linux）
+    # 打包所有 src/ 下的可发布项目（slnx 包含 Bundle.Windows / Bundle.Linux / Sdk）
     - dotnet pack $SOLUTION -c Release --no-build -o $PACKAGE_OUTPUT -p:SkipFrontendBuild=true
     # 单独打包 Templates 项目
     # Templates 不在 slnx 中（dotnet pack 会因 NU5017 误报退出码 1，但 nupkg 实际正确生成）
@@ -161,6 +172,21 @@ pack:
     - $templatesPkg = Get-ChildItem $PACKAGE_OUTPUT -Filter "Wails.Net.Templates.*.nupkg" -ErrorAction SilentlyContinue
     - if (-not $templatesPkg) { Write-Host "错误：Templates 包未生成"; exit 1 }
     - Write-Host "Templates 包已生成: $($templatesPkg.Name)"
+    # 验证统一 SDK 包（Wails.Net.Sdk）已生成且包含 build/ 目录
+    - $sdkPkg = Get-ChildItem $PACKAGE_OUTPUT -Filter "Wails.Net.Sdk.*.nupkg" -ErrorAction SilentlyContinue | Select-Object -First 1
+    - if (-not $sdkPkg) { Write-Host "错误：Wails.Net.Sdk 包未生成"; exit 1 }
+    - Write-Host "Wails.Net.Sdk 包已生成: $($sdkPkg.Name)"
+    # 解压 nupkg（zip 格式）验证 build/ 目录存在
+    - $sdkTempDir = Join-Path $env:TEMP "sdk-verify-$(Get-Random)"
+    - New-Item -ItemType Directory -Force -Path $sdkTempDir | Out-Null
+    - Copy-Item $sdkPkg.FullName -Destination (Join-Path $sdkTempDir "sdk.zip")
+    - Expand-Archive -Path (Join-Path $sdkTempDir "sdk.zip") -DestinationPath $sdkTempDir -Force
+    - $sdkBuildDir = Join-Path $sdkTempDir "build"
+    - if (-not (Test-Path $sdkBuildDir)) { Write-Host "错误：Wails.Net.Sdk 包未包含 build/ 目录"; exit 1 }
+    - $buildFiles = Get-ChildItem $sdkBuildDir -Recurse
+    - Write-Host "Wails.Net.Sdk build/ 目录验证通过，包含 $($buildFiles.Count) 个文件:"
+    - $buildFiles | Format-Table Name, FullName
+    - Remove-Item -Recurse -Force $sdkTempDir
     # 列出生成的包
     - Get-ChildItem $PACKAGE_OUTPUT -Filter "*.nupkg" | Format-Table Name, Length
   artifacts:
@@ -175,10 +201,11 @@ pack:
 # ============================================================================
 # 阶段 5：三平台自包含构建（Windows / Linux / Android）
 # ============================================================================
-# 调用 F# 脚本生成自包含可执行文件，无需终端用户安装 .NET 运行时
-# - Windows: 输出 .exe + .zip（自包含）
-# - Linux: 输出二进制 + .tar.gz（自包含，.deb 包需 dpkg-deb 可选）
-# - Android: 输出 .apk（需 android 工作负载）
+# 调用 BuildAll.fsx 统一构建脚本，通过 --rid all 一键构建该平台全部架构。
+# 生成自包含可执行文件，无需终端用户安装 .NET 运行时。
+#   - Windows: win-x64, win-x86, win-arm64 → .exe + .zip
+#   - Linux:   linux-x64, linux-arm64     → 二进制 + .tar.gz
+#   - Android: android-arm64, android-x64, android-arm → .apk
 dist:windows:
   stage: dist
   tags:
@@ -187,8 +214,8 @@ dist:windows:
     - pack
   script:
     - New-Item -ItemType Directory -Force -Path $DIST_OUTPUT
-    # 调用 F# 脚本构建 Windows 自包含可执行
-    - dotnet fsi scripts/build/BuildWindows.fsx -- --configuration Release --output $DIST_OUTPUT/windows
+    # 调用 BuildAll.fsx 构建 Windows 全部 RID（win-x64, win-x86, win-arm64）
+    - dotnet fsi scripts/build/BuildAll.fsx -- --platform windows --rid all --configuration Release --output $DIST_OUTPUT --skip-frontend
     - Get-ChildItem $DIST_OUTPUT/windows -Recurse | Format-Table FullName, Length
   artifacts:
     paths:
@@ -206,8 +233,8 @@ dist:linux:
     - pack
   script:
     - New-Item -ItemType Directory -Force -Path $DIST_OUTPUT
-    # 调用 F# 脚本交叉编译 Linux 自包含二进制
-    - dotnet fsi scripts/build/BuildLinux.fsx -- --configuration Release --output $DIST_OUTPUT/linux
+    # 调用 BuildAll.fsx 交叉编译 Linux 全部 RID（linux-x64, linux-arm64）
+    - dotnet fsi scripts/build/BuildAll.fsx -- --platform linux --rid all --configuration Release --output $DIST_OUTPUT --skip-frontend
     - Get-ChildItem $DIST_OUTPUT/linux -Recurse | Format-Table FullName, Length
   artifacts:
     paths:
@@ -226,8 +253,8 @@ dist:android:
     - pack
   script:
     - New-Item -ItemType Directory -Force -Path $DIST_OUTPUT
-    # 调用 F# 脚本构建 Android APK（需 android 工作负载 + Android SDK + Java JDK）
-    - dotnet fsi scripts/build/BuildAndroid.fsx -- --configuration Release --output $DIST_OUTPUT/android
+    # 调用 BuildAll.fsx 构建 Android 全部 RID（android-arm64, android-x64, android-arm）
+    - dotnet fsi scripts/build/BuildAll.fsx -- --platform android --rid all --configuration Release --output $DIST_OUTPUT --skip-frontend
     - Get-ChildItem $DIST_OUTPUT/android -Recurse | Format-Table FullName, Length
   artifacts:
     paths:
@@ -241,6 +268,11 @@ dist:android:
 # ============================================================================
 # 阶段 6：发布到 NuGet.org（仅 tag 触发）
 # ============================================================================
+# 遍历所有生成的 nupkg 推送到 nuget.org，包括：
+#   - Wails.Net.Application（核心运行时）
+#   - Wails.Net.Bundle.Windows / Linux / Android（平台 Bundle）
+#   - Wails.Net.Sdk（统一 SDK 聚合包，自动选择平台）
+#   - Wails.Net.Templates（项目模板）
 publish:nuget:
   stage: publish
   tags:
@@ -258,4 +290,4 @@ publish:nuget:
       when: on_success
   environment:
     name: nuget-org
-    url: https://www.nuget.org/packages/Wails.Net.Application
+    url: https://www.nuget.org/packages/Wails.Net.Sdk
