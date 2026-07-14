@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using Wails.Net.AssetServer.Middleware;
+using Wails.Net.AssetServer.Security;
 
 namespace Wails.Net.AssetServer;
 
@@ -151,6 +152,8 @@ public class AssetServer
     /// <summary>
     /// 处理完整的 HTTP 请求，包括中间件链、Range 请求、ETag 缓存和 404 处理。
     /// 对应 Wails v3 Go 版本 AssetServer.ServeHTTP 方法。
+    /// 启用 <see cref="SecurityOptions.Nonce"/> 时为每个请求生成唯一 nonce 并注入 CSP 头。
+    /// 启用 <see cref="SecurityOptions.Isolation"/> 时为 HTML 响应注入隔离 iframe。
     /// </summary>
     /// <param name="context">HTTP 请求上下文。</param>
     /// <param name="cancellationToken">取消令牌。</param>
@@ -165,8 +168,16 @@ public class AssetServer
         // 添加 CORS 响应头
         response.Headers[Headers.AccessControlAllowOrigin] = "*";
 
-        // 添加内容安全策略（CSP）响应头
-        if (!string.IsNullOrEmpty(_cspHeader))
+        // 生成 per-request nonce（若启用），并构建 CSP 头
+        // nonce 模式优先于静态 _cspHeader（启用 nonce 时忽略 _cspHeader）
+        string? perRequestNonce = null;
+        if (_options.Security is { Nonce.EnableNonce: true } security)
+        {
+            perRequestNonce = NonceInjector.GenerateNonce();
+            var cspHeader = NonceInjector.BuildCspHeader(security.Nonce.CspPolicy, perRequestNonce);
+            response.Headers["Content-Security-Policy"] = cspHeader;
+        }
+        else if (!string.IsNullOrEmpty(_cspHeader))
         {
             response.Headers["Content-Security-Policy"] = _cspHeader;
         }
@@ -186,19 +197,26 @@ public class AssetServer
         // 先执行 HTTP 中间件链：若中间件已处理则返回，否则执行核心资源处理
         await _middlewareChain.ExecuteHttpAsync(context, async () =>
         {
-            await ServeAssetCoreAsync(context, path, cancellationToken);
+            await ServeAssetCoreAsync(context, path, cancellationToken, perRequestNonce);
         });
     }
 
     /// <summary>
     /// 核心资源处理逻辑：读取资源、设置头部、处理 Range 和缓存。
     /// 当资源未找到且启用 SPA 回退时，尝试读取默认文档。
+    /// 若 nonce 参数非 null 且响应为 HTML，应用 <see cref="NonceInjector.InjectNonce"/>；
+    /// 若 <see cref="SecurityOptions.Isolation"/> 启用且响应为 HTML，注入 isolation iframe。
     /// </summary>
     /// <param name="context">HTTP 上下文。</param>
     /// <param name="path">资源路径。</param>
     /// <param name="cancellationToken">取消令牌。</param>
+    /// <param name="nonce">per-request nonce，为 null 表示未启用 nonce 注入。</param>
     /// <returns>表示处理操作的异步任务。</returns>
-    private async Task ServeAssetCoreAsync(HttpListenerContext context, string path, CancellationToken cancellationToken)
+    private async Task ServeAssetCoreAsync(
+        HttpListenerContext context,
+        string path,
+        CancellationToken cancellationToken,
+        string? nonce = null)
     {
         var request = context.Request;
         var response = context.Response;
@@ -215,6 +233,28 @@ public class AssetServer
             }
 
             var mimeType = GetMimeType(servedPath);
+
+            // 仅对 HTML 内容应用 nonce + isolation 注入
+            var isHtml = mimeType.StartsWith("text/html", StringComparison.OrdinalIgnoreCase);
+            if (isHtml && (nonce is not null || _options.Security.Isolation.Enabled))
+            {
+                var html = Encoding.UTF8.GetString(content);
+
+                // nonce 注入
+                if (nonce is not null && _options.Security.Nonce.InjectIntoHtml)
+                {
+                    html = NonceInjector.InjectNonce(html, nonce);
+                }
+
+                // Isolation iframe 注入
+                if (_options.Security.Isolation.Enabled)
+                {
+                    html = IsolationInjector.InjectIsolationIframe(html, _options.Security.Isolation);
+                }
+
+                content = Encoding.UTF8.GetBytes(html);
+            }
+
             response.ContentType = mimeType;
             response.Headers[Headers.AcceptRanges] = "bytes";
 

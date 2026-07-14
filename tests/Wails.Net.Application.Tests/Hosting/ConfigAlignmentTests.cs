@@ -5,7 +5,7 @@ namespace Wails.Net.Application.Tests.Hosting;
 
 /// <summary>
 /// 配置对齐单元测试（TUnit）。
-/// 对应主题 H-4.6：验证 AppOptions / WindowConfig / SecurityConfig / DesktopHostOptions.App
+/// 对应主题 H-4.6：验证 HostingAppConfig / WindowConfig / SecurityConfig / DesktopHostOptions.App
 /// 的默认值、属性读写和配置节绑定。
 /// 对应 Tauri v2 的 app/windows/security 配置结构。
 /// </summary>
@@ -13,12 +13,12 @@ namespace Wails.Net.Application.Tests.Hosting;
 public sealed class ConfigAlignmentTests
 {
     /// <summary>
-    /// AppOptions.Windows 默认应为空列表（非 null），Security 默认应非 null。
+    /// HostingAppConfig.Windows 默认应为空列表（非 null），Security 默认应非 null。
     /// </summary>
     [Test]
-    public async Task AppOptions_DefaultEmptyWindows_EmptyList()
+    public async Task HostingAppConfig_DefaultEmptyWindows_EmptyList()
     {
-        var opts = new AppOptions();
+        var opts = new HostingAppConfig();
 
         await Assert.That(opts.Windows).IsNotNull();
         await Assert.That(opts.Windows.Count).IsEqualTo(0);
@@ -71,7 +71,7 @@ public sealed class ConfigAlignmentTests
         await Assert.That(opts.App).IsNull();
 
         // 可赋值
-        var appOptions = new AppOptions
+        var appConfig = new HostingAppConfig
         {
             Windows = new List<WindowConfig>
             {
@@ -79,7 +79,7 @@ public sealed class ConfigAlignmentTests
                 new() { Name = "settings", Title = "Settings" },
             },
         };
-        opts.App = appOptions;
+        opts.App = appConfig;
 
         // 读取验证
         await Assert.That(opts.App).IsNotNull();
@@ -89,12 +89,12 @@ public sealed class ConfigAlignmentTests
     }
 
     /// <summary>
-    /// AppOptions.Windows 支持添加多个 WindowConfig。
+    /// HostingAppConfig.Windows 支持添加多个 WindowConfig。
     /// </summary>
     [Test]
-    public async Task AppOptions_Windows_CanAddMultipleConfigs()
+    public async Task HostingAppConfig_Windows_CanAddMultipleConfigs()
     {
-        var opts = new AppOptions();
+        var opts = new HostingAppConfig();
 
         opts.Windows.Add(new WindowConfig { Name = "win1", Title = "窗口 1" });
         opts.Windows.Add(new WindowConfig { Name = "win2", Title = "窗口 2" });
@@ -131,7 +131,7 @@ public sealed class ConfigAlignmentTests
     {
         var opts = new DesktopHostOptions
         {
-            App = new AppOptions
+            App = new HostingAppConfig
             {
                 Security = new SecurityConfig
                 {

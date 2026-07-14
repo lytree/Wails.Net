@@ -43,6 +43,7 @@ public static class Program
         root.Subcommands.Add(SignerCommand.Create());
         root.Subcommands.Add(PlatformCommand.Create());
         root.Subcommands.Add(SelfUpdateCommand.Create());
+        root.Subcommands.Add(DeployCommand.Create());
         return root;
     }
 }

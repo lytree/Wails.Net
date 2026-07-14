@@ -17,6 +17,19 @@ public sealed class PluginManager
     private readonly ILogger<PluginManager>? _logger;
 
     /// <summary>
+    /// 启动是否已调用（幂等保护）。
+    /// 0=未调用，1=已调用。使用 Interlocked 保证线程安全。
+    /// 防止 IHostedService 适配器与 Application.Run 手动调用同时触发导致重复启动。
+    /// </summary>
+    private int _started;
+
+    /// <summary>
+    /// 关闭是否已调用（幂等保护）。
+    /// 0=未调用，1=已调用。使用 Interlocked 保证线程安全。
+    /// </summary>
+    private int _stopped;
+
+    /// <summary>
     /// 已注册的插件只读列表。
     /// </summary>
     public IReadOnlyList<IPlugin> Plugins => _plugins.AsReadOnly();
@@ -113,11 +126,19 @@ public sealed class PluginManager
     /// 在 <see cref="Application.Run"/> 中、OnAfterStart 回调之后调用。
     /// 对应 Wails v3 的 Startup() 和 Tauri v2 的 setup() 钩子。
     /// 单个插件启动失败不影响其他插件，但会记录错误日志。
+    /// 幂等：多次调用安全，仅首次执行实际启动逻辑。
     /// </summary>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>表示异步启动操作的任务。</returns>
     public async Task StartupPluginsAsync(CancellationToken cancellationToken = default)
     {
+        // 幂等保护：防止 IHostedService 适配器与 Application.Run 手动调用同时触发
+        if (Interlocked.CompareExchange(ref _started, 1, 0) != 0)
+        {
+            _logger?.LogDebug("插件已启动过，跳过重复启动。");
+            return;
+        }
+
         foreach (var plugin in _plugins)
         {
             try
@@ -138,11 +159,19 @@ public sealed class PluginManager
     /// 在 <see cref="Application.Shutdown"/> 中、关闭任务执行之后调用。
     /// 对应 Wails v3 的 Shutdown() 和 Tauri v2 的 on_drop 钩子。
     /// 单个插件关闭失败不影响其他插件，但会记录错误日志。
+    /// 幂等：多次调用安全，仅首次执行实际关闭逻辑。
     /// </summary>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>表示异步关闭操作的任务。</returns>
     public async Task ShutdownPluginsAsync(CancellationToken cancellationToken = default)
     {
+        // 幂等保护：防止重复关闭
+        if (Interlocked.CompareExchange(ref _stopped, 1, 0) != 0)
+        {
+            _logger?.LogDebug("插件已关闭过，跳过重复关闭。");
+            return;
+        }
+
         // 逆序关闭，确保依赖关系正确（后注册的插件先关闭）
         for (var i = _plugins.Count - 1; i >= 0; i--)
         {

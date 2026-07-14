@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Wails.Net.Application.Commands;
 using Wails.Net.Application.Managers;
 using Wails.Net.Application.Menus;
+using Wails.Net.Application.SystemTray;
 
 namespace Wails.Net.Application.Plugins.BuiltIn;
 
@@ -97,7 +98,7 @@ public class TrayPlugin : IPlugin
     /// <param name="ctx">命令上下文。</param>
     /// <returns>活动托盘实例。</returns>
     /// <exception cref="InvalidOperationException">当托盘未创建时抛出。</exception>
-    private static object GetActiveTrayOrThrow(ICommandContext ctx)
+    private static ISystemTrayImpl GetActiveTrayOrThrow(ICommandContext ctx)
     {
         var holder = ctx.Services.GetService<TrayHolder>();
         if (holder?.ActiveTray is not { } tray)
@@ -117,7 +118,7 @@ public class TrayPlugin : IPlugin
 public sealed class TrayHolder
 {
     /// <summary>当前活动的系统托盘实例，可为 null。</summary>
-    public object? ActiveTray { get; set; }
+    public ISystemTrayImpl? ActiveTray { get; set; }
 }
 
 /// <summary>tray.setIcon 命令参数。</summary>

@@ -23,7 +23,7 @@
 #   - pack 阶段会验证 build/ 目录已正确打包到 nupkg
 #
 # 多 RID 自包含构建：
-#   - dist 阶段调用 BuildAll.fsx，通过 --rid all 一键构建该平台全部架构
+#   - dist 阶段调用 cake.cs（Cake 构建脚本），通过 --rid all 一键构建该平台全部架构
 #   - Windows: win-x64, win-x86, win-arm64（主构建，必须成功）
 #   - Linux:   linux-x64, linux-arm64（交叉编译，允许失败）
 #   - Android: android-arm64, android-x64, android-arm（需 Android SDK，允许失败）
@@ -79,7 +79,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: 还原 NuGet 包
+      - name: 还原 NuGet 包（含 Cake SDK）
         run: dotnet restore ${{ env.SOLUTION }}
 
       - name: 构建解决方案
@@ -292,7 +292,7 @@ jobs:
 # ============================================================================
 # Job 4：三平台自包含构建（Windows / Linux / Android）
 # ============================================================================
-# 调用 BuildAll.fsx 统一构建脚本，通过 --rid all 一键构建该平台全部架构。
+# 调用 cake.cs（Cake 构建脚本）统一构建，通过 --rid all 一键构建该平台全部架构。
 # 生成自包含可执行文件，无需终端用户安装 .NET 运行时。
 #   - Windows: win-x64, win-x86, win-arm64 → .exe + .zip
 #   - Linux:   linux-x64, linux-arm64     → 二进制 + .tar.gz
@@ -323,10 +323,10 @@ jobs:
         shell: pwsh
         run: New-Item -ItemType Directory -Force -Path ${{ env.DIST_OUTPUT }}
 
-      # 调用 BuildAll.fsx 构建 Windows 全部 RID（win-x64, win-x86, win-arm64）
+      # 调用 Cake 构建 Windows 全部 RID（win-x64, win-x86, win-arm64）
       - name: 构建 Windows 自包含（全部 RID）
         shell: pwsh
-        run: dotnet fsi scripts/build/BuildAll.fsx -- --platform windows --rid all --configuration Release --output ${{ env.DIST_OUTPUT }} --skip-frontend
+        run: dotnet cake --target=Dist --platform=windows --rid=all --configuration=Release --output=${{ env.DIST_OUTPUT }} --skip-frontend
 
       - name: 列出构建产物
         shell: pwsh
@@ -366,10 +366,10 @@ jobs:
         shell: pwsh
         run: New-Item -ItemType Directory -Force -Path ${{ env.DIST_OUTPUT }}
 
-      # 调用 BuildAll.fsx 交叉编译 Linux 全部 RID（linux-x64, linux-arm64）
+      # 调用 Cake 交叉编译 Linux 全部 RID（linux-x64, linux-arm64）
       - name: 构建 Linux 自包含（全部 RID）
         shell: pwsh
-        run: dotnet fsi scripts/build/BuildAll.fsx -- --platform linux --rid all --configuration Release --output ${{ env.DIST_OUTPUT }} --skip-frontend
+        run: dotnet cake --target=Dist --platform=linux --rid=all --configuration=Release --output=${{ env.DIST_OUTPUT }} --skip-frontend
 
       - name: 列出构建产物
         shell: pwsh
@@ -413,10 +413,10 @@ jobs:
         shell: pwsh
         run: New-Item -ItemType Directory -Force -Path ${{ env.DIST_OUTPUT }}
 
-      # 调用 BuildAll.fsx 构建 Android 全部 RID（android-arm64, android-x64, android-arm）
+      # 调用 Cake 构建 Android 全部 RID（android-arm64, android-x64, android-arm）
       - name: 构建 Android APK（全部 RID）
         shell: pwsh
-        run: dotnet fsi scripts/build/BuildAll.fsx -- --platform android --rid all --configuration Release --output ${{ env.DIST_OUTPUT }} --skip-frontend
+        run: dotnet cake --target=Dist --platform=android --rid=all --configuration=Release --output=${{ env.DIST_OUTPUT }} --skip-frontend
 
       - name: 列出构建产物
         shell: pwsh

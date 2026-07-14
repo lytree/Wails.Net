@@ -239,6 +239,93 @@ wails-net --help
 2. 安装 NuGet 包后，调试时自动跳转到 GitHub 源码
 3. 符号包（.snupkg）发布到 nuget.org，自动加载符号
 
+## 三平台签名流程
+
+### Windows Authenticode 签名
+
+**工具**：`signtool.exe`（Windows SDK 自带）
+
+**签名命令**：
+
+```bash
+signtool sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 /sha1 <THUMBPRINT> MyApplication.exe
+```
+
+**验证签名**：
+
+```bash
+signtool verify /pa /v MyApplication.exe
+```
+
+**说明**：Wails.Net 的 `SignerCommand`（Minisign）用于文件完整性校验，不替代 Authenticode 代码签名。生产环境发布 Windows 应用程序应同时进行 Authenticode 签名，确保用户在 SmartScreen 和 UAC 对话框中看到可信发布者信息。
+
+### Linux GPG 签名
+
+**工具**：`gpg`（GnuPG）
+
+**对 tar.gz 签名**：
+
+```bash
+gpg --detach-sign --armor Wails.Net.App-linux-x64.tar.gz
+```
+
+**验证签名**：
+
+```bash
+gpg --verify Wails.Net.App-linux-x64.tar.gz.asc Wails.Net.App-linux-x64.tar.gz
+```
+
+**发布公钥**：发布前需将签名公钥上传到公共密钥服务器（如 `keys.openpgp.org`），并在发布说明中提供公钥指纹。
+
+### Android APK 签名
+
+**工具**：`apksigner`（Android SDK build-tools）
+
+**构建时签名**：`build.cake` 的 `Dist-Android` task 通过 MSBuild 属性配置签名：
+
+| MSBuild 属性 | 说明 |
+|--------------|------|
+| `AndroidKeyStore` | 设为 `True` 启用签名 |
+| `AndroidSigningKeyStore` | keystore 文件路径 |
+| `AndroidSigningKeyAlias` | 密钥别名 |
+| `AndroidSigningKeyPass` | 密钥密码 |
+| `AndroidSigningStorePass` | keystore 密码 |
+
+**验证签名**：
+
+```bash
+apksigner verify --verbose MyApplication.apk
+```
+
+**说明**：Debug 构建默认使用 Android SDK 的 debug keystore 签名；Release 构建需提供自定义 keystore。keystore 文件应通过 CI/CD Secrets 注入，不入仓库。
+
+## AppImage 构建指南（Linux）
+
+`build.cake` 的 `Dist-Linux` task 生成 `tar.gz` 自包含包。AppImage 打包需额外工具 `appimagetool`，本期不集成到构建脚本，可手动执行：
+
+```bash
+# 安装 appimagetool
+wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+chmod +x appimagetool-x86_64.AppImage
+
+# 准备 AppDir 目录结构
+mkdir -p MyApplication.AppDir/usr/bin
+cp -r artifacts/dist/linux-x64/* MyApplication.AppDir/usr/bin/
+
+# 创建 .desktop 文件
+cat > MyApplication.AppDir/MyApplication.desktop <<EOF
+[Desktop Entry]
+Name=MyApplication
+Exec=MyApplication
+Icon=MyApplication
+Type=Application
+Categories=Utility;
+EOF
+
+# 打包 AppImage
+./appimagetool-x86_64.AppImage MyApplication.AppDir MyApplication-x86_64.AppImage
+```
+
 ## 回滚
 
 如需回滚已发布的版本：

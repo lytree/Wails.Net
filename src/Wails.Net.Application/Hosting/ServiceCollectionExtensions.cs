@@ -4,6 +4,7 @@ using Wails.Net.Application.Bindings;
 using Wails.Net.Application.Events;
 using Wails.Net.Application.Managers;
 using Wails.Net.Application.Platform;
+using Wails.Net.Application.Plugins;
 using Wails.Net.Application.Security;
 using Wails.Net.Application.Services;
 
@@ -44,6 +45,11 @@ public static class ServiceCollectionExtensions
         services.AddOptions<PermissionOptions>()
             .BindConfiguration("Wails:Permissions");
         services.AddSingleton<PermissionManager>();
+
+        // 注册 PluginManager 为单例（幂等：EnsurePluginManagerRegistered 会跳过已注册的实例）。
+        // 默认注册确保无插件场景下 PluginHostedServiceAdapter 也能从 DI 构造。
+        // 对应主题 B.2c：插件生命周期适配到 IHostedService。
+        services.AddSingleton<PluginManager>();
 
         return services;
     }

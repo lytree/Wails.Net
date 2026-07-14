@@ -44,7 +44,7 @@ public static class LinuxApplicationExtensions
     private sealed class LinuxSystemTrayManager : ISystemTrayManager
     {
         /// <inheritdoc />
-        public object CreateSystemTray(byte[] icon)
+        public ISystemTrayImpl CreateSystemTray(byte[] icon)
         {
             var tray = new LinuxSystemTray();
             tray.SetIcon(icon);
@@ -53,70 +53,52 @@ public static class LinuxApplicationExtensions
         }
 
         /// <inheritdoc />
-        public void DestroySystemTray(object tray)
+        public void DestroySystemTray(ISystemTrayImpl tray)
         {
-            if (tray is LinuxSystemTray linuxTray)
+            tray.Destroy();
+        }
+
+        /// <inheritdoc />
+        public void SetIcon(ISystemTrayImpl tray, byte[]? iconData)
+        {
+            if (iconData is not null)
             {
-                linuxTray.Destroy();
+                tray.SetIcon(iconData);
             }
         }
 
         /// <inheritdoc />
-        public void SetIcon(object tray, byte[]? iconData)
+        public void SetLabel(ISystemTrayImpl tray, string label)
         {
-            if (tray is LinuxSystemTray linuxTray && iconData is not null)
-            {
-                linuxTray.SetIcon(iconData);
-            }
+            tray.SetLabel(label);
         }
 
         /// <inheritdoc />
-        public void SetLabel(object tray, string label)
+        public void SetMenu(ISystemTrayImpl tray, Menu? menu)
         {
-            if (tray is LinuxSystemTray linuxTray)
-            {
-                linuxTray.SetLabel(label);
-            }
+            tray.SetMenu(menu);
         }
 
         /// <inheritdoc />
-        public void SetMenu(object tray, Menu? menu)
+        public void SetTooltip(ISystemTrayImpl tray, string tooltip)
         {
-            if (tray is LinuxSystemTray linuxTray)
-            {
-                linuxTray.SetMenu(menu);
-            }
+            tray.SetTooltip(tooltip);
         }
 
         /// <inheritdoc />
-        public void SetTooltip(object tray, string tooltip)
+        public void Show(ISystemTrayImpl tray)
         {
-            if (tray is LinuxSystemTray linuxTray)
-            {
-                linuxTray.SetTooltip(tooltip);
-            }
+            tray.Show();
         }
 
         /// <inheritdoc />
-        public void Show(object tray)
+        public void Hide(ISystemTrayImpl tray)
         {
-            if (tray is LinuxSystemTray linuxTray)
-            {
-                linuxTray.Show();
-            }
+            tray.Hide();
         }
 
         /// <inheritdoc />
-        public void Hide(object tray)
-        {
-            if (tray is LinuxSystemTray linuxTray)
-            {
-                linuxTray.Hide();
-            }
-        }
-
-        /// <inheritdoc />
-        public bool IsVisible(object tray)
+        public bool IsVisible(ISystemTrayImpl tray)
         {
             // Linux 托盘可见性由桌面环境管理，D-Bus 注册成功即视为可见
             return tray is LinuxSystemTray;

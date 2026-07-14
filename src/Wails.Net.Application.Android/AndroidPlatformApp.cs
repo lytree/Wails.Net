@@ -58,6 +58,12 @@ public sealed class AndroidPlatformApp : IPlatformApp
     private Wails.Net.AssetServer.AssetServer? _assetServer;
 
     /// <summary>
+    /// 当前 Activity 引用，由 <see cref="SetActivity"/> 注入。
+    /// 用于 WebView 创建时附加到 Activity 视图层级（调用 <c>Activity.SetContentView</c>）。
+    /// </summary>
+    private Activity? _activity;
+
+    /// <summary>
     /// 构造 AndroidPlatformApp 实例。
     /// </summary>
     /// <param name="options">应用配置选项。</param>
@@ -80,6 +86,26 @@ public sealed class AndroidPlatformApp : IPlatformApp
     public void SetAssetServer(Wails.Net.AssetServer.AssetServer? assetServer)
     {
         _assetServer = assetServer;
+    }
+
+    /// <summary>
+    /// 设置当前 Activity 引用。
+    /// 在 Activity.OnCreate 中调用，使平台应用能将 WebView 附加到 Activity 视图层级。
+    /// </summary>
+    /// <param name="activity">当前 Activity 实例。</param>
+    public void SetActivity(Activity activity)
+    {
+        _activity = activity;
+    }
+
+    /// <summary>
+    /// 获取当前 Activity 引用。
+    /// 供 <see cref="AndroidWebviewWindow"/> 创建 WebView 时使用，以附加到视图层级。
+    /// </summary>
+    /// <returns>当前 Activity；未设置时返回 null（测试场景回退）。</returns>
+    internal Activity? GetActivity()
+    {
+        return _activity;
     }
 
     /// <inheritdoc />

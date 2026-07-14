@@ -3,12 +3,8 @@ namespace Wails.Net.Application.Hosting;
 /// <summary>
 /// 应用配置节（对应 appsettings.json 中 "Wails":"App" 节）。
 /// 对应 Tauri v2 的 app/windows/security 配置结构。
-/// <para>
-/// 注意：与 <see cref="Wails.Net.Application.Options.ApplicationOptions"/> 不同——
-/// 后者是运行时应用元信息（Version/Name），本类是宿主配置节。
-/// </para>
 /// </summary>
-public sealed class AppOptions
+public sealed class HostingAppConfig
 {
     /// <summary>多窗口配置列表。第一个窗口作为主窗口。</summary>
     public List<WindowConfig> Windows { get; set; } = new();

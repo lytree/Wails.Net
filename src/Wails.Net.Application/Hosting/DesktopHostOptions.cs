@@ -35,7 +35,7 @@ public class DesktopHostOptions
     /// 与 <see cref="Window"/> 互补：Window 是默认窗口快捷配置，App.Windows 是多窗口列表。
     /// 对应 Tauri v2 的 app 配置节。
     /// </summary>
-    public AppOptions? App { get; set; }
+    public HostingAppConfig? App { get; set; }
 
     /// <summary>
     /// 静态资源配置选项。

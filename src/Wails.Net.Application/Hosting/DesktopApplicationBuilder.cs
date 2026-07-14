@@ -100,6 +100,11 @@ public sealed class DesktopApplicationBuilder
 
         // 注册 DesktopHostedService，将 Application 生命周期适配为 IHostedService
         Services.AddHostedService<DesktopHostedService>();
+
+        // 注册 PluginHostedServiceAdapter，将插件生命周期适配到 IHostedService
+        // 对应 AGENTS.md §1.1.1：Host/DI/Config/Logging → ASP.NET Core
+        // PluginManager 内部已使用 Interlocked 保护，与 Application.Run 手动调用共存安全
+        Services.AddHostedService<PluginHostedServiceAdapter>();
     }
 
     /// <summary>
@@ -219,7 +224,7 @@ public sealed class DesktopApplicationBuilder
     }
 
     /// <summary>
-    /// 根据 AppOptions.Windows 配置创建窗口。
+    /// 根据 HostingAppConfig.Windows 配置创建窗口。
     /// 对应 Tauri v2 的 static windows 配置创建流程。
     /// 优先级：App.Windows 多窗口列表 &gt; Window 默认窗口 &gt; 不创建。
     /// </summary>

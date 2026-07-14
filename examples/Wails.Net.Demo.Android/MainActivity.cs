@@ -83,6 +83,7 @@ public class MainActivity : Activity
         if (_app.PlatformApp is AndroidPlatformApp androidApp)
         {
             androidApp.SetAssetServer(assetServer);
+            androidApp.SetActivity(this);
         }
 
         // 注册绑定服务到 Application（公共方法通过反射暴露给前端）

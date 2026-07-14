@@ -1,4 +1,5 @@
 using System.Net;
+using Wails.Net.AssetServer.Security;
 
 namespace Wails.Net.AssetServer;
 
@@ -69,4 +70,11 @@ public class AssetOptions
     /// 优先级最高，先于此字典 <see cref="CustomMimeTypes"/> 与内置映射执行。
     /// </summary>
     public Func<string, string?>? MimeTypeResolver { get; set; }
+
+    /// <summary>
+    /// 获取或设置安全选项，包含 CSP nonce 注入与 Isolation Pattern 配置。
+    /// 默认值为新实例（所有功能未启用），保持与现有 CSP 行为兼容。
+    /// 对应 Tauri v2 的安全配置。
+    /// </summary>
+    public SecurityOptions Security { get; set; } = new();
 }

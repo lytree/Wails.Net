@@ -203,17 +203,48 @@ public sealed class AndroidWebviewWindow : IWebviewWindowImpl
     /// 对应 ADR-0002 §5：通过 Android.Webkit.WebView 承载 Web 内容。
     /// 注入 <see cref="WailsWebViewClient"/> 实现资源拦截，
     /// 注入 <see cref="WailsWebMessageListener"/> 实现 IPC 桥接。
+    /// 当 Activity 引用可用时，通过 <c>Activity.SetContentView</c> 将 WebView 附加到视图层级，
+    /// 否则回退到 <c>Application.Context</c>（测试场景，WebView 不可见但逻辑可验证）。
     /// </summary>
     private void CreateWebView()
     {
-        var context = global::Android.App.Application.Context;
-        if (context is null)
+        var activity = _app.GetActivity();
+        if (activity is null)
         {
+            // 测试场景回退：无 Activity 时使用 Application.Context（WebView 不可见但可测试逻辑）
+            var appContext = global::Android.App.Application.Context;
+            if (appContext is null)
+            {
+                return;
+            }
+
+            var testWebView = new WebView(appContext);
+            ConfigureWebView(testWebView);
+            _webView = testWebView;
+            _visible = true;
+            LoadContent(testWebView);
             return;
         }
 
-        var webView = new WebView(context);
+        // 生产路径：用 Activity 创建 WebView 并附加到视图层级
+        var webView = new WebView(activity);
+        ConfigureWebView(webView);
 
+        // 附加到 Activity 视图：SetContentView 使 WebView 填满整个 Activity
+        activity.SetContentView(webView);
+
+        _webView = webView;
+        _visible = true;
+        LoadContent(webView);
+    }
+
+    /// <summary>
+    /// 配置 WebView 设置（JS 启用、调试、WebViewClient、IPC 桥接）。
+    /// 提取为独立方法，避免生产路径与测试路径重复配置。
+    /// </summary>
+    /// <param name="webView">要配置的 WebView 实例。</param>
+    private void ConfigureWebView(WebView webView)
+    {
         // 配置 WebView 设置
         var settings = webView.Settings;
         settings.JavaScriptEnabled = true;
@@ -234,11 +265,15 @@ public sealed class AndroidWebviewWindow : IWebviewWindowImpl
         // （该方法属于 AndroidX WebKit 扩展），改用 AddJavascriptInterface 是标准做法。
         _messageListener = new WailsWebMessageListener(_id);
         webView.AddJavascriptInterface(_messageListener, "WailsBridge");
+    }
 
-        _webView = webView;
-        _visible = true;
-
-        // 加载 URL 或 HTML
+    /// <summary>
+    /// 加载 URL 或 HTML 内容到 WebView。
+    /// 提取为独立方法，避免生产路径与测试路径重复加载逻辑。
+    /// </summary>
+    /// <param name="webView">要加载内容的 WebView 实例。</param>
+    private void LoadContent(WebView webView)
+    {
         if (!string.IsNullOrEmpty(_currentUrl))
         {
             webView.LoadUrl(_currentUrl);
@@ -354,8 +389,10 @@ public sealed class AndroidWebviewWindow : IWebviewWindowImpl
     /// <inheritdoc />
     public void SetBackgroundColour(byte r, byte g, byte b, byte a)
     {
-        // 完整实现需通过 WebView 背景设置：
-        //   _webView?.SetBackgroundColor(new Android.Graphics.Color(r, g, b, a));
+        if (_webView is not null)
+        {
+            _webView.SetBackgroundColor(new global::Android.Graphics.Color(r, g, b, a));
+        }
     }
 
     /// <inheritdoc />

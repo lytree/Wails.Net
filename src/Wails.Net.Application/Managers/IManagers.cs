@@ -2,6 +2,7 @@ using Wails.Net.Application.Dialogs;
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Screens;
+using Wails.Net.Application.SystemTray;
 using Wails.Net.Application.Windows;
 
 namespace Wails.Net.Application.Managers;
@@ -218,64 +219,64 @@ public interface IScreenManager
 public interface ISystemTrayManager
 {
     /// <summary>
-    /// 创建系统托盘（暂用 object，实际实现后替换）。
+    /// 创建系统托盘。
     /// </summary>
     /// <param name="icon">图标字节数据。</param>
-    /// <returns>系统托盘实例。</returns>
-    object CreateSystemTray(byte[] icon);
+    /// <returns>系统托盘平台实现实例。</returns>
+    ISystemTrayImpl CreateSystemTray(byte[] icon);
 
     /// <summary>
     /// 销毁系统托盘。
     /// </summary>
     /// <param name="tray">系统托盘实例。</param>
-    void DestroySystemTray(object tray);
+    void DestroySystemTray(ISystemTrayImpl tray);
 
     /// <summary>
     /// 设置托盘图标。
     /// </summary>
     /// <param name="tray">托盘实例。</param>
     /// <param name="iconData">图标字节数据。</param>
-    void SetIcon(object tray, byte[]? iconData);
+    void SetIcon(ISystemTrayImpl tray, byte[]? iconData);
 
     /// <summary>
     /// 设置托盘标签（部分平台仅显示图标，标签可能不可见）。
     /// </summary>
     /// <param name="tray">托盘实例。</param>
     /// <param name="label">标签文本。</param>
-    void SetLabel(object tray, string label);
+    void SetLabel(ISystemTrayImpl tray, string label);
 
     /// <summary>
     /// 设置托盘右键菜单。
     /// </summary>
     /// <param name="tray">托盘实例。</param>
     /// <param name="menu">菜单实例，可为 null。</param>
-    void SetMenu(object tray, Menu? menu);
+    void SetMenu(ISystemTrayImpl tray, Menu? menu);
 
     /// <summary>
     /// 设置托盘提示文本。
     /// </summary>
     /// <param name="tray">托盘实例。</param>
     /// <param name="tooltip">提示文本。</param>
-    void SetTooltip(object tray, string tooltip);
+    void SetTooltip(ISystemTrayImpl tray, string tooltip);
 
     /// <summary>
     /// 显示托盘。
     /// </summary>
     /// <param name="tray">托盘实例。</param>
-    void Show(object tray);
+    void Show(ISystemTrayImpl tray);
 
     /// <summary>
     /// 隐藏托盘。
     /// </summary>
     /// <param name="tray">托盘实例。</param>
-    void Hide(object tray);
+    void Hide(ISystemTrayImpl tray);
 
     /// <summary>
     /// 判断托盘是否可见。
     /// </summary>
     /// <param name="tray">托盘实例。</param>
     /// <returns>可见返回 true，否则 false。</returns>
-    bool IsVisible(object tray);
+    bool IsVisible(ISystemTrayImpl tray);
 }
 
 /// <summary>

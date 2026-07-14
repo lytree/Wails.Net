@@ -446,4 +446,4 @@ dotnet fsi script.fsx
 
 ---
 
-**最后更新**：2026-07-14（阶段 8 完成：Android 平台实现与三平台自包含构建）
+**最后更新**：2026-07-14（Tauri v2 功能对齐收尾完成：DpiScalePlugin + 移动端插件 + PlatformFactory 6 级回退 + 三平台签名文档化）
