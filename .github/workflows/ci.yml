@@ -1,0 +1,470 @@
+# ============================================================================
+# Wails.Net GitHub Actions CI/CD 配置
+# ----------------------------------------------------------------------------
+# 流水线 Jobs：build → test → pack → dist → publish
+#
+# 运行环境：
+#   - windows-latest：构建全部项目、Windows 测试、打包、三平台自包含构建
+#   - ubuntu-latest：Linux 平台测试（需 GTK4 原生库，允许失败）
+#
+# 触发条件：
+#   - push 到任意分支：运行 build → test → pack（仅 main 分支）→ dist
+#   - Pull Request：运行 build → test
+#   - tag（v*.*.*）：运行完整流水线，包括 publish 到 NuGet.org
+#
+# 版本号管理：
+#   版本号集中在 Directory.Build.props 的 WailsNetVersion 属性中维护。
+#   发布新版本时，修改 WailsNetVersion 后打 Git tag（如 v0.1.0-alpha.1），
+#   触发 publish 阶段推送 NuGet 包到 nuget.org。
+#
+# 统一 SDK（Wails.Net.Sdk）：
+#   - multi-target net10.0;net10.0-windows10.0.19041.0，根据 TFM 自动选择平台 Bundle
+#   - 包含 build/ props/targets，消费者自动导入平台相关 MSBuild 属性
+#   - pack 阶段会验证 build/ 目录已正确打包到 nupkg
+#
+# 多 RID 自包含构建：
+#   - dist 阶段调用 BuildAll.fsx，通过 --rid all 一键构建该平台全部架构
+#   - Windows: win-x64, win-x86, win-arm64（主构建，必须成功）
+#   - Linux:   linux-x64, linux-arm64（交叉编译，允许失败）
+#   - Android: android-arm64, android-x64, android-arm（需 Android SDK，允许失败）
+# ============================================================================
+
+name: CI
+
+on:
+  push:
+    branches:
+      - '**'
+    tags:
+      - 'v*.*.*'
+  pull_request:
+    branches:
+      - main
+
+env:
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  # 标记为 CI 构建，启用 ContinuousIntegrationBuild 与确定性构建
+  CI: 'true'
+  # 解决方案文件
+  SOLUTION: 'Wails.Net.slnx'
+  # 打包输出目录
+  PACKAGE_OUTPUT: 'artifacts/packages'
+  # 自包含构建产物目录
+  DIST_OUTPUT: 'artifacts/dist'
+
+# ============================================================================
+# Job 1：构建（restore + build）
+# ============================================================================
+# Windows runner 构建全部项目，包括 Linux 平台项目（交叉编译程序集）。
+# 构建产物上传为 artifact，供后续 test / pack job 下载使用。
+jobs:
+  build:
+    name: 构建
+    runs-on: windows-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: 缓存 NuGet 包
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: 还原 NuGet 包
+        run: dotnet restore ${{ env.SOLUTION }}
+
+      - name: 构建解决方案
+        run: dotnet build ${{ env.SOLUTION }} -c Release --no-restore -p:SkipFrontendBuild=true
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: |
+            src/**/bin/Release/
+            tests/**/bin/Release/
+          retention-days: 1
+
+# ============================================================================
+# Job 2：测试
+# ============================================================================
+# 跨平台测试（Application + CLI），在 Windows runner 上运行
+  test-application:
+    name: 测试 (Application + CLI)
+    runs-on: windows-latest
+    needs: build
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: 缓存 NuGet 包
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: 下载构建产物
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+
+      # Application 测试（TUnit，使用 dotnet run 而非 dotnet test）
+      - name: 运行 Application 测试
+        run: dotnet run --project tests/Wails.Net.Application.Tests/Wails.Net.Application.Tests.csproj --no-build -c Release
+
+      # CLI 测试
+      - name: 运行 CLI 测试
+        run: dotnet run --project tests/Wails.Net.Cli.Tests/Wails.Net.Cli.Tests.csproj --no-build -c Release
+
+# Windows 平台测试（依赖 Win32 API、注册表、WinForms 剪贴板）
+  test-windows:
+    name: 测试 (Windows 平台)
+    runs-on: windows-latest
+    needs: build
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: 缓存 NuGet 包
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: 下载构建产物
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+
+      - name: 运行 Windows 平台测试
+        run: dotnet run --project tests/Wails.Net.Application.Windows.Tests/Wails.Net.Application.Windows.Tests.csproj --no-build -c Release
+
+# Linux 平台测试（依赖 GirCore/GTK4 原生库，需在 Linux runner 上运行）
+  test-linux:
+    name: 测试 (Linux 平台)
+    runs-on: ubuntu-latest
+    needs: build
+    continue-on-error: true  # Linux 原生库环境可能不稳定，允许失败
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: 缓存 NuGet 包
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      # 安装 GTK4 + WebKitGTK 6.0 原生库（Debian/Ubuntu 系）
+      - name: 安装 GTK4 + WebKitGTK 原生库
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y libgtk-4-1 libwebkitgtk-6.0-4 || sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+
+      # 在 Linux 上重新构建 Linux 平台项目（之前的构建在 Windows 上完成）
+      - name: 还原 NuGet 包
+        run: dotnet restore ${{ env.SOLUTION }}
+
+      - name: 构建 Linux 测试项目
+        run: dotnet build tests/Wails.Net.Application.Linux.Tests/Wails.Net.Application.Linux.Tests.csproj -c Release
+
+      - name: 运行 Linux 平台测试
+        run: dotnet run --project tests/Wails.Net.Application.Linux.Tests/Wails.Net.Application.Linux.Tests.csproj --no-build -c Release
+
+# ============================================================================
+# Job 3：打包 NuGet 包（仅 main 分支或 tag 触发）
+# ============================================================================
+  pack:
+    name: 打包 NuGet
+    runs-on: windows-latest
+    needs: [test-application, test-windows]
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: 缓存 NuGet 包
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: 下载构建产物
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+
+      - name: 创建打包输出目录
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path ${{ env.PACKAGE_OUTPUT }}
+
+      # 打包所有 src/ 下的可发布项目（slnx 包含 Bundle.Windows / Bundle.Linux / Sdk）
+      - name: 打包解决方案
+        shell: pwsh
+        run: dotnet pack ${{ env.SOLUTION }} -c Release --no-build -o ${{ env.PACKAGE_OUTPUT }} -p:SkipFrontendBuild=true
+
+      # 单独打包 Templates 项目
+      # Templates 不在 slnx 中（dotnet pack 会因 NU5017 误报退出码 1，但 nupkg 实际正确生成）
+      - name: 打包 Templates 项目
+        shell: pwsh
+        run: |
+          $templatesExit = 0
+          dotnet pack src/Wails.Net.Templates/Wails.Net.Templates.csproj -c Release -o ${{ env.PACKAGE_OUTPUT }}
+          if ($LASTEXITCODE -ne 0) { $templatesExit = $LASTEXITCODE; Write-Host "Templates 打包返回非零退出码 $templatesExit（NU5017 误报，nupkg 已生成）" }
+
+      # 验证 Templates nupkg 实际生成
+      - name: 验证 Templates 包
+        shell: pwsh
+        run: |
+          $templatesPkg = Get-ChildItem ${{ env.PACKAGE_OUTPUT }} -Filter "Wails.Net.Templates.*.nupkg" -ErrorAction SilentlyContinue
+          if (-not $templatesPkg) { Write-Host "错误：Templates 包未生成"; exit 1 }
+          Write-Host "Templates 包已生成: $($templatesPkg.Name)"
+
+      # 验证统一 SDK 包（Wails.Net.Sdk）已生成且包含 build/ 目录
+      - name: 验证 Wails.Net.Sdk 包
+        shell: pwsh
+        run: |
+          $sdkPkg = Get-ChildItem ${{ env.PACKAGE_OUTPUT }} -Filter "Wails.Net.Sdk.*.nupkg" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $sdkPkg) { Write-Host "错误：Wails.Net.Sdk 包未生成"; exit 1 }
+          Write-Host "Wails.Net.Sdk 包已生成: $($sdkPkg.Name)"
+          # 解压 nupkg（zip 格式）验证 build/ 目录存在
+          $sdkTempDir = Join-Path $env:TEMP "sdk-verify-$(Get-Random)"
+          New-Item -ItemType Directory -Force -Path $sdkTempDir | Out-Null
+          Copy-Item $sdkPkg.FullName -Destination (Join-Path $sdkTempDir "sdk.zip")
+          Expand-Archive -Path (Join-Path $sdkTempDir "sdk.zip") -DestinationPath $sdkTempDir -Force
+          $sdkBuildDir = Join-Path $sdkTempDir "build"
+          if (-not (Test-Path $sdkBuildDir)) { Write-Host "错误：Wails.Net.Sdk 包未包含 build/ 目录"; exit 1 }
+          $buildFiles = Get-ChildItem $sdkBuildDir -Recurse
+          Write-Host "Wails.Net.Sdk build/ 目录验证通过，包含 $($buildFiles.Count) 个文件:"
+          $buildFiles | Format-Table Name, FullName
+          Remove-Item -Recurse -Force $sdkTempDir
+
+      - name: 列出生成的包
+        shell: pwsh
+        run: Get-ChildItem ${{ env.PACKAGE_OUTPUT }} -Filter "*.nupkg" | Format-Table Name, Length
+
+      - name: 上传包产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-output
+          path: |
+            ${{ env.PACKAGE_OUTPUT }}/*.nupkg
+            ${{ env.PACKAGE_OUTPUT }}/*.snupkg
+          retention-days: 7
+
+# ============================================================================
+# Job 4：三平台自包含构建（Windows / Linux / Android）
+# ============================================================================
+# 调用 BuildAll.fsx 统一构建脚本，通过 --rid all 一键构建该平台全部架构。
+# 生成自包含可执行文件，无需终端用户安装 .NET 运行时。
+#   - Windows: win-x64, win-x86, win-arm64 → .exe + .zip
+#   - Linux:   linux-x64, linux-arm64     → 二进制 + .tar.gz
+#   - Android: android-arm64, android-x64, android-arm → .apk
+  dist-windows:
+    name: 自包含构建 (Windows)
+    runs-on: windows-latest
+    needs: pack
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: 缓存 NuGet 包
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: 创建构建输出目录
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path ${{ env.DIST_OUTPUT }}
+
+      # 调用 BuildAll.fsx 构建 Windows 全部 RID（win-x64, win-x86, win-arm64）
+      - name: 构建 Windows 自包含（全部 RID）
+        shell: pwsh
+        run: dotnet fsi scripts/build/BuildAll.fsx -- --platform windows --rid all --configuration Release --output ${{ env.DIST_OUTPUT }} --skip-frontend
+
+      - name: 列出构建产物
+        shell: pwsh
+        run: Get-ChildItem ${{ env.DIST_OUTPUT }}/windows -Recurse | Format-Table FullName, Length
+
+      - name: 上传 Windows 构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-windows
+          path: ${{ env.DIST_OUTPUT }}/windows/
+          retention-days: 7
+
+  dist-linux:
+    name: 自包含构建 (Linux)
+    runs-on: windows-latest
+    needs: pack
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    continue-on-error: true  # Linux 在 Windows runner 上交叉编译可能失败
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: 缓存 NuGet 包
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: 创建构建输出目录
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path ${{ env.DIST_OUTPUT }}
+
+      # 调用 BuildAll.fsx 交叉编译 Linux 全部 RID（linux-x64, linux-arm64）
+      - name: 构建 Linux 自包含（全部 RID）
+        shell: pwsh
+        run: dotnet fsi scripts/build/BuildAll.fsx -- --platform linux --rid all --configuration Release --output ${{ env.DIST_OUTPUT }} --skip-frontend
+
+      - name: 列出构建产物
+        shell: pwsh
+        run: Get-ChildItem ${{ env.DIST_OUTPUT }}/linux -Recurse | Format-Table FullName, Length
+
+      - name: 上传 Linux 构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-linux
+          path: ${{ env.DIST_OUTPUT }}/linux/
+          retention-days: 7
+
+  dist-android:
+    name: 自包含构建 (Android)
+    runs-on: windows-latest
+    needs: pack
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    continue-on-error: true  # Android 构建需要完整 Android SDK 配置
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: 缓存 NuGet 包
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      # 安装 Android 工作负载（构建 APK 必需）
+      - name: 安装 Android 工作负载
+        run: dotnet workload install android
+
+      - name: 创建构建输出目录
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path ${{ env.DIST_OUTPUT }}
+
+      # 调用 BuildAll.fsx 构建 Android 全部 RID（android-arm64, android-x64, android-arm）
+      - name: 构建 Android APK（全部 RID）
+        shell: pwsh
+        run: dotnet fsi scripts/build/BuildAll.fsx -- --platform android --rid all --configuration Release --output ${{ env.DIST_OUTPUT }} --skip-frontend
+
+      - name: 列出构建产物
+        shell: pwsh
+        run: Get-ChildItem ${{ env.DIST_OUTPUT }}/android -Recurse | Format-Table FullName, Length
+
+      - name: 上传 Android 构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-android
+          path: ${{ env.DIST_OUTPUT }}/android/
+          retention-days: 7
+
+# ============================================================================
+# Job 5：发布到 NuGet.org（仅 tag 触发）
+# ============================================================================
+# 遍历所有生成的 nupkg 推送到 nuget.org，包括：
+#   - Wails.Net.Application（核心运行时）
+#   - Wails.Net.Bundle.Windows / Linux / Android（平台 Bundle）
+#   - Wails.Net.Sdk（统一 SDK 聚合包，自动选择平台）
+#   - Wails.Net.Templates（项目模板）
+  publish-nuget:
+    name: 发布到 NuGet.org
+    runs-on: windows-latest
+    needs: pack
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment:
+      name: nuget-org
+      url: https://www.nuget.org/packages/Wails.Net.Sdk
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: 下载包产物
+        uses: actions/download-artifact@v4
+        with:
+          name: package-output
+          path: ${{ env.PACKAGE_OUTPUT }}
+
+      # 遍历所有 nupkg 推送到 nuget.org
+      - name: 推送 NuGet 包
+        shell: pwsh
+        run: |
+          Get-ChildItem ${{ env.PACKAGE_OUTPUT }} -Filter "*.nupkg" | ForEach-Object {
+            Write-Host "推送包: $($_.Name)"
+            dotnet nuget push $_.FullName --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+          }

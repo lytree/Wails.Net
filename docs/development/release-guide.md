@@ -1,6 +1,6 @@
 # 发布指南
 
-本文档说明 Wails.Net 的版本号管理机制、发布流程与 GitLab CI/CD 流水线。
+本文档说明 Wails.Net 的版本号管理机制、发布流程与 GitHub Actions CI/CD 流水线。
 
 ## 版本号管理
 
@@ -76,59 +76,62 @@ git push origin main --tags
 
 ### 5. 触发 CI 发布流水线
 
-推送 tag 后，GitLab CI 将自动触发 `publish:nuget` 任务，推送 NuGet 包到 nuget.org。
+推送 tag 后，GitHub Actions 将自动触发 `publish-nuget` job，推送 NuGet 包到 nuget.org。
 
 ### 6. 验证发布
 
 - 在 [nuget.org](https://www.nuget.org/packages/Wails.Net.Application) 查看包是否上传成功
 - 使用 `dotnet add package Wails.Net.Application --version 0.2.0` 验证可安装
 
-## GitLab CI/CD 流水线
+## GitHub Actions CI/CD 流水线
 
-### 流水线阶段
+### 流水线 Jobs
 
 ```
-restore → build → test → pack → publish
+build → test → pack → dist → publish
 ```
 
-| 阶段 | 任务 | Runner | 说明 |
-|------|------|--------|------|
-| restore | `restore` | windows | 还原 NuGet 包 |
-| build | `build` | windows | 构建全部项目（包括 Linux 平台项目） |
-| test | `test:application` | windows | 运行 Application + CLI 测试 |
-| test | `test:windows` | windows | 运行 Windows 平台测试 |
-| test | `test:linux` | linux | 运行 Linux 平台测试（允许失败） |
-| pack | `pack` | windows | 打包 NuGet 包（nupkg + snupkg） |
-| publish | `publish:nuget` | windows | 推送到 nuget.org（仅 tag 触发） |
+| Job | 名称 | Runner | 说明 |
+|-----|------|--------|------|
+| build | 构建 | windows-latest | 还原 + 构建全部项目（包括 Linux 平台项目） |
+| test | test-application | windows-latest | 运行 Application + CLI 测试 |
+| test | test-windows | windows-latest | 运行 Windows 平台测试 |
+| test | test-linux | ubuntu-latest | 运行 Linux 平台测试（允许失败） |
+| pack | 打包 NuGet | windows-latest | 打包 NuGet 包（nupkg + snupkg） |
+| dist | dist-windows | windows-latest | Windows 自包含构建（win-x64/x86/arm64） |
+| dist | dist-linux | windows-latest | Linux 自包含构建（linux-x64/arm64，允许失败） |
+| dist | dist-android | windows-latest | Android APK 构建（android-arm64/x64/arm，允许失败） |
+| publish | publish-nuget | windows-latest | 推送到 nuget.org（仅 tag 触发） |
 
 ### 触发条件
 
-| 事件 | 触发的阶段 |
-|------|-----------|
-| Merge Request | restore, build, test |
-| 推送到 main 分支 | restore, build, test, pack |
-| 推送 tag（`v*` 格式） | restore, build, test, pack, publish |
+| 事件 | 触发的 Jobs |
+|------|-------------|
+| Pull Request | build, test |
+| 推送到任意分支 | build, test |
+| 推送到 main 分支 | build, test, pack, dist |
+| 推送 tag（`v*.*.*` 格式） | build, test, pack, dist, publish |
 
 ### Runner 要求
 
-#### Windows Runner
+#### Windows Runner（windows-latest）
 
-- 安装 .NET 10 SDK
-- 标签：`windows`
-- 用于构建全部项目与 Windows 平台测试
+- GitHub Actions 托管的 windows-latest 运行器
+- 通过 `actions/setup-dotnet@v4` 安装 .NET 10 SDK
+- 用于构建全部项目、Windows 测试、打包、三平台自包含构建
 
-#### Linux Runner
+#### Linux Runner（ubuntu-latest）
 
-- Docker 镜像：`mcr.microsoft.com/dotnet/sdk:10.0`
+- GitHub Actions 托管的 ubuntu-latest 运行器
+- 通过 `actions/setup-dotnet@v4` 安装 .NET 10 SDK
 - 安装 GTK4 + WebKitGTK 6.0 原生库
-- 标签：`linux`
-- 仅用于 Linux 平台测试
+- 仅用于 Linux 平台测试（允许失败）
 
-### 必需的 CI/CD 变量
+### 必需的 Secrets
 
-| 变量 | 说明 | 配置位置 |
-|------|------|--------|
-| `NUGET_API_KEY` | nuget.org API Key | GitLab → Settings → CI/CD → Variables |
+| Secret | 说明 | 配置位置 |
+|--------|------|--------|
+| `NUGET_API_KEY` | nuget.org API Key | GitHub → Settings → Secrets and variables → Actions → Repository secrets |
 
 ### 构建产物
 
@@ -230,10 +233,10 @@ wails-net --help
 
 ## SourceLink 调试支持
 
-所有 NuGet 包均启用 SourceLink，调试时可自动从 GitLab 加载源码：
+所有 NuGet 包均启用 SourceLink，调试时可自动从 GitHub 加载源码：
 
 1. 在 Visual Studio / Rider 中启用 Source Link 支持
-2. 安装 NuGet 包后，调试时自动跳转到 GitLab 源码
+2. 安装 NuGet 包后，调试时自动跳转到 GitHub 源码
 3. 符号包（.snupkg）发布到 nuget.org，自动加载符号
 
 ## 回滚

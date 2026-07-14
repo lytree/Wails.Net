@@ -43,7 +43,6 @@
   <!-- 源码映射（SourceLink） -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
-    <PackageVersion Include="Microsoft.SourceLink.GitLab" Version="8.0.0" />
   </ItemGroup>
   <!-- 测试 -->
   <ItemGroup>

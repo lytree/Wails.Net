@@ -49,7 +49,7 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 |------|------|
 | [测试指南](development/testing-guide.md) | TUnit 使用、测试组织、断言模式、平台特定测试、覆盖率要求 |
 | [贡献指南](development/contributing.md) | 编码规范、命名约定、Git 提交规范、PR 流程、代码审查要点 |
-| [发布指南](development/release-guide.md) | 版本号集中管理、发布流程、GitLab CI/CD 流水线、NuGet 发布 |
+| [发布指南](development/release-guide.md) | 版本号集中管理、发布流程、GitHub Actions CI/CD 流水线、NuGet 发布 |
 
 ### 架构决策记录（`ADR/`）
 

@@ -51,10 +51,9 @@
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
-  <!-- SourceLink：在 GitLab CI 中生成源码映射，便于调试符号定位 -->
+  <!-- SourceLink：在 GitHub Actions 中生成源码映射，便于调试符号定位 -->
   <ItemGroup Condition="'$(IsPackable)' != 'false'">
-    <PackageReference Include="Microsoft.SourceLink.GitLab" PrivateAssets="all" />
-    <SourceLinkGitLabHost Include="gitlab.com" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="all" />
   </ItemGroup>
 
 </Project>
