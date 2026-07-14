@@ -79,4 +79,10 @@ public enum ApplicationEventType : uint
 
     /// <summary>收到深度链接。</summary>
     DeepLinkReceived = 24,
+
+    /// <summary>应用激活（成为前台活动应用）。</summary>
+    ApplicationActive = 25,
+
+    /// <summary>应用失活（失去前台活动状态）。</summary>
+    ApplicationInactive = 26,
 }

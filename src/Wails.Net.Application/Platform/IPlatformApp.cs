@@ -56,6 +56,18 @@ public interface IPlatformApp
     uint GetCurrentWindowId();
 
     /// <summary>
+    /// 将应用主窗口的父窗口设置为指定平台原生句柄。
+    /// 主要用于将应用嵌入到外部宿主进程（如插件宿主、IDE 面板等）。
+    /// 默认实现为 no-op，由支持的平台（如 Windows）覆盖。
+    /// 对应 Wails v3 Go 版本 application.go 中的 SetParent 方法。
+    /// </summary>
+    /// <param name="parent">父窗口的平台原生句柄（如 Win32 HWND）。</param>
+    void SetParent(IntPtr parent)
+    {
+        // 默认空实现，由平台特定实现覆盖。
+    }
+
+    /// <summary>
     /// 显示关于对话框。
     /// </summary>
     /// <param name="name">应用名称。</param>

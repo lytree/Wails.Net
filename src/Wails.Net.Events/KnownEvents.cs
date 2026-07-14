@@ -143,6 +143,15 @@ public static class KnownEvents
     /// <summary>窗口即将卸载事件。</summary>
     public const string WindowBeforeUnload = "wails:window:before:unload";
 
+    /// <summary>应用激活事件（成为前台活动应用）。</summary>
+    public const string ApplicationActive = "wails:application:active";
+
+    /// <summary>应用失活事件（失去前台活动状态）。</summary>
+    public const string ApplicationInactive = "wails:application:inactive";
+
+    /// <summary>检测到第二个实例启动事件（携带命令行参数）。</summary>
+    public const string SecondInstanceLaunched = "wails:second-instance:launched";
+
     /// <summary>
     /// 根据窗口事件类型返回对应的事件名称。
     /// </summary>
@@ -213,6 +222,8 @@ public static class KnownEvents
         ApplicationEventType.URLLoadFailed => URLLoadFailed,
         ApplicationEventType.DeepLinkReceived => DeepLinkReceived,
         ApplicationEventType.WindowBeforeUnload => WindowBeforeUnload,
+        ApplicationEventType.ApplicationActive => ApplicationActive,
+        ApplicationEventType.ApplicationInactive => ApplicationInactive,
         _ => $"wails:custom:{(uint)type}"
     };
 

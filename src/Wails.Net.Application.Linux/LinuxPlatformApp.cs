@@ -414,8 +414,9 @@ public sealed class LinuxPlatformApp : IPlatformApp
                         var json = reader.ReadToEnd();
                         var args = System.Text.Json.JsonSerializer.Deserialize<string[]>(json) ?? Array.Empty<string>();
 
-                        // 通过事件系统分发 SecondInstanceLaunched 事件，携带命令行参数。
-                        Application.Get()?.Events.Emit("SecondInstanceLaunched", args, null);
+                        // 通过 Application 集中入口分发 SecondInstanceLaunched 事件并触发用户回调。
+                        // 对应主题 D：替换魔法字符串为 KnownEvents.SecondInstanceLaunched 常量。
+                        Application.Get()?.RaiseSecondInstanceLaunched(args);
                     }
                     catch
                     {

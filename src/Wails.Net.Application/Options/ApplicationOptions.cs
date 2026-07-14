@@ -23,6 +23,13 @@ public class ApplicationOptions
     public string Version { get; set; } = "1.0.0";
 
     /// <summary>
+    /// 应用程序 Bundle ID（包标识符），用于平台特定注册和单实例协调。
+    /// 对应 Wails v3 Go 版本 application_options.go 中的 BundleID 字段。
+    /// 形如 <c>com.company.appname</c>，未设置时回退到 <see cref="Name"/>。
+    /// </summary>
+    public string? BundleID { get; set; }
+
+    /// <summary>
     /// 应用图标字节数据，可为 null。
     /// </summary>
     public byte[]? Icon { get; set; }

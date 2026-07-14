@@ -182,6 +182,13 @@ public class Application
     private bool _isFirstInstance = true;
 
     /// <summary>
+    /// 第二个实例启动时调用的回调列表。
+    /// 由 <see cref="OnSecondInstanceLaunch"/> 注册，由 <see cref="RaiseSecondInstanceLaunched"/> 触发。
+    /// 对应 Wails v3 Go 版本 application.go 中的 OnSecondInstanceLaunch hook 机制。
+    /// </summary>
+    private Action<string[]>? _onSecondInstanceLaunch;
+
+    /// <summary>
     /// 应用级取消令牌源，在 <see cref="Shutdown"/> 时取消。
     /// 对应 Wails v3 Go 版本 application.go 中的 context 取消机制。
     /// </summary>
@@ -795,6 +802,59 @@ public class Application
     public void OnBeforeStart(Action<Application> hook)
     {
         _onBeforeStartHooks.Add(hook);
+    }
+
+    /// <summary>
+    /// 获取当前活动窗口的 ID。委托给平台应用 <see cref="IPlatformApp.GetCurrentWindowId"/>。
+    /// 对应 Wails v3 Go 版本 application.go 中的 GetCurrentWindowID 方法。
+    /// </summary>
+    /// <returns>当前活动窗口的 ID；若平台应用未设置则返回 0。</returns>
+    public uint GetCurrentWindowID()
+    {
+        return _platformApp?.GetCurrentWindowId() ?? 0u;
+    }
+
+    /// <summary>
+    /// 将应用主窗口的父窗口设置为指定平台原生句柄。
+    /// 主要用于将应用嵌入到外部宿主进程（如插件宿主、IDE 面板等）。
+    /// 委托给平台应用 <see cref="IPlatformApp.SetParent"/>；不支持的平台为 no-op。
+    /// 对应 Wails v3 Go 版本 application.go 中的 SetParent 方法。
+    /// </summary>
+    /// <param name="parent">父窗口的平台原生句柄（如 Win32 HWND）。</param>
+    public void SetParent(IntPtr parent)
+    {
+        _platformApp?.SetParent(parent);
+    }
+
+    /// <summary>
+    /// 注册第二个实例启动时的回调。当启用单实例模式且有新进程尝试启动时，
+    /// 已运行的首实例会通过此回调收到新实例的命令行参数。
+    /// 对应 Wails v3 Go 版本 application.go 中的 OnSecondInstanceLaunch hook 机制。
+    /// </summary>
+    /// <param name="callback">回调函数，参数为新实例启动时的命令行参数。</param>
+    public void OnSecondInstanceLaunch(Action<string[]> callback)
+    {
+        _onSecondInstanceLaunch = callback;
+    }
+
+    /// <summary>
+    /// 触发 <see cref="KnownEvents.SecondInstanceLaunched"/> 事件并调用通过
+    /// <see cref="OnSecondInstanceLaunch"/> 注册的回调。
+    /// 由平台特定代码在检测到第二个实例启动时调用，替代直接 Emit 事件的分散式入口，
+    /// 统一处理事件分发与用户回调。
+    /// </summary>
+    /// <param name="args">新实例启动时的命令行参数。</param>
+    public void RaiseSecondInstanceLaunched(string[] args)
+    {
+        _events.Emit(KnownEvents.SecondInstanceLaunched, args, null);
+        try
+        {
+            _onSecondInstanceLaunch?.Invoke(args);
+        }
+        catch
+        {
+            // 用户回调中的异常不应中断平台事件分发流程
+        }
     }
 
     /// <summary>
