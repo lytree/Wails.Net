@@ -32,5 +32,6 @@
     <Project Path="tests/Wails.Net.Application.Linux.Tests/Wails.Net.Application.Linux.Tests.csproj" />
     <Project Path="tests/Wails.Net.Application.Android.Tests/Wails.Net.Application.Android.Tests.csproj" />
     <Project Path="tests/Wails.Net.Cli.Tests/Wails.Net.Cli.Tests.csproj" />
+    <Project Path="tests/Wails.Net.AssetServer.Tests/Wails.Net.AssetServer.Tests.csproj" />
   </Folder>
 </Solution>

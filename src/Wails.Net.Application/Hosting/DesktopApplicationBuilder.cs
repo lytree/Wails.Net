@@ -199,7 +199,10 @@ public sealed class DesktopApplicationBuilder
 
             if (Directory.Exists(rootPath))
             {
-                var fileAssetServer = new FileAssetServer(rootPath);
+                var fileAssetServer = new FileAssetServer(
+                    rootPath,
+                    enableSpaFallback: desktopOpts.Assets.EnableSpaFallback,
+                    defaultDocument: desktopOpts.Assets.DefaultDocument);
                 application.AssetServer = fileAssetServer;
             }
         }

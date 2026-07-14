@@ -24,7 +24,18 @@ public class FileAssetServer : AssetServer
     /// </summary>
     /// <param name="rootPath">资源文件系统的根路径。</param>
     public FileAssetServer(string rootPath)
-        : base(CreateOptions(rootPath))
+        : this(rootPath, enableSpaFallback: false, defaultDocument: "index.html")
+    {
+    }
+
+    /// <summary>
+    /// 使用指定根路径和 SPA 回退配置构造 <see cref="FileAssetServer" /> 实例。
+    /// </summary>
+    /// <param name="rootPath">资源文件系统的根路径。</param>
+    /// <param name="enableSpaFallback">是否启用 SPA 路由回退。</param>
+    /// <param name="defaultDocument">SPA 回退使用的默认文档名称。</param>
+    public FileAssetServer(string rootPath, bool enableSpaFallback, string defaultDocument)
+        : base(CreateOptions(rootPath, enableSpaFallback, defaultDocument))
     {
         ArgumentException.ThrowIfNullOrEmpty(rootPath);
         _rootPath = rootPath;
@@ -53,11 +64,11 @@ public class FileAssetServer : AssetServer
     }
 
     /// <summary>
-    /// 获取指定路径文件的最后修改时间（UTC），用于设置 Last-Modified 头。
+    /// 获取指定路径文件的最后修改时间（UTC），用于设置 Last-Modified 头和 If-Modified-Since 协商缓存。
     /// </summary>
     /// <param name="path">资源相对路径。</param>
     /// <returns>最后修改时间；若文件不存在则返回 null。</returns>
-    public DateTime? GetLastModified(string path)
+    public override DateTime? GetLastModified(string path)
     {
         if (string.IsNullOrEmpty(path))
         {
@@ -84,26 +95,6 @@ public class FileAssetServer : AssetServer
     }
 
     /// <summary>
-    /// 处理 HTTP 请求时额外写入 Last-Modified 头。
-    /// 在基类处理之后补充文件相关的元数据头。
-    /// </summary>
-    /// <param name="context">HTTP 上下文。</param>
-    /// <param name="cancellationToken">取消令牌。</param>
-    public override async Task ServeHttpAsync(HttpListenerContext context, CancellationToken cancellationToken = default)
-    {
-        var path = context.Request.Url?.AbsolutePath.Split('?')[0] ?? "/";
-        var lastModified = GetLastModified(path);
-
-        if (lastModified is not null)
-        {
-            context.Response.Headers[Headers.LastModified] =
-                lastModified.Value.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
-        }
-
-        await base.ServeHttpAsync(context, cancellationToken);
-    }
-
-    /// <summary>
     /// 将相对路径解析为绝对路径，并确保解析结果位于根路径之下。
     /// </summary>
     /// <param name="path">资源相对路径。</param>
@@ -124,17 +115,21 @@ public class FileAssetServer : AssetServer
     }
 
     /// <summary>
-    /// 根据根路径创建资源服务器选项。
+    /// 根据根路径和 SPA 回退配置创建资源服务器选项。
     /// </summary>
     /// <param name="rootPath">资源根路径。</param>
+    /// <param name="enableSpaFallback">是否启用 SPA 路由回退。</param>
+    /// <param name="defaultDocument">SPA 回退使用的默认文档名称。</param>
     /// <returns>配置好的 <see cref="AssetOptions" /> 实例。</returns>
-    private static AssetOptions CreateOptions(string rootPath)
+    private static AssetOptions CreateOptions(string rootPath, bool enableSpaFallback, string defaultDocument)
     {
         ArgumentException.ThrowIfNullOrEmpty(rootPath);
         return new AssetOptions
         {
             Handler = "file",
-            RootPath = rootPath
+            RootPath = rootPath,
+            EnableSpaFallback = enableSpaFallback,
+            DefaultDocument = string.IsNullOrEmpty(defaultDocument) ? "index.html" : defaultDocument
         };
     }
 }

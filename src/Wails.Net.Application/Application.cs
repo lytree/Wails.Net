@@ -72,6 +72,18 @@ public class Application
     private Wails.Net.AssetServer.AssetServer? _assetServer;
 
     /// <summary>
+    /// 自定义 URI scheme 到 AssetServer 的映射。
+    /// 通过 <see cref="RegisterScheme"/> 注册，平台 WebviewWindow 在创建时可查询此映射以拦截请求。
+    /// </summary>
+    private readonly Dictionary<string, Wails.Net.AssetServer.AssetServer> _customSchemes =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 用于保护 <see cref="_customSchemes"/> 并发访问的同步对象。
+    /// </summary>
+    private readonly object _customSchemesLock = new();
+
+    /// <summary>
     /// 是否正在运行。
     /// </summary>
     private volatile bool _isRunning;
@@ -364,6 +376,97 @@ public class Application
     {
         get => _assetServer;
         set => _assetServer = value;
+    }
+
+    /// <summary>
+    /// 注册自定义 URI scheme，将指定 scheme 的请求路由到提供的 <see cref="Wails.Net.AssetServer.AssetServer"/>。
+    /// 对应 Tauri v2 的自定义协议（asset protocol）功能。
+    /// 注册后，平台 WebviewWindow 在创建时会查询此映射并设置请求拦截。
+    /// </summary>
+    /// <param name="scheme">URI scheme 名称（不含 "://"，如 "myapp"）。</param>
+    /// <param name="assetServer">处理该 scheme 请求的资源服务器。若为 null，则使用 <see cref="AssetServer"/>。</param>
+    /// <exception cref="ArgumentNullException">scheme 为 null。</exception>
+    /// <exception cref="ArgumentException">scheme 为空字符串或仅包含空白字符。</exception>
+    public void RegisterScheme(string scheme, Wails.Net.AssetServer.AssetServer? assetServer = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(scheme);
+        lock (_customSchemesLock)
+        {
+            _customSchemes[scheme] = assetServer ?? _assetServer
+                ?? throw new InvalidOperationException(
+                    "RegisterScheme 需要提供 assetServer，或在 Application.AssetServer 已设置后调用。");
+        }
+    }
+
+    /// <summary>
+    /// 取消注册指定 URI scheme。
+    /// </summary>
+    /// <param name="scheme">要取消注册的 scheme 名称。</param>
+    /// <returns>是否成功移除；若 scheme 未注册则返回 false。</returns>
+    public bool UnregisterScheme(string scheme)
+    {
+        if (string.IsNullOrEmpty(scheme))
+        {
+            return false;
+        }
+
+        lock (_customSchemesLock)
+        {
+            return _customSchemes.Remove(scheme);
+        }
+    }
+
+    /// <summary>
+    /// 查询指定 URI scheme 是否已注册。
+    /// </summary>
+    /// <param name="scheme">scheme 名称。</param>
+    /// <returns>若已注册返回 true；否则返回 false。</returns>
+    public bool IsSchemeRegistered(string scheme)
+    {
+        if (string.IsNullOrEmpty(scheme))
+        {
+            return false;
+        }
+
+        lock (_customSchemesLock)
+        {
+            return _customSchemes.ContainsKey(scheme);
+        }
+    }
+
+    /// <summary>
+    /// 尝试获取指定 URI scheme 关联的 <see cref="Wails.Net.AssetServer.AssetServer"/>。
+    /// 供平台 WebviewWindow 实现在创建时查询已注册的 scheme 以设置请求拦截。
+    /// </summary>
+    /// <param name="scheme">scheme 名称。</param>
+    /// <param name="assetServer">查找到的资源服务器；若未注册则为 null。</param>
+    /// <returns>是否找到已注册的 scheme。</returns>
+    public bool TryGetSchemeAssetServer(string scheme, out Wails.Net.AssetServer.AssetServer? assetServer)
+    {
+        if (string.IsNullOrEmpty(scheme))
+        {
+            assetServer = null;
+            return false;
+        }
+
+        lock (_customSchemesLock)
+        {
+            return _customSchemes.TryGetValue(scheme, out assetServer);
+        }
+    }
+
+    /// <summary>
+    /// 获取所有已注册的自定义 URI scheme 名称的只读列表。
+    /// </summary>
+    public IReadOnlyList<string> RegisteredSchemes
+    {
+        get
+        {
+            lock (_customSchemesLock)
+            {
+                return _customSchemes.Keys.ToList().AsReadOnly();
+            }
+        }
     }
 
     /// <summary>

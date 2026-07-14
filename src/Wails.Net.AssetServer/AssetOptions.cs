@@ -39,4 +39,34 @@ public class AssetOptions
     /// 默认值为 30 秒，对应 Go 版本默认无限制但建议设置上限。
     /// </summary>
     public TimeSpan HandlerTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// 获取或设置是否启用 SPA 路由回退。
+    /// 启用后，当请求的资源不存在时，自动回退到 <see cref="DefaultDocument"/>。
+    /// 适用于 Vue/React/Angular 等前端框架的客户端路由。
+    /// 默认值为 false（由 Application 层根据 <c>DesktopHostOptions</c> 启用）。
+    /// </summary>
+    public bool EnableSpaFallback { get; set; }
+
+    /// <summary>
+    /// 获取或设置 SPA 回退使用的默认文档名称。
+    /// 当 <see cref="EnableSpaFallback"/> 为 true 且资源未找到时使用。
+    /// 默认值为 "index.html"。
+    /// </summary>
+    public string DefaultDocument { get; set; } = "index.html";
+
+    /// <summary>
+    /// 获取或设置自定义 MIME 类型映射字典。
+    /// 键为文件扩展名（含前导点，不区分大小写，如 <c>.webmanifest</c>），
+    /// 值为对应的 MIME 类型。
+    /// 查找时优先于此字典，未命中再使用内置映射。
+    /// </summary>
+    public Dictionary<string, string> CustomMimeTypes { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 获取或设置自定义 MIME 类型解析器。
+    /// 传入文件路径，返回对应 MIME 类型；返回 null 表示未识别，交由内置映射处理。
+    /// 优先级最高，先于此字典 <see cref="CustomMimeTypes"/> 与内置映射执行。
+    /// </summary>
+    public Func<string, string?>? MimeTypeResolver { get; set; }
 }

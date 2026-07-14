@@ -136,6 +136,7 @@ public class AssetServer
     /// <summary>
     /// 根据路径异步返回资源内容。
     /// 通过中间件链处理请求，最终由派生类提供的资源读取逻辑兜底。
+    /// 当资源未找到且启用 SPA 回退时，回退到默认文档。
     /// </summary>
     /// <param name="path">请求的资源路径。</param>
     /// <returns>资源内容字节组；若资源不存在则返回空字节数组。</returns>
@@ -143,8 +144,8 @@ public class AssetServer
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
 
-        var result = await _middlewareChain.ExecuteAsync(path, p => Task.FromResult(ReadAssetCore(p)));
-        return result ?? [];
+        var (content, _) = await TryReadAssetWithSpaFallbackAsync(path);
+        return content ?? [];
     }
 
     /// <summary>
@@ -191,6 +192,7 @@ public class AssetServer
 
     /// <summary>
     /// 核心资源处理逻辑：读取资源、设置头部、处理 Range 和缓存。
+    /// 当资源未找到且启用 SPA 回退时，尝试读取默认文档。
     /// </summary>
     /// <param name="context">HTTP 上下文。</param>
     /// <param name="path">资源路径。</param>
@@ -203,8 +205,8 @@ public class AssetServer
 
         try
         {
-            // 通过基于路径的中间件链处理，最终读取资源
-            var content = await _middlewareChain.ExecuteAsync(path, p => Task.FromResult(ReadAssetCore(p)));
+            // 尝试读取资源，若未找到且启用 SPA 回退，则尝试默认文档
+            var (content, servedPath) = await TryReadAssetWithSpaFallbackAsync(path);
 
             if (content is null || content.Length == 0)
             {
@@ -212,13 +214,21 @@ public class AssetServer
                 return;
             }
 
-            var mimeType = GetMimeType(path);
+            var mimeType = GetMimeType(servedPath);
             response.ContentType = mimeType;
             response.Headers[Headers.AcceptRanges] = "bytes";
 
             // 计算 ETag（基于内容的 SHA-256 前 16 字符）
             var etag = ComputeETag(content);
             response.Headers[Headers.ETag] = etag;
+
+            // 设置 Last-Modified 头（若派生类提供）
+            var lastModified = GetLastModified(servedPath);
+            if (lastModified is not null)
+            {
+                response.Headers[Headers.LastModified] =
+                    lastModified.Value.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+            }
 
             // 设置 Cache-Control（静态资源默认缓存）
             response.Headers[Headers.CacheControl] = "no-cache";
@@ -230,6 +240,21 @@ public class AssetServer
                 response.StatusCode = 304;
                 response.Close();
                 return;
+            }
+
+            // 处理 If-Modified-Since（304 Not Modified）
+            // 仅当未命中 If-None-Match 时检查，符合 HTTP 缓存语义
+            var ifModifiedSince = request.Headers[Headers.IfModifiedSince];
+            if (!string.IsNullOrEmpty(ifModifiedSince) && lastModified is not null &&
+                TryParseHttpDate(ifModifiedSince, out var sinceDate))
+            {
+                // 比较精度为秒，去除亚秒部分
+                if (lastModified.Value <= sinceDate)
+                {
+                    response.StatusCode = 304;
+                    response.Close();
+                    return;
+                }
             }
 
             // 处理 Range 请求
@@ -264,6 +289,38 @@ public class AssetServer
         {
             ServeError(context, ex);
         }
+    }
+
+    /// <summary>
+    /// 尝试读取指定路径的资源内容。
+    /// 若资源未找到且 <see cref="AssetOptions.EnableSpaFallback"/> 为 true，
+    /// 则回退到 <see cref="AssetOptions.DefaultDocument"/>。
+    /// </summary>
+    /// <param name="path">请求的资源路径。</param>
+    /// <returns>
+    /// 元组：资源内容（可能为 null）和实际服务的路径（用于 MIME 类型推导）。
+    /// </returns>
+    private async Task<(byte[]? content, string servedPath)> TryReadAssetWithSpaFallbackAsync(string path)
+    {
+        var content = await _middlewareChain.ExecuteAsync(path, p => Task.FromResult(ReadAssetCore(p)));
+        if (content is not null && content.Length > 0)
+        {
+            return (content, path);
+        }
+
+        // SPA 回退：若启用且默认文档有效，尝试读取默认文档
+        if (_options.EnableSpaFallback && !string.IsNullOrEmpty(_options.DefaultDocument))
+        {
+            var fallbackPath = _options.DefaultDocument;
+            var fallbackContent = await _middlewareChain.ExecuteAsync(
+                fallbackPath, p => Task.FromResult(ReadAssetCore(p)));
+            if (fallbackContent is not null && fallbackContent.Length > 0)
+            {
+                return (fallbackContent, fallbackPath);
+            }
+        }
+
+        return (null, path);
     }
 
     /// <summary>
@@ -467,8 +524,47 @@ public class AssetServer
     }
 
     /// <summary>
+    /// 获取指定路径资源的最后修改时间（UTC），用于设置 Last-Modified 头和 If-Modified-Since 协商缓存。
+    /// 基类默认返回 null（不设置 Last-Modified）。
+    /// 派生类（如 <see cref="FileAssetServer"/>）可重写此方法以提供具体的修改时间。
+    /// </summary>
+    /// <param name="path">资源路径。</param>
+    /// <returns>最后修改时间（UTC）；若不可用则返回 null。</returns>
+    public virtual DateTime? GetLastModified(string path) => null;
+
+    /// <summary>
+    /// 尝试解析 HTTP 日期字符串（RFC 1123 / RFC 850 / asctime 格式）。
+    /// </summary>
+    /// <param name="dateString">日期字符串。</param>
+    /// <param name="result">解析结果（UTC）。</param>
+    /// <returns>是否解析成功。</returns>
+    private static bool TryParseHttpDate(string dateString, out DateTime result)
+    {
+        // 优先尝试 RFC 1123 格式（"R"），与 Last-Modified 头部输出格式一致
+        if (DateTime.TryParseExact(
+            dateString,
+            "r",
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal,
+            out result))
+        {
+            return true;
+        }
+
+        // 回退到通用解析（支持 RFC 850、asctime 等 HTTP 允许的格式）
+        return DateTime.TryParse(
+            dateString,
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal,
+            out result);
+    }
+
+    /// <summary>
     /// 根据文件扩展名返回 MIME 类型。
     /// 对应 Wails v3 Go 版本 GetMimetype 函数。
+    /// 查找顺序：自定义解析器 <see cref="AssetOptions.MimeTypeResolver"/> →
+    /// 自定义映射 <see cref="AssetOptions.CustomMimeTypes"/> → 内置扩展名映射 →
+    /// 默认 <c>application/octet-stream</c>。
     /// </summary>
     /// <param name="path">文件路径或文件名。</param>
     /// <returns>对应的 MIME 类型字符串；若无法识别则返回 <c>application/octet-stream</c>。</returns>
@@ -479,8 +575,27 @@ public class AssetServer
             return "application/octet-stream";
         }
 
-        var extension = Path.GetExtension(path).ToLowerInvariant();
-        return extension switch
+        // 优先级 1：自定义解析器（返回非 null 即采用）
+        if (_options.MimeTypeResolver is not null)
+        {
+            var resolved = _options.MimeTypeResolver(path);
+            if (!string.IsNullOrEmpty(resolved))
+            {
+                return resolved;
+            }
+        }
+
+        var extension = Path.GetExtension(path);
+
+        // 优先级 2：自定义 MIME 字典
+        if (!string.IsNullOrEmpty(extension) &&
+            _options.CustomMimeTypes.TryGetValue(extension, out var custom))
+        {
+            return custom;
+        }
+
+        // 优先级 3：内置映射
+        return extension.ToLowerInvariant() switch
         {
             ".html" or ".htm" => "text/html",
             ".css" => "text/css",
