@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Wails.Net.Application.Commands;
+using Wails.Net.Application.Security;
 
 namespace Wails.Net.Application.Plugins.BuiltIn;
 
@@ -53,16 +54,43 @@ public class ShellPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
-        context.Commands.MapCommand("shell.execute", (Func<string, string?, ShellResult>)((command, args) =>
-            Execute(command, args)));
+        // 声明权限集
+        context.Permissions.RegisterPermissionSet("shell:default", "Shell 默认权限集",
+            "shell:allow-execute", "shell:allow-open");
+        context.Permissions.DeclarePermission("shell:allow-execute", "允许执行命令行程序");
+        context.Permissions.DeclarePermission("shell:allow-open", "允许使用系统默认程序打开文件或URL");
 
-        context.Commands.MapCommand("shell.executeAsync", (Func<string, string?, Task<ShellResult>>)(async (command, args) =>
-            await ExecuteAsync(command, args)));
-
-        context.Commands.MapCommand("shell.open", (Action<string>)(path => Open(path)));
-
-        context.Commands.MapCommand("shell.openUrl", (Action<string>)(url => Open(url)));
+        // 使用带 [ScopeParameter] 特性的方法组注册
+        // 对应 Tauri v2 的 shell scope：限定可执行的命令和可打开的路径
+        context.Commands.MapCommand("shell.execute", (Func<string, string?, ShellResult>)ExecuteScoped);
+        context.Commands.MapCommand("shell.executeAsync", (Func<string, string?, Task<ShellResult>>)ExecuteScopedAsync);
+        context.Commands.MapCommand("shell.open", (Action<string>)OpenPath);
+        context.Commands.MapCommand("shell.openUrl", (Action<string>)OpenUrl);
     }
+
+    /// <summary>
+    /// 同步执行 shell 命令（带 Scope 校验包装）。
+    /// </summary>
+    public ShellResult ExecuteScoped(
+        [ScopeParameter("shell:allow-execute")] string command,
+        string? args) => Execute(command, args);
+
+    /// <summary>
+    /// 异步执行 shell 命令（带 Scope 校验包装）。
+    /// </summary>
+    public Task<ShellResult> ExecuteScopedAsync(
+        [ScopeParameter("shell:allow-execute")] string command,
+        string? args) => ExecuteAsync(command, args);
+
+    /// <summary>
+    /// 使用系统默认程序打开文件（带 Scope 校验包装）。
+    /// </summary>
+    public void OpenPath([ScopeParameter("shell:allow-open")] string path) => Open(path);
+
+    /// <summary>
+    /// 使用系统默认程序打开 URL（带 Scope 校验包装）。
+    /// </summary>
+    public void OpenUrl([ScopeParameter("shell:allow-open")] string url) => Open(url);
 
     /// <summary>
     /// 同步执行 shell 命令。

@@ -29,6 +29,13 @@ public class StorePlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        // 声明权限集
+        context.Permissions.RegisterPermissionSet("store:default", "键值存储默认权限集",
+            "store:allow-get", "store:allow-set", "store:allow-delete");
+        context.Permissions.DeclarePermission("store:allow-get", "允许读取键值存储");
+        context.Permissions.DeclarePermission("store:allow-set", "允许写入键值存储");
+        context.Permissions.DeclarePermission("store:allow-delete", "允许删除键值存储");
+
         context.Commands.MapCommand("store.get", (Func<ICommandContext, string, string?>)((ctx, key) =>
         {
             var service = ctx.Services.GetService<KvStoreService>();

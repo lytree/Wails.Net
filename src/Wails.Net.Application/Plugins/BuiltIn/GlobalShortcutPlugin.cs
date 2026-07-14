@@ -34,6 +34,12 @@ public class GlobalShortcutPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        // 声明权限集
+        context.Permissions.RegisterPermissionSet("global-shortcut:default", "全局快捷键默认权限集",
+            "global-shortcut:allow-register", "global-shortcut:allow-unregister");
+        context.Permissions.DeclarePermission("global-shortcut:allow-register", "允许注册全局快捷键");
+        context.Permissions.DeclarePermission("global-shortcut:allow-unregister", "允许注销全局快捷键");
+
         context.Commands.MapCommand("globalshortcut.register", (Action<ICommandContext, string>)((ctx, accelerator) =>
         {
             var app = Application.Get();

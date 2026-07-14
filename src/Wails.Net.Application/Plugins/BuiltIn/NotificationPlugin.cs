@@ -30,6 +30,11 @@ public class NotificationPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        // 声明权限集
+        context.Permissions.RegisterPermissionSet("notification:default", "通知默认权限集",
+            "notification:allow-show");
+        context.Permissions.DeclarePermission("notification:allow-show", "允许显示系统通知");
+
         context.Commands.MapCommand("notification.show", (Action<ICommandContext, NotificationOptions>)((ctx, options) =>
         {
             var service = ctx.Services.GetService<NotificationService>();

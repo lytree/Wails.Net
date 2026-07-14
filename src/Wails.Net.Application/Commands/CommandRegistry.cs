@@ -32,7 +32,23 @@ public sealed class CommandRegistry
     public void Register(string name, object instance, MethodInfo method)
     {
         var invoker = CommandInvokerCompiler.Compile(method);
-        _commands[name] = new CommandEntry(name, instance, method, invoker);
+        _commands[name] = new CommandEntry(name, instance, method, invoker, []);
+    }
+
+    /// <summary>
+    /// 注册命令并指定所需能力列表。
+    /// 在注册时通过 <see cref="CommandInvokerCompiler.Compile"/> 编译表达式树，
+    /// 生成强类型调用器，运行时零反射调用。
+    /// 调度时 <see cref="CommandDispatcher"/> 会校验所有所需能力是否已授权。
+    /// </summary>
+    /// <param name="name">命令名称。</param>
+    /// <param name="instance">命令所属实例。</param>
+    /// <param name="method">命令方法反射信息。</param>
+    /// <param name="requiredCapabilities">所需能力标识列表（如 <c>fs:allow-read</c>）。</param>
+    public void Register(string name, object instance, MethodInfo method, params string[] requiredCapabilities)
+    {
+        var invoker = CommandInvokerCompiler.Compile(method);
+        _commands[name] = new CommandEntry(name, instance, method, invoker, requiredCapabilities);
     }
 
     /// <summary>
@@ -101,14 +117,18 @@ public sealed class CommandRegistry
     /// 命令条目，记录命令名、实例、方法信息和编译后的调用器。
     /// <see cref="Invoker"/> 为表达式树编译的强类型委托，运行时零反射调用；
     /// <see cref="Method"/> 保留用于权限校验等元数据查询。
+    /// <see cref="RequiredCapabilities"/> 记录命令所需的能力标识列表，
+    /// 调度时由 <see cref="CommandDispatcher"/> 校验是否已授权。
     /// </summary>
     /// <param name="Name">命令名称。</param>
     /// <param name="Instance">命令所属实例。</param>
     /// <param name="Method">命令方法反射信息（仅用于权限校验等，不用于调用）。</param>
     /// <param name="Invoker">编译后的强类型调用器，可为 null（编译失败时回退到反射）。</param>
+    /// <param name="RequiredCapabilities">所需能力标识列表（如 <c>fs:allow-read</c>），为空表示无特殊要求。</param>
     public sealed record CommandEntry(
         string Name,
         object Instance,
         MethodInfo Method,
-        CompiledCommandInvoker? Invoker);
+        CompiledCommandInvoker? Invoker,
+        IReadOnlyList<string> RequiredCapabilities);
 }

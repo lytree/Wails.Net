@@ -31,6 +31,12 @@ public class SqlPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        // 声明权限集
+        context.Permissions.RegisterPermissionSet("sql:default", "SQL 数据库默认权限集",
+            "sql:allow-execute", "sql:allow-select");
+        context.Permissions.DeclarePermission("sql:allow-execute", "允许执行 SQL 语句");
+        context.Permissions.DeclarePermission("sql:allow-select", "允许执行 SQL 查询");
+
         // 执行非查询 SQL（INSERT/UPDATE/DELETE/DDL），返回受影响行数
         context.Commands.MapCommand("sqlite.execute",
             (Func<ICommandContext, string, object[]?, Task<int>>)(async (ctx, sql, parameters) =>

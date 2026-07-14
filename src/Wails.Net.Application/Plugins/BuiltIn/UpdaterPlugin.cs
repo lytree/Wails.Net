@@ -30,6 +30,13 @@ public class UpdaterPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        // 声明权限集
+        context.Permissions.RegisterPermissionSet("updater:default", "更新器默认权限集",
+            "updater:allow-check", "updater:allow-download", "updater:allow-install");
+        context.Permissions.DeclarePermission("updater:allow-check", "允许检查应用更新");
+        context.Permissions.DeclarePermission("updater:allow-download", "允许下载更新包");
+        context.Permissions.DeclarePermission("updater:allow-install", "允许安装更新");
+
         // 检查更新，返回包含版本和是否可用的 JSON 字符串。
         // 服务未注册或检查失败时返回 "{}"。
         context.Commands.MapCommand("updater.check", (Func<ICommandContext, Task<string>>)(async ctx =>
@@ -94,7 +101,7 @@ public class UpdaterPlugin : IPlugin
 
             try
             {
-                await service.InstallUpdateAsync(archivePath, ctx.CancellationToken);
+                await service.InstallUpdateAsync(archivePath, cancellationToken: ctx.CancellationToken);
             }
             catch
             {

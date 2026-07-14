@@ -32,6 +32,13 @@ public class DialogPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        // 声明权限集
+        context.Permissions.RegisterPermissionSet("dialog:default", "对话框默认权限集",
+            "dialog:allow-open", "dialog:allow-save", "dialog:allow-message");
+        context.Permissions.DeclarePermission("dialog:allow-open", "允许打开文件选择对话框");
+        context.Permissions.DeclarePermission("dialog:allow-save", "允许打开文件保存对话框");
+        context.Permissions.DeclarePermission("dialog:allow-message", "允许显示消息对话框");
+
         // 消息对话框：信息提示
         context.Commands.MapCommand("dialog.message",
             (Func<ICommandContext, string, string, Task<int>>)(async (ctx, title, message) =>

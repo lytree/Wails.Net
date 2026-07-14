@@ -21,4 +21,10 @@ public interface IPluginContext
 
     /// <summary>日志工厂</summary>
     ILoggerFactory LoggerFactory { get; }
+
+    /// <summary>
+    /// 插件权限声明器，用于在 <see cref="IPlugin.Configure"/> 中注册插件自身的权限集和作用域。
+    /// 对应 Tauri v2 插件的 permissions 声明机制。
+    /// </summary>
+    IPermissionRegistrar Permissions { get; }
 }

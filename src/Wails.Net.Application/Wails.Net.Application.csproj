@@ -29,6 +29,9 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    <!-- minisign 签名依赖（对应 Tauri v2 的 updater 签名方案） -->
+    <PackageReference Include="SauceControl.Blake2Fast" />
+    <PackageReference Include="NSec.Cryptography" />
   </ItemGroup>
 
   <!-- 源代码生成器：扫描 [Binding] 和 [Command] 特性生成强类型调用器，替代反射 -->

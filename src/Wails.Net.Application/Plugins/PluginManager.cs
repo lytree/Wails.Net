@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Wails.Net.Application.Commands;
+using Wails.Net.Application.Security;
 
 namespace Wails.Net.Application.Plugins;
 
@@ -75,7 +76,7 @@ public sealed class PluginManager
     }
 
     /// <summary>
-    /// 初始化所有插件（注册服务、配置命令）。
+    /// 初始化所有插件（注册服务、配置命令、声明权限）。
     /// </summary>
     /// <param name="services">DI 服务集合。</param>
     /// <param name="commands">命令注册表。</param>
@@ -87,7 +88,9 @@ public sealed class PluginManager
         IConfiguration configuration,
         ILoggerFactory loggerFactory)
     {
-        var context = new PluginContext(services, commands, configuration, loggerFactory);
+        // 从 DI 容器解析 PermissionManager（可能未注册，为 null 时使用空权限声明器）
+        var permissionManager = _services.GetService<PermissionManager>();
+        var context = new PluginContext(services, commands, configuration, loggerFactory, permissionManager);
 
         foreach (var plugin in _plugins)
         {

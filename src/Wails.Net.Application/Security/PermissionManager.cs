@@ -182,6 +182,55 @@ public sealed class PermissionManager
     }
 
     /// <summary>
+    /// 校验指定能力标识列表是否全部已授权。
+    /// 用于检查通过 <see cref="Commands.CommandRegistry.CommandEntry.RequiredCapabilities"/> 声明的能力。
+    /// </summary>
+    /// <param name="requiredCapabilities">所需能力标识列表。</param>
+    /// <returns>全部已授权返回 true；权限不足返回 false。</returns>
+    public bool ValidateCapabilities(IEnumerable<string> requiredCapabilities)
+    {
+        if (!_options.Enabled) return true;
+
+        foreach (var capability in requiredCapabilities)
+        {
+            if (!IsGranted(capability))
+            {
+                _logger?.LogWarning("权限拒绝: 命令需要能力 {Capability}", capability);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// 校验命令参数的 Scope 约束。
+    /// 对每个 (permissionId, value) 对，检查权限是否已授权，
+    /// 若绑定了 IScope 则调用 Allows(value) 校验值是否在允许范围内。
+    /// </summary>
+    /// <param name="scopeValues">待校验的 (权限标识, 值) 对列表。</param>
+    /// <returns>全部通过返回 true，任一不通过返回 false。</returns>
+    public bool ValidateScopes(IEnumerable<(string PermissionId, string Value)> scopeValues)
+    {
+        if (!_options.Enabled) return true;
+
+        foreach (var (permissionId, value) in scopeValues)
+        {
+            if (!IsGranted(permissionId))
+            {
+                _logger?.LogWarning("Scope 校验失败：权限 {Permission} 未授权", permissionId);
+                return false;
+            }
+            var scope = GetScope(permissionId);
+            if (scope is not null && !scope.Allows(value))
+            {
+                _logger?.LogWarning("Scope 校验失败：值 {Value} 不在权限 {Permission} 的允许范围内", value, permissionId);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// <summary>
     /// 检查指定窗口是否匹配能力声明的窗口范围。
     /// 能力的 Windows 列表为空表示应用于所有窗口。
     /// </summary>

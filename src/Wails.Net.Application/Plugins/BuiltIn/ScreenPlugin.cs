@@ -36,6 +36,12 @@ public class ScreenPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        // 声明权限集
+        context.Permissions.RegisterPermissionSet("screen:default", "屏幕信息默认权限集",
+            "screen:allow-get-all", "screen:allow-get-primary");
+        context.Permissions.DeclarePermission("screen:allow-get-all", "允许获取所有屏幕信息");
+        context.Permissions.DeclarePermission("screen:allow-get-primary", "允许获取主屏幕信息");
+
         var commands = context.Commands;
 
         // === 屏幕查询 ===

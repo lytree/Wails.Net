@@ -68,7 +68,15 @@ public sealed class UpdaterConfig
     /// 启用签名验证后，将校验实际签名者是否与此值匹配。
     /// Windows 上与 Authenticode 证书 Subject 字段匹配；Linux 上与 GPG GOODSIG 行匹配。
     /// </summary>
+    [Obsolete("使用 TrustedPublicKey 替代。保留用于向后兼容 Authenticode/GPG 验证。")]
     public string? ExpectedSigner { get; set; }
+
+    /// <summary>
+    /// 获取或设置信任的 minisign 公钥（Base64 字符串或公钥文件路径）。
+    /// 启用签名验证后，将使用此公钥验证更新包的 minisign 签名。
+    /// 对应 Tauri v2 的 updater.pubkey 配置。
+    /// </summary>
+    public string? TrustedPublicKey { get; set; }
 
     /// <summary>
     /// 获取或设置下载目录，默认为系统临时目录。

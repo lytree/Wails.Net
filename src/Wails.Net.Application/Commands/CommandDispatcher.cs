@@ -4,6 +4,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Wails.Net.Application.Security;
 
+// 预定义注入类型集合，Scope 校验时跳过这些参数。
+// 与 CommandInvokerCompiler 和 ExecuteCommandAsync 的参数绑定逻辑一致。
+
 namespace Wails.Net.Application.Commands;
 
 /// <summary>
@@ -128,11 +131,29 @@ public sealed class CommandDispatcher
                 return new InvokeResponse(request.Id, false, null, $"Command not found: {request.Method}");
             }
 
-            // 权限校验
-            if (_permissionManager is not null && !_permissionManager.ValidateCommand(entry.Method))
+            // 权限校验：检查 [RequireCapability] 特性和 CommandEntry.RequiredCapabilities
+            if (_permissionManager is not null)
             {
-                _logger?.LogWarning("权限拒绝: 命令 {Method}", request.Method);
-                return new InvokeResponse(request.Id, false, null, $"Permission denied: {request.Method}");
+                if (!_permissionManager.ValidateCommand(entry.Method))
+                {
+                    _logger?.LogWarning("权限拒绝: 命令 {Method}", request.Method);
+                    return new InvokeResponse(request.Id, false, null, $"Permission denied: {request.Method}");
+                }
+
+                if (entry.RequiredCapabilities.Count > 0 && !_permissionManager.ValidateCapabilities(entry.RequiredCapabilities))
+                {
+                    _logger?.LogWarning("权限拒绝: 命令 {Method} 需要能力 {Capabilities}",
+                        request.Method, string.Join(", ", entry.RequiredCapabilities));
+                    return new InvokeResponse(request.Id, false, null, $"Permission denied: {request.Method}");
+                }
+
+                // Scope 校验：检查实现 IScopeParameter 的参数对象
+                var scopeValues = ExtractScopeValues(entry.Method, request.Parameters);
+                if (scopeValues.Count > 0 && !_permissionManager.ValidateScopes(scopeValues))
+                {
+                    _logger?.LogWarning("Scope 拒绝: 命令 {Method}", request.Method);
+                    return new InvokeResponse(request.Id, false, null, $"Scope denied: {request.Method}");
+                }
             }
 
             // 构建中间件管道：middlewares[0] → middlewares[1] → ... → 终端处理器（实际命令调用）。
@@ -164,6 +185,95 @@ public sealed class CommandDispatcher
             timeoutCts?.Dispose();
         }
     }
+
+    /// <summary>
+    /// Scope 校验用 JSON 序列化选项（与 CommandInvokerCompiler 保持一致）。
+    /// </summary>
+    private static readonly JsonSerializerOptions _scopeJsonOptions = new(JsonSerializerDefaults.Web);
+
+    /// <summary>
+    /// 从命令参数中提取 Scope 校验值。
+    /// 遍历方法参数，支持两种提取方式：
+    /// <list type="bullet">
+    /// <item>实现 <see cref="IScopeParameter"/> 的 Options 类：反序列化后调用 <see cref="IScopeParameter.GetScopeValues"/></item>
+    /// <item>标记 <see cref="ScopeParameterAttribute"/> 的 <c>string</c> 参数：从 JSON 中按参数名提取值</item>
+    /// </list>
+    /// 对应 Tauri v2 的参数级 Scope 校验。
+    /// </summary>
+    /// <param name="method">命令方法信息。</param>
+    /// <param name="parameters">前端传入的 JSON 参数。</param>
+    /// <returns>需要 Scope 校验的 (权限标识, 值) 对列表，可能为空。</returns>
+    private static List<(string PermissionId, string Value)> ExtractScopeValues(MethodInfo method, JsonElement parameters)
+    {
+        var result = new List<(string PermissionId, string Value)>();
+
+        // 参数的 ValueKind 为 Undefined 或 Null 时无法反序列化
+        if (parameters.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+        {
+            return result;
+        }
+
+        var methodParams = method.GetParameters();
+        var rawText = parameters.GetRawText();
+
+        foreach (var param in methodParams)
+        {
+            var paramType = param.ParameterType;
+
+            // 跳过注入类型
+            if (paramType == typeof(ICommandContext) ||
+                paramType == typeof(CancellationToken) ||
+                paramType == typeof(IServiceProvider))
+            {
+                continue;
+            }
+
+            // 分支 1：实现 IScopeParameter 的 Options 类
+            if (typeof(IScopeParameter).IsAssignableFrom(paramType))
+            {
+                try
+                {
+                    var obj = JsonSerializer.Deserialize(rawText, paramType, _scopeJsonOptions);
+                    if (obj is IScopeParameter scopeParam)
+                    {
+                        result.AddRange(scopeParam.GetScopeValues());
+                    }
+                }
+                catch (JsonException)
+                {
+                    // 反序列化失败时跳过此参数（让命令执行时的正常反序列化报错）
+                }
+                continue;
+            }
+
+            // 分支 2：标记 [ScopeParameter] 特性的 string 参数
+            var scopeAttr = param.GetCustomAttribute<ScopeParameterAttribute>();
+            if (scopeAttr is not null && paramType == typeof(string))
+            {
+                var propName = scopeAttr.JsonPropertyName ?? ToCamelCase(param.Name ?? string.Empty);
+                if (!string.IsNullOrEmpty(propName) &&
+                    parameters.TryGetProperty(propName, out var propValue) &&
+                    propValue.ValueKind == JsonValueKind.String)
+                {
+                    var value = propValue.GetString();
+                    if (!string.IsNullOrEmpty(value))
+                    {
+                        result.Add((scopeAttr.PermissionId, value));
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// 将参数名转换为 camelCase 形式，与 <see cref="JsonSerializerDefaults.Web"/> 的命名策略一致。
+    /// </summary>
+    /// <param name="s">原始参数名。</param>
+    /// <returns>camelCase 形式的名称。</returns>
+    private static string ToCamelCase(string s)
+        => string.IsNullOrEmpty(s) ? s : char.ToLowerInvariant(s[0]) + s[1..];
 
     /// <summary>
     /// 执行命令的终端处理器：参数绑定、反射调用和异步返回值处理。

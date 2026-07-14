@@ -28,6 +28,12 @@ public class ClipboardPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        // 声明权限集
+        context.Permissions.RegisterPermissionSet("clipboard:default", "剪贴板默认权限集",
+            "clipboard:allow-read", "clipboard:allow-write");
+        context.Permissions.DeclarePermission("clipboard:allow-read", "允许读取剪贴板内容");
+        context.Permissions.DeclarePermission("clipboard:allow-write", "允许写入剪贴板内容");
+
         context.Commands.MapCommand("clipboard.getText", (Func<ICommandContext, string>)(ctx =>
         {
             var app = ctx.Services.GetService<Application>();

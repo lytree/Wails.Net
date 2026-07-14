@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Wails.Net.Application.Commands;
+using Wails.Net.Application.Security;
 
 namespace Wails.Net.Application.Plugins.BuiltIn;
 
@@ -33,20 +34,21 @@ public class HttpPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        // 声明权限集
+        context.Permissions.RegisterPermissionSet("http:default", "HTTP 默认权限集",
+            "http:allow-fetch", "http:allow-request");
+        context.Permissions.DeclarePermission("http:allow-fetch", "允许发起 HTTP 请求");
+        context.Permissions.DeclarePermission("http:allow-request", "允许发送自定义 HTTP 请求");
+
         context.Commands.MapCommand("http.fetch", (Func<HttpRequestOptions, Task<HttpResponseResult>>)(async options =>
             await FetchAsync(options)));
 
-        context.Commands.MapCommand("http.get", (Func<string, Task<HttpResponseResult>>)(async url =>
-            await GetAsync(url)));
-
-        context.Commands.MapCommand("http.post", (Func<string, string?, Task<HttpResponseResult>>)(async (url, body) =>
-            await PostAsync(url, body)));
-
-        context.Commands.MapCommand("http.put", (Func<string, string?, Task<HttpResponseResult>>)(async (url, body) =>
-            await PutAsync(url, body)));
-
-        context.Commands.MapCommand("http.delete", (Func<string, Task<HttpResponseResult>>)(async url =>
-            await DeleteAsync(url)));
+        // http.get/post/put/delete 使用方法组注册，以便在参数上加 [ScopeParameter] 特性
+        // 对应 Tauri v2 的 http scope：限定可访问的 URL 范围
+        context.Commands.MapCommand("http.get", (Func<string, Task<HttpResponseResult>>)GetAsyncWithScope);
+        context.Commands.MapCommand("http.post", (Func<string, string?, Task<HttpResponseResult>>)PostAsyncWithScope);
+        context.Commands.MapCommand("http.put", (Func<string, string?, Task<HttpResponseResult>>)PutAsyncWithScope);
+        context.Commands.MapCommand("http.delete", (Func<string, Task<HttpResponseResult>>)DeleteAsyncWithScope);
     }
 
     /// <summary>
@@ -126,6 +128,33 @@ public class HttpPlugin : IPlugin
     }
 
     /// <summary>
+    /// GET 请求的 Scope 校验包装。
+    /// 参数加 [ScopeParameter] 特性，CommandDispatcher 调度时自动提取 url 进行 Scope 校验。
+    /// </summary>
+    private static Task<HttpResponseResult> GetAsyncWithScope(
+        [ScopeParameter("http:allow-fetch")] string url) => GetAsync(url);
+
+    /// <summary>
+    /// POST 请求的 Scope 校验包装。
+    /// </summary>
+    private static Task<HttpResponseResult> PostAsyncWithScope(
+        [ScopeParameter("http:allow-fetch")] string url,
+        string? body) => PostAsync(url, body);
+
+    /// <summary>
+    /// PUT 请求的 Scope 校验包装。
+    /// </summary>
+    private static Task<HttpResponseResult> PutAsyncWithScope(
+        [ScopeParameter("http:allow-fetch")] string url,
+        string? body) => PutAsync(url, body);
+
+    /// <summary>
+    /// DELETE 请求的 Scope 校验包装。
+    /// </summary>
+    private static Task<HttpResponseResult> DeleteAsyncWithScope(
+        [ScopeParameter("http:allow-fetch")] string url) => DeleteAsync(url);
+
+    /// <summary>
     /// 将 HttpResponseMessage 转换为可序列化的 HttpResponseResult。
     /// </summary>
     private static async Task<HttpResponseResult> ToResultAsync(HttpResponseMessage response)
@@ -156,8 +185,9 @@ public class HttpPlugin : IPlugin
 /// <summary>
 /// HTTP 请求选项。
 /// 对应 Tauri v2 的 <c>RequestOptions</c>。
+/// 实现 <see cref="IScopeParameter"/> 以支持 URL Scope 校验。
 /// </summary>
-public sealed class HttpRequestOptions
+public sealed class HttpRequestOptions : IScopeParameter
 {
     /// <summary>请求 URL</summary>
     public string Url { get; set; } = string.Empty;
@@ -173,6 +203,18 @@ public sealed class HttpRequestOptions
 
     /// <summary>自定义请求头</summary>
     public Dictionary<string, string>? Headers { get; set; }
+
+    /// <summary>
+    /// 获取需要 Scope 校验的 (权限标识, URL) 对。
+    /// 对应 Tauri v2 的 http scope：限定可访问的 URL 范围。
+    /// </summary>
+    public IEnumerable<(string PermissionId, string Value)> GetScopeValues()
+    {
+        if (!string.IsNullOrEmpty(Url))
+        {
+            yield return ("http:allow-fetch", Url);
+        }
+    }
 }
 
 /// <summary>

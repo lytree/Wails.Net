@@ -21,6 +21,28 @@ public static class MapCommandExtensions
     }
 
     /// <summary>
+    /// 注册委托为命令，并指定所需能力列表。
+    /// 调度时 <see cref="CommandDispatcher"/> 会校验所有所需能力是否已授权。
+    /// 对应 Tauri v2 的命令权限标记：每个命令可声明所需权限（如 <c>fs:allow-read</c>）。
+    /// </summary>
+    /// <param name="registry">命令注册表。</param>
+    /// <param name="name">命令名称。</param>
+    /// <param name="handler">命令处理委托。</param>
+    /// <param name="requiredCapabilities">所需能力标识列表（如 <c>fs:allow-read</c>）。</param>
+    /// <returns>命令注册表，用于链式调用。</returns>
+    public static CommandRegistry MapCommand(
+        this CommandRegistry registry,
+        string name,
+        Delegate handler,
+        params string[] requiredCapabilities)
+    {
+        var method = handler.Method;
+        var target = handler.Target;
+        registry.Register(name, target!, method, requiredCapabilities);
+        return registry;
+    }
+
+    /// <summary>
     /// 注册 <see cref="Action"/> 为命令。
     /// </summary>
     /// <param name="registry">命令注册表。</param>

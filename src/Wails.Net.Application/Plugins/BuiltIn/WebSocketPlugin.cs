@@ -48,6 +48,12 @@ public class WebSocketPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        // 声明权限集
+        context.Permissions.RegisterPermissionSet("websocket:default", "WebSocket 默认权限集",
+            "websocket:allow-connect", "websocket:allow-send");
+        context.Permissions.DeclarePermission("websocket:allow-connect", "允许建立 WebSocket 连接");
+        context.Permissions.DeclarePermission("websocket:allow-send", "允许发送 WebSocket 消息");
+
         // 连接到指定 URL
         context.Commands.MapCommand("websocket.connect",
             (Func<ICommandContext, string, Task<string>>)(async (ctx, url) =>

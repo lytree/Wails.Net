@@ -51,6 +51,12 @@ public sealed class ProjectConfig
     public string? OutputFilename { get; set; }
 
     /// <summary>
+    /// 获取或设置打包配置。
+    /// 对应 wails.json 中的 "bundle" 节，融合 Tauri v2 bundle 配置。
+    /// </summary>
+    public BundleConfig? Bundle { get; set; }
+
+    /// <summary>
     /// Wails JS 运行时输出目录，对应 Wails v3 的 <c>wailsjsdir</c>。
     /// </summary>
     public string? WailsJsDir { get; set; }

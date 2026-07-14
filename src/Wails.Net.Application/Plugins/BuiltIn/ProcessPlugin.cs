@@ -28,6 +28,12 @@ public class ProcessPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        // 声明权限集
+        context.Permissions.RegisterPermissionSet("process:default", "进程管理默认权限集",
+            "process:allow-exit", "process:allow-restart");
+        context.Permissions.DeclarePermission("process:allow-exit", "允许退出应用进程");
+        context.Permissions.DeclarePermission("process:allow-restart", "允许重启应用进程");
+
         context.Commands.MapCommand("process.exit", (Action<ICommandContext, int>)((ctx, exitCode) =>
         {
             Application.Get()?.Quit();

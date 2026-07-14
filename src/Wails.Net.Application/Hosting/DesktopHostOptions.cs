@@ -31,6 +31,13 @@ public class DesktopHostOptions
     public AssetsOptions Assets { get; set; } = new();
 
     /// <summary>
+    /// 获取或设置应用配置节（多窗口、安全等）。
+    /// 与 <see cref="Window"/> 互补：Window 是默认窗口快捷配置，App.Windows 是多窗口列表。
+    /// 对应 Tauri v2 的 app 配置节。
+    /// </summary>
+    public AppOptions? App { get; set; }
+
+    /// <summary>
     /// 静态资源配置选项。
     /// </summary>
     public class AssetsOptions

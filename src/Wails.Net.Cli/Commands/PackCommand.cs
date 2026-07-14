@@ -246,6 +246,12 @@ internal sealed class PackCommand : CliCommandBase
             Version = version,
         };
 
+        // 应用 wails.json 中的 bundle 配置到 PackageOptions（不覆盖命令行参数）
+        if (config is not null)
+        {
+            Packager.ApplyBundleConfig(options, config.Bundle);
+        }
+
         var packager = new Packager();
         var packageResult = await packager.PackageAsync(publishResult.OutputPath!, options);
 

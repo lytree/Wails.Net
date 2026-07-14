@@ -330,9 +330,10 @@ public class UpdaterService : IServiceStartup, IServiceShutdown
     /// 完成后发射 UpdaterEventInstallComplete；错误时发射 UpdaterEventInstallError。
     /// </summary>
     /// <param name="archivePath">更新包归档文件路径。</param>
+    /// <param name="manifest">更新清单（可选）。提供时优先使用 minisign 签名验证路径。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>表示安装操作的异步任务。</returns>
-    public async Task InstallUpdateAsync(string archivePath, CancellationToken cancellationToken = default)
+    public async Task InstallUpdateAsync(string archivePath, UpdateManifest? manifest = null, CancellationToken cancellationToken = default)
     {
         if (!File.Exists(archivePath))
         {
@@ -346,7 +347,24 @@ public class UpdaterService : IServiceStartup, IServiceShutdown
             // 签名验证（如果启用）
             if (_config.VerifySignature)
             {
-                var sigResult = await SignatureVerifier.VerifyAsync(archivePath, _config.ExpectedSigner);
+                var verifier = new SignatureVerifier(_config);
+                SignatureVerifyResult sigResult;
+
+                // 优先 minisign 路径（manifest.Signature 非空且配置了 TrustedPublicKey）
+                if (manifest is not null
+                    && !string.IsNullOrEmpty(manifest.Signature)
+                    && !string.IsNullOrEmpty(_config.TrustedPublicKey))
+                {
+                    sigResult = await verifier.VerifyMinisignAsync(archivePath, manifest.Signature);
+                }
+                else
+                {
+                    // 回退到旧路径（向后兼容 Authenticode/GPG）
+#pragma warning disable CS0618
+                    sigResult = await verifier.VerifyAsync(archivePath, _config.ExpectedSigner);
+#pragma warning restore CS0618
+                }
+
                 if (!sigResult.IsValid)
                 {
                     EmitEvent(UpdateEvents.UpdaterEventInstallError, $"签名验证失败: {sigResult.ErrorMessage}");
@@ -408,7 +426,7 @@ public class UpdaterService : IServiceStartup, IServiceShutdown
 
             if (_config.AutoInstall)
             {
-                await InstallUpdateAsync(archivePath, cancellationToken);
+                await InstallUpdateAsync(archivePath, manifest, cancellationToken);
             }
         }
     }

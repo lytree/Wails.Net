@@ -39,6 +39,9 @@
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
     <PackageVersion Include="System.CommandLine" Version="2.0.9" />
+    <!-- minisign 签名依赖（对应 Tauri v2 的 updater 签名方案） -->
+    <PackageVersion Include="SauceControl.Blake2Fast" Version="2.0.0" />
+    <PackageVersion Include="NSec.Cryptography" Version="26.4.0" />
   </ItemGroup>
   <!-- 源码映射（SourceLink） -->
   <ItemGroup>

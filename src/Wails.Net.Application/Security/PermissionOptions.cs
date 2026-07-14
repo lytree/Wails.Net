@@ -24,4 +24,11 @@ public class PermissionOptions
     /// - DenyByDefault=false：未授权的权限默认放行（仅在显式撤销时拒绝）。
     /// </summary>
     public bool DenyByDefault { get; set; } = true;
+
+    /// <summary>
+    /// 获取或设置权限 Scope 配置。
+    /// 键为权限标识（如 "fs:allow-read"），值为 Scope 配置（路径/URL 白名单）。
+    /// 对应 Tauri v2 的 Scope 配置：从 appsettings.json 的 "Wails:Permissions:Scopes" 节读取。
+    /// </summary>
+    public Dictionary<string, ScopeConfig> Scopes { get; set; } = new();
 }

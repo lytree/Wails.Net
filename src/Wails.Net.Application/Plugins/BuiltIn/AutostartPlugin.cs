@@ -31,6 +31,12 @@ public class AutostartPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        // 声明权限集
+        context.Permissions.RegisterPermissionSet("autostart:default", "开机自启默认权限集",
+            "autostart:allow-enable", "autostart:allow-disable");
+        context.Permissions.DeclarePermission("autostart:allow-enable", "允许启用开机自启");
+        context.Permissions.DeclarePermission("autostart:allow-disable", "允许禁用开机自启");
+
         context.Commands.MapCommand("autostart.enable", (Func<ICommandContext, bool>)(ctx =>
             EnableAutostart(GetAppName())));
 

@@ -8,52 +8,11 @@ namespace Wails.Net.Cli.Tests;
 
 /// <summary>
 /// SignerCommand、PlatformCommand、SelfUpdateCommand 的单元测试（TUnit）。
-/// 验证 RSA 密钥生成、签名/验证往返、RID 映射、工作负载管理。
+/// 验证 minisign 密钥生成、签名/验证往返、RID 映射、工作负载管理。
 /// </summary>
 [NotInParallel]
 public sealed class SignerPlatformUpdateTests
 {
-    // ---------------------------------------------------------------------
-    // SignerCommand - PEM 导出/导入
-    // ---------------------------------------------------------------------
-
-    [Test]
-    public async Task SignerCommand_ExportPrivateKeyPem_ContainsPrivateKeyHeader()
-    {
-        using var rsa = RSA.Create(2048);
-        var pem = SignerCommand.ExportPrivateKeyPem(rsa);
-        await Assert.That(pem).Contains("PRIVATE KEY");
-    }
-
-    [Test]
-    public async Task SignerCommand_ExportPublicKeyPem_ContainsPublicKeyHeader()
-    {
-        using var rsa = RSA.Create(2048);
-        var pem = SignerCommand.ExportPublicKeyPem(rsa);
-        await Assert.That(pem).Contains("PUBLIC KEY");
-    }
-
-    [Test]
-    public async Task SignerCommand_ImportExportRoundTrip_Succeeds()
-    {
-        using var rsa1 = RSA.Create(2048);
-        var privPem = SignerCommand.ExportPrivateKeyPem(rsa1);
-        var pubPem = SignerCommand.ExportPublicKeyPem(rsa1);
-
-        using var rsa2 = RSA.Create();
-        SignerCommand.ImportPrivateKeyPem(rsa2, privPem);
-
-        using var rsa3 = RSA.Create();
-        SignerCommand.ImportPublicKeyPem(rsa3, pubPem);
-
-        // 用导入的公钥验证签名
-        var data = new byte[] { 1, 2, 3, 4, 5 };
-        var signature = rsa2.SignData(data, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-        bool isValid = rsa3.VerifyData(data, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-
-        await Assert.That(isValid).IsTrue();
-    }
-
     // ---------------------------------------------------------------------
     // SignerCommand - 完整签名/验证往返
     // ---------------------------------------------------------------------
@@ -71,8 +30,8 @@ public sealed class SignerPlatformUpdateTests
             var signer = new SignerCommand();
             await signer.GenerateKeyPairAsync(new FileInfo(keyPrefix));
 
-            var keyPath = keyPrefix + ".key";
-            var pubKeyPath = keyPrefix + ".pub";
+            var keyPath = keyPrefix + ".minisign.key";
+            var pubKeyPath = keyPrefix + ".minisign.pub";
 
             await Assert.That(File.Exists(keyPath)).IsTrue();
             await Assert.That(File.Exists(pubKeyPath)).IsTrue();
@@ -87,7 +46,7 @@ public sealed class SignerPlatformUpdateTests
 
             await Assert.That(exitSign).IsEqualTo(0);
 
-            var sigFile = dataFile + ".sig";
+            var sigFile = dataFile + ".minisign.sig";
             await Assert.That(File.Exists(sigFile)).IsTrue();
 
             // 验证
@@ -120,14 +79,14 @@ public sealed class SignerPlatformUpdateTests
             await File.WriteAllBytesAsync(dataFile, new byte[] { 1, 2, 3 });
 
             await signer.SignFileAsync(
-                new FileInfo(dataFile), new FileInfo(keyPrefix + ".key"), null);
+                new FileInfo(dataFile), new FileInfo(keyPrefix + ".minisign.key"), null);
 
             // 篡改文件内容
             await File.WriteAllBytesAsync(dataFile, new byte[] { 9, 9, 9 });
 
             // 验证应失败
             var exitVerify = await signer.VerifyFileAsync(
-                new FileInfo(dataFile), new FileInfo(keyPrefix + ".pub"), null);
+                new FileInfo(dataFile), new FileInfo(keyPrefix + ".minisign.pub"), null);
 
             await Assert.That(exitVerify).IsEqualTo(2);
         }

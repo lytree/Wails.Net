@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
+using Wails.Net.Cli.Config;
 
 namespace Wails.Net.Cli.Build;
 
@@ -33,6 +34,29 @@ public sealed class Packager
     /// tar 块大小（字节）。
     /// </summary>
     private const int TarBlockSize = 512;
+
+    /// <summary>
+    /// 将 BundleConfig 映射到 PackageOptions（不覆盖命令行已设值）。
+    /// 对应 Tauri v2 的 bundle 配置应用到打包流程。
+    /// </summary>
+    /// <param name="options">打包选项实例。</param>
+    /// <param name="bundle">打包配置（可为 null）。</param>
+    public static void ApplyBundleConfig(PackageOptions options, BundleConfig? bundle)
+    {
+        if (bundle is null)
+        {
+            return;
+        }
+
+        options.BundleIdentifier ??= bundle.Identifier;
+        options.IconPath ??= bundle.IconPath;
+        options.Resources ??= bundle.Resources;
+        options.Copyright ??= bundle.Copyright;
+        options.Category ??= bundle.Category;
+        options.ShortDescription ??= bundle.ShortDescription;
+        options.LongDescription ??= bundle.LongDescription;
+        options.Publisher ??= bundle.Windows?.Publisher;
+    }
 
     /// <summary>
     /// 将指定发布目录打包为可分发文件。
@@ -323,7 +347,7 @@ public sealed class Packager
         try
         {
             var script = GenerateNsisScript(
-                options.AppName, options.Version, options.Publisher,
+                options.AppName, options.Version, options.Publisher ?? "Wails.Net",
                 Path.GetFullPath(outputExePath), Path.GetFullPath(sourceDir), exeName);
             await File.WriteAllTextAsync(scriptPath, script);
 

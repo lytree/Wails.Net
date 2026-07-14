@@ -37,6 +37,11 @@ public class OsInfoPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        // 声明权限集
+        context.Permissions.RegisterPermissionSet("os:default", "操作系统信息默认权限集",
+            "os:allow-info");
+        context.Permissions.DeclarePermission("os:allow-info", "允许获取操作系统信息");
+
         var commands = context.Commands;
 
         // === os.* 命令（历史名，保留向后兼容） ===

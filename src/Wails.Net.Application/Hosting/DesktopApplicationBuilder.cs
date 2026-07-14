@@ -207,13 +207,114 @@ public sealed class DesktopApplicationBuilder
             }
         }
 
+        // 加载能力文件（Tauri v2 风格的 capabilities/*.json）
+        // 必须在窗口创建前完成，确保权限已就绪
+        LoadCapabilities(desktopOpts, host.Services);
+
+        // 根据配置创建窗口（多窗口或默认窗口）
+        // 在 AssetServer 之后创建，确保窗口导航时资源服务已就绪
+        CreateWindowsFromConfig(desktopOpts, application);
+
         return new DesktopApplication(host, application, desktopOpts.ApplicationName);
+    }
+
+    /// <summary>
+    /// 根据 AppOptions.Windows 配置创建窗口。
+    /// 对应 Tauri v2 的 static windows 配置创建流程。
+    /// 优先级：App.Windows 多窗口列表 &gt; Window 默认窗口 &gt; 不创建。
+    /// </summary>
+    /// <param name="options">宿主配置选项。</param>
+    /// <param name="application">Application 实例，用于创建窗口。</param>
+    private static void CreateWindowsFromConfig(DesktopHostOptions options, Application application)
+    {
+        if (options.App?.Windows is { Count: > 0 } windows)
+        {
+            // 多窗口配置：依次创建每个窗口（第一个为主窗口）
+            foreach (var cfg in windows)
+            {
+                var windowOptions = new WebviewWindowOptions
+                {
+                    Name = cfg.Name ?? string.Empty,
+                    Title = cfg.Title ?? "Wails.Net",
+                    Width = cfg.Width,
+                    Height = cfg.Height,
+                    Resizable = cfg.Resizable,
+                    Centered = cfg.Centered,
+                    Fullscreen = cfg.Fullscreen,
+                    Frameless = cfg.Frameless,
+                    AlwaysOnTop = cfg.AlwaysOnTop,
+                    URL = cfg.Url ?? string.Empty,
+                };
+                application.CreateWebviewWindow(windowOptions);
+            }
+        }
+        else if (options.Window is not null)
+        {
+            // 回退：使用默认窗口配置（向后兼容）
+            var window = options.Window;
+            application.CreateWebviewWindow(new WebviewWindowOptions
+            {
+                Title = window.Title,
+                Width = window.Width,
+                Height = window.Height,
+                Frameless = window.Frameless,
+            });
+        }
+        // 两者皆空时不创建窗口（由平台或调用方负责）
+    }
+
+    /// <summary>
+    /// 从 capabilities 目录加载能力文件并注册到权限管理器。
+    /// 对应 Tauri v2 的 capabilities 自动加载机制。
+    /// 加载失败不抛异常，仅记录 warning 日志（避免生产环境因目录缺失崩溃）。
+    /// </summary>
+    /// <param name="options">宿主配置选项。</param>
+    /// <param name="services">已构建的 DI 服务提供者。</param>
+    private static void LoadCapabilities(DesktopHostOptions options, IServiceProvider services)
+    {
+        var capabilitiesDir = options.App?.Security?.CapabilitiesDir;
+        if (string.IsNullOrEmpty(capabilitiesDir))
+        {
+            capabilitiesDir = Path.Combine(AppContext.BaseDirectory, "capabilities");
+        }
+        else if (!Path.IsPathRooted(capabilitiesDir))
+        {
+            capabilitiesDir = Path.Combine(AppContext.BaseDirectory, capabilitiesDir);
+        }
+
+        var loggerFactory = services.GetService<ILoggerFactory>();
+        var logger = loggerFactory?.CreateLogger<DesktopApplicationBuilder>();
+        var permissionManager = services.GetService<PermissionManager>();
+
+        if (permissionManager is null)
+        {
+            logger?.LogDebug("PermissionManager 未注册，跳过能力文件加载。");
+            return;
+        }
+
+        if (!Directory.Exists(capabilitiesDir))
+        {
+            logger?.LogDebug("能力文件目录不存在，跳过加载: {Dir}", capabilitiesDir);
+            return;
+        }
+
+        try
+        {
+            var capabilities = CapabilityFileLoader.LoadFromDirectory(capabilitiesDir, logger);
+            CapabilityFileLoader.RegisterToManager(permissionManager, capabilities);
+            logger?.LogInformation("已加载 {Count} 个能力文件", capabilities.Count);
+        }
+        catch (Exception ex)
+        {
+            logger?.LogWarning(ex, "加载能力文件失败，继续启动");
+        }
     }
 
     /// <summary>
     /// 初始化所有已注册的插件。
     /// 对每个插件依次调用 <see cref="IPlugin.Configure(IPluginContext)"/>，
-    /// 使插件可以通过 <see cref="IPluginContext.Commands"/> 注册命令。
+    /// 使插件可以通过 <see cref="IPluginContext.Commands"/> 注册命令，
+    /// 通过 <see cref="IPluginContext.Permissions"/> 声明权限集和作用域。
     /// </summary>
     private void InitializePlugins()
     {
@@ -223,20 +324,41 @@ public sealed class DesktopApplicationBuilder
         }
 
         // 注意：此时尚未构建 Host，无法从 IServiceProvider 获取 LoggerFactory。
-        // 构建临时 ServiceProvider 仅用于获取已注册的 LoggerFactory，
+        // 构建临时 ServiceProvider 仅用于获取已注册的 LoggerFactory 和 PermissionManager，
         // 不影响后续 Host 构建。使用 NullLoggerFactory.Instance 作为兜底。
         var tempProvider = _hostBuilder.Services.BuildServiceProvider();
         var loggerFactory = tempProvider.GetService<ILoggerFactory>()
             ?? Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance;
+        var permissionManager = tempProvider.GetService<PermissionManager>();
+
+        // 将 PermissionManager 实例重新注册为单例实例（替换类型注册），
+        // 确保后续 Host 构建时复用同一实例，使插件注册的权限在运行时可见。
+        if (permissionManager is not null)
+        {
+            Services.AddSingleton(permissionManager);
+        }
+
         var context = new PluginContext(
             _hostBuilder.Services,
             _commandRegistry,
             _hostBuilder.Configuration,
-            loggerFactory);
+            loggerFactory,
+            permissionManager);
 
         foreach (var plugin in _plugins)
         {
             plugin.Configure(context);
+        }
+
+        // 初始化 Scope 绑定：从 PermissionOptions.Scopes 配置创建 IScope 实例并绑定到权限。
+        // 对应 Tauri v2 的 Scope 配置加载：appsettings.json 中的路径/URL 白名单转换为运行时约束。
+        if (permissionManager is not null)
+        {
+            var permOptions = tempProvider.GetService<IOptions<PermissionOptions>>()?.Value;
+            if (permOptions is not null)
+            {
+                ScopeInitializer.Initialize(permissionManager, permOptions, loggerFactory.CreateLogger("ScopeInitializer"));
+            }
         }
     }
 
