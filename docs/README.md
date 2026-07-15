@@ -60,6 +60,7 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 | [ADR-0001 技术选型](ADR/0001-technology-selection.md) | .NET 10、Generic Host、WebView2、GirCore、TUnit 等技术栈选择 |
 | [ADR-0002 插件化架构](ADR/0002-plugin-architecture.md) | 采用 Tauri v2 风格的"核心即插件"哲学 |
 | [ADR-0003 源代码生成器替代反射](ADR/0003-source-generator-for-bindings.md) | `IIncrementalGenerator` 编译期注册绑定，支持 AOT 裁剪 |
+| [ADR-0004 Android 平台实现](ADR/0004-android-platform.md) | `android` 工作负载、`net10.0-android24.0` TFM、Single-Activity + Fragment 窗口模型、`WebViewClient.ShouldInterceptRequest` 资源拦截、`WebMessageListener` IPC |
 
 ## 顶层文档
 

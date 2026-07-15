@@ -281,7 +281,7 @@ gpg --verify Wails.Net.App-linux-x64.tar.gz.asc Wails.Net.App-linux-x64.tar.gz
 
 **工具**：`apksigner`（Android SDK build-tools）
 
-**构建时签名**：`build.cake` 的 `Dist-Android` task 通过 MSBuild 属性配置签名：
+**构建时签名**：Cake Frosting `build/` 项目的 `Dist-Android` task 通过 MSBuild 属性配置签名：
 
 | MSBuild 属性 | 说明 |
 |--------------|------|
@@ -301,7 +301,7 @@ apksigner verify --verbose MyApplication.apk
 
 ## AppImage 构建指南（Linux）
 
-`build.cake` 的 `Dist-Linux` task 生成 `tar.gz` 自包含包。AppImage 打包需额外工具 `appimagetool`，本期不集成到构建脚本，可手动执行：
+Cake Frosting `build/` 项目的 `Dist-Linux` task 生成 `tar.gz` 自包含包。AppImage 打包需额外工具 `appimagetool`，本期不集成到构建脚本，可手动执行：
 
 ```bash
 # 安装 appimagetool

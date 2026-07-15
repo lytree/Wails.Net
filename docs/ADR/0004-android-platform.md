@@ -1,4 +1,4 @@
-# ADR-0002: Android 平台实现决策
+# ADR-0004: Android 平台实现决策
 
 - 状态：已接受
 - 日期：2026-07-13
@@ -115,7 +115,6 @@ Wails v3 原版（Go 实现）已支持 Android，使用 GoMobile + Android WebV
 
 - [AGENTS.md — 技术选型](../../AGENTS.md)
 - [ADR-0001: 技术选型决策](0001-technology-selection.md)
-- [ADR-0003: 三平台自包含构建](0003-cross-platform-build.md)（待起草）
 - [PlatformFactory.cs](../../src/Wails.Net.Application/Platform/PlatformFactory.cs)
 - [IPlatformApp.cs](../../src/Wails.Net.Application/Platform/IPlatformApp.cs)
 - [IWebviewWindowImpl.cs](../../src/Wails.Net.Application/Windows/IWebviewWindowImpl.cs)

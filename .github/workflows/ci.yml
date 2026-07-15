@@ -97,9 +97,9 @@ jobs:
 # ============================================================================
 # Job 2：测试
 # ============================================================================
-# 跨平台测试（Application + CLI），在 Windows runner 上运行
+# 跨平台测试（Application + CLI + AssetServer），在 Windows runner 上运行
   test-application:
-    name: 测试 (Application + CLI)
+    name: 测试 (Application + CLI + AssetServer)
     runs-on: windows-latest
     needs: build
     steps:
@@ -131,6 +131,10 @@ jobs:
       # CLI 测试
       - name: 运行 CLI 测试
         run: dotnet run --project tests/Wails.Net.Cli.Tests/Wails.Net.Cli.Tests.csproj --no-build -c Release
+
+      # AssetServer 测试（无平台依赖，与 Application 同 runner）
+      - name: 运行 AssetServer 测试
+        run: dotnet run --project tests/Wails.Net.AssetServer.Tests/Wails.Net.AssetServer.Tests.csproj --no-build -c Release
 
 # Windows 平台测试（依赖 Win32 API、注册表、WinForms 剪贴板）
   test-windows:
@@ -200,6 +204,45 @@ jobs:
 
       - name: 运行 Linux 平台测试
         run: dotnet run --project tests/Wails.Net.Application.Linux.Tests/Wails.Net.Application.Linux.Tests.csproj --no-build -c Release
+
+# Android 平台测试（需 android 工作负载，允许失败）
+  test-android:
+    name: 测试 (Android 平台)
+    runs-on: windows-latest
+    needs: build
+    continue-on-error: true  # Android 工作负载环境可能不稳定，允许失败
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: 缓存 NuGet 包
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      # 安装 Android 工作负载（构建 Android 测试必需）
+      - name: 安装 Android 工作负载
+        run: dotnet workload install android
+
+      - name: 下载构建产物
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+
+      # 重新构建 Android 测试项目（之前的构建可能未包含 Android TFM）
+      - name: 构建 Android 测试项目
+        run: dotnet build tests/Wails.Net.Application.Android.Tests/Wails.Net.Application.Android.Tests.csproj -c Release
+
+      - name: 运行 Android 平台测试
+        run: dotnet run --project tests/Wails.Net.Application.Android.Tests/Wails.Net.Application.Android.Tests.csproj --no-build -c Release
 
 # ============================================================================
 # Job 3：打包 NuGet 包（仅 main 分支或 tag 触发）
@@ -326,7 +369,7 @@ jobs:
       # 调用 Cake 构建 Windows 全部 RID（win-x64, win-x86, win-arm64）
       - name: 构建 Windows 自包含（全部 RID）
         shell: pwsh
-        run: dotnet cake --target=Dist --platform=windows --rid=all --configuration=Release --output=${{ env.DIST_OUTPUT }} --skip-frontend
+        run: dotnet run --project build/Wails.Net.Build -- --target=Dist --platform=windows --rid=all --configuration=Release --output=${{ env.DIST_OUTPUT }} --skip-frontend
 
       - name: 列出构建产物
         shell: pwsh
@@ -369,7 +412,7 @@ jobs:
       # 调用 Cake 交叉编译 Linux 全部 RID（linux-x64, linux-arm64）
       - name: 构建 Linux 自包含（全部 RID）
         shell: pwsh
-        run: dotnet cake --target=Dist --platform=linux --rid=all --configuration=Release --output=${{ env.DIST_OUTPUT }} --skip-frontend
+        run: dotnet run --project build/Wails.Net.Build -- --target=Dist --platform=linux --rid=all --configuration=Release --output=${{ env.DIST_OUTPUT }} --skip-frontend
 
       - name: 列出构建产物
         shell: pwsh
@@ -416,7 +459,7 @@ jobs:
       # 调用 Cake 构建 Android 全部 RID（android-arm64, android-x64, android-arm）
       - name: 构建 Android APK（全部 RID）
         shell: pwsh
-        run: dotnet cake --target=Dist --platform=android --rid=all --configuration=Release --output=${{ env.DIST_OUTPUT }} --skip-frontend
+        run: dotnet run --project build/Wails.Net.Build -- --target=Dist --platform=android --rid=all --configuration=Release --output=${{ env.DIST_OUTPUT }} --skip-frontend
 
       - name: 列出构建产物
         shell: pwsh

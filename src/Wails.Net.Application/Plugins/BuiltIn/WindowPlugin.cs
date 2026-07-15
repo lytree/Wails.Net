@@ -41,6 +41,16 @@ public class WindowPlugin : IPlugin
     {
         var commands = context.Commands;
 
+        // === 权限声明（对齐 Tauri v2 window 插件权限模型） ===
+        // window:default — 默认权限集，仅包含只读查询能力，能力声明中引用此集合后自动授权只读操作
+        // window:allow-readonly — 允许查询窗口状态（尺寸、位置、URL、缩放、可见性、焦点等）
+        // window:allow-dangerous — 允许修改窗口属性、执行 JS、注入 CSS、导航、打印、DevTools 等危险操作
+        // 说明：权限校验仅在 PermissionManager.Enabled=true 时生效，默认 Enabled=false 保持向后兼容
+        context.Permissions.RegisterPermissionSet("window:default", "窗口默认权限集（只读查询）",
+            "window:allow-readonly");
+        context.Permissions.DeclarePermission("window:allow-readonly", "允许查询窗口状态（尺寸、位置、URL、缩放、可见性、焦点、全屏、最大化、最小化）");
+        context.Permissions.DeclarePermission("window:allow-dangerous", "允许修改窗口属性、执行 JS、注入 CSS、导航、打印、DevTools 等危险操作");
+
         // === 标题与尺寸 ===
         commands.MapCommand("window.setTitle", (Action<ICommandContext, WindowSetTitleOptions>)((ctx, opts) =>
             GetWindowOrThrow(ctx).SetTitle(opts.Title)));

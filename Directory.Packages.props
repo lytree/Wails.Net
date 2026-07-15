@@ -58,4 +58,9 @@
     <PackageVersion Include="TUnit.Assertions" Version="1.58.0" />
     <PackageVersion Include="TUnit.Engine" Version="1.58.0" />
   </ItemGroup>
+  <!-- 构建工具（Cake Frosting） -->
+  <ItemGroup>
+    <PackageVersion Include="Cake.Frosting" Version="6.1.0" />
+    <PackageVersion Include="Cake.Common" Version="6.1.0" />
+  </ItemGroup>
 </Project>
