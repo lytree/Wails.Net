@@ -3,10 +3,11 @@ using Android.Webkit;
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform;
+using Wails.Net.Application.Windows;
 using Menu = Wails.Net.Application.Menus.Menu;
 using WailsApplication = Wails.Net.Application.Application;
 
-namespace Wails.Net.Application.Windows;
+namespace Wails.Net.Application.Android;
 
 /// <summary>
 /// Android 平台的 Webview 窗口实现。
@@ -258,6 +259,10 @@ public sealed class AndroidWebviewWindow : IWebviewWindowImpl
         // 设置自定义 WebViewClient 用于资源拦截
         _webViewClient = new WailsWebViewClient(_assetServer);
         webView.SetWebViewClient(_webViewClient);
+
+        // 设置 WebChromeClient，转发 console.log / alert / 等到 Android Logcat
+        // 没有它，前端 JS 的 console.log 不会出现在 logcat，调试困难
+        webView.SetWebChromeClient(new WailsWebChromeClient());
 
         // 注册 IPC 桥接对象，通过 AddJavascriptInterface 注入到 JS 全局。
         // 对应 ADR-0002 §5：前端通过 window.WailsBridge.postMessage(json) 调用后端。

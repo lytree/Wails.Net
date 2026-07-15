@@ -1,5 +1,6 @@
 using Android.Content.Res;
 using Android.Webkit;
+using Microsoft.Extensions.Logging;
 using Wails.Net.AssetServer;
 
 namespace Wails.Net.Application.Platform;
@@ -19,8 +20,14 @@ public sealed class AndroidAssetServer : AssetServer.AssetServer
 
     /// <summary>
     /// assets 目录内的子路径前缀，默认为空字符串（直接从 assets 根目录读取）。
+    /// 非空时拼接在请求路径之前，例如 <c>"www"</c> 会将 <c>index.html</c> 解析为 <c>www/index.html</c>。
     /// </summary>
     private readonly string _assetPrefix;
+
+    /// <summary>
+    /// 日志器，用于诊断 Asset 加载失败等问题。可为 null（未配置日志时）。
+    /// </summary>
+    private readonly ILogger<AndroidAssetServer>? _logger;
 
     /// <summary>
     /// 使用指定 AssetManager 构造 <see cref="AndroidAssetServer" /> 实例。
@@ -28,10 +35,22 @@ public sealed class AndroidAssetServer : AssetServer.AssetServer
     /// <param name="assetManager">Android AssetManager 实例，可为 null（非 Android 环境时）。</param>
     /// <param name="assetPrefix">assets 目录内的子路径前缀，默认为空字符串。</param>
     public AndroidAssetServer(AssetManager? assetManager, string assetPrefix = "")
+        : this(assetManager, assetPrefix, logger: null)
+    {
+    }
+
+    /// <summary>
+    /// 使用指定 AssetManager 和日志器构造 <see cref="AndroidAssetServer" /> 实例。
+    /// </summary>
+    /// <param name="assetManager">Android AssetManager 实例，可为 null（非 Android 环境时）。</param>
+    /// <param name="assetPrefix">assets 目录内的子路径前缀，默认为空字符串。</param>
+    /// <param name="logger">日志器实例，可为 null。</param>
+    public AndroidAssetServer(AssetManager? assetManager, string assetPrefix, ILogger<AndroidAssetServer>? logger)
         : base(CreateOptions())
     {
         _assetManager = assetManager;
         _assetPrefix = assetPrefix ?? string.Empty;
+        _logger = logger;
     }
 
     /// <summary>
@@ -64,6 +83,7 @@ public sealed class AndroidAssetServer : AssetServer.AssetServer
             using var stream = _assetManager.Open(normalizedPath);
             if (stream is null)
             {
+                _logger?.LogWarning("Android AssetManager.Open 返回 null：{Path}", normalizedPath);
                 return null;
             }
 
@@ -73,10 +93,19 @@ public sealed class AndroidAssetServer : AssetServer.AssetServer
         }
         catch (Java.IO.FileNotFoundException)
         {
+            // 文件不存在是正常路径（404），不记录警告
             return null;
         }
-        catch
+        catch (Java.IO.IOException ex)
         {
+            // IO 异常（AssetManager 损坏、APK 打包错误等），记录错误便于诊断
+            _logger?.LogError(ex, "读取 Android Asset 失败（IO 异常）：{Path}", normalizedPath);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            // 其他未预期异常，记录错误避免静默吞掉
+            _logger?.LogError(ex, "读取 Android Asset 失败（未预期异常）：{Path}", normalizedPath);
             return null;
         }
     }
@@ -90,7 +119,8 @@ public sealed class AndroidAssetServer : AssetServer.AssetServer
         return new AssetOptions
         {
             Handler = "android-asset",
-            RootPath = "assets",
+            // RootPath 在 Android 平台不使用（直接由 AssetManager.Open 读取）
+            RootPath = string.Empty,
         };
     }
 }

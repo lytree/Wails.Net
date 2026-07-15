@@ -1,7 +1,7 @@
 using System.Reflection;
 using Android.Webkit;
 using TUnit.Core;
-using Wails.Net.Application.Windows;
+using Wails.Net.Application.Android;
 using Wails.Net.AssetServer;
 
 namespace Wails.Net.Application.Android.Tests;

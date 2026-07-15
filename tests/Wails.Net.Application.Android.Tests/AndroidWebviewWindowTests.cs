@@ -1,7 +1,7 @@
 using TUnit.Core;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform;
-using Wails.Net.Application.Windows;
+using Wails.Net.Application.Android;
 
 namespace Wails.Net.Application.Android.Tests;
 

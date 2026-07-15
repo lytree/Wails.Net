@@ -126,60 +126,99 @@
     </div>
 
     <script>
-        // Wails.Net IPC 桥接：通过 window.WailsBridge.postMessage 与后端通信
-        // 这是 Android 平台的 IPC 入口，由 AddJavascriptInterface 注入
+        // Wails.Net IPC 桥接：通过 window.WailsBridge.invoke(json) 与后端同步通信
+        // 这是 Android 平台的 IPC 入口，由 AddJavascriptInterface 注入。
+        // invoke 返回 JSON 字符串，前端用 JSON.parse 解析。
 
-        // 简化示例：直接通过 fetch 调用绑定方法（完整实现需通过 IPC 桥）
-        async function callBinding(methodName, args) {
-            // 实际实现中，这里应通过 WailsBridge.postMessage 发送 JSON-RPC 请求
-            // 骨架 Demo 简化为直接调用后端方法（需要完整 IPC 实现）
-            try {
-                const response = await fetch(`http://wails.localhost/api/${methodName}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(args || [])
-                });
-                if (response.ok) {
-                    return await response.text();
+        // 生成唯一消息 ID（用于请求-响应匹配）
+        function genId() {
+            return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+        }
+
+        // 调用后端绑定方法
+        // 对应 MessageProcessor 的 call 类型消息：{id, type:"call", payload:{name, args}}
+        // 响应结构：{id, type:"response", result:{result:<值>, error:<null或错误对象>}}
+        function callBinding(methodName, args) {
+            if (!window.WailsBridge || typeof window.WailsBridge.invoke !== 'function') {
+                return Promise.reject(new Error('IPC 桥未注入：window.WailsBridge 不可用'));
+            }
+
+            const request = {
+                id: genId(),
+                type: 'call',
+                payload: {
+                    name: methodName,
+                    args: args || []
                 }
-                return `错误: ${response.status}`;
+            };
+
+            try {
+                const raw = window.WailsBridge.invoke(JSON.stringify(request));
+                if (!raw) {
+                    return Promise.resolve(null);
+                }
+                const response = JSON.parse(raw);
+                // ResponseMessage.result 是 {result, error} 字典
+                const inner = response.result || {};
+                if (inner.error) {
+                    // error 可能是字符串或对象
+                    const errMsg = typeof inner.error === 'string'
+                        ? inner.error
+                        : (inner.error.message || JSON.stringify(inner.error));
+                    return Promise.reject(new Error(errMsg));
+                }
+                return Promise.resolve(inner.result);
             } catch (e) {
-                // IPC 桥尚未完全实现时，返回提示信息
-                return `IPC 未就绪: ${e.message}`;
+                return Promise.reject(new Error(`IPC 调用失败: ${e.message}`));
             }
         }
 
         async function callGreet() {
             const name = document.getElementById('nameInput').value;
-            const result = await callBinding('GreetingService.Greet', [name]);
-            document.getElementById('greetResult').textContent = result;
+            try {
+                const result = await callBinding('GreetingService.Greet', [name]);
+                document.getElementById('greetResult').textContent = result;
+            } catch (e) {
+                document.getElementById('greetResult').textContent = `错误: ${e.message}`;
+            }
         }
 
         async function callGetTime() {
-            const result = await callBinding('GreetingService.GetCurrentTimeAsync', []);
-            document.getElementById('timeResult').textContent = result;
+            try {
+                const result = await callBinding('GreetingService.GetCurrentTimeAsync', []);
+                document.getElementById('timeResult').textContent = result;
+            } catch (e) {
+                document.getElementById('timeResult').textContent = `错误: ${e.message}`;
+            }
         }
 
         async function callAdd() {
             const a = parseInt(document.getElementById('numA').value) || 0;
             const b = parseInt(document.getElementById('numB').value) || 0;
-            const result = await callBinding('GreetingService.Add', [a, b]);
-            document.getElementById('addResult').textContent = `${a} + ${b} = ${result}`;
+            try {
+                const result = await callBinding('GreetingService.Add', [a, b]);
+                document.getElementById('addResult').textContent = `${a} + ${b} = ${result}`;
+            } catch (e) {
+                document.getElementById('addResult').textContent = `错误: ${e.message}`;
+            }
         }
 
         async function callGetDeviceInfo() {
-            const result = await callBinding('GreetingService.GetDeviceInfo', []);
             const resultEl = document.getElementById('deviceResult');
             try {
-                const info = JSON.parse(result);
-                let html = '<div class="info-grid">';
-                for (const [key, value] of Object.entries(info)) {
-                    html += `<div class="key">${key}:</div><div class="value">${value}</div>`;
+                const result = await callBinding('GreetingService.GetDeviceInfo', []);
+                if (typeof result === 'object') {
+                    let html = '<div class="info-grid">';
+                    for (const [key, value] of Object.entries(result)) {
+                        html += `<div class="key">${key}:</div><div class="value">${value}</div>`;
+                    }
+                    html += '</div>';
+                    resultEl.innerHTML = html;
+                } else {
+                    resultEl.textContent = typeof result === 'string' ? result : JSON.stringify(result);
                 }
-                html += '</div>';
-                resultEl.innerHTML = html;
-            } catch {
-                resultEl.textContent = result;
+            } catch (e) {
+                resultEl.textContent = `错误: ${e.message}`;
             }
         }
     </script>

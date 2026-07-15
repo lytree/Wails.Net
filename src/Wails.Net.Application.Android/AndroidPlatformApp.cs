@@ -2,11 +2,11 @@ using Android.App;
 using Android.Content;
 using Android.Content.Res;
 using Android.OS;
+using Wails.Net.Application.Android;
 using Wails.Net.Application.Dialogs;
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Screens;
-using Wails.Net.Application.Windows;
 using Action = System.Action;
 using Array = System.Array;
 using Environment = System.Environment;
@@ -31,7 +31,9 @@ public sealed class AndroidPlatformApp : IPlatformApp
     private readonly string _name;
 
     /// <summary>
-    /// 主线程 ID，构造时记录。当 <see cref="_mainLooper"/> 不可用时作为回退判断依据。
+    /// 构造时记录的调用方线程 ID。
+    /// 注意：构造函数在后台线程（StartWailsApp）执行，此 ID 不是 Android UI 线程 ID，
+    /// 仅用于非 Android 环境（如单元测试）回退判断主线程，与 <see cref="_mainLooper"/> 配合使用。
     /// </summary>
     private readonly int _mainThreadId;
 
@@ -279,7 +281,8 @@ public sealed class AndroidPlatformApp : IPlatformApp
     public bool IsOnMainThread()
     {
         // 对应 ADR-0002：使用 Looper.MyLooper() == Looper.MainLooper 判断主线程。
-        // 当 MainLooper 不可用时（非 Android 环境），回退到线程 ID 比较。
+        // 注：构造函数在后台线程（StartWailsApp）执行，故 _mainThreadId 实际不是 UI 线程 ID，
+        // 仅作为非 Android 环境的回退判断（测试场景）。
         if (_mainLooper is not null)
         {
             return Looper.MyLooper() == _mainLooper;

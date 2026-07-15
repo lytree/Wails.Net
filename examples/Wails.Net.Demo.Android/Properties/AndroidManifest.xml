@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Demo 应用 AndroidManifest.xml 源文件。
+    .NET Android 工具链会将此文件与自动生成的内容合并。
+    显式声明明文 HTTP 流量允许，用于 WebView 加载 http://wails.localhost/ 自定义 scheme。
+    Android 9 (API 28)+ 默认禁止明文 HTTP，此处放开限制使 ShouldInterceptRequest 能正常拦截。
+    Activity 声明由 [Activity] 特性自动生成，无需在此重复。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <application
+        android:allowBackup="true"
+        android:label="Wails.Net Demo"
+        android:usesCleartextTraffic="true" />
+</manifest>
