@@ -141,6 +141,24 @@ public sealed class DesktopApplicationBuilder
     }
 
     /// <summary>
+    /// 使用平台工厂自动检测并注册平台实现。
+    /// 基于 <see cref="PlatformFactory.CreatePlatformApp"/> 的 6 级检测链，
+    /// 在 Windows 上注册 WindowsPlatformApp，Linux 上注册 LinuxPlatformApp，
+    /// 检测失败时降级到 ServerPlatformApp。
+    /// 对应 Wails v3 Go 版本的运行时平台自动选择行为。
+    /// </summary>
+    /// <returns>当前构建器实例，用于链式调用。</returns>
+    public DesktopApplicationBuilder UseAutoPlatform()
+    {
+        Services.AddSingleton<IPlatformApp>(sp =>
+        {
+            var options = sp.GetRequiredService<ApplicationOptions>();
+            return PlatformFactory.CreatePlatformApp(options);
+        });
+        return this;
+    }
+
+    /// <summary>
     /// 构建桌面应用实例。
     /// 在构建 Host 之前初始化所有插件（调用 <see cref="IPlugin.Configure"/>），
     /// 在构建 Host 之后创建 <see cref="CommandDispatcher"/> 并注入到 <see cref="Application"/>。
@@ -216,56 +234,12 @@ public sealed class DesktopApplicationBuilder
         // 必须在窗口创建前完成，确保权限已就绪
         LoadCapabilities(desktopOpts, host.Services);
 
-        // 根据配置创建窗口（多窗口或默认窗口）
-        // 在 AssetServer 之后创建，确保窗口导航时资源服务已就绪
-        CreateWindowsFromConfig(desktopOpts, application);
+        // 将窗口配置传递给 Application，由 Application.Run() 在 UI 线程上按需创建。
+        // 避免在 Build()（主线程）创建窗口导致 Win32 窗口线程亲和性问题：
+        // 窗口必须由 STA UI 线程创建，才能被该线程的 GetMessage 循环处理。
+        application.SetWindowConfigs(desktopOpts.App?.Windows, desktopOpts.Window);
 
         return new DesktopApplication(host, application, desktopOpts.ApplicationName);
-    }
-
-    /// <summary>
-    /// 根据 HostingAppConfig.Windows 配置创建窗口。
-    /// 对应 Tauri v2 的 static windows 配置创建流程。
-    /// 优先级：App.Windows 多窗口列表 &gt; Window 默认窗口 &gt; 不创建。
-    /// </summary>
-    /// <param name="options">宿主配置选项。</param>
-    /// <param name="application">Application 实例，用于创建窗口。</param>
-    private static void CreateWindowsFromConfig(DesktopHostOptions options, Application application)
-    {
-        if (options.App?.Windows is { Count: > 0 } windows)
-        {
-            // 多窗口配置：依次创建每个窗口（第一个为主窗口）
-            foreach (var cfg in windows)
-            {
-                var windowOptions = new WebviewWindowOptions
-                {
-                    Name = cfg.Name ?? string.Empty,
-                    Title = cfg.Title ?? "Wails.Net",
-                    Width = cfg.Width,
-                    Height = cfg.Height,
-                    Resizable = cfg.Resizable,
-                    Centered = cfg.Centered,
-                    Fullscreen = cfg.Fullscreen,
-                    Frameless = cfg.Frameless,
-                    AlwaysOnTop = cfg.AlwaysOnTop,
-                    URL = cfg.Url ?? string.Empty,
-                };
-                application.CreateWebviewWindow(windowOptions);
-            }
-        }
-        else if (options.Window is not null)
-        {
-            // 回退：使用默认窗口配置（向后兼容）
-            var window = options.Window;
-            application.CreateWebviewWindow(new WebviewWindowOptions
-            {
-                Title = window.Title,
-                Width = window.Width,
-                Height = window.Height,
-                Frameless = window.Frameless,
-            });
-        }
-        // 两者皆空时不创建窗口（由平台或调用方负责）
     }
 
     /// <summary>
@@ -277,16 +251,6 @@ public sealed class DesktopApplicationBuilder
     /// <param name="services">已构建的 DI 服务提供者。</param>
     private static void LoadCapabilities(DesktopHostOptions options, IServiceProvider services)
     {
-        var capabilitiesDir = options.App?.Security?.CapabilitiesDir;
-        if (string.IsNullOrEmpty(capabilitiesDir))
-        {
-            capabilitiesDir = Path.Combine(AppContext.BaseDirectory, "capabilities");
-        }
-        else if (!Path.IsPathRooted(capabilitiesDir))
-        {
-            capabilitiesDir = Path.Combine(AppContext.BaseDirectory, capabilitiesDir);
-        }
-
         var loggerFactory = services.GetService<ILoggerFactory>();
         var logger = loggerFactory?.CreateLogger<DesktopApplicationBuilder>();
         var permissionManager = services.GetService<PermissionManager>();
@@ -294,6 +258,38 @@ public sealed class DesktopApplicationBuilder
         if (permissionManager is null)
         {
             logger?.LogDebug("PermissionManager 未注册，跳过能力文件加载。");
+            return;
+        }
+
+        // 读取权限配置（对齐 Tauri v2 默认行为）。
+        // 仅在 PermissionOptions.Enabled=true 时触发自动加载，
+        // 保持 Enabled=false 默认的向后兼容，避免现有应用升级后命令被意外拒绝。
+        var permissionOptions = services.GetService<IOptions<PermissionOptions>>()?.Value;
+        if (permissionOptions is null || !permissionOptions.Enabled)
+        {
+            logger?.LogDebug("权限未启用（PermissionOptions.Enabled=false），跳过能力文件自动加载。");
+            return;
+        }
+
+        // 解析能力文件目录：优先 PermissionOptions.CapabilitiesDirectory，
+        // 回退到 HostingAppConfig.Security.CapabilitiesDir（向后兼容）。
+        string? capabilitiesDir = null;
+        if (!string.IsNullOrEmpty(permissionOptions.CapabilitiesDirectory))
+        {
+            capabilitiesDir = Path.IsPathRooted(permissionOptions.CapabilitiesDirectory)
+                ? permissionOptions.CapabilitiesDirectory
+                : Path.Combine(AppContext.BaseDirectory, permissionOptions.CapabilitiesDirectory);
+        }
+        else if (!string.IsNullOrEmpty(options.App?.Security?.CapabilitiesDir))
+        {
+            capabilitiesDir = Path.IsPathRooted(options.App.Security.CapabilitiesDir)
+                ? options.App.Security.CapabilitiesDir
+                : Path.Combine(AppContext.BaseDirectory, options.App.Security.CapabilitiesDir);
+        }
+
+        if (string.IsNullOrEmpty(capabilitiesDir))
+        {
+            logger?.LogDebug("未配置能力文件目录，跳过加载。");
             return;
         }
 
@@ -307,7 +303,7 @@ public sealed class DesktopApplicationBuilder
         {
             var capabilities = CapabilityFileLoader.LoadFromDirectory(capabilitiesDir, logger);
             CapabilityFileLoader.RegisterToManager(permissionManager, capabilities);
-            logger?.LogInformation("已加载 {Count} 个能力文件", capabilities.Count);
+            logger?.LogInformation("已从 {Dir} 自动加载 {Count} 个 Capability 声明", capabilitiesDir, capabilities.Count);
         }
         catch (Exception ex)
         {

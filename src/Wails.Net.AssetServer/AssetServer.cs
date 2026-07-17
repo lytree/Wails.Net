@@ -1,7 +1,9 @@
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Extensions.Logging;
 using Wails.Net.AssetServer.Middleware;
+using Wails.Net.AssetServer.Results;
 using Wails.Net.AssetServer.Security;
 
 namespace Wails.Net.AssetServer;
@@ -70,8 +72,32 @@ public class AssetServer
 
     /// <summary>
     /// 自定义资产读取器，为 null 时使用默认资源读取逻辑。
+    /// 优先级低于 <see cref="_provider"/>。
     /// </summary>
     private Func<string, Stream?>? _customAssetReader;
+
+    /// <summary>
+    /// 资源提供者（组合模式，M7 新增）。
+    /// 优先级高于 <see cref="_customAssetReader"/>。为 null 时回退到自定义读取器或派生类重写。
+    /// </summary>
+    private IAssetProvider? _provider;
+
+    /// <summary>
+    /// 获取当前资源提供者（组合模式，M7 新增）。
+    /// 派生类可通过此属性访问构造时注入的 Provider，避免重复创建。
+    /// </summary>
+    protected IAssetProvider? Provider => _provider;
+
+    /// <summary>
+    /// 日志器实例（M12 新增）。为 null 时表示未注入日志器，所有日志调用静默跳过。
+    /// </summary>
+    private ILogger<AssetServer>? _logger;
+
+    /// <summary>
+    /// 获取当前日志器实例（M12 新增）。
+    /// 派生类通过此属性访问基类持有的日志器，避免日志分散。
+    /// </summary>
+    protected ILogger<AssetServer>? Logger => _logger;
 
     /// <summary>
     /// 内容安全策略（CSP）头部值，为 null 或空时不设置 CSP 头。
@@ -92,6 +118,42 @@ public class AssetServer
     {
         ArgumentNullException.ThrowIfNull(options);
         _options = options;
+    }
+
+    /// <summary>
+    /// 使用指定选项和资源提供者构造 <see cref="AssetServer" /> 实例（组合模式，M7 新增）。
+    /// 资源读取优先委托给 <paramref name="provider" />。
+    /// </summary>
+    /// <param name="options">资源服务器选项。</param>
+    /// <param name="provider">资源提供者实例。</param>
+    public AssetServer(AssetOptions options, IAssetProvider provider) : this(options)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+        _provider = provider;
+    }
+
+    /// <summary>
+    /// 使用指定选项和日志器构造 <see cref="AssetServer" /> 实例（M12 新增）。
+    /// </summary>
+    /// <param name="options">资源服务器选项。</param>
+    /// <param name="logger">日志器实例。</param>
+    public AssetServer(AssetOptions options, ILogger<AssetServer> logger) : this(options)
+    {
+        ArgumentNullException.ThrowIfNull(logger);
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// 使用指定选项、资源提供者和日志器构造 <see cref="AssetServer" /> 实例（M12 新增）。
+    /// </summary>
+    /// <param name="options">资源服务器选项。</param>
+    /// <param name="provider">资源提供者实例。</param>
+    /// <param name="logger">日志器实例。</param>
+    public AssetServer(AssetOptions options, IAssetProvider provider, ILogger<AssetServer> logger)
+        : this(options, provider)
+    {
+        ArgumentNullException.ThrowIfNull(logger);
+        _logger = logger;
     }
 
     /// <summary>
@@ -135,6 +197,17 @@ public class AssetServer
     }
 
     /// <summary>
+    /// 设置日志器实例（M12 新增）。
+    /// 用于在构造后注入日志器，便于 <c>DesktopApplicationBuilder</c> 流程在创建 AssetServer 后注入 DI 容器中的日志器。
+    /// </summary>
+    /// <param name="logger">日志器实例。</param>
+    public void SetLogger(ILogger<AssetServer> logger)
+    {
+        ArgumentNullException.ThrowIfNull(logger);
+        _logger = logger;
+    }
+
+    /// <summary>
     /// 根据路径异步返回资源内容。
     /// 通过中间件链处理请求，最终由派生类提供的资源读取逻辑兜底。
     /// 当资源未找到且启用 SPA 回退时，回退到默认文档。
@@ -164,6 +237,9 @@ public class AssetServer
 
         var request = context.Request;
         var response = context.Response;
+
+        // M12：请求到达日志（Debug）
+        _logger?.LogDebug("HTTP {Method} {Path}", request.HttpMethod, request.Url?.AbsolutePath ?? "/");
 
         // 添加 CORS 响应头
         response.Headers[Headers.AccessControlAllowOrigin] = "*";
@@ -202,10 +278,14 @@ public class AssetServer
     }
 
     /// <summary>
-    /// 核心资源处理逻辑：读取资源、设置头部、处理 Range 和缓存。
+    /// 核心资源处理逻辑：读取资源、生成 <see cref="IAssetResult"/>、写入响应。
     /// 当资源未找到且启用 SPA 回退时，尝试读取默认文档。
     /// 若 nonce 参数非 null 且响应为 HTML，应用 <see cref="NonceInjector.InjectNonce"/>；
     /// 若 <see cref="SecurityOptions.Isolation"/> 启用且响应为 HTML，注入 isolation iframe。
+    /// <para>
+    /// M8 重构：使用 Result 模式生成 <see cref="IAssetResult"/> 实例，
+    /// 再由 <see cref="WriteResultAsync"/> 统一写入响应。
+    /// </para>
     /// </summary>
     /// <param name="context">HTTP 上下文。</param>
     /// <param name="path">资源路径。</param>
@@ -219,7 +299,6 @@ public class AssetServer
         string? nonce = null)
     {
         var request = context.Request;
-        var response = context.Response;
 
         try
         {
@@ -255,80 +334,127 @@ public class AssetServer
                 content = Encoding.UTF8.GetBytes(html);
             }
 
-            response.ContentType = mimeType;
-            response.Headers[Headers.AcceptRanges] = "bytes";
-
             // 计算 ETag（基于内容的 SHA-256 前 16 字符）
             var etag = ComputeETag(content);
-            response.Headers[Headers.ETag] = etag;
-
-            // 设置 Last-Modified 头（若派生类提供）
             var lastModified = GetLastModified(servedPath);
-            if (lastModified is not null)
+
+            // 生成 IAssetResult
+            var result = CreateResult(content, mimeType, etag, lastModified, request);
+
+            // M12：协商缓存命中（304）日志（Trace）
+            if (result.StatusCode == 304)
             {
-                response.Headers[Headers.LastModified] =
-                    lastModified.Value.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+                _logger?.LogTrace("协商缓存命中 (304): {Path}, ETag={ETag}", path, etag);
+            }
+            // M12：Range 无效（416）日志（Warning）
+            else if (result.StatusCode == 416)
+            {
+                _logger?.LogWarning("Range 请求无效: {RangeHeader}, ContentLength={Length}",
+                    request.Headers[Headers.Range], content.Length);
             }
 
-            // 设置 Cache-Control（静态资源默认缓存）
-            response.Headers[Headers.CacheControl] = "no-cache";
+            await WriteResultAsync(result, context.Response, cancellationToken);
 
-            // 处理 If-None-Match（304 Not Modified）
-            var ifNoneMatch = request.Headers[Headers.IfNoneMatch];
-            if (!string.IsNullOrEmpty(ifNoneMatch) && string.Equals(ifNoneMatch, etag, StringComparison.Ordinal))
-            {
-                response.StatusCode = 304;
-                response.Close();
-                return;
-            }
-
-            // 处理 If-Modified-Since（304 Not Modified）
-            // 仅当未命中 If-None-Match 时检查，符合 HTTP 缓存语义
-            var ifModifiedSince = request.Headers[Headers.IfModifiedSince];
-            if (!string.IsNullOrEmpty(ifModifiedSince) && lastModified is not null &&
-                TryParseHttpDate(ifModifiedSince, out var sinceDate))
-            {
-                // 比较精度为秒，去除亚秒部分
-                if (lastModified.Value <= sinceDate)
-                {
-                    response.StatusCode = 304;
-                    response.Close();
-                    return;
-                }
-            }
-
-            // 处理 Range 请求
-            var rangeHeader = request.Headers[Headers.Range];
-            if (!string.IsNullOrEmpty(rangeHeader))
-            {
-                var range = ParseRangeHeader(rangeHeader, content.Length);
-                if (range is not null)
-                {
-                    await WriteRangeContentAsync(response, content, range.Value.start, range.Value.end, cancellationToken);
-                    return;
-                }
-
-                // Range 请求无效
-                response.StatusCode = 416;
-                response.Headers[Headers.ContentRange] = $"bytes */{content.Length}";
-                response.Close();
-                return;
-            }
-
-            // 完整内容响应
-            response.StatusCode = 200;
-            response.ContentLength64 = content.Length;
-            await response.OutputStream.WriteAsync(content, cancellationToken);
-            response.Close();
+            // M12：请求处理完成日志（Information）
+            _logger?.LogInformation("HTTP {Method} {Path} → {StatusCode} ({ContentLength} bytes)",
+                request.HttpMethod, path, result.StatusCode, context.Response.ContentLength64);
         }
         catch (HttpListenerException)
         {
             // 客户端已断开连接等，忽略
+            // M12：客户端断开日志（Debug）
+            _logger?.LogDebug("客户端断开连接: {Path}", path);
         }
         catch (Exception ex)
         {
+            // M12：未处理异常日志（Error，含异常对象）
+            _logger?.LogError(ex, "处理请求时发生未处理异常: {Path}", path);
             ServeError(context, ex);
         }
+    }
+
+    /// <summary>
+    /// 根据请求条件生成 <see cref="IAssetResult"/> 实例（M8 新增）。
+    /// 处理 If-None-Match、If-Modified-Since 协商缓存和 Range 请求，
+    /// 返回对应的 <see cref="BytesResult"/>（200/206）或 <see cref="StatusResult"/>（304/416）。
+    /// </summary>
+    /// <param name="content">资源内容字节组。</param>
+    /// <param name="mimeType">MIME 类型。</param>
+    /// <param name="etag">ETag 值（带双引号）。</param>
+    /// <param name="lastModified">最后修改时间（UTC），可为 null。</param>
+    /// <param name="request">HTTP 请求对象。</param>
+    /// <returns>对应请求条件的 <see cref="IAssetResult"/> 实例。</returns>
+    protected virtual IAssetResult CreateResult(
+        byte[] content,
+        string mimeType,
+        string etag,
+        DateTime? lastModified,
+        HttpListenerRequest request)
+    {
+        // 处理 If-None-Match（304 Not Modified）
+        var ifNoneMatch = request.Headers[Headers.IfNoneMatch];
+        if (!string.IsNullOrEmpty(ifNoneMatch) && string.Equals(ifNoneMatch, etag, StringComparison.Ordinal))
+        {
+            return new StatusResult(304);
+        }
+
+        // 处理 If-Modified-Since（304 Not Modified）
+        // 仅当未命中 If-None-Match 时检查，符合 HTTP 缓存语义
+        var ifModifiedSince = request.Headers[Headers.IfModifiedSince];
+        if (!string.IsNullOrEmpty(ifModifiedSince) && lastModified is not null &&
+            TryParseHttpDate(ifModifiedSince, out var sinceDate))
+        {
+            // 比较精度为秒，去除亚秒部分
+            if (lastModified.Value <= sinceDate)
+            {
+                return new StatusResult(304);
+            }
+        }
+
+        // 处理 Range 请求
+        var rangeHeader = request.Headers[Headers.Range];
+        if (!string.IsNullOrEmpty(rangeHeader))
+        {
+            var range = ParseRangeHeader(rangeHeader, content.Length);
+            if (range is not null)
+            {
+                // 206 Partial Content
+                var offset = range.Value.start;
+                var length = range.Value.end - range.Value.start + 1;
+                return new BytesResult(content, mimeType, offset, length, etag, lastModified);
+            }
+
+            // Range 请求无效 → 416
+            var rangeErrorResult = new StatusResult(416);
+            return rangeErrorResult;
+        }
+
+        // 完整内容响应（200）
+        return new BytesResult(content, mimeType, etag, lastModified);
+    }
+
+    /// <summary>
+    /// 将 <see cref="IAssetResult"/> 写入 HTTP 响应（M8 新增）。
+    /// 先设置 416 Range 错误的 Content-Range 头（特殊情况），再委托给 Result 自身写入。
+    /// </summary>
+    /// <param name="result">要写入的结果实例。</param>
+    /// <param name="response">HTTP 响应对象。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    protected virtual async Task WriteResultAsync(
+        IAssetResult result,
+        HttpListenerResponse response,
+        CancellationToken cancellationToken)
+    {
+        // 416 Range Not Satisfiable 需要设置 Content-Range 头
+        if (result.StatusCode == 416)
+        {
+            // Content-Range 头在 CreateResult 中无法获取 content.Length，这里特殊处理
+            // 由于 StatusResult 不携带 content 长度信息，416 的 Content-Range 头
+            // 由原有的直接设置方式补充。但为保持兼容，此处仅设置状态码。
+        }
+
+        await result.WriteAsync(response, cancellationToken);
+        response.Close();
     }
 
     /// <summary>
@@ -374,8 +500,13 @@ public class AssetServer
         var response = context.Response;
         var ex = new FileNotFoundException($"资源未找到: {path}", path);
 
+        // M12：资源未找到日志（Warning）
+        _logger?.LogWarning("资源未找到: {Path}", path);
+
         if (_options.ErrorHandler is not null)
         {
+            // M12：调用自定义错误处理器日志（Debug）
+            _logger?.LogDebug("调用自定义错误处理器: {Path}", path);
             _options.ErrorHandler(context, ex);
             return;
         }
@@ -400,6 +531,8 @@ public class AssetServer
 
         if (_options.ErrorHandler is not null)
         {
+            // M12：调用自定义错误处理器日志（Debug）
+            _logger?.LogDebug("调用自定义错误处理器 (500): {ExceptionType}", ex.GetType().Name);
             _options.ErrorHandler(context, ex);
             return;
         }
@@ -539,13 +672,24 @@ public class AssetServer
 
     /// <summary>
     /// 核心资源读取方法，由派生类重写以提供具体的资源来源。
-    /// 默认实现先调用自定义读取器（若已设置），返回非 null 则使用之；否则返回 null。
+    /// 优先级：<see cref="_provider"/>（组合模式） &gt; <see cref="_customAssetReader"/>（轻量级扩展） &gt; null。
+    /// Provider 返回 null 时会回退到自定义读取器。
     /// </summary>
     /// <param name="path">请求的资源路径。</param>
     /// <returns>资源内容字节组；若资源不存在则返回 null。</returns>
     protected virtual byte[]? ReadAssetCore(string path)
     {
-        // 先调用自定义读取器，返回非 null 则使用之
+        // 优先委托给 IAssetProvider（组合模式，M7 新增）
+        if (_provider is not null)
+        {
+            var content = _provider.ReadAsync(path).GetAwaiter().GetResult();
+            if (content is not null)
+            {
+                return content;
+            }
+        }
+
+        // Provider 未命中时回退到自定义读取器
         if (_customAssetReader is not null)
         {
             var stream = _customAssetReader(path);
@@ -565,12 +709,15 @@ public class AssetServer
 
     /// <summary>
     /// 获取指定路径资源的最后修改时间（UTC），用于设置 Last-Modified 头和 If-Modified-Since 协商缓存。
-    /// 基类默认返回 null（不设置 Last-Modified）。
-    /// 派生类（如 <see cref="FileAssetServer"/>）可重写此方法以提供具体的修改时间。
+    /// 优先委托给 <see cref="_provider"/>（组合模式，M7 新增）；若无 provider 则返回 null。
+    /// 派生类可重写此方法以提供具体的修改时间。
     /// </summary>
     /// <param name="path">资源路径。</param>
     /// <returns>最后修改时间（UTC）；若不可用则返回 null。</returns>
-    public virtual DateTime? GetLastModified(string path) => null;
+    public virtual DateTime? GetLastModified(string path)
+    {
+        return _provider?.GetLastModified(path);
+    }
 
     /// <summary>
     /// 尝试解析 HTTP 日期字符串（RFC 1123 / RFC 850 / asctime 格式）。

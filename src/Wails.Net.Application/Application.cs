@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Wails.Net.Application.Bindings;
 using Wails.Net.Application.Commands;
 using Wails.Net.Application.Events;
+using Wails.Net.Application.Hosting;
 using Wails.Net.Application.Managers;
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
@@ -29,6 +30,18 @@ public class Application
     private readonly ServiceRegistry _serviceRegistry = new();
     private uint _nextWindowId = 1;
     private readonly Dictionary<uint, WebviewWindow> _windows = new();
+
+    /// <summary>
+    /// 配置驱动的窗口列表，由 DesktopApplicationBuilder.Build 传递。
+    /// 在 Run() 的 OnAfterStart 之前按需创建，避免主线程创建窗口导致 Win32 线程亲和性问题。
+    /// </summary>
+    private List<WindowConfig>? _configuredWindows;
+
+    /// <summary>
+    /// 默认窗口配置，由 DesktopApplicationBuilder.Build 传递。
+    /// 当 _configuredWindows 为空且 OnAfterStart 未设置时使用。
+    /// </summary>
+    private DesktopHostOptions.WindowOptions? _defaultWindowConfig;
 
     /// <summary>
     /// 绑定管理器，负责注册和调用绑定方法。
@@ -645,6 +658,60 @@ public class Application
     }
 
     /// <summary>
+    /// 设置配置驱动的窗口配置，由 DesktopApplicationBuilder.Build 调用。
+    /// 窗口不在 Build（主线程）创建，而是延迟到 Run()（UI 线程）按需创建，
+    /// 避免 Win32 窗口线程亲和性导致的死锁。
+    /// </summary>
+    /// <param name="configuredWindows">多窗口配置列表，可为 null。</param>
+    /// <param name="defaultWindow">默认窗口配置，可为 null。</param>
+    internal void SetWindowConfigs(
+        List<WindowConfig>? configuredWindows,
+        DesktopHostOptions.WindowOptions? defaultWindow)
+    {
+        _configuredWindows = configuredWindows;
+        _defaultWindowConfig = defaultWindow;
+    }
+
+    /// <summary>
+    /// 根据配置创建窗口。在 UI 线程的 Run() 方法中调用，
+    /// 确保窗口由 STA UI 线程创建，可被该线程的 GetMessage 循环正确处理。
+    /// 仅当 OnAfterStart 未设置时执行，避免与用户回调重复创建窗口。
+    /// </summary>
+    private void CreateWindowsFromConfig()
+    {
+        if (_configuredWindows is { Count: > 0 } windows)
+        {
+            foreach (var cfg in windows)
+            {
+                CreateWebviewWindow(new WebviewWindowOptions
+                {
+                    Name = cfg.Name ?? string.Empty,
+                    Title = cfg.Title ?? "Wails.Net",
+                    Width = cfg.Width,
+                    Height = cfg.Height,
+                    Resizable = cfg.Resizable,
+                    Centered = cfg.Centered,
+                    Fullscreen = cfg.Fullscreen,
+                    Frameless = cfg.Frameless,
+                    AlwaysOnTop = cfg.AlwaysOnTop,
+                    URL = cfg.Url ?? string.Empty,
+                });
+            }
+        }
+        else if (_defaultWindowConfig is not null)
+        {
+            var window = _defaultWindowConfig;
+            CreateWebviewWindow(new WebviewWindowOptions
+            {
+                Title = window.Title,
+                Width = window.Width,
+                Height = window.Height,
+                Frameless = window.Frameless,
+            });
+        }
+    }
+
+    /// <summary>
     /// 创建 Webview 窗口，使用自动递增的 ID。
     /// 若平台应用已设置，则委托给平台应用创建实际窗口。
     /// </summary>
@@ -768,8 +835,18 @@ public class Application
             _transport.StartAsync(_cts.Token).GetAwaiter().GetResult();
         }
 
-        // 触发 OnStartup 和 OnAfterStart 回调
+        // 触发 OnStartup 回调
         _options.OnStartup?.Invoke();
+
+        // 仅当未设置 OnAfterStart 时，根据配置创建窗口。
+        // 若用户在 OnAfterStart 中手动创建窗口，则跳过配置驱动创建，避免双重窗口。
+        // 窗口在此处（UI 线程）创建，确保 Win32 窗口线程亲和性正确。
+        if (_options.OnAfterStart is null)
+        {
+            CreateWindowsFromConfig();
+        }
+
+        // 触发 OnAfterStart 回调
         _options.OnAfterStart?.Invoke();
 
         // 启动所有插件（调用 IPlugin.StartupAsync）。

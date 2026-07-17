@@ -10,6 +10,7 @@ using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform;
 using Wails.Net.Application.Screens;
+using WebKit;
 using Action = System.Action;
 using Array = System.Array;
 using File = Gio.File;
@@ -299,10 +300,55 @@ public sealed class LinuxPlatformApp : IPlatformApp
     {
         if (Interlocked.Exchange(ref _gtkInitialized, 1) == 0)
         {
-            // GTK4 初始化，内部调用 gtk_init()。
-            // 必须在创建任何窗口或控件之前调用，且后续所有 GTK 操作须在同一线程。
-            Gtk.Functions.Init();
+            // 在 GTK 初始化前根据环境选择合适的显示后端。
+            // WSLg 的 Wayland 实现存在 seat/shared_memory 不完整问题，
+            // 默认回退到 X11 以避免 gdk_seat_get_keyboard 等错误。
+            // 用户显式设置 GDK_BACKEND 时尊重用户选择。
+            SelectDisplayBackend();
+
+            // GirCore 0.8.0 要求先调用 Module.Initialize() 注册 DllImportResolver，
+            // 否则 P/Invoke 无法将 "Gtk" 等 GirCore 内部库名映射到实际的 libgtk-4.so.0。
+            // WebKit.Module.Initialize() 会级联初始化所有依赖模块：
+            //   WebKit → Gtk → Gdk/Gsk → GdkPixbuf/Gio/Pango/PangoCairo/Cairo
+            //   WebKit → JavaScriptCore
+            //   WebKit → Soup
+            // 内部会调用 gtk_init() 完成 GTK4 初始化。
+            WebKit.Module.Initialize();
         }
+    }
+
+    /// <summary>
+    /// 选择合适的 GDK 显示后端。
+    /// 策略：
+    /// 1. 用户已通过 <c>GDK_BACKEND</c> 显式指定时，尊重用户选择；
+    /// 2. 检测到 WSLg 环境（<c>WSL_DISTRO_NAME</c> 存在或 <c>/mnt/wslg</c> 存在）时，
+    ///    默认设置 <c>GDK_BACKEND=x11</c>，因为 WSLg 的 Wayland 实现存在 seat 问题；
+    /// 3. 其他环境不设置，由 GTK 自动选择（Wayland 优先，X11 回退）。
+    /// 对应 Wails v3 Go 版本在 WSL2 调试场景下的 X11 回退策略。
+    /// </summary>
+    private static void SelectDisplayBackend()
+    {
+        // 已显式指定时尊重用户选择。
+        var current = Environment.GetEnvironmentVariable("GDK_BACKEND");
+        if (!string.IsNullOrEmpty(current))
+        {
+            return;
+        }
+
+        // 检测 WSLg 环境：WSL_DISTRO_NAME 环境变量或 /mnt/wslg 目录存在。
+        var wslDistro = Environment.GetEnvironmentVariable("WSL_DISTRO_NAME");
+        var wslgExists = System.IO.Directory.Exists("/mnt/wslg");
+        var isWslg = !string.IsNullOrEmpty(wslDistro) || wslgExists;
+
+        if (isWslg)
+        {
+            // WSLg 的 Wayland 实现存在 seat/shared_memory 问题，
+            // 默认使用 X11 后端以避免 gdk_seat_get_keyboard 等错误。
+            // 用户可通过显式设置 GDK_BACKEND=wayland 强制使用 Wayland。
+            Environment.SetEnvironmentVariable("GDK_BACKEND", "x11");
+        }
+
+        // 非 WSLg 环境不设置 GDK_BACKEND，由 GTK 自动选择（Wayland 优先，X11 回退）。
     }
 
     /// <inheritdoc />

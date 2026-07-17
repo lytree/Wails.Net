@@ -52,3 +52,5 @@ package-lock.json
 
 # CI/CD 构建产物
 artifacts/
+
+.fake

@@ -23,6 +23,8 @@ public sealed class BuildContext : FrostingContext
     public bool SkipFrontend { get; }
     public bool DryRun { get; }
     public bool Rebuild { get; }
+    /// <summary>Linux 打包格式（targz|deb|rpm|all|逗号分隔组合），默认 targz。</summary>
+    public string LinuxFormats { get; }
 
     // === 常量 ===
     public const string SolutionFile = "Wails.Net.slnx";
@@ -58,6 +60,7 @@ public sealed class BuildContext : FrostingContext
         SkipFrontend = context.Arguments.HasArgument("skip-frontend");
         DryRun = context.Arguments.HasArgument("dry-run");
         Rebuild = context.Arguments.HasArgument("rebuild");
+        LinuxFormats = context.Arguments.GetArgument("linux-formats") ?? "targz";
     }
 
     // === 辅助方法 ===
@@ -109,6 +112,35 @@ public sealed class BuildContext : FrostingContext
             }
         }
         return ridList.Count == 0 ? new List<string> { defaultRid } : ridList;
+    }
+
+    /// <summary>
+    /// 解析 --linux-formats 参数，返回要生成的 Linux 包格式列表。
+    /// 支持值：targz、deb、rpm、all，或逗号分隔组合（如 "targz,deb"）。
+    /// </summary>
+    public List<string> ResolveLinuxFormats()
+    {
+        var supported = new[] { "targz", "deb", "rpm" };
+        if (string.IsNullOrEmpty(LinuxFormats) || LinuxFormats.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            return new List<string>(supported);
+        }
+
+        var result = new List<string>();
+        var parts = LinuxFormats.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var f in parts)
+        {
+            var lower = f.ToLowerInvariant();
+            if (Array.IndexOf(supported, lower) >= 0)
+            {
+                if (!result.Contains(lower)) result.Add(lower);
+            }
+            else
+            {
+                this.Warning($"不支持的 Linux 格式: {f}（支持: {string.Join(", ", supported)}）");
+            }
+        }
+        return result.Count == 0 ? new List<string> { "targz" } : result;
     }
 
     /// <summary>

@@ -16,7 +16,13 @@ public enum PackageFormat
     Nsis,
 
     /// <summary>AppImage（Linux）</summary>
-    AppImage
+    AppImage,
+
+    /// <summary>Debian 包（.deb），对应 Tauri v2 bundle.linux.debian。</summary>
+    Deb,
+
+    /// <summary>RPM 包（.rpm），对应 Tauri v2 bundle.linux.rpm。</summary>
+    Rpm
 }
 
 /// <summary>

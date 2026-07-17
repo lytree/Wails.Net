@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO.Compression;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using Wails.Net.Cli.Config;
@@ -107,6 +108,14 @@ public sealed class Packager
                     await PackageAppImageAsync(publishDir, outputPath, options);
                     break;
 
+                case PackageFormat.Deb:
+                    await PackageDebAsync(publishDir, outputPath, options);
+                    break;
+
+                case PackageFormat.Rpm:
+                    await PackageRpmAsync(publishDir, outputPath, options);
+                    break;
+
                 default:
                     return new PackageResult
                     {
@@ -149,6 +158,8 @@ public sealed class Packager
         PackageFormat.TarGz => ".tar.gz",
         PackageFormat.Nsis => ".exe",
         PackageFormat.AppImage => ".AppImage",
+        PackageFormat.Deb => ".deb",
+        PackageFormat.Rpm => ".rpm",
         _ => ".zip",
     };
 
@@ -598,6 +609,252 @@ Icon={{appName}}
 Categories=Utility;
 Terminal=false
 """;
+    }
+
+    /// <summary>
+    /// 创建 Debian 包（.deb）。
+    /// 对应 Tauri v2 bundle.linux.debian 配置项。
+    /// 通过调用 dpkg-deb 命令构建标准 Debian 包目录结构。
+    /// </summary>
+    /// <param name="sourceDir">发布输出目录。</param>
+    /// <param name="outputPath">.deb 输出路径。</param>
+    /// <param name="options">打包选项。</param>
+    /// <exception cref="PlatformNotSupportedException">非 Linux 平台。</exception>
+    /// <exception cref="FileNotFoundException">未找到 dpkg-deb 或主可执行文件。</exception>
+    private static async Task PackageDebAsync(string sourceDir, string outputPath, PackageOptions options)
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            throw new PlatformNotSupportedException("Debian 包（.deb）只能在 Linux 上生成");
+        }
+
+        var dpkgDeb = FindExecutableInPath("dpkg-deb");
+        if (dpkgDeb is null)
+        {
+            throw new FileNotFoundException(
+                "未找到 dpkg-deb，请安装 dpkg-dev 包并确保 dpkg-deb 在 PATH 中");
+        }
+
+        var pkgDir = Path.Combine(Path.GetTempPath(), $"wailsnet-deb-{Guid.NewGuid():N}");
+        try
+        {
+            // 构建 Debian 标准包目录结构
+            // {pkgDir}/DEBIAN/control
+            // {pkgDir}/usr/bin/{exeName}
+            // {pkgDir}/usr/share/applications/{appName}.desktop
+            // {pkgDir}/usr/share/icons/hicolor/256x256/apps/{appName}.png
+            var debianDir = Path.Combine(pkgDir, "DEBIAN");
+            Directory.CreateDirectory(debianDir);
+
+            var usrBin = Path.Combine(pkgDir, "usr", "bin");
+            Directory.CreateDirectory(usrBin);
+            CopyDirectory(sourceDir, usrBin);
+
+            var exeName = FindLinuxExecutable(usrBin, options.AppName)
+                ?? throw new FileNotFoundException($"在发布目录中未找到主可执行文件：{sourceDir}");
+            SetExecutablePermission(Path.Combine(usrBin, exeName));
+
+            // 生成 control 文件
+            var arch = InferDebArchitecture();
+            var maintainer = string.IsNullOrEmpty(options.Publisher) ? "Wails.Net" : options.Publisher;
+            var controlPath = Path.Combine(debianDir, "control");
+            await File.WriteAllTextAsync(controlPath,
+                GenerateDebControl(options.AppName, options.Version, arch, maintainer,
+                    options.ShortDescription, options.LongDescription));
+
+            // postinst 安装后脚本：确保主程序可执行
+            var postinstPath = Path.Combine(debianDir, "postinst");
+            await File.WriteAllTextAsync(postinstPath,
+                $"#!/bin/sh\nchmod +x /usr/bin/{exeName}\n");
+            SetExecutablePermission(postinstPath);
+
+            // .desktop 文件
+            var applicationsDir = Path.Combine(pkgDir, "usr", "share", "applications");
+            Directory.CreateDirectory(applicationsDir);
+            await File.WriteAllTextAsync(
+                Path.Combine(applicationsDir, $"{options.AppName}.desktop"),
+                GenerateDesktopFile(options.AppName));
+
+            // 图标（占位）
+            var iconDir = Path.Combine(pkgDir, "usr", "share", "icons", "hicolor", "256x256", "apps");
+            Directory.CreateDirectory(iconDir);
+            await File.WriteAllBytesAsync(Path.Combine(iconDir, $"{options.AppName}.png"), MinimalPngIcon);
+
+            // 调用 dpkg-deb --build
+            var (exitCode, output) = await RunProcessAsync(dpkgDeb, "--build", pkgDir, Path.GetFullPath(outputPath));
+            if (exitCode != 0)
+            {
+                throw new InvalidOperationException($"dpkg-deb 退出码 {exitCode}：{output}");
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(pkgDir))
+            {
+                try { Directory.Delete(pkgDir, recursive: true); } catch { }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 创建 RPM 包（.rpm）。
+    /// 对应 Tauri v2 bundle.linux.rpm 配置项。
+    /// 通过调用 rpmbuild 命令构建 RPM 包。
+    /// </summary>
+    /// <param name="sourceDir">发布输出目录。</param>
+    /// <param name="outputPath">.rpm 输出路径。</param>
+    /// <param name="options">打包选项。</param>
+    /// <exception cref="PlatformNotSupportedException">非 Linux 平台。</exception>
+    /// <exception cref="FileNotFoundException">未找到 rpmbuild 或主可执行文件。</exception>
+    private static async Task PackageRpmAsync(string sourceDir, string outputPath, PackageOptions options)
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            throw new PlatformNotSupportedException("RPM 包（.rpm）只能在 Linux 上生成");
+        }
+
+        var rpmbuild = FindExecutableInPath("rpmbuild");
+        if (rpmbuild is null)
+        {
+            throw new FileNotFoundException(
+                "未找到 rpmbuild，请安装 rpm 包并确保 rpmbuild 在 PATH 中");
+        }
+
+        var exeName = FindLinuxExecutable(sourceDir, options.AppName)
+            ?? throw new FileNotFoundException($"在发布目录中未找到主可执行文件：{sourceDir}");
+
+        // RPM 构建目录布局：{topdir}/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+        var topDir = Path.Combine(Path.GetTempPath(), $"wailsnet-rpm-{Guid.NewGuid():N}");
+        try
+        {
+            foreach (var sub in new[] { "BUILD", "RPMS", "SOURCES", "SPECS", "SRPMS" })
+            {
+                Directory.CreateDirectory(Path.Combine(topDir, sub));
+            }
+
+            // 将主可执行文件和 .desktop 文件放入 SOURCES
+            var sourcesDir = Path.Combine(topDir, "SOURCES");
+            File.Copy(Path.Combine(sourceDir, exeName), Path.Combine(sourcesDir, exeName), overwrite: true);
+            await File.WriteAllTextAsync(
+                Path.Combine(sourcesDir, $"{options.AppName}.desktop"),
+                GenerateDesktopFile(options.AppName));
+
+            // 生成 .spec 文件
+            var specPath = Path.Combine(topDir, "SPECS", $"{options.AppName}.spec");
+            var license = string.IsNullOrEmpty(options.Copyright) ? "Proprietary" : options.Copyright;
+            var category = string.IsNullOrEmpty(options.Category) ? "Utility" : options.Category;
+            await File.WriteAllTextAsync(specPath,
+                GenerateRpmSpec(options.AppName, options.Version, exeName,
+                    options.ShortDescription, options.LongDescription, license, category));
+
+            // 调用 rpmbuild -bb {spec}，指定 _topdir
+            var (exitCode, output) = await RunProcessAsync(rpmbuild,
+                "--define", $"_topdir {topDir}", "-bb", specPath);
+            if (exitCode != 0)
+            {
+                throw new InvalidOperationException($"rpmbuild 退出码 {exitCode}：{output}");
+            }
+
+            // rpmbuild 输出到 {topDir}/RPMS/{arch}/{name}-{version}-1.{arch}.rpm
+            // 查找生成的 .rpm 并复制到目标输出路径
+            var rpmFiles = Directory.GetFiles(Path.Combine(topDir, "RPMS"), "*.rpm", SearchOption.AllDirectories);
+            if (rpmFiles.Length == 0)
+            {
+                throw new InvalidOperationException("rpmbuild 执行完成但未找到生成的 .rpm 文件");
+            }
+            File.Copy(rpmFiles[0], Path.GetFullPath(outputPath), overwrite: true);
+        }
+        finally
+        {
+            if (Directory.Exists(topDir))
+            {
+                try { Directory.Delete(topDir, recursive: true); } catch { }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 生成 Debian control 文件内容。
+    /// </summary>
+    /// <param name="appName">应用名称（包名）。</param>
+    /// <param name="version">版本号。</param>
+    /// <param name="architecture">Debian 架构（amd64/arm64/i386）。</param>
+    /// <param name="maintainer">维护者/发布者。</param>
+    /// <param name="shortDescription">短描述。</param>
+    /// <param name="longDescription">长描述（可为 null）。</param>
+    /// <returns>control 文件内容。</returns>
+    internal static string GenerateDebControl(string appName, string version, string architecture,
+        string maintainer, string? shortDescription, string? longDescription)
+    {
+        var summary = string.IsNullOrEmpty(shortDescription) ? $"{appName} application" : shortDescription;
+        var description = string.IsNullOrEmpty(longDescription) ? summary : longDescription;
+        // Debian control 要求长描述每行以单空格开头（续行）
+        var descriptionLine = $" {description}";
+
+        return $"""
+Package: {appName}
+Version: {version}
+Architecture: {architecture}
+Maintainer: {maintainer}
+Depends: libgtk-4-1, libwebkitgtk-6.0-4
+Section: utils
+Priority: optional
+Description: {summary}
+{descriptionLine}
+""";
+    }
+
+    /// <summary>
+    /// 生成 RPM .spec 文件内容。
+    /// </summary>
+    /// <param name="appName">应用名称。</param>
+    /// <param name="version">版本号。</param>
+    /// <param name="exeName">主可执行文件名。</param>
+    /// <param name="shortDescription">短描述（Summary）。</param>
+    /// <param name="longDescription">长描述（%description）。</param>
+    /// <param name="license">许可证。</param>
+    /// <param name="category">分类。</param>
+    /// <returns>.spec 文件内容。</returns>
+    internal static string GenerateRpmSpec(string appName, string version, string exeName,
+        string? shortDescription, string? longDescription, string license, string category)
+    {
+        var summary = string.IsNullOrEmpty(shortDescription) ? $"{appName} application" : shortDescription;
+        var description = string.IsNullOrEmpty(longDescription) ? summary : longDescription;
+
+        return $$"""
+Name:           {{appName}}
+Version:        {{version}}
+Release:        1%{?dist}
+Summary:        {{summary}}
+License:        {{license}}
+Group:          Applications/{{category}}
+Requires:       gtk4, webkitgtk6.0
+
+%description
+{{description}}
+
+%install
+install -D -m 0755 %{_sourcedir}/{{exeName}} %{buildroot}/usr/bin/{{exeName}}
+install -D -m 0644 %{_sourcedir}/{{appName}}.desktop %{buildroot}/usr/share/applications/{{appName}}.desktop
+
+%files
+/usr/bin/{{exeName}}
+/usr/share/applications/{{appName}}.desktop
+""";
+    }
+
+    /// <summary>
+    /// 推断 Debian 包架构（根据当前运行时 OS 架构）。
+    /// </summary>
+    /// <returns>Debian 架构名（amd64/arm64/i386）。</returns>
+    private static string InferDebArchitecture()
+    {
+        return RuntimeInformation.OSArchitecture switch
+        {
+            Architecture.Arm64 => "arm64",
+            Architecture.X86 => "i386",
+            _ => "amd64",
+        };
     }
 
     /// <summary>

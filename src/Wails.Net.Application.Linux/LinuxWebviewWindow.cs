@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using Gio;
 using GLib;
 using Gtk;
@@ -50,6 +51,16 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     private static extern void GSlistFree(IntPtr slist);
 
     /// <summary>
+    /// 原生 g_bytes_get_data 函数，从 GBytes 取出数据指针与大小。
+    /// 用于读取 IPC 请求体（GInputStream → GLib.Bytes → 原生字节）。
+    /// </summary>
+    /// <param name="bytes">GBytes* 原生指针。</param>
+    /// <param name="size">输出：数据字节数。</param>
+    /// <returns>指向数据的只读指针，无需释放（数据由 GBytes 拥有）。</returns>
+    [DllImport("glib-2.0", EntryPoint = "g_bytes_get_data")]
+    private static extern IntPtr GBytesGetData(IntPtr bytes, out nuint size);
+
+    /// <summary>
     /// 窗口 ID。
     /// </summary>
     private readonly uint _id;
@@ -93,6 +104,24 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     /// wails 自定义 URI scheme 是否已注册（全局，所有窗口共享同一 WebContext）。
     /// </summary>
     private static bool _wailsSchemeRegistered;
+
+    /// <summary>
+    /// Wails 运行时 JS 是否已注入到 WebView。
+    /// 通过 <see cref="UserContentManager.AddScript"/> 注入后，
+    /// 脚本会在每个新文档创建时、页面脚本执行前运行（等价于 WebView2 的
+    /// <c>AddScriptToExecuteOnDocumentCreatedAsync</c>）。仅注入一次。
+    /// </summary>
+    private bool _runtimeInjected;
+
+    /// <summary>
+    /// JSON 序列化选项，用于 IPC 响应序列化。
+    /// 对应 Win32 平台 Win32WebviewWindow._jsonOptions。
+    /// </summary>
+    private static readonly JsonSerializerOptions _jsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true
+    };
 
     /// <summary>
     /// 最小宽度（GTK4 通过LayoutManager 约束，此处缓存以便查询）。
@@ -305,6 +334,60 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
             settings.SetEnableJavascript(true);
             settings.SetEnableDeveloperExtras(true);
         }
+
+        // 注入 Wails 运行时 JS（必须在导航之前！）
+        // 通过 UserContentManager.AddScript 注册的脚本会在每个新文档创建时、
+        // 页面脚本执行前运行，确保 window.wails 在页面脚本中可用。
+        // 对应 Win32 平台的 AddScriptToExecuteOnDocumentCreatedAsync。
+        // 若放在导航之后，页面脚本已执行完，wails 会是 undefined。
+        InjectRuntimeJs();
+    }
+
+    /// <summary>
+    /// 注入 Wails 运行时 JavaScript 到 WebView。
+    /// 对应 Wails v3 Go 版本中的 injectRuntimeJs 方法。
+    /// 通过 <see cref="Application.GenerateRuntimeJs"/> 生成运行时代码，
+    /// 使用 <see cref="UserContentManager.AddScript"/> 注册 <see cref="UserScript"/>，
+    /// 确保运行时在页面任何脚本执行前就绪（否则页面脚本访问 wails 时会得到 undefined）。
+    /// 仅注入一次，后续导航不重复注入。
+    /// </summary>
+    private void InjectRuntimeJs()
+    {
+        if (_runtimeInjected || _webView is null)
+        {
+            return;
+        }
+
+        var app = WailsApplication.Get();
+        if (app is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var js = app.GenerateRuntimeJs(false);
+            if (!string.IsNullOrEmpty(js))
+            {
+                // 通过 UserContentManager.AddScript 注册 UserScript，
+                // 脚本会在每个新文档创建时、页面脚本执行前注入。
+                // UserContentInjectedFrames.AllFrames 确保主框架与子框架均注入。
+                // UserScriptInjectionTime.Start 对应 WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START。
+                var ucm = _webView.GetUserContentManager();
+                var script = UserScript.New(
+                    js,
+                    UserContentInjectedFrames.AllFrames,
+                    UserScriptInjectionTime.Start,
+                    null,
+                    null);
+                ucm.AddScript(script);
+                _runtimeInjected = true;
+            }
+        }
+        catch
+        {
+            // 运行时注入失败时忽略，不影响窗口正常使用
+        }
     }
 
     /// <summary>
@@ -328,57 +411,131 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
 
     /// <summary>
     /// 处理 wails:// URI scheme 请求。
-    /// 从 <see cref="WailsApplication.AssetServer"/> 读取静态资源并返回给 WebView。
+    /// 支持两类请求：
+    /// 1. <b>POST /wails/*</b>：IPC 消息端点，转发到 <see cref="WailsApplication.HandleMessageFromFrontend"/>。
+    ///    运行时 API（call/window/dialog 等）通过 _wailsInvoke 发送到 /wails/&lt;type&gt; 端点，
+    ///    对应 Win32 平台的 WebView2 WebResourceRequested 拦截。
+    /// 2. <b>GET /&lt;path&gt;</b>：静态资源请求，由 <see cref="WailsApplication.AssetServer"/> 提供。
+    ///    支持 SPA 路由回退：当资源不存在且路径无扩展名时，回退到 index.html。
     /// 使用 <see cref="URISchemeResponse"/> 设置状态码与 Content-Type，
     /// 避免直接构造 <see cref="GLib.Error"/>（GirCore 0.8.0 未公开便利构造器）。
-    /// 支持 SPA 路由回退：当请求的资源不存在且路径无扩展名时，回退到 index.html。
     /// </summary>
     /// <param name="request">URI scheme 请求对象。</param>
     private void OnWailsSchemeRequest(URISchemeRequest request)
     {
         try
         {
-            var path = request.GetPath().TrimStart('/');
-            if (string.IsNullOrEmpty(path))
-            {
-                path = "index.html";
-            }
+            // 优先处理 POST IPC 请求（/wails/* 端点）。
+            // WebKitGTK 6.0 从 2.36 起支持通过 URISchemeRequest 处理 POST 请求。
+            var httpMethod = request.GetHttpMethod();
+            var path = request.GetPath();
 
-            var app = WailsApplication.Get();
-            var assetServer = app?.AssetServer;
-            if (assetServer is null)
+            if (string.Equals(httpMethod, "POST", StringComparison.OrdinalIgnoreCase) &&
+                path.StartsWith("/wails/", StringComparison.OrdinalIgnoreCase))
             {
-                FinishWithStatus(request, 500, "AssetServer not configured");
+                HandleIpcRequest(request);
                 return;
             }
 
-            var content = assetServer.ServeAsync(path).GetAwaiter().GetResult();
-            if (content is null || content.Length == 0)
-            {
-                // SPA 路由回退：当资源不存在时，回退到 index.html。
-                if (!string.IsNullOrEmpty(path)
-                    && !path.Equals("index.html", StringComparison.OrdinalIgnoreCase)
-                    && !Path.HasExtension(path))
-                {
-                    content = assetServer.ServeAsync("index.html").GetAwaiter().GetResult();
-                    if (content is not null && content.Length > 0)
-                    {
-                        FinishResponse(request, content, "text/html", 200, "OK");
-                        return;
-                    }
-                }
-
-                FinishWithStatus(request, 404, "Not Found");
-                return;
-            }
-
-            var mimeType = assetServer.GetMimeType(path);
-            FinishResponse(request, content, mimeType, 200, "OK");
+            // GET 静态资源请求。
+            HandleAssetRequest(request);
         }
         catch (Exception ex)
         {
             FinishWithStatus(request, 500, ex.Message);
         }
+    }
+
+    /// <summary>
+    /// 处理 POST /wails/* IPC 请求。
+    /// 同步读取请求体并转发到 <see cref="WailsApplication.HandleMessageFromFrontend"/>，
+    /// 返回 JSON 响应。对应 Win32 平台 OnWebResourceRequested 中的 IPC 分支。
+    /// </summary>
+    /// <param name="request">URI scheme 请求对象。</param>
+    private void HandleIpcRequest(URISchemeRequest request)
+    {
+        var app = WailsApplication.Get();
+        string responseJson = "{\"result\":null,\"error\":null}";
+
+        // 同步读取请求体（GInputStream → GLib.Bytes → 原生字节 → UTF-8 字符串）。
+        var bodyStream = request.GetHttpBody();
+        string body = "{}";
+        if (bodyStream is not null)
+        {
+            // 使用 ReadBytes 一次性读取全部可用字节（最多 4MB，足够 IPC 消息）。
+            var gBytes = bodyStream.ReadBytes(4 * 1024 * 1024, null);
+            if (gBytes is not null)
+            {
+                // GirCore 0.8.0 的 GLib.Bytes 未公开 Data 属性，
+                // 通过 P/Invoke g_bytes_get_data 获取原生数据指针与大小。
+                var dataPtr = GBytesGetData(gBytes.Handle.DangerousGetHandle(), out var size);
+                if (dataPtr != IntPtr.Zero && size > 0)
+                {
+                    var data = new byte[(int)size];
+                    Marshal.Copy(dataPtr, data, 0, (int)size);
+                    body = System.Text.Encoding.UTF8.GetString(data);
+                }
+            }
+        }
+
+        if (app is not null)
+        {
+            // 同步调用后端处理消息并获取响应（与 Win32 平台一致）。
+            var response = app.HandleMessageFromFrontend(body, _id).GetAwaiter().GetResult();
+            if (response is not null)
+            {
+                responseJson = JsonSerializer.Serialize(response, _jsonOptions);
+            }
+        }
+
+        var responseBytes = System.Text.Encoding.UTF8.GetBytes(responseJson);
+        FinishResponse(request, responseBytes, "application/json", 200, "OK");
+    }
+
+    /// <summary>
+    /// 处理 GET 静态资源请求。
+    /// 从 <see cref="WailsApplication.AssetServer"/> 读取静态资源并返回给 WebView。
+    /// 支持 SPA 路由回退：当资源不存在且路径无扩展名时，回退到 index.html。
+    /// </summary>
+    /// <param name="request">URI scheme 请求对象。</param>
+    private void HandleAssetRequest(URISchemeRequest request)
+    {
+        var path = request.GetPath().TrimStart('/');
+        if (string.IsNullOrEmpty(path))
+        {
+            path = "index.html";
+        }
+
+        var app = WailsApplication.Get();
+        var assetServer = app?.AssetServer;
+        if (assetServer is null)
+        {
+            FinishWithStatus(request, 500, "AssetServer not configured");
+            return;
+        }
+
+        var content = assetServer.ServeAsync(path).GetAwaiter().GetResult();
+        if (content is null || content.Length == 0)
+        {
+            // SPA 路由回退：当资源不存在时，回退到 index.html。
+            if (!string.IsNullOrEmpty(path)
+                && !path.Equals("index.html", StringComparison.OrdinalIgnoreCase)
+                && !Path.HasExtension(path))
+            {
+                content = assetServer.ServeAsync("index.html").GetAwaiter().GetResult();
+                if (content is not null && content.Length > 0)
+                {
+                    FinishResponse(request, content, "text/html", 200, "OK");
+                    return;
+                }
+            }
+
+            FinishWithStatus(request, 404, "Not Found");
+            return;
+        }
+
+        var mimeType = assetServer.GetMimeType(path);
+        FinishResponse(request, content, mimeType, 200, "OK");
     }
 
     /// <summary>
@@ -443,7 +600,42 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         if (_window is not null)
         {
             _window.OnNotify += OnWindowNotify;
+            // 连接 close-request 信号，处理用户点击窗口关闭按钮的事件。
+            // 对应 Win32 平台的 WM_CLOSE/WM_DESTROY 消息处理。
+            _window.OnCloseRequest += OnWindowCloseRequest;
         }
+    }
+
+    /// <summary>
+    /// 处理 GTK 窗口的 close-request 信号（用户点击关闭按钮时触发）。
+    /// 分发 WindowClosing 事件，并在最后一个窗口关闭时退出应用。
+    /// 对应 Win32 平台 <see cref="Win32WebviewWindow"/> 中的 WM_CLOSE/WM_DESTROY 处理：
+    /// WM_CLOSE 分发 WindowClosing 事件；WM_DESTROY 在所有窗口关闭时调用 PostQuitMessage(0)。
+    /// </summary>
+    /// <param name="sender">触发事件的 GTK 窗口。</param>
+    /// <param name="args">事件参数。</param>
+    /// <returns>返回 false 表示允许关闭窗口；返回 true 会阻止关闭。</returns>
+    private bool OnWindowCloseRequest(Window sender, EventArgs args)
+    {
+        var app = WailsApplication.Get();
+        if (app is null)
+        {
+            return false;
+        }
+
+        // 分发 WindowClosing 事件，通知应用层窗口即将关闭。
+        app.DispatchWindowEvent(_id, (uint)WindowEventType.WindowClosing);
+
+        // 当所有窗口都关闭时，退出应用。
+        // 对应 Win32 平台 WmDestroy 中的 shouldQuit 检查与 PostQuitMessage(0) 调用。
+        if (!app.Options.DisableQuitOnLastWindowClosed && app.Windows.Count <= 1)
+        {
+            // 最后一个窗口关闭时，通过 Application.Quit() 触发 Shutdown，
+            // 最终调用 LinuxPlatformApp.Destroy() 中的 _mainLoop?.Quit() 退出 GTK 主循环。
+            app.Quit();
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -754,7 +946,38 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     {
         _x = x;
         _y = y;
-        // GTK4 中窗口位置由窗口管理器控制，不直接支持 SetPosition。
+        // GTK4 中窗口位置由窗口管理器控制。
+        // X11 后端可通过 wmctrl 设置位置；Wayland 后端下应用无法直接控制窗口位置，
+        // 仅缓存坐标供 GetPosition 查询，由 compositor 决定实际位置。
+        if (!LinuxBackendDetector.SupportsWindowPositionControl() || _window is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var title = _window.GetTitle() ?? string.Empty;
+            if (!string.IsNullOrEmpty(title))
+            {
+                _window.GetDefaultSize(out var width, out var height);
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "wmctrl",
+                    Arguments = $"-r \"{title}\" -e 0,{x},{y},{width},{height}",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                using var process = System.Diagnostics.Process.Start(psi);
+                process?.WaitForExit(1000);
+            }
+        }
+        catch
+        {
+            // wmctrl 不可用时忽略，坐标已缓存供 GetPosition 查询。
+        }
     }
 
     /// <inheritdoc />
@@ -930,23 +1153,17 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         }
 
         // GDK4 移除了 gtk_window_set_keep_above API。
-        // 通过 X11 EWMH 协议发送 ClientMessage 设置 _NET_WM_STATE_ABOVE 窗口属性。
+        // X11 后端：通过 wmctrl 工具设置 _NET_WM_STATE_ABOVE 窗口属性（EWMH 协议）。
+        // Wayland 后端：没有通用的置顶协议，需 compositor 专有扩展（如 layer-shell），
+        // 此处仅缓存状态供查询，实际置顶行为由 compositor 决定。
         // 对应 Go 版 webview_window_linux.go 中通过 SetKeepAbove 的实现。
+        if (!LinuxBackendDetector.SupportsAlwaysOnTop())
+        {
+            return;
+        }
+
         try
         {
-            var surface = _window.GetSurface();
-            if (surface is null)
-            {
-                return;
-            }
-
-            // 获取 X11 显示连接。
-            var display = Gdk.Display.GetDefault();
-            if (display is null)
-            {
-                return;
-            }
-
             // 通过 wmctrl 命令行工具设置 _NET_WM_STATE_ABOVE 窗口属性。
             var psi = new System.Diagnostics.ProcessStartInfo
             {
@@ -959,10 +1176,7 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
             };
 
             using var process = System.Diagnostics.Process.Start(psi);
-            if (process is not null)
-            {
-                process.WaitForExit(1000);
-            }
+            process?.WaitForExit(1000);
         }
         catch
         {
@@ -1424,33 +1638,34 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         _x = x;
         _y = y;
 
-        // GTK4 中窗口位置由窗口管理器控制，不直接支持 SetPosition。
-        // 通过 wmctrl 工具移动窗口到计算后的居中坐标（兼容 X11）。
-        try
+        // X11 后端通过 wmctrl 移动窗口到计算后的居中坐标；
+        // Wayland 后端下应用无法直接控制窗口位置，compositor 通常会自动居中，
+        // 仅缓存坐标供 GetPosition 查询。
+        if (LinuxBackendDetector.SupportsWindowPositionControl())
         {
-            var title = _window.GetTitle() ?? string.Empty;
-            if (!string.IsNullOrEmpty(title))
+            try
             {
-                var psi = new System.Diagnostics.ProcessStartInfo
+                var title = _window.GetTitle() ?? string.Empty;
+                if (!string.IsNullOrEmpty(title))
                 {
-                    FileName = "wmctrl",
-                    Arguments = $"-r \"{title}\" -e 0,{x},{y},{width},{height}",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
+                    var psi = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "wmctrl",
+                        Arguments = $"-r \"{title}\" -e 0,{x},{y},{width},{height}",
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
 
-                using var process = System.Diagnostics.Process.Start(psi);
-                if (process is not null)
-                {
-                    process.WaitForExit(1000);
+                    using var process = System.Diagnostics.Process.Start(psi);
+                    process?.WaitForExit(1000);
                 }
             }
-        }
-        catch
-        {
-            // wmctrl 不可用时忽略，坐标已缓存供 GetPosition 查询。
+            catch
+            {
+                // wmctrl 不可用时忽略，坐标已缓存供 GetPosition 查询。
+            }
         }
 
         _window.Present();
@@ -1715,19 +1930,6 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     {
         // 窗口就绪后立即执行回调；GTK4 中窗口在 Present 后即可交互。
         callback();
-    }
-
-    /// <summary>
-    /// 注入 Wails 运行时 JavaScript 到 WebView。
-    /// 在页面加载完成后调用，注入运行时初始化脚本以建立前后端通信桥。
-    /// </summary>
-    /// <param name="js">要注入的 JavaScript 代码。</param>
-    public void InjectRuntimeJs(string js)
-    {
-        if (_webView is not null && !string.IsNullOrEmpty(js))
-        {
-            _ = _webView.EvaluateJavascriptAsync(js);
-        }
     }
 
     /// <summary>

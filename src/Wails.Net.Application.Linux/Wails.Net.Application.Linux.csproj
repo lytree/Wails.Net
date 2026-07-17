@@ -26,4 +26,8 @@
     <ProjectReference Include="..\Wails.Net.Application\Wails.Net.Application.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Wails.Net.Application.Linux.Tests" />
+  </ItemGroup>
+
 </Project>

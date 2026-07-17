@@ -3,7 +3,6 @@ using Microsoft.Extensions.Logging;
 using Wails.Net.Application;
 using Wails.Net.Application.Hosting;
 using Wails.Net.Application.Options;
-using Wails.Net.Application.Platform;
 using Wails.Net.Application.Plugins;
 using Wails.Net.Application.Plugins.BuiltIn;
 using Wails.Net.Demo.Plugins;
@@ -56,8 +55,9 @@ builder.UsePlugin<MyCustomPlugin>();          // 自定义计数器插件
 // 配置日志级别
 builder.Logging.SetMinimumLevel(LogLevel.Information);
 
-// 注册 Windows 平台实现
-builder.UsePlatform<WindowsPlatformApp>();
+// 使用平台工厂自动检测并注册平台实现
+// Windows 上注册 WindowsPlatformApp，Linux 上注册 LinuxPlatformApp
+builder.UseAutoPlatform();
 
 // 构建应用实例
 var desktopApp = builder.Build();

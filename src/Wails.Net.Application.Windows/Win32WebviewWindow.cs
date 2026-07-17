@@ -1083,10 +1083,12 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                 break;
 
             case WmDestroy:
-                // 从实例表移除
+                // 从实例表移除，并在锁内判断是否应退出消息循环（消除竞态条件）。
+                bool shouldQuit;
                 lock (_instancesLock)
                 {
                     _instancesByHwnd.Remove((IntPtr)hWnd);
+                    shouldQuit = _instancesByHwnd.Count == 0;
                 }
 
                 // 触发 WindowClosed 事件，通知应用层窗口已销毁。
@@ -1099,7 +1101,7 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
 
                 // 当所有窗口都关闭时，退出消息循环使应用退出。
                 // 对应 Wails v3 Go 版本中最后一个窗口关闭时调用 application.Quit() 的行为。
-                if (_instancesByHwnd.Count == 0)
+                if (shouldQuit)
                 {
                     PInvoke.PostQuitMessage(0);
                 }

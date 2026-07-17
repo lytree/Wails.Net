@@ -6,18 +6,23 @@ namespace Wails.Net.AssetServer;
 /// 文件系统资源服务器，从文件系统读取资源（开发模式）。
 /// 对应 Wails v3 Go 版本 <c>internal/assetserver/fileassets</c> 中的 FileAssetServer。
 /// 支持 Range 请求、ETag 缓存及 Last-Modified 头（由基类 AssetServer 统一处理）。
+/// <para>
+/// M7 起，此类内部委托给 <see cref="FileAssetProvider"/>（组合模式），
+/// 自身仅作为便捷包装保留，以维持向后兼容。新代码应优先直接使用
+/// <see cref="FileAssetProvider"/> + <see cref="AssetServer(AssetOptions, IAssetProvider)"/>。
+/// </para>
 /// </summary>
 public class FileAssetServer : AssetServer
 {
     /// <summary>
-    /// 资源文件系统的根路径。
+    /// 获取内部资源提供者，负责实际的文件系统读取。
     /// </summary>
-    private readonly string _rootPath;
+    private FileAssetProvider ProviderImpl => (FileAssetProvider)Provider!;
 
     /// <summary>
     /// 获取资源根路径。
     /// </summary>
-    public string RootPath => _rootPath;
+    public string RootPath => ProviderImpl.RootPath;
 
     /// <summary>
     /// 使用指定根路径构造 <see cref="FileAssetServer" /> 实例。
@@ -35,10 +40,8 @@ public class FileAssetServer : AssetServer
     /// <param name="enableSpaFallback">是否启用 SPA 路由回退。</param>
     /// <param name="defaultDocument">SPA 回退使用的默认文档名称。</param>
     public FileAssetServer(string rootPath, bool enableSpaFallback, string defaultDocument)
-        : base(CreateOptions(rootPath, enableSpaFallback, defaultDocument))
+        : base(CreateOptions(rootPath, enableSpaFallback, defaultDocument), CreateProvider(rootPath))
     {
-        ArgumentException.ThrowIfNullOrEmpty(rootPath);
-        _rootPath = rootPath;
     }
 
     /// <summary>
@@ -49,18 +52,7 @@ public class FileAssetServer : AssetServer
     /// <returns>文件内容字节组；若文件不存在或路径非法则返回 null。</returns>
     public byte[]? ReadFile(string path)
     {
-        if (string.IsNullOrEmpty(path))
-        {
-            return null;
-        }
-
-        var fullPath = ResolveFullPath(path);
-        if (fullPath is null || !File.Exists(fullPath))
-        {
-            return null;
-        }
-
-        return File.ReadAllBytes(fullPath);
+        return ProviderImpl.ReadAsync(path).GetAwaiter().GetResult();
     }
 
     /// <summary>
@@ -70,48 +62,28 @@ public class FileAssetServer : AssetServer
     /// <returns>最后修改时间；若文件不存在则返回 null。</returns>
     public override DateTime? GetLastModified(string path)
     {
-        if (string.IsNullOrEmpty(path))
-        {
-            return null;
-        }
-
-        var fullPath = ResolveFullPath(path);
-        if (fullPath is null || !File.Exists(fullPath))
-        {
-            return null;
-        }
-
-        return File.GetLastWriteTimeUtc(fullPath);
+        return ProviderImpl.GetLastModified(path);
     }
 
     /// <summary>
-    /// 核心资源读取方法，委托给 <see cref="ReadFile" /> 从文件系统读取。
+    /// 核心资源读取方法，委托给 <see cref="FileAssetProvider.ReadAsync" /> 从文件系统读取。
     /// </summary>
     /// <param name="path">请求的资源路径。</param>
     /// <returns>文件内容字节组；若文件不存在则返回 null。</returns>
     protected override byte[]? ReadAssetCore(string path)
     {
-        return ReadFile(path);
+        return ProviderImpl.ReadAsync(path).GetAwaiter().GetResult();
     }
 
     /// <summary>
-    /// 将相对路径解析为绝对路径，并确保解析结果位于根路径之下。
+    /// 根据根路径创建资源提供者实例。
     /// </summary>
-    /// <param name="path">资源相对路径。</param>
-    /// <returns>安全的绝对路径；若路径穿越根路径则返回 null。</returns>
-    private string? ResolveFullPath(string path)
+    /// <param name="rootPath">资源根路径。</param>
+    /// <returns>配置好的 <see cref="FileAssetProvider" /> 实例。</returns>
+    private static FileAssetProvider CreateProvider(string rootPath)
     {
-        var normalizedPath = path.TrimStart('/', '\\');
-        var fullPath = Path.GetFullPath(Path.Combine(_rootPath, normalizedPath));
-        var fullRoot = Path.GetFullPath(_rootPath);
-
-        // 确保解析后的路径仍在根路径之下，防止路径穿越。
-        if (!fullPath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        return fullPath;
+        ArgumentException.ThrowIfNullOrEmpty(rootPath);
+        return new FileAssetProvider(rootPath);
     }
 
     /// <summary>

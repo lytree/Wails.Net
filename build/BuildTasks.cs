@@ -265,6 +265,9 @@ public sealed class DistWindowsTask : FrostingTask<BuildContext>
             {
                 context.Information($"[DRY-RUN] 将输出到: {outputDir}");
                 context.Information($"[DRY-RUN] 将创建 zip: {zipPath}");
+                var drySignBackend = Environment.GetEnvironmentVariable("WAILS_SIGN_BACKEND");
+                if (!string.IsNullOrEmpty(drySignBackend))
+                    context.Information($"[DRY-RUN] 将使用 {drySignBackend} 签名 *.exe");
                 continue;
             }
 
@@ -289,6 +292,62 @@ public sealed class DistWindowsTask : FrostingTask<BuildContext>
 
             context.Zip(outputDir, zipPath);
             context.Information($"已创建 zip: {zipPath}");
+
+            // 签名步骤（环境变量门控，签名失败非阻塞）
+            var signBackend = Environment.GetEnvironmentVariable("WAILS_SIGN_BACKEND");
+            if (!string.IsNullOrEmpty(signBackend))
+            {
+                context.Information($"----- 签名 {rid} 产物 -----");
+                var exePath = System.IO.Directory.GetFiles(outputDir, "*.exe", SearchOption.TopDirectoryOnly)
+                    .FirstOrDefault();
+                if (exePath != null)
+                {
+                    var tsUrl = Environment.GetEnvironmentVariable("WAILS_SIGN_TIMESTAMP_URL") ?? "http://timestamp.digicert.com";
+                    if (signBackend.Equals("signtool", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var certPath = Environment.GetEnvironmentVariable("WAILS_SIGN_CERT_PATH");
+                        var certPwd = Environment.GetEnvironmentVariable("WAILS_SIGN_CERT_PASSWORD") ?? string.Empty;
+                        if (!string.IsNullOrEmpty(certPath))
+                        {
+                            var args = $"sign /f \"{certPath}\" /p \"{certPwd}\" /tr \"{tsUrl}\" /td sha256 /fd sha256 \"{exePath}\"";
+                            var exitCode = context.StartProcess("signtool", new ProcessSettings { Arguments = args });
+                            if (exitCode != 0) context.Warning($"signtool 退出码 {exitCode}，签名失败但继续");
+                            else context.Information($"已签名: {exePath}");
+                        }
+                        else
+                        {
+                            context.Warning("WAILS_SIGN_BACKEND=signtool 但 WAILS_SIGN_CERT_PATH 未设置，跳过签名");
+                        }
+                    }
+                    else if (signBackend.Equals("azuresigntool", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var kvu = Environment.GetEnvironmentVariable("WAILS_SIGN_AKV_URL");
+                        var kvc = Environment.GetEnvironmentVariable("WAILS_SIGN_AKV_CERT");
+                        var kvi = Environment.GetEnvironmentVariable("WAILS_SIGN_AZURE_CLIENT_ID");
+                        var kvs = Environment.GetEnvironmentVariable("WAILS_SIGN_AZURE_CLIENT_SECRET");
+                        var kvt = Environment.GetEnvironmentVariable("WAILS_SIGN_AZURE_TENANT_ID");
+                        if (!string.IsNullOrEmpty(kvu) && !string.IsNullOrEmpty(kvc))
+                        {
+                            var args = $"sign -kvu \"{kvu}\" -kvc \"{kvc}\" -kvi \"{kvi}\" -kvs \"{kvs}\" -kvt \"{kvt}\" -tr \"{tsUrl}\" -td sha256 -fd sha256 \"{exePath}\"";
+                            var exitCode = context.StartProcess("AzureSignTool", new ProcessSettings { Arguments = args });
+                            if (exitCode != 0) context.Warning($"AzureSignTool 退出码 {exitCode}，签名失败但继续");
+                            else context.Information($"已签名: {exePath}");
+                        }
+                        else
+                        {
+                            context.Warning("WAILS_SIGN_BACKEND=azuresigntool 但 AKV 参数未完整设置，跳过签名");
+                        }
+                    }
+                    else
+                    {
+                        context.Warning($"不支持的签名后端: {signBackend}（支持: signtool, azuresigntool）");
+                    }
+                }
+                else
+                {
+                    context.Warning($"未在 {outputDir} 找到 .exe 文件，跳过签名");
+                }
+            }
         }
 
         context.Information("========== Windows 构建完成 ==========");
@@ -308,7 +367,8 @@ public sealed class DistLinuxTask : FrostingTask<BuildContext>
     public override void Run(BuildContext context)
     {
         var version = context.GetVersion();
-        context.Information($"========== Linux 自包含构建 v{version} ==========");
+        var formats = context.ResolveLinuxFormats();
+        context.Information($"========== Linux 自包含构建 v{version}（格式: {string.Join(", ", formats)}）==========");
 
         if (!System.IO.File.Exists(BuildContext.DemoProject))
         {
@@ -324,11 +384,15 @@ public sealed class DistLinuxTask : FrostingTask<BuildContext>
             context.Information($"----- 构建 Linux/{rid} -----");
             var outputDir = $"{context.OutputRoot}/linux/{version}/{rid}";
             var tarGzPath = $"{context.OutputRoot}/linux/{version}/Wails.Net.Demo-{version}-{rid}.tar.gz";
+            var debPath = $"{context.OutputRoot}/linux/{version}/Wails.Net.Demo-{version}-{rid}.deb";
+            var rpmPath = $"{context.OutputRoot}/linux/{version}/Wails.Net.Demo-{version}-{rid}.rpm";
 
             if (context.DryRun)
             {
                 context.Information($"[DRY-RUN] 将输出到: {outputDir}");
-                context.Information($"[DRY-RUN] 将创建 tar.gz: {tarGzPath}");
+                if (formats.Contains("targz")) context.Information($"[DRY-RUN] 将创建 tar.gz: {tarGzPath}");
+                if (formats.Contains("deb")) context.Information($"[DRY-RUN] 将创建 deb: {debPath}");
+                if (formats.Contains("rpm")) context.Information($"[DRY-RUN] 将创建 rpm: {rpmPath}");
                 continue;
             }
 
@@ -350,11 +414,211 @@ public sealed class DistLinuxTask : FrostingTask<BuildContext>
 
             context.DotNetPublish(BuildContext.DemoProject, settings);
 
-            context.CreateTarGz(outputDir, tarGzPath);
-            context.Information($"已创建 tar.gz: {tarGzPath}");
+            if (formats.Contains("targz"))
+            {
+                context.CreateTarGz(outputDir, tarGzPath);
+            }
+
+            if (formats.Contains("deb"))
+            {
+                CreateDebPackage(context, outputDir, debPath, version, rid);
+            }
+
+            if (formats.Contains("rpm"))
+            {
+                CreateRpmPackage(context, outputDir, rpmPath, version, rid);
+            }
         }
 
         context.Information("========== Linux 构建完成 ==========");
+    }
+
+    /// <summary>
+    /// 内联创建 Debian 包（.deb），调用 dpkg-deb --build。
+    /// </summary>
+    private static void CreateDebPackage(BuildContext context, string outputDir, string debPath, string version, string rid)
+    {
+        var appName = "Wails.Net.Demo";
+        var exeName = FindLinuxExe(outputDir, appName);
+        if (exeName is null)
+        {
+            context.Warning($"未在 {outputDir} 找到 Linux 可执行文件，跳过 .deb 生成");
+            return;
+        }
+
+        var pkgDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"wailsnet-deb-{Guid.NewGuid():N}");
+        try
+        {
+            // Debian 标准目录结构
+            var debianDir = System.IO.Path.Combine(pkgDir, "DEBIAN");
+            var usrBin = System.IO.Path.Combine(pkgDir, "usr", "bin");
+            var appsDir = System.IO.Path.Combine(pkgDir, "usr", "share", "applications");
+            var iconDir = System.IO.Path.Combine(pkgDir, "usr", "share", "icons", "hicolor", "256x256", "apps");
+            System.IO.Directory.CreateDirectory(debianDir);
+            System.IO.Directory.CreateDirectory(usrBin);
+            System.IO.Directory.CreateDirectory(appsDir);
+            System.IO.Directory.CreateDirectory(iconDir);
+
+            // 复制发布产物到 usr/bin
+            CopyAllFiles(outputDir, usrBin);
+            // 设置主程序可执行权限
+            context.StartProcess("chmod", new ProcessSettings { Arguments = $"+x \"{System.IO.Path.Combine(usrBin, exeName)}\"" });
+
+            // control 文件
+            var arch = rid.Contains("arm64") ? "arm64" : (rid.Contains("x86") ? "i386" : "amd64");
+            var control = $"""
+Package: {appName}
+Version: {version}
+Architecture: {arch}
+Maintainer: Wails.Net
+Depends: libgtk-4-1, libwebkitgtk-6.0-4
+Section: utils
+Priority: optional
+Description: {appName} application
+ {appName} built by Wails.Net
+""";
+            System.IO.File.WriteAllText(System.IO.Path.Combine(debianDir, "control"), control);
+
+            // postinst
+            System.IO.File.WriteAllText(System.IO.Path.Combine(debianDir, "postinst"),
+                $"#!/bin/sh\nchmod +x /usr/bin/{exeName}\n");
+            context.StartProcess("chmod", new ProcessSettings { Arguments = $"+x \"{System.IO.Path.Combine(debianDir, "postinst")}\"" });
+
+            // .desktop 文件
+            System.IO.File.WriteAllText(System.IO.Path.Combine(appsDir, $"{appName}.desktop"),
+                $"[Desktop Entry]\nType=Application\nName={appName}\nExec={appName}\nIcon={appName}\nCategories=Utility;\nTerminal=false\n");
+
+            // 调用 dpkg-deb --build
+            context.EnsureDirectoryExists(System.IO.Path.GetDirectoryName(debPath)!);
+            var exitCode = context.StartProcess("dpkg-deb",
+                new ProcessSettings { Arguments = $"--build \"{pkgDir}\" \"{System.IO.Path.GetFullPath(debPath)}\"" });
+            if (exitCode != 0)
+            {
+                context.Warning($"dpkg-deb 退出码 {exitCode}，.deb 生成失败");
+            }
+            else
+            {
+                context.Information($"已创建 deb: {debPath}");
+            }
+        }
+        finally
+        {
+            if (System.IO.Directory.Exists(pkgDir))
+            {
+                try { System.IO.Directory.Delete(pkgDir, recursive: true); } catch { }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 内联创建 RPM 包（.rpm），调用 rpmbuild -bb。
+    /// </summary>
+    private static void CreateRpmPackage(BuildContext context, string outputDir, string rpmPath, string version, string rid)
+    {
+        var appName = "Wails.Net.Demo";
+        var exeName = FindLinuxExe(outputDir, appName);
+        if (exeName is null)
+        {
+            context.Warning($"未在 {outputDir} 找到 Linux 可执行文件，跳过 .rpm 生成");
+            return;
+        }
+
+        var topDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"wailsnet-rpm-{Guid.NewGuid():N}");
+        try
+        {
+            foreach (var sub in new[] { "BUILD", "RPMS", "SOURCES", "SPECS", "SRPMS" })
+            {
+                System.IO.Directory.CreateDirectory(System.IO.Path.Combine(topDir, sub));
+            }
+
+            // 主可执行文件 + .desktop 放入 SOURCES
+            var sourcesDir = System.IO.Path.Combine(topDir, "SOURCES");
+            System.IO.File.Copy(System.IO.Path.Combine(outputDir, exeName),
+                System.IO.Path.Combine(sourcesDir, exeName), overwrite: true);
+            System.IO.File.WriteAllText(System.IO.Path.Combine(sourcesDir, $"{appName}.desktop"),
+                $"[Desktop Entry]\nType=Application\nName={appName}\nExec={appName}\nIcon={appName}\nCategories=Utility;\nTerminal=false\n");
+
+            // .spec 文件
+            var spec = $$"""
+Name:           {{appName}}
+Version:        {{version}}
+Release:        1%{?dist}
+Summary:        {{appName}} application
+License:        Proprietary
+Group:          Applications/Utility
+Requires:       gtk4, webkitgtk6.0
+
+%description
+{{appName}} built by Wails.Net
+
+%install
+install -D -m 0755 %{_sourcedir}/{{exeName}} %{buildroot}/usr/bin/{{exeName}}
+install -D -m 0644 %{_sourcedir}/{{appName}}.desktop %{buildroot}/usr/share/applications/{{appName}}.desktop
+
+%files
+/usr/bin/{{exeName}}
+/usr/share/applications/{{appName}}.desktop
+""";
+            var specPath = System.IO.Path.Combine(topDir, "SPECS", $"{appName}.spec");
+            System.IO.File.WriteAllText(specPath, spec);
+
+            // 调用 rpmbuild -bb
+            context.EnsureDirectoryExists(System.IO.Path.GetDirectoryName(rpmPath)!);
+            var exitCode = context.StartProcess("rpmbuild",
+                new ProcessSettings { Arguments = $"--define \"_topdir {topDir}\" -bb \"{specPath}\"" });
+            if (exitCode != 0)
+            {
+                context.Warning($"rpmbuild 退出码 {exitCode}，.rpm 生成失败");
+            }
+            else
+            {
+                var rpmFiles = System.IO.Directory.GetFiles(System.IO.Path.Combine(topDir, "RPMS"), "*.rpm", System.IO.SearchOption.AllDirectories);
+                if (rpmFiles.Length > 0)
+                {
+                    System.IO.File.Copy(rpmFiles[0], System.IO.Path.GetFullPath(rpmPath), overwrite: true);
+                    context.Information($"已创建 rpm: {rpmPath}");
+                }
+                else
+                {
+                    context.Warning("rpmbuild 执行完成但未找到生成的 .rpm 文件");
+                }
+            }
+        }
+        finally
+        {
+            if (System.IO.Directory.Exists(topDir))
+            {
+                try { System.IO.Directory.Delete(topDir, recursive: true); } catch { }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 在目录中查找 Linux 可执行文件（无扩展名的文件）。
+    /// </summary>
+    private static string? FindLinuxExe(string dir, string appName)
+    {
+        var match = System.IO.Path.Combine(dir, appName);
+        if (System.IO.File.Exists(match)) return appName;
+        foreach (var f in System.IO.Directory.GetFiles(dir, "*", System.IO.SearchOption.TopDirectoryOnly))
+        {
+            if (string.IsNullOrEmpty(System.IO.Path.GetExtension(f))) return System.IO.Path.GetFileName(f);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// 复制目录下所有文件到目标目录。
+    /// </summary>
+    private static void CopyAllFiles(string sourceDir, string destDir)
+    {
+        foreach (var file in System.IO.Directory.GetFiles(sourceDir, "*", System.IO.SearchOption.AllDirectories))
+        {
+            var rel = System.IO.Path.GetRelativePath(sourceDir, file);
+            var dest = System.IO.Path.Combine(destDir, rel);
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(dest)!);
+            System.IO.File.Copy(file, dest, overwrite: true);
+        }
     }
 }
 

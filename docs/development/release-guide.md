@@ -99,7 +99,7 @@ build → test → pack → dist → publish
 | test | test-linux | ubuntu-latest | 运行 Linux 平台测试（允许失败） |
 | pack | 打包 NuGet | windows-latest | 打包 NuGet 包（nupkg + snupkg） |
 | dist | dist-windows | windows-latest | Windows 自包含构建（win-x64/x86/arm64） |
-| dist | dist-linux | windows-latest | Linux 自包含构建（linux-x64/arm64，允许失败） |
+| dist | dist-linux | ubuntu-latest | Linux 自包含构建（linux-x64/arm64，含 .deb/.rpm 原生包打包） |
 | dist | dist-android | windows-latest | Android APK 构建（android-arm64/x64/arm，允许失败） |
 | publish | publish-nuget | windows-latest | 推送到 nuget.org（仅 tag 触发） |
 
@@ -125,7 +125,8 @@ build → test → pack → dist → publish
 - GitHub Actions 托管的 ubuntu-latest 运行器
 - 通过 `actions/setup-dotnet@v4` 安装 .NET 10 SDK
 - 安装 GTK4 + WebKitGTK 6.0 原生库
-- 仅用于 Linux 平台测试（允许失败）
+- 安装 `dpkg-dev` 与 `rpm` 包（提供 `dpkg-deb` 和 `rpmbuild` 命令，用于 .deb/.rpm 原生包打包）
+- 用于 Linux 平台测试（允许失败）与 Linux 自包含构建（dist-linux，必须成功）
 
 ### 必需的 Secrets
 
@@ -239,6 +240,43 @@ wails-net --help
 2. 安装 NuGet 包后，调试时自动跳转到 GitHub 源码
 3. 符号包（.snupkg）发布到 nuget.org，自动加载符号
 
+## Capability 自动加载
+
+Wails.Net 默认从 `{ContentRoot}/capabilities/` 目录自动加载 Capability JSON 文件并注册到 `PermissionManager`，对齐 Tauri v2 的默认行为。
+
+### 配置
+
+通过 `appsettings.json` 的 `Wails:Permissions` 节配置：
+
+```json
+{
+  "Wails": {
+    "Permissions": {
+      "Enabled": true,
+      "DenyByDefault": true,
+      "CapabilitiesDirectory": "capabilities"
+    }
+  }
+}
+```
+
+- `Enabled` 默认 `false`，启用后才触发自动加载与权限校验
+- `CapabilitiesDirectory` 默认 `"capabilities"`（相对 `ContentRoot`），设为 `null` 或空字符串禁用自动加载
+- 目录不存在时静默跳过（不抛异常）
+
+### Capability 文件格式
+
+```json
+{
+  "identifier": "main-capability",
+  "description": "主窗口能力",
+  "permissions": ["core:default", "fs:allow-read"],
+  "windows": ["main"]
+}
+```
+
+详细字段参见 `Wails.Net.Application.Security.CapabilityFileLoader` 文档。
+
 ## 三平台签名流程
 
 ### Windows Authenticode 签名
@@ -258,6 +296,33 @@ signtool verify /pa /v MyApplication.exe
 ```
 
 **说明**：Wails.Net 的 `SignerCommand`（Minisign）用于文件完整性校验，不替代 Authenticode 代码签名。生产环境发布 Windows 应用程序应同时进行 Authenticode 签名，确保用户在 SmartScreen 和 UAC 对话框中看到可信发布者信息。
+
+### CI 自动签名
+
+`dist-windows` job 检测以下环境变量自动调用 signtool 或 AzureSignTool，对发布目录下的所有 `.exe` / `.dll` 文件签名：
+
+| 环境变量 | 说明 |
+|----------|------|
+| `WINDOWS_SIGN_BACKEND` | `signtool` 或 `azure`，未设置则跳过签名 |
+| `WINDOWS_CERT_PFX_PATH` | PFX 证书文件路径（signtool 模式） |
+| `WINDOWS_CERT_PASSWORD` | PFX 密码（signtool 模式） |
+| `WINDOWS_CERT_THUMBPRINT` | 证书存储指纹（signtool 模式，与 PFX 二选一） |
+| `WINDOWS_TIMESTAMP_URL` | 时间戳服务器，默认 `http://timestamp.digicert.com` |
+| `AZURE_SIGNING_ENDPOINT` | Azure Trusted Signing endpoint（azure 模式） |
+| `AZURE_SIGNING_ACCOUNT` | 账户名（azure 模式） |
+| `AZURE_SIGNING_PROFILE` | 证书 profile 名（azure 模式） |
+
+在 GitHub Actions 中通过 Repository Secrets 注入上述环境变量。签名失败将中断流水线（与 Android 签名策略一致）。
+
+**signtool 查找顺序**：
+
+1. `PATH` 中的 `signtool.exe`
+2. Windows SDK 安装路径：`C:\Program Files (x86)\Windows Kits\10\bin\{version}\{arch}\signtool.exe`（自动取最新版本目录）
+
+**AzureSignTool 查找**：
+
+- `PATH` 中的 `azuresigntool.exe`
+- 未找到时提示安装：`dotnet tool install --global AzureSignTool`
 
 ### Linux GPG 签名
 
@@ -301,7 +366,9 @@ apksigner verify --verbose MyApplication.apk
 
 ## AppImage 构建指南（Linux）
 
-Cake Frosting `build/` 项目的 `Dist-Linux` task 生成 `tar.gz` 自包含包。AppImage 打包需额外工具 `appimagetool`，本期不集成到构建脚本，可手动执行：
+AppImage 打包已集成到 `Wails.Net.Cli` 的 `Packager`（通过 `pack` 命令的 `--format appimage` 选项触发）。Cake `Dist-Linux` task 默认仅生成 `tar.gz`，不默认生成 AppImage（需手动调用 CLI）。
+
+手动构建 AppImage：
 
 ```bash
 # 安装 appimagetool
@@ -324,6 +391,39 @@ EOF
 
 # 打包 AppImage
 ./appimagetool-x86_64.AppImage MyApplication.AppDir MyApplication-x86_64.AppImage
+```
+
+## Linux 原生包打包（.deb / .rpm）
+
+Cake Frosting `build/` 项目的 `Dist-Linux` task 默认生成 `tar.gz`，通过 `--linux-formats` 参数可同时生成 `.deb` 和 `.rpm`：
+
+```bash
+# 生成全部 Linux 格式
+dotnet run --project build/Wails.Net.Build -- --target=Dist-Linux --platform=linux --rid=all --linux-formats=tar.gz,deb,rpm
+
+# 仅生成 .deb
+dotnet run --project build/Wails.Net.Build -- --target=Dist-Linux --platform=linux --rid=linux-x64 --linux-formats=deb
+```
+
+**依赖**：构建机需安装 `dpkg-deb`（dpkg-dev 包）与 `rpmbuild`（rpm 包）。在 CI 的 ubuntu-latest 上通过 `sudo apt-get install -y dpkg-dev rpm` 自动安装。
+
+**Debian 包内容**：
+
+- `/usr/bin/{appName}` — 主可执行文件
+- `/usr/share/applications/{appName}.desktop` — 桌面入口
+- `/usr/share/icons/hicolor/256x256/apps/{appName}.png` — 图标
+- `Depends: libgtk-4-1, libwebkitgtk-6.0-4` — 自动声明 GTK4/WebKitGTK 依赖
+
+**RPM 包内容**：与 .deb 对齐，`Requires: gtk4, webkitgtk6.0`
+
+**验证**：
+
+```bash
+# 查看 .deb 元数据
+dpkg-deb -I MyApplication-1.0.0-linux-x64.deb
+
+# 查看 .rpm 元数据
+rpm -qpi MyApplication-1.0.0-linux-x64.rpm
 ```
 
 ## 回滚

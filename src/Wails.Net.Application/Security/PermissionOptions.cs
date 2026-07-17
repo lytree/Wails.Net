@@ -31,4 +31,11 @@ public class PermissionOptions
     /// 对应 Tauri v2 的 Scope 配置：从 appsettings.json 的 "Wails:Permissions:Scopes" 节读取。
     /// </summary>
     public Dictionary<string, ScopeConfig> Scopes { get; set; } = new();
+
+    /// <summary>
+    /// 获取或设置 Capability 文件目录路径（相对 ContentRoot / AppContext.BaseDirectory）。
+    /// 默认 "capabilities"，对应 Tauri v2 的 capabilities/ 目录约定。
+    /// 仅在 <see cref="Enabled"/> 为 true 时触发自动加载；设为 null 或空字符串禁用自动加载。
+    /// </summary>
+    public string? CapabilitiesDirectory { get; set; } = "capabilities";
 }

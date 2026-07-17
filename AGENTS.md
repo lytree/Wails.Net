@@ -27,7 +27,7 @@
 | Linux GTK | GirCore 0.8.0 | **禁止使用 Xamarin.Forms、GtkSharp** |
 | Android 工作负载 | `android` 36.1.43 | .NET Android SDK，**禁止引入 MAUI Controls** |
 | Android Webview | Android.Webkit.WebView | 通过 .NET Android 互操作直接调用 |
-| Android TFM | `net10.0-android24.0` | 最低 API Level 24（Android 7.0） |
+| Android TFM | `net10.0-android36.0`（`SupportedOSPlatformVersion=24`） | 最低 API Level 24（Android 7.0），使用已安装的 .NET Android SDK 平台版本 |
 | CLI 解析 | System.CommandLine 2.0.9 | **禁止使用 McMaster.Extensions.CommandLineUtils** |
 | 测试框架 | TUnit 1.58.0 | **禁止使用 MSTest/xUnit/NUnit** |
 | 脚本语言 | F# (.fsx) | **严禁使用 Python (.py)** |
@@ -446,4 +446,4 @@ dotnet fsi script.fsx
 
 ---
 
-**最后更新**：2026-07-14（Tauri v2 功能对齐收尾完成：DpiScalePlugin + 移动端插件 + PlatformFactory 6 级回退 + 三平台签名文档化）
+**最后更新**：2026-07-15（Tauri v2 打包/分发/签名对齐：Linux .deb/.rpm 打包 + Windows Authenticode 自动签名 + CI dist-linux 迁移到 Linux runner + Capability 自动加载 + 文档一致性修正）
