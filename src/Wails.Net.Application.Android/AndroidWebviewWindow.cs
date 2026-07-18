@@ -257,7 +257,8 @@ public sealed class AndroidWebviewWindow : IWebviewWindowImpl
         WebView.SetWebContentsDebuggingEnabled(true);
 
         // 设置自定义 WebViewClient 用于资源拦截
-        _webViewClient = new WailsWebViewClient(_assetServer);
+        // P0-4：传递窗口名称以支持 per-window CSP 注入
+        _webViewClient = new WailsWebViewClient(_assetServer, _options.Name);
         webView.SetWebViewClient(_webViewClient);
 
         // 设置 WebChromeClient，转发 console.log / alert / 等到 Android Logcat

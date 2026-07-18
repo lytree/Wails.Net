@@ -67,6 +67,9 @@ public class WindowManager : IWindowManager
             _windowNames[options.Name] = id;
         }
 
+        // P0-4：注册窗口级 CSP 到 AssetServer（通过 Application 静态引用）
+        Application.Get()?.RegisterWindowCsp(options.Name, options.Csp);
+
         // 注册窗口关闭事件监听器，当窗口发出 WindowClosed 事件时自动从管理器中移除
         window.On((uint)WindowEventType.WindowClosed, () =>
         {
@@ -75,6 +78,8 @@ public class WindowManager : IWindowManager
                 if (!string.IsNullOrEmpty(window.Name))
                 {
                     _windowNames.TryRemove(window.Name, out _);
+                    // P0-4：清理窗口级 CSP 注册，避免内存泄漏
+                    Application.Get()?.AssetServer?.SetCspHeaderForWindow(window.Name, null);
                 }
             }
         });

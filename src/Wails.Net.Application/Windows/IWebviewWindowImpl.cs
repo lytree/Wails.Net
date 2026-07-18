@@ -712,6 +712,56 @@ public interface IWebviewWindowImpl
     {
         // 默认空实现，平台实现可重写。
     }
+
+    /// <summary>
+    /// 注册原生 postMessage 接收回调（P0-C2）。
+    /// <para>
+    /// 平台实现应连接 WebView 的原生消息事件：
+    /// <list type="bullet">
+    /// <item>Windows: WebView2 <c>WebMessageReceived</c> 事件</item>
+    /// <item>Linux: GirCore <c>UserContentManager.ScriptMessageReceived</c> 信号</item>
+    /// <item>Android: <c>JavascriptInterface</c> 标记方法</item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// 注册后，前端通过 <c>window.chrome.webview.postMessage(jsonStr)</c>（Windows）或
+    /// <c>window.webkit.messageHandlers.external.postMessage(msg)</c>（Linux）发送的消息
+    /// 会路由到此回调，而非默认的 <c>Application.HandleMessageFromFrontend</c> 路径。
+    /// </para>
+    /// <para>
+    /// 默认实现为空操作。未注册时，平台实现应保持原有行为（路由到 Application）。
+    /// </para>
+    /// </summary>
+    /// <param name="callback">消息回调，参数为前端发送的原始字符串内容。</param>
+    void SetNativeMessageHandler(Func<string, Task>? callback)
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 通过原生 postMessage 通道向前端推送消息（P0-C2）。
+    /// <para>
+    /// 平台实现应调用 WebView 原生 API：
+    /// <list type="bullet">
+    /// <item>Windows: <c>CoreWebView2.PostWebMessageAsString</c></item>
+    /// <item>Linux: <c>EvaluateJavascript("window.__wailsNative.onMessage(...)")</c></item>
+    /// <item>Android: <c>EvaluateJavascript("window.__wailsNative.onMessage(...)")</c></item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// 默认实现回退到 <see cref="ExecJS"/>，调用前端 <c>window.__wailsNative.onMessage</c> 处理函数。
+    /// 平台实现重写以使用更高效的原生 API。
+    /// </para>
+    /// </summary>
+    /// <param name="message">要推送的 JSON 字符串。</param>
+    /// <returns>表示推送操作的异步任务。</returns>
+    Task PostNativeMessageAsync(string message)
+    {
+        // 默认实现：通过 ExecJS 调用前端处理函数（兼容未实现原生 API 的平台）。
+        // 使用 JSON.stringify 转义字符串，避免引号注入问题。
+        ExecJS($"window.__wailsNative && window.__wailsNative.onMessage({System.Text.Json.JsonSerializer.Serialize(message)});");
+        return Task.CompletedTask;
+    }
 }
 
 /// <summary>

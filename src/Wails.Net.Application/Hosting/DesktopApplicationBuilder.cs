@@ -230,6 +230,15 @@ public sealed class DesktopApplicationBuilder
             }
         }
 
+        // 注入全局 CSP 到 AssetServer（P0-4：原为死代码，现统一接入）
+        // 对应 Tauri v2 的 app.csp 配置，作为未指定窗口级 CSP 时的回退
+        // 来源：appsettings.json "Wails":"App":"Security":"Csp"（字符串形式的 CSP 头部）
+        if (application.AssetServer is not null &&
+            !string.IsNullOrWhiteSpace(desktopOpts.App?.Security?.Csp))
+        {
+            application.AssetServer.SetCspHeader(desktopOpts.App!.Security!.Csp);
+        }
+
         // 加载能力文件（Tauri v2 风格的 capabilities/*.json）
         // 必须在窗口创建前完成，确保权限已就绪
         LoadCapabilities(desktopOpts, host.Services);

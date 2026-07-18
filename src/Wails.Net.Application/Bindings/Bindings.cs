@@ -248,6 +248,12 @@ public class BindingManager
         {
             return ErrorResult($"参数反序列化失败: {ex.Message}", Errors.CallErrorKind.TypeError);
         }
+        catch (OperationCanceledException)
+        {
+            // P0-B1：取消异常直接重抛，让 MessageProcessor.ProcessCallAsync 统一处理为 "调用已被取消"。
+            // 不在此包装为 ErrorResult，否则 ProcessCallAsync 无法识别取消语义。
+            throw;
+        }
         catch (Exception ex)
         {
             return ErrorResult(ex.Message, Errors.CallErrorKind.RuntimeError);

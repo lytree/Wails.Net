@@ -612,6 +612,272 @@ public sealed class AssetServerTests
         await Assert.That(result).IsEqualTo(content);
     }
 
+    // ========== P0-4：per-window CSP 注入测试（对应 Tauri v2 per-window CSP）==========
+
+    [Test]
+    public async Task ServeAsync_WithWindowName_InjectsWindowCspMetaTag()
+    {
+        var html = Encoding.UTF8.GetBytes("<html><head><title>Test</title></head><body></body></html>");
+        var server = new StubAssetServer(_ => html);
+        server.SetCspHeaderForWindow("main", "default-src 'self'; script-src 'self'");
+
+        var result = await server.ServeAsync("/index.html", "main");
+        var resultHtml = Encoding.UTF8.GetString(result);
+
+        await Assert.That(resultHtml).Contains("http-equiv=\"Content-Security-Policy\"");
+        await Assert.That(resultHtml).Contains("default-src 'self'; script-src 'self'");
+        // CSP meta 标签应位于 <head> 之后
+        var metaIndex = resultHtml.IndexOf("http-equiv=\"Content-Security-Policy\"", StringComparison.OrdinalIgnoreCase);
+        var headCloseIndex = resultHtml.IndexOf("</head>", StringComparison.OrdinalIgnoreCase);
+        await Assert.That(metaIndex > 0 && metaIndex < headCloseIndex).IsTrue();
+    }
+
+    [Test]
+    public async Task ServeAsync_WithWindowName_FallsBackToGlobalCsp()
+    {
+        var html = Encoding.UTF8.GetBytes("<html><head></head><body></body></html>");
+        var server = new StubAssetServer(_ => html);
+        server.SetCspHeader("default-src 'self'"); // 全局 CSP
+
+        // 窗口 "main" 未注册窗口级 CSP → 回退到全局
+        var result = await server.ServeAsync("/index.html", "main");
+        var resultHtml = Encoding.UTF8.GetString(result);
+
+        await Assert.That(resultHtml).Contains("http-equiv=\"Content-Security-Policy\"");
+        await Assert.That(resultHtml).Contains("default-src 'self'");
+    }
+
+    [Test]
+    public async Task ServeAsync_WindowCsp_OverridesGlobalCsp()
+    {
+        var html = Encoding.UTF8.GetBytes("<html><head></head><body></body></html>");
+        var server = new StubAssetServer(_ => html);
+        server.SetCspHeader("default-src 'self'");                  // 全局
+        server.SetCspHeaderForWindow("main", "default-src 'none'"); // main 窗口覆盖
+
+        var result = await server.ServeAsync("/index.html", "main");
+        var resultHtml = Encoding.UTF8.GetString(result);
+
+        // 应使用窗口级 CSP（default-src 'none'），而非全局
+        await Assert.That(resultHtml).Contains("default-src 'none'");
+        await Assert.That(resultHtml.Contains("default-src 'self'", StringComparison.Ordinal)).IsFalse();
+    }
+
+    [Test]
+    public async Task ServeAsync_WithWindowName_NoCspConfigured_ReturnsRawContent()
+    {
+        var html = Encoding.UTF8.GetBytes("<html><head></head><body></body></html>");
+        var server = new StubAssetServer(_ => html);
+
+        // 未设置任何 CSP（窗口级 + 全局都为空）
+        var result = await server.ServeAsync("/index.html", "main");
+
+        await Assert.That(result).IsEqualTo(html);
+    }
+
+    [Test]
+    public async Task ServeAsync_WithEmptyWindowName_DoesNotInjectCsp()
+    {
+        var html = Encoding.UTF8.GetBytes("<html><head></head><body></body></html>");
+        var server = new StubAssetServer(_ => html);
+        server.SetCspHeader("default-src 'self'"); // 全局已设置
+
+        // windowName 为空 → 不注入 CSP（向后兼容：等价于 ServeAsync(path)）
+        var result = await server.ServeAsync("/index.html", null);
+        await Assert.That(result).IsEqualTo(html);
+
+        var result2 = await server.ServeAsync("/index.html", "");
+        await Assert.That(result2).IsEqualTo(html);
+    }
+
+    [Test]
+    public async Task ServeAsync_WithWindowName_NonHtmlContent_DoesNotInjectCsp()
+    {
+        var json = Encoding.UTF8.GetBytes("{\"key\":\"value\"}");
+        var server = new StubAssetServer(_ => json);
+        server.SetCspHeaderForWindow("main", "default-src 'self'");
+
+        // 非 HTML 内容不注入 CSP
+        var result = await server.ServeAsync("/data.json", "main");
+        await Assert.That(result).IsEqualTo(json);
+    }
+
+    [Test]
+    public async Task ServeAsync_WithWindowName_HtmlWithoutHeadTag_PrependsCspMeta()
+    {
+        // 无 <head> 与 <html> 标签的 HTML 片段
+        var fragment = Encoding.UTF8.GetBytes("<body>hello</body>");
+        var server = new StubAssetServer(_ => fragment);
+        server.SetCspHeaderForWindow("main", "default-src 'self'");
+
+        var result = await server.ServeAsync("/index.html", "main");
+        var resultHtml = Encoding.UTF8.GetString(result);
+
+        // 应在内容前插入 CSP meta 标签
+        await Assert.That(resultHtml.StartsWith("<meta http-equiv=\"Content-Security-Policy\"")).IsTrue();
+    }
+
+    [Test]
+    public async Task ServeAsync_WithWindowName_ExistingCspMetaTag_NotDoubleInjected()
+    {
+        var html = Encoding.UTF8.GetBytes(
+            "<html><head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self'\"></head><body></body></html>");
+        var server = new StubAssetServer(_ => html);
+        server.SetCspHeaderForWindow("main", "default-src 'none'");
+
+        // HTML 中已存在 CSP meta 标签 → 不重复注入
+        var result = await server.ServeAsync("/index.html", "main");
+        var resultHtml = Encoding.UTF8.GetString(result);
+
+        var count = CountOccurrences(resultHtml, "http-equiv=\"Content-Security-Policy\"");
+        await Assert.That(count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task SetCspHeaderForWindow_EmptyCsp_RemovesWindowEntry_FallsBackToGlobal()
+    {
+        var html = Encoding.UTF8.GetBytes("<html><head></head><body></body></html>");
+        var server = new StubAssetServer(_ => html);
+        server.SetCspHeader("default-src 'self'");                  // 全局
+        server.SetCspHeaderForWindow("main", "default-src 'none'"); // main 窗口覆盖
+        server.SetCspHeaderForWindow("main", null);                // 移除 main 窗口 CSP
+
+        // 移除后回退到全局
+        var result = await server.ServeAsync("/index.html", "main");
+        var resultHtml = Encoding.UTF8.GetString(result);
+        await Assert.That(resultHtml).Contains("default-src 'self'");
+    }
+
+    [Test]
+    public async Task SetCspHeaderForWindow_NullOrEmptyWindowName_SetsGlobalCsp()
+    {
+        var html = Encoding.UTF8.GetBytes("<html><head></head><body></body></html>");
+        var server = new StubAssetServer(_ => html);
+
+        // null/空 windowName 等价于 SetCspHeader
+        server.SetCspHeaderForWindow(null, "default-src 'self'");
+        server.SetCspHeaderForWindow("", "default-src 'self'");
+
+        // 任意窗口名应能命中全局 CSP
+        var result = await server.ServeAsync("/index.html", "any-window");
+        var resultHtml = Encoding.UTF8.GetString(result);
+        await Assert.That(resultHtml).Contains("default-src 'self'");
+    }
+
+    [Test]
+    public async Task ServeAsync_WindowSpecificCsp_DoesNotAffectOtherWindows()
+    {
+        var html = Encoding.UTF8.GetBytes("<html><head></head><body></body></html>");
+        var server = new StubAssetServer(_ => html);
+        server.SetCspHeaderForWindow("main", "default-src 'none'");
+
+        // main 窗口应注入 CSP
+        var mainResult = await server.ServeAsync("/index.html", "main");
+        var mainHtml = Encoding.UTF8.GetString(mainResult);
+        await Assert.That(mainHtml).Contains("default-src 'none'");
+
+        // settings 窗口无 CSP 配置（也无全局 CSP）→ 不注入
+        var settingsResult = await server.ServeAsync("/index.html", "settings");
+        await Assert.That(settingsResult).IsEqualTo(html);
+    }
+
+    [Test]
+    public async Task ServeAsync_CspWithDoubleQuotes_EscapesQuotes()
+    {
+        var html = Encoding.UTF8.GetBytes("<html><head></head><body></body></html>");
+        var server = new StubAssetServer(_ => html);
+        // CSP 中包含双引号（如 nonce 值），应被转义为单引号避免破坏 HTML 属性
+        server.SetCspHeaderForWindow("main", "default-src \"wails://localhost\"");
+
+        var result = await server.ServeAsync("/index.html", "main");
+        var resultHtml = Encoding.UTF8.GetString(result);
+
+        // 转义后的 CSP 应在 meta 标签中
+        await Assert.That(resultHtml).Contains("default-src 'wails://localhost'");
+    }
+
+    [Test]
+    public async Task ServeHttpAsync_WithWindowNameHeader_UsesWindowCsp()
+    {
+        var html = Encoding.UTF8.GetBytes("<html><head></head><body></body></html>");
+        var response = await SendRequestAsync(
+            () =>
+            {
+                var s = new StubAssetServer(_ => html);
+                s.SetCspHeader("default-src 'self'");                  // 全局
+                s.SetCspHeaderForWindow("main", "default-src 'none'"); // main 窗口覆盖
+                return s;
+            },
+            "/index.html",
+            "GET",
+            new Dictionary<string, string>
+            {
+                { AssetServer.Headers.WindowName, "main" }
+            });
+
+        if (response is null)
+        {
+            return; // CI 环境无 HttpListener 权限时跳过
+        }
+
+        try
+        {
+            // 应使用窗口级 CSP（default-src 'none'）
+            var cspHeader = response.GetHeader("Content-Security-Policy");
+            await Assert.That(cspHeader).IsEqualTo("default-src 'none'");
+        }
+        finally
+        {
+            response.Dispose();
+        }
+    }
+
+    [Test]
+    public async Task ServeHttpAsync_WithoutWindowNameHeader_UsesGlobalCsp()
+    {
+        var html = Encoding.UTF8.GetBytes("<html><head></head><body></body></html>");
+        var response = await SendRequestAsync(
+            () =>
+            {
+                var s = new StubAssetServer(_ => html);
+                s.SetCspHeader("default-src 'self'");                  // 全局
+                s.SetCspHeaderForWindow("main", "default-src 'none'"); // 仅 main 窗口覆盖
+                return s;
+            },
+            "/index.html"); // 不传 x-wails-window-name header
+
+        if (response is null)
+        {
+            return;
+        }
+
+        try
+        {
+            // 无 window-name header → 使用全局 CSP
+            var cspHeader = response.GetHeader("Content-Security-Policy");
+            await Assert.That(cspHeader).IsEqualTo("default-src 'self'");
+        }
+        finally
+        {
+            response.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// 统计字符串中子串出现次数。
+    /// </summary>
+    private static int CountOccurrences(string haystack, string needle)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = haystack.IndexOf(needle, index, StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            count++;
+            index += needle.Length;
+        }
+        return count;
+    }
+
     // ========== SPA 回退测试 ==========
 
     /// <summary>

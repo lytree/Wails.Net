@@ -43,6 +43,14 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
     public string BaseUrl => $"http://localhost:{Port}";
 
     /// <summary>
+    /// WebSocket 端点完整 URL（P0-D：Server 模式事件 API 完善）。
+    /// 由 <see cref="BaseUrl"/> 与 <see cref="WebSocketPath"/> 拼接而成，
+    /// 供 <see cref="Application.GenerateRuntimeJs"/> 注入到 <see cref="RuntimeOptions.WebSocketUrl"/>，
+    /// 使 Server 模式前端 <c>ServerRuntime</c> 知晓连接地址。
+    /// </summary>
+    public string WebSocketUrl => $"ws://localhost:{Port}{WebSocketPath}";
+
+    /// <summary>
     /// 消息处理器实例。
     /// </summary>
     private readonly MessageProcessor _processor;

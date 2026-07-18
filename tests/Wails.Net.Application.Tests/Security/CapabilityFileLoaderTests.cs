@@ -169,4 +169,69 @@ public sealed class CapabilityFileLoaderTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    // ============== !prefix Deny 语法测试（对应 P0-3）==============
+
+    [Test]
+    public async Task RegisterToManager_DenyPrefix_RegistersAsDeny()
+    {
+        // 安排：能力中包含 "!fs:allow-read" 表示显式拒绝
+        var options = Microsoft.Extensions.Options.Options.Create(new PermissionOptions { Enabled = true, DenyByDefault = false });
+        var manager = new PermissionManager(options, NullLogger<PermissionManager>.Instance);
+        manager.Grant("fs:allow-read"); // 先授权
+        var capability = new Capability("deny-cap")
+        {
+            Permissions = { "!fs:allow-read" }
+        };
+
+        // 操作
+        CapabilityFileLoader.RegisterToManager(manager, new[] { capability });
+
+        // 断言：fs:allow-read 被拒绝（即便已授权）
+        await Assert.That(manager.IsGranted("fs:allow-read")).IsFalse();
+        await Assert.That(manager.IsDenied("fs:allow-read", null)).IsTrue();
+    }
+
+    [Test]
+    public async Task RegisterToManager_MixedGrantAndDeny_DenyWins()
+    {
+        // 安排：同一能力中混合 grant 和 deny 权限
+        var options = Microsoft.Extensions.Options.Options.Create(new PermissionOptions { Enabled = true, DenyByDefault = true });
+        var manager = new PermissionManager(options, NullLogger<PermissionManager>.Instance);
+        var capability = new Capability("mixed-cap")
+        {
+            Permissions = { "fs:allow-read", "!fs:allow-write" },
+            Windows = { "main" }
+        };
+
+        // 操作
+        CapabilityFileLoader.RegisterToManager(manager, new[] { capability });
+
+        // 断言
+        await Assert.That(manager.IsGranted("fs:allow-read", "main")).IsTrue();
+        // fs:allow-write 即便在窗口内也被拒绝（未显式授权但被 deny）
+        await Assert.That(manager.IsGranted("fs:allow-write", "main")).IsFalse();
+        await Assert.That(manager.IsDenied("fs:allow-write", "main")).IsTrue();
+    }
+
+    [Test]
+    public async Task RegisterToManager_DenyPrefixWithWindows_OnlyDeniesThatWindow()
+    {
+        // 安排：窗口级拒绝
+        var options = Microsoft.Extensions.Options.Options.Create(new PermissionOptions { Enabled = true, DenyByDefault = false });
+        var manager = new PermissionManager(options, NullLogger<PermissionManager>.Instance);
+        manager.Grant("fs:allow-read");
+        var capability = new Capability("window-deny")
+        {
+            Permissions = { "!fs:allow-read" },
+            Windows = { "main" }
+        };
+
+        // 操作
+        CapabilityFileLoader.RegisterToManager(manager, new[] { capability });
+
+        // 断言：main 窗口拒绝，settings 窗口仍可用
+        await Assert.That(manager.IsGranted("fs:allow-read", "main")).IsFalse();
+        await Assert.That(manager.IsGranted("fs:allow-read", "settings")).IsTrue();
+    }
 }

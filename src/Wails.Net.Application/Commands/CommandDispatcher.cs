@@ -115,11 +115,13 @@ public sealed class CommandDispatcher
             }
         }
 
-        var ctx = context ?? new CommandContext(_services, null, effectiveToken);
+        var ctx = context ?? new CommandContext(_services, null, effectiveToken, null);
         // 若传入 context 的取消令牌不是 effectiveToken，需要重建上下文以传播超时。
+        // 同时保留 WindowName 和 Origin 以确保权限校验信息完整。
         if (context is not null && context.CancellationToken != effectiveToken)
         {
-            ctx = new CommandContext(context.Services, context.WindowId, effectiveToken);
+            ctx = new CommandContext(
+                context.Services, context.WindowId, effectiveToken, context.WindowName, context.Origin);
         }
 
         try
@@ -132,18 +134,23 @@ public sealed class CommandDispatcher
             }
 
             // 权限校验：检查 [RequireCapability] 特性和 CommandEntry.RequiredCapabilities
+            // 同时传入 ctx.WindowName 实现窗口级 Capability 运行时隔离（对应 Tauri v2 Capability.Windows）
+            // 同时传入 ctx.Origin 实现 Capability.remote 远程 URL 校验（对应 Tauri v2 Capability.remote）
             if (_permissionManager is not null)
             {
-                if (!_permissionManager.ValidateCommand(entry.Method))
+                if (!_permissionManager.ValidateCommand(entry.Method, ctx.WindowName, ctx.Origin))
                 {
-                    _logger?.LogWarning("权限拒绝: 命令 {Method}", request.Method);
+                    _logger?.LogWarning("权限拒绝: 命令 {Method}（窗口={Window}，来源={Origin}）",
+                        request.Method, ctx.WindowName ?? "未知",
+                        string.IsNullOrEmpty(ctx.Origin) ? "本地" : ctx.Origin);
                     return new InvokeResponse(request.Id, false, null, $"Permission denied: {request.Method}");
                 }
 
-                if (entry.RequiredCapabilities.Count > 0 && !_permissionManager.ValidateCapabilities(entry.RequiredCapabilities))
+                if (entry.RequiredCapabilities.Count > 0 && !_permissionManager.ValidateCapabilities(entry.RequiredCapabilities, ctx.WindowName, ctx.Origin))
                 {
-                    _logger?.LogWarning("权限拒绝: 命令 {Method} 需要能力 {Capabilities}",
-                        request.Method, string.Join(", ", entry.RequiredCapabilities));
+                    _logger?.LogWarning("权限拒绝: 命令 {Method} 需要能力 {Capabilities}（窗口={Window}，来源={Origin}）",
+                        request.Method, string.Join(", ", entry.RequiredCapabilities),
+                        ctx.WindowName ?? "未知", string.IsNullOrEmpty(ctx.Origin) ? "本地" : ctx.Origin);
                     return new InvokeResponse(request.Id, false, null, $"Permission denied: {request.Method}");
                 }
 

@@ -514,7 +514,7 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
             return;
         }
 
-        var content = assetServer.ServeAsync(path).GetAwaiter().GetResult();
+        var content = assetServer.ServeAsync(path, _options.Name).GetAwaiter().GetResult();
         if (content is null || content.Length == 0)
         {
             // SPA 路由回退：当资源不存在时，回退到 index.html。
@@ -522,7 +522,7 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
                 && !path.Equals("index.html", StringComparison.OrdinalIgnoreCase)
                 && !Path.HasExtension(path))
             {
-                content = assetServer.ServeAsync("index.html").GetAwaiter().GetResult();
+                content = assetServer.ServeAsync("index.html", _options.Name).GetAwaiter().GetResult();
                 if (content is not null && content.Length > 0)
                 {
                     FinishResponse(request, content, "text/html", 200, "OK");

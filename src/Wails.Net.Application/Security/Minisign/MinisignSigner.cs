@@ -192,4 +192,71 @@ public static class MinisignSigner
             base64KeyFingerprint: keyPair.KeyFingerprint);
         File.WriteAllText(privateKeyFilePath, content);
     }
+
+    /// <summary>
+    /// 将私钥用密码加密后写入文件（P0-5，对应 Tauri v2 的密码加密私钥存储）。
+    /// </summary>
+    /// <param name="privateKeyFilePath">私钥文件路径。</param>
+    /// <param name="keyPair">密钥对。</param>
+    /// <param name="password">加密密码。</param>
+    /// <param name="iterations">PBKDF2 迭代次数（默认 600,000）。</param>
+    public static void WriteEncryptedPrivateKeyFile(
+        string privateKeyFilePath,
+        MinisignKeyPair keyPair,
+        string password,
+        long iterations = MinisignPrivateKey.DefaultIterations)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(privateKeyFilePath);
+        ArgumentNullException.ThrowIfNull(keyPair);
+        ArgumentException.ThrowIfNullOrEmpty(password);
+
+        var encryptedBlob = MinisignPrivateKey.Encrypt(keyPair.PrivateKey, password, iterations);
+        var base64Blob = Convert.ToBase64String(encryptedBlob);
+        var content = MinisignFormat.FormatPrivateKeyFile(
+            comment: null,
+            base64PrivateKey: base64Blob,
+            base64KeyFingerprint: keyPair.KeyFingerprint);
+        File.WriteAllText(privateKeyFilePath, content);
+    }
+
+    /// <summary>
+    /// 从文件加载私钥（P0-5，自动识别明文或加密格式）。
+    /// </summary>
+    /// <param name="privateKeyFilePath">私钥文件路径。</param>
+    /// <param name="password">密码。若文件为加密格式则必须提供；若为明文格式则忽略。</param>
+    /// <returns>解密后的密钥对。</returns>
+    /// <exception cref="FileNotFoundException">文件不存在。</exception>
+    /// <exception cref="FormatException">文件格式错误。</exception>
+    /// <exception cref="System.Security.Cryptography.CryptographicException">密码错误。</exception>
+    public static MinisignKeyPair LoadPrivateKeyFile(string privateKeyFilePath, string? password = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(privateKeyFilePath);
+
+        if (!File.Exists(privateKeyFilePath))
+        {
+            throw new FileNotFoundException($"私钥文件不存在: {privateKeyFilePath}", privateKeyFilePath);
+        }
+
+        var content = File.ReadAllText(privateKeyFilePath);
+        if (!MinisignFormat.TryParsePrivateKeyFile(content, out var base64Key, out var fingerprint))
+        {
+            throw new FormatException($"私钥文件格式错误: {privateKeyFilePath}");
+        }
+
+        var keyBytes = Convert.FromBase64String(base64Key!);
+
+        // 加密格式：blob 长度 = 122 字节
+        if (keyBytes.Length == MinisignPrivateKey.BlobLength)
+        {
+            if (string.IsNullOrEmpty(password))
+            {
+                throw new ArgumentException("私钥文件已加密，必须提供密码。", nameof(password));
+            }
+            var decrypted = MinisignPrivateKey.Decrypt(keyBytes, password);
+            return ImportKeyPair(decrypted);
+        }
+
+        // 明文格式：64 字节私钥
+        return ImportKeyPair(keyBytes);
+    }
 }

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -106,6 +107,12 @@ public class AssetServer
     private string? _cspHeader;
 
     /// <summary>
+    /// 窗口级 CSP 头部存储（P0-4 新增，对应 Tauri v2 per-window CSP）。
+    /// 键为窗口名称，值为 CSP 头部字符串。窗口级 CSP 优先于 <see cref="_cspHeader"/> 全局配置。
+    /// </summary>
+    private readonly ConcurrentDictionary<string, string> _windowCspHeaders = new();
+
+    /// <summary>
     /// 获取资源服务器选项。
     /// </summary>
     public AssetOptions Options => _options;
@@ -197,6 +204,101 @@ public class AssetServer
     }
 
     /// <summary>
+    /// 为指定窗口设置 CSP 头部（P0-4 新增，对应 Tauri v2 per-window CSP）。
+    /// 窗口级 CSP 优先于 <see cref="SetCspHeader"/> 设置的全局 CSP。
+    /// </summary>
+    /// <param name="windowName">
+    /// 窗口名称。为 null 或空时等价于 <see cref="SetCspHeader"/>（设置全局 CSP）。
+    /// 必须与 <see cref="WebviewWindowOptions.Name"/> 一致。
+    /// </param>
+    /// <param name="cspHeader">CSP 头部值；传入 null 或空字符串将移除该窗口的 CSP 配置，回退到全局。</param>
+    public void SetCspHeaderForWindow(string? windowName, string? cspHeader)
+    {
+        if (string.IsNullOrEmpty(windowName))
+        {
+            _cspHeader = cspHeader;
+            return;
+        }
+
+        if (string.IsNullOrEmpty(cspHeader))
+        {
+            _windowCspHeaders.TryRemove(windowName!, out _);
+        }
+        else
+        {
+            _windowCspHeaders[windowName!] = cspHeader;
+        }
+    }
+
+    /// <summary>
+    /// 解析指定窗口的有效 CSP 头部（P0-4 新增）。
+    /// 优先级：窗口级 CSP &gt; 全局 <see cref="_cspHeader"/>。
+    /// 返回 null 表示未配置 CSP（不应注入）。
+    /// </summary>
+    /// <param name="windowName">窗口名称，可为 null。</param>
+    /// <returns>有效 CSP 头部字符串；若未配置则返回 null。</returns>
+    protected string? ResolveCspHeader(string? windowName)
+    {
+        if (!string.IsNullOrEmpty(windowName) &&
+            _windowCspHeaders.TryGetValue(windowName, out var windowCsp) &&
+            !string.IsNullOrEmpty(windowCsp))
+        {
+            return windowCsp;
+        }
+
+        return _cspHeader;
+    }
+
+    /// <summary>
+    /// 将 CSP 作为 <c>&lt;meta http-equiv="Content-Security-Policy"&gt;</c> 标签注入到 HTML 内容中。
+    /// 用于桌面 WebView 路径（不通过 HTTP 头部，需内联到 HTML）。
+    /// 若 HTML 中已存在 CSP meta 标签则不重复注入。
+    /// </summary>
+    /// <param name="content">原始 HTML 字节内容（UTF-8 编码）。</param>
+    /// <param name="cspHeader">CSP 头部值。</param>
+    /// <returns>注入 CSP 后的字节内容。</returns>
+    private static byte[] InjectCspMetaTag(byte[] content, string cspHeader)
+    {
+        var html = Encoding.UTF8.GetString(content);
+
+        // 已存在 CSP meta 标签则不重复注入（避免冲突）
+        if (html.Contains("http-equiv=\"Content-Security-Policy\"", StringComparison.OrdinalIgnoreCase) ||
+            html.Contains("http-equiv='Content-Security-Policy'", StringComparison.OrdinalIgnoreCase))
+        {
+            return content;
+        }
+
+        // 转义 CSP 值中的双引号，避免破坏 HTML 属性
+        var escapedCsp = cspHeader.Replace("\"", "'");
+        var metaTag = $"<meta http-equiv=\"Content-Security-Policy\" content=\"{escapedCsp}\">";
+
+        // 优先插入到 <head> 之后
+        var headIndex = html.IndexOf("<head", StringComparison.OrdinalIgnoreCase);
+        if (headIndex >= 0)
+        {
+            var closeTag = html.IndexOf('>', headIndex);
+            if (closeTag >= 0)
+            {
+                return Encoding.UTF8.GetBytes(html.Insert(closeTag + 1, metaTag));
+            }
+        }
+
+        // 无 <head> 标签，插入到 <html> 之后
+        var htmlTagIndex = html.IndexOf("<html", StringComparison.OrdinalIgnoreCase);
+        if (htmlTagIndex >= 0)
+        {
+            var closeTag = html.IndexOf('>', htmlTagIndex);
+            if (closeTag >= 0)
+            {
+                return Encoding.UTF8.GetBytes(html.Insert(closeTag + 1, metaTag));
+            }
+        }
+
+        // 退化路径：直接前置
+        return Encoding.UTF8.GetBytes(metaTag + html);
+    }
+
+    /// <summary>
     /// 设置日志器实例（M12 新增）。
     /// 用于在构造后注入日志器，便于 <c>DesktopApplicationBuilder</c> 流程在创建 AssetServer 后注入 DI 容器中的日志器。
     /// </summary>
@@ -223,6 +325,48 @@ public class AssetServer
     }
 
     /// <summary>
+    /// 根据路径异步返回资源内容，并为指定窗口注入 CSP（P0-4 新增，对应 Tauri v2 per-window CSP）。
+    /// 当 <paramref name="windowName"/> 非空时，查找窗口级 CSP（回退到全局），
+    /// 若资源为 HTML 则将 CSP 作为 <c>&lt;meta http-equiv="Content-Security-Policy"&gt;</c> 标签内联注入。
+    /// </summary>
+    /// <param name="path">请求的资源路径。</param>
+    /// <param name="windowName">
+    /// 触发请求的窗口名称，用于查找窗口级 CSP。为 null 或空时不注入 CSP（保持现有行为）。
+    /// </param>
+    /// <returns>资源内容字节组（可能已注入 CSP meta 标签）；若资源不存在则返回空字节数组。</returns>
+    public virtual async Task<byte[]> ServeAsync(string path, string? windowName)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+
+        var (content, servedPath) = await TryReadAssetWithSpaFallbackAsync(path);
+        if (content is null || content.Length == 0)
+        {
+            return [];
+        }
+
+        // 仅当指定窗口名时进行 CSP 注入（向后兼容：不传 windowName 等价于无 CSP 注入）
+        if (string.IsNullOrEmpty(windowName))
+        {
+            return content;
+        }
+
+        var cspHeader = ResolveCspHeader(windowName);
+        if (string.IsNullOrEmpty(cspHeader))
+        {
+            return content;
+        }
+
+        // 仅对 HTML 内容注入 CSP meta 标签
+        var mimeType = GetMimeType(servedPath);
+        if (!mimeType.StartsWith("text/html", StringComparison.OrdinalIgnoreCase))
+        {
+            return content;
+        }
+
+        return InjectCspMetaTag(content, cspHeader!);
+    }
+
+    /// <summary>
     /// 处理完整的 HTTP 请求，包括中间件链、Range 请求、ETag 缓存和 404 处理。
     /// 对应 Wails v3 Go 版本 AssetServer.ServeHTTP 方法。
     /// 启用 <see cref="SecurityOptions.Nonce"/> 时为每个请求生成唯一 nonce 并注入 CSP 头。
@@ -244,8 +388,15 @@ public class AssetServer
         // 添加 CORS 响应头
         response.Headers[Headers.AccessControlAllowOrigin] = "*";
 
+        // 解析窗口名称（P0-4：用于 per-window CSP 查找，对应 Tauri v2 的 remote CSP）
+        var windowName = request.Headers[Headers.WindowName];
+        if (string.IsNullOrEmpty(windowName))
+        {
+            windowName = null;
+        }
+
         // 生成 per-request nonce（若启用），并构建 CSP 头
-        // nonce 模式优先于静态 _cspHeader（启用 nonce 时忽略 _cspHeader）
+        // nonce 模式优先于静态 _cspHeader / 窗口级 CSP（启用 nonce 时忽略两者）
         string? perRequestNonce = null;
         if (_options.Security is { Nonce.EnableNonce: true } security)
         {
@@ -253,9 +404,14 @@ public class AssetServer
             var cspHeader = NonceInjector.BuildCspHeader(security.Nonce.CspPolicy, perRequestNonce);
             response.Headers["Content-Security-Policy"] = cspHeader;
         }
-        else if (!string.IsNullOrEmpty(_cspHeader))
+        else
         {
-            response.Headers["Content-Security-Policy"] = _cspHeader;
+            // 优先窗口级 CSP，回退到全局 _cspHeader
+            var effectiveCsp = ResolveCspHeader(windowName);
+            if (!string.IsNullOrEmpty(effectiveCsp))
+            {
+                response.Headers["Content-Security-Policy"] = effectiveCsp;
+            }
         }
 
         // 处理 OPTIONS 预检请求

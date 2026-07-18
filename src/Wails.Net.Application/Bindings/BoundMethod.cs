@@ -124,12 +124,25 @@ public class BoundMethod
 
             return SuccessResult(result);
         }
+        catch (TargetInvocationException ex) when (ex.InnerException is OperationCanceledException)
+        {
+            // P0-B1：反射调用包装的取消异常需要解包并重抛，
+            // 使 MessageProcessor.ProcessCallAsync 能识别为取消操作并返回 "调用已被取消" 错误响应，
+            // 而不是被当作普通 RuntimeError 处理。
+            throw new OperationCanceledException(ex.InnerException.Message, ex.InnerException);
+        }
         catch (TargetInvocationException ex) when (ex.InnerException is not null)
         {
             // 反射调用包装的异常需要解包
             return ErrorResult(ex.InnerException.Message, ex.InnerException is ArgumentException
                 ? Errors.CallErrorKind.TypeError
                 : Errors.CallErrorKind.RuntimeError);
+        }
+        catch (OperationCanceledException)
+        {
+            // P0-B1：直接重抛取消异常，让 MessageProcessor 统一处理为 "调用已被取消"。
+            // 不在此包装为 ErrorResult，否则 ProcessCallAsync 无法识别取消语义。
+            throw;
         }
         catch (JsonException ex)
         {

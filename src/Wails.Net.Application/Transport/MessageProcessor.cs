@@ -47,6 +47,14 @@ public class MessageProcessor
 
         /// <summary>系统命令。</summary>
         public const string System = "system";
+
+        /// <summary>
+        /// 取消运行中调用。
+        /// 对应 Wails v3 Go 版本 messageprocessor.go 中的 <c>cancelCallRequest = 10</c>
+        /// （objectNames["CancelCall"]）。
+        /// 前端通过此消息类型请求后端取消指定 callId 对应的运行中绑定调用。
+        /// </summary>
+        public const string Cancel = "cancel";
     }
 
     /// <summary>
@@ -89,6 +97,20 @@ public class MessageProcessor
     /// 取消令牌源。
     /// </summary>
     private readonly CancellationTokenSource _cts = new();
+
+    /// <summary>
+    /// 运行中调用登记表：callId（即 <see cref="Message.Id"/>） → 链接的取消令牌源。
+    /// 对应 Wails v3 Go 版本 messageprocessor.go 中的 <c>runningCalls map[string]context.CancelFunc</c>。
+    /// <para>
+    /// 每次绑定调用创建独立的 CTS（与全局 <see cref="_cts"/> 链接），使应用关闭时取消所有运行中调用，
+    /// 同时允许前端通过 <see cref="MessageTypes.Cancel"/> 消息按 callId 取消单个调用。
+    /// </para>
+    /// <para>
+    /// <b>线程安全</b>：使用 <see cref="ConcurrentDictionary{TKey, TValue}"/> 实现并发安全，
+    /// 无需显式加锁（与 Wails v3 Go 版本的 sync.Mutex 实现等价但更轻量）。
+    /// </para>
+    /// </summary>
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _runningCalls = new();
 
     /// <summary>
     /// 使用指定的绑定管理器和事件处理器构造 MessageProcessor 实例。
@@ -245,6 +267,8 @@ public class MessageProcessor
             // 窗口操作优先走 CommandDispatcher（WindowPlugin 命令路径），
             // 若命令未找到则回退到 ProcessWindow 内部的 DispatchWindowAction 硬编码分发（向后兼容）。
             MessageTypes.Window => await ProcessWindowAsync(message),
+            // 取消运行中调用（P0-B1）：前端通过 "cancel" 消息按 callId 取消未完成的绑定调用。
+            MessageTypes.Cancel => ProcessCancel(message),
             // 未识别的命名空间（如 "notification.show"、"application.hide"、"tray.setIcon"）
             // 回退到 CommandDispatcher 查找命令，借鉴 Tauri v2 的 "核心即插件" 哲学：
             // 所有系统操作都以插件命令形式注册，前端 wails.<namespace>.<method>() 调用
@@ -277,39 +301,129 @@ public class MessageProcessor
             return CreateErrorResponse(message.Id, "无效的调用载荷", CallErrorKind.TypeError);
         }
 
-        var args = callPayload.Args ?? Array.Empty<JsonElement>();
-        Dictionary<string, object?> result;
+        // P0-B1：为每个绑定调用创建独立的 CTS 并注册到 _runningCalls，
+        // 使前端可通过 "cancel" 消息按 callId 取消此调用。
+        // 对应 Wails v3 Go 版本 messageprocessor_call.go 中的：
+        //   ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+        //   m.runningCalls[*callID] = cancel
+        //   defer delete(m.runningCalls, *callID)
+        // callId 复用 message.Id（与 Wails v3 前端 calls.ts 中以 generateID() 同时作为消息 ID 和 call-id 一致）。
+        var callId = message.Id;
+        using var callCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
 
-        // 优先按 ID 调用，其次按名称调用
-        if (callPayload.Id is not null)
+        // 注册到运行中调用表。若 callId 已存在（极少见的 ID 冲突），返回错误。
+        // 对应 Wails v3 中的 ambiguousID 检查。
+        if (!_runningCalls.TryAdd(callId, callCts))
         {
-            result = await _bindings.Call(callPayload.Id.Value, args, _cts.Token);
+            return CreateErrorResponse(message.Id, $"callId 冲突：{callId} 已存在运行中调用", CallErrorKind.RuntimeError);
         }
-        else if (!string.IsNullOrEmpty(callPayload.Name))
-        {
-            result = await _bindings.Call(callPayload.Name!, args, _cts.Token);
 
-            // 若 BindingManager 未找到方法（且未通过源生成器注册），
-            // 尝试回退到 CommandDispatcher 查找命令（如 "counter.increment"、"notification.show"）
-            if (IsNotFoundResult(result, callPayload.Name!) && _commands is not null)
+        try
+        {
+            var args = callPayload.Args ?? Array.Empty<JsonElement>();
+            Dictionary<string, object?> result;
+
+            // 优先按 ID 调用，其次按名称调用
+            if (callPayload.Id is not null)
             {
-                var commandResult = await TryDispatchCommandAsync(callPayload.Name!, args, message.WindowId);
-                if (commandResult is not null)
+                result = await _bindings.Call(callPayload.Id.Value, args, callCts.Token);
+            }
+            else if (!string.IsNullOrEmpty(callPayload.Name))
+            {
+                result = await _bindings.Call(callPayload.Name!, args, callCts.Token);
+
+                // 若 BindingManager 未找到方法（且未通过源生成器注册），
+                // 尝试回退到 CommandDispatcher 查找命令（如 "counter.increment"、"notification.show"）
+                if (IsNotFoundResult(result, callPayload.Name!) && _commands is not null)
                 {
-                    result = commandResult;
+                    var commandResult = await TryDispatchCommandAsync(callPayload.Name!, args, message.WindowId, message.Origin, callCts.Token);
+                    if (commandResult is not null)
+                    {
+                        result = commandResult;
+                    }
                 }
             }
+            else
+            {
+                return CreateErrorResponse(message.Id, "调用必须指定 id 或 name", CallErrorKind.TypeError);
+            }
+
+            return new ResponseMessage
+            {
+                Id = message.Id,
+                Type = MessageTypes.Response,
+                Result = result
+            };
         }
-        else
+        catch (OperationCanceledException)
         {
-            return CreateErrorResponse(message.Id, "调用必须指定 id 或 name", CallErrorKind.TypeError);
+            // 调用被取消（前端发送 cancel 消息或应用关闭触发）。
+            // 对应 Wails v3 中 ctx 取消时 boundMethod.Call 返回 context.Canceled。
+            return CreateErrorResponse(message.Id, "调用已被取消", CallErrorKind.RuntimeError);
+        }
+        finally
+        {
+            // 调用完成（无论成功、失败、取消）后从运行中调用表移除。
+            // 对应 Wails v3 messageprocessor_call.go 中的 defer delete(m.runningCalls, *callID)。
+            _runningCalls.TryRemove(callId, out _);
+        }
+    }
+
+    /// <summary>
+    /// 处理取消运行中调用的消息。
+    /// 对应 Wails v3 Go 版本 messageprocessor_call.go 中的 <c>processCallCancelMethod</c>。
+    /// <para>
+    /// 从消息载荷中读取 <c>callId</c>，在 <see cref="_runningCalls"/> 中查找对应的 CTS 并调用 <see cref="CancellationTokenSource.Cancel"/>。
+    /// 若 callId 不存在（已完成或无效），保持幂等返回成功（与 Wails v3 行为一致）。
+    /// </para>
+    /// </summary>
+    /// <param name="message">取消调用消息，载荷包含 <c>callId</c> 字段。</param>
+    /// <returns>固定返回成功响应（取消请求本身不携带错误）。</returns>
+    private ResponseMessage? ProcessCancel(Message message)
+    {
+        CancelCallPayload? cancelPayload;
+        try
+        {
+            cancelPayload = message.Payload.Deserialize<CancelCallPayload>(JsonOptions.DefaultSerializerOptions);
+        }
+        catch (JsonException)
+        {
+            return CreateErrorResponse(message.Id, "无效的取消调用载荷", CallErrorKind.TypeError);
         }
 
+        if (cancelPayload is null || string.IsNullOrEmpty(cancelPayload.CallId))
+        {
+            return CreateErrorResponse(message.Id, "缺少 callId 字段", CallErrorKind.TypeError);
+        }
+
+        // 查找并取消运行中调用。TryRemove 保证只取消一次，避免重复 Cancel 调用。
+        // 对应 Wails v3 messageprocessor_call.go processCallCancelMethod:
+        //   cancel = m.runningCalls[*callID]
+        //   if cancel != nil { cancel() }
+        if (_runningCalls.TryRemove(cancelPayload.CallId!, out var cts))
+        {
+            try
+            {
+                cts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // CTS 已被调用完成路径 dispose（极小概率的竞态），忽略。
+            }
+            // 注意：不在此 dispose cts，因为调用方的 finally 块负责 dispose。
+            // 此处只是触发取消信号，CTS 的 dispose 由创建者（ProcessCallAsync）的 using 块负责。
+        }
+
+        // 取消请求总是返回成功（即使 callId 不存在），匹配 Wails v3 行为。
         return new ResponseMessage
         {
             Id = message.Id,
             Type = MessageTypes.Response,
-            Result = result
+            Result = new Dictionary<string, object?>
+            {
+                ["result"] = true,
+                ["error"] = null
+            }
         };
     }
 
@@ -333,9 +447,11 @@ public class MessageProcessor
         // CommandDispatcher 会从 parametersElement 反序列化命令方法参数
         var request = new InvokeRequest(Guid.NewGuid(), message.Type, message.Payload);
 
-        // 创建带 WindowId 的上下文，使窗口命令能识别目标窗口
+        // 创建带 WindowId 和 WindowName 的上下文，使窗口命令能识别目标窗口，
+        // 并使 CommandDispatcher 能执行窗口级 Capability 运行时隔离（对应 Tauri v2 Capability.Windows）
+        // 同时传入 Origin 实现 Capability.remote 远程 URL 校验（对应 Tauri v2 Capability.remote）
         var ctx = _services is not null
-            ? new CommandContext(_services, message.WindowId, _cts.Token)
+            ? new CommandContext(_services, message.WindowId, _cts.Token, ResolveWindowName(message.WindowId), message.Origin)
             : null;
 
         var response = await _commands.DispatchAsync(request, ctx);
@@ -389,11 +505,15 @@ public class MessageProcessor
     /// <param name="commandName">命令名称。</param>
     /// <param name="args">JSON 参数数组。</param>
     /// <param name="windowId">窗口 ID（可为 null）。</param>
+    /// <param name="origin">调用来源 URL（可为 null），用于 Capability.remote 远程 URL 校验。</param>
+    /// <param name="cancellationToken">调用级取消令牌（P0-B1：支持取消运行中命令调用）。</param>
     /// <returns>调用结果字典；若命令派发抛出异常则返回包含错误的字典。</returns>
     private async Task<Dictionary<string, object?>?> TryDispatchCommandAsync(
         string commandName,
         JsonElement[] args,
-        uint? windowId)
+        uint? windowId,
+        string? origin,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -419,11 +539,14 @@ public class MessageProcessor
 
             var request = new InvokeRequest(Guid.NewGuid(), commandName, parametersElement);
 
-            // 创建带 WindowId 的上下文，使窗口命令能识别目标窗口。
+            // 创建带 WindowId 和 WindowName 的上下文，使窗口命令能识别目标窗口。
             // 借鉴 ASP.NET Core 的 DI 模式：CommandDispatcher 从 _services 获取依赖，
             // 命令方法通过 ICommandContext.WindowId 定位目标 WebviewWindow。
+            // 同时传入 WindowName 支持窗口级 Capability 运行时隔离。
+            // 同时传入 Origin 支持 Capability.remote 远程 URL 校验。
+            // P0-B1：使用调用级 cancellationToken 替代全局 _cts.Token，使前端可取消运行中命令。
             var ctx = _services is not null
-                ? new CommandContext(_services, windowId, _cts.Token)
+                ? new CommandContext(_services, windowId, cancellationToken, ResolveWindowName(windowId), origin)
                 : null;
             var response = await _commands!.DispatchAsync(request, ctx);
 
@@ -442,6 +565,11 @@ public class MessageProcessor
                 ["error"] = new CallError(response.Error ?? "命令调用失败", null, CallErrorKind.RuntimeError).ToJson()
             };
         }
+        catch (OperationCanceledException)
+        {
+            // 命令被取消，向上抛出由 ProcessCallAsync 统一处理为 "调用已被取消"。
+            throw;
+        }
         catch (Exception ex)
         {
             return new Dictionary<string, object?>
@@ -449,6 +577,29 @@ public class MessageProcessor
                 ["result"] = null,
                 ["error"] = new CallError(ex.Message, null, CallErrorKind.RuntimeError).ToJson()
             };
+        }
+    }
+
+    /// <summary>
+    /// 根据窗口 ID 解析窗口名称，用于窗口级 Capability 运行时隔离。
+    /// </summary>
+    /// <param name="windowId">窗口 ID，可为 null。</param>
+    /// <returns>窗口名称；若 <paramref name="windowId"/> 为 null 或查找失败则返回 null。</returns>
+    private string? ResolveWindowName(uint? windowId)
+    {
+        if (windowId is null || _windowLookup is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return _windowLookup(windowId.Value)?.Name;
+        }
+        catch
+        {
+            // 窗口查找失败时返回 null，权限校验退化为仅检查全局授权
+            return null;
         }
     }
 
@@ -972,6 +1123,15 @@ public class Message
     /// </summary>
     [JsonPropertyName("windowId")]
     public uint? WindowId { get; set; }
+
+    /// <summary>
+    /// 调用来源 URL（前端页面 origin），可为 null。
+    /// 用于 Capability.remote 字段的运行时校验：当权限附带远程 URL 限制时，
+    /// 调度器据此校验调用来源是否在允许模式集合内。
+    /// 本地源（wails://、http(s)://localhost、http(s)://127.0.0.1、null）始终允许。
+    /// </summary>
+    [JsonPropertyName("origin")]
+    public string? Origin { get; set; }
 }
 
 /// <summary>
@@ -996,6 +1156,24 @@ public class CallPayload
     /// </summary>
     [JsonPropertyName("args")]
     public JsonElement[]? Args { get; set; }
+}
+
+/// <summary>
+/// 取消运行中调用消息的载荷。
+/// 对应 Wails v3 Go 版本 messageprocessor_call.go 中 <c>processCallCancelMethod</c>
+/// 读取的 <c>args.AsMap().String("call-id")</c> 字段。
+/// </summary>
+public class CancelCallPayload
+{
+    /// <summary>
+    /// 要取消的调用 ID。
+    /// <para>
+    /// 此 ID 与原始 <see cref="Message.Id"/> 一致：前端 _wailsInvoke 生成 id 时同时作为消息 ID 和 call-id。
+    /// 对应 Wails v3 前端 calls.ts 中 <c>const id = generateID()</c> 同时用于 <c>callResponses</c> 键和 <c>"call-id"</c> 字段。
+    /// </para>
+    /// </summary>
+    [JsonPropertyName("callId")]
+    public string? CallId { get; set; }
 }
 
 /// <summary>

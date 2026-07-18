@@ -104,6 +104,14 @@ public static class CapabilityFileLoader
     /// <summary>
     /// 将加载的能力声明注册到权限管理器。
     /// 同时展开能力中的权限集引用，将细粒度权限授权给管理器。
+    /// 对应 Tauri v2 的窗口级 Capability 隔离和远程 URL 限制：
+    /// <list type="bullet">
+    /// <item>当 <see cref="Capability.Windows"/> 为空时，权限全局授权（应用于所有窗口）。</item>
+    /// <item>当 <see cref="Capability.Windows"/> 非空时，权限仅授权给列出的窗口（窗口级隔离）。</item>
+    /// <item>当 <see cref="Capability.Remote"/> 非空时，权限附带远程 URL 模式限制：
+    /// 远程调用来源必须匹配其中一个模式才能放行；本地源始终放行。
+    /// 对应 Tauri v2 Capability.remote 字段。</item>
+    /// </list>
     /// </summary>
     /// <param name="manager">权限管理器。</param>
     /// <param name="capabilities">要注册的能力声明列表。</param>
@@ -115,10 +123,52 @@ public static class CapabilityFileLoader
         foreach (var capability in capabilities)
         {
             manager.DeclareCapability(capability);
-            // 展开权限集并授权
-            foreach (var permission in capability.Permissions)
+
+            // 提取远程 URL 模式集合（可能为空，表示不限制远程来源）
+            var remotePatterns = capability.Remote is { Count: > 0 } remote
+                ? remote
+                : null;
+
+            // 按 capability.Windows 分发授权或拒绝：
+            // - Windows 为空 → 全局（所有窗口可用/拒绝）
+            // - Windows 非空 → 窗口级（仅列出的窗口可用/拒绝）
+            // 同时透传 Remote 模式集合（仅 grant 时有效），使运行时校验远程来源是否匹配。
+            //
+            // 权限标识支持 "!" 前缀语法（对应 Tauri v2 Capability.Permissions）：
+            // - "fs:allow-read" → 调用 manager.Grant 授权该权限
+            // - "!fs:allow-read" → 调用 manager.Deny 显式拒绝该权限（deny 优先于 grant）
+            if (capability.Windows.Count == 0)
             {
-                manager.Grant(permission);
+                foreach (var permission in capability.Permissions)
+                {
+                    if (permission.StartsWith("!"))
+                    {
+                        // 显式拒绝：剥离 "!" 前缀后调用 Deny
+                        // 注意：Deny 不需要 remotePatterns，因为拒绝本身就是无条件的
+                        manager.Deny(permission[1..], windowName: null);
+                    }
+                    else
+                    {
+                        manager.Grant(permission, windowName: null, remotePatterns);
+                    }
+                }
+            }
+            else
+            {
+                foreach (var windowName in capability.Windows)
+                {
+                    foreach (var permission in capability.Permissions)
+                    {
+                        if (permission.StartsWith("!"))
+                        {
+                            manager.Deny(permission[1..], windowName);
+                        }
+                        else
+                        {
+                            manager.Grant(permission, windowName, remotePatterns);
+                        }
+                    }
+                }
             }
         }
     }

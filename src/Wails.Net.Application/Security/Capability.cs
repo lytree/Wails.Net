@@ -2,7 +2,7 @@ namespace Wails.Net.Application.Security;
 
 /// <summary>
 /// 能力声明，定义应用所需的权限及作用窗口范围。
-/// 对应 Tauri v2 的 Capability 模型：一个能力包含多个权限标识，可限定到特定窗口。
+/// 对应 Tauri v2 的 Capability 模型：一个能力包含多个权限标识，可限定到特定窗口和远程来源 URL。
 /// 同时作为运行时能力声明（供 <see cref="PermissionManager"/> 校验）和配置层模型（从 appsettings.json 加载）。
 /// </summary>
 public sealed class Capability
@@ -30,6 +30,14 @@ public sealed class Capability
     /// 对应 Tauri v2 的窗口级能力隔离。
     /// </summary>
     public List<string> Windows { get; set; } = new();
+
+    /// <summary>
+    /// 获取或设置应用此能力的远程来源 URL 模式列表（如 "https://*.example.com"）。
+    /// 空列表表示不限制远程来源（仅本地源可用，或全局生效）。
+    /// 对应 Tauri v2 Capability.remote 字段：
+    /// 限制哪些远程页面可以调用此能力包含的命令。
+    /// </summary>
+    public List<string> Remote { get; set; } = new();
 
     /// <summary>
     /// 获取或设置所属插件名称（运行时由插件声明时填充）。

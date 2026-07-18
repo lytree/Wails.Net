@@ -326,12 +326,30 @@ public class Application
             EnvironmentManager = environmentManager;
         }
 
-        // 连接传输层事件监听器到事件处理器（_events 为只读字段，仅设置监听器而非替换实例）
+        // 连接传输层事件监听器到事件处理器。
+        // 对应 Wails v3 Go 版本 application.go 中的 wailsEventListeners 列表追加机制：
+        //   - 若主 Transport 实现了 IWailsEventListener（如 HttpTransport/WebSocketTransport），追加到列表。
+        //   - **永远追加 EventIPCTransport 作为兜底**，确保桌面端 webview 通过 ExecJS 直接收到事件，
+        //     即使主 Transport 的 WebSocket 通道无客户端连接。
+        //   - 这对应 Wails v3 中 EventIPCTransport 的自动追加逻辑：
+        //     if _, ok := transport.(WailsEventListener); !ok {
+        //         result.wailsEventListeners = append(result.wailsEventListeners, &EventIPCTransport{app: result})
+        //     }
+        //   - Wails.Net 更激进：永远追加，因为 HttpTransport 实现了 IWailsEventListener
+        //     但其内部依赖 WebSocketBroadcaster，无 WS 客户端时事件丢失。EventIPCTransport 通过
+        //     ExecJS 注入可弥补此缺陷，与主 Transport 同时工作不冲突。
         var listener = serviceProvider.GetService<IWailsEventListener>();
         if (listener is not null)
         {
-            _events.SetWailsEventListener(listener);
+            _events.AddWailsEventListener(listener);
         }
+
+        // 始终追加 EventIPCTransport 作为兜底，确保桌面端事件必达。
+        // P0-A1：EventIPCTransport 兜底机制对齐 Wails v3。
+        // P0-D：注入 ILogger<EventIPCTransport> 以便记录事件派发失败日志，
+        // 支持结构化日志诊断。NativeIpcTransport 协作由 NotifyEvent 内部完成。
+        var eventIpcLogger = serviceProvider.GetService<ILogger<EventIPCTransport>>();
+        _events.AddWailsEventListener(new EventIPCTransport(eventIpcLogger!));
 
         // 从 DI 容器获取 PluginManager 并收集已注册的插件实例。
         // 对应主题 B：插件生命周期对齐。PluginManager 由 UsePlugin 注册为单例，
@@ -389,6 +407,23 @@ public class Application
     {
         get => _assetServer;
         set => _assetServer = value;
+    }
+
+    /// <summary>
+    /// 为指定窗口注册 CSP 到 <see cref="AssetServer"/>（P0-4 新增，对应 Tauri v2 per-window CSP）。
+    /// 仅当 <paramref name="csp"/> 非空且 <c>Enabled=true</c> 时注册。
+    /// 调用方应在创建窗口前调用此方法，确保资源请求拦截时 CSP 已就绪。
+    /// </summary>
+    /// <param name="windowName">窗口名称；为 null 或空时不注册（回退到全局 CSP）。</param>
+    /// <param name="csp">窗口级 CSP 配置；为 null 时不注册。</param>
+    internal void RegisterWindowCsp(string? windowName, Wails.Net.Application.Security.CspOptions? csp)
+    {
+        if (string.IsNullOrEmpty(windowName) || csp is null || !csp.Enabled || _assetServer is null)
+        {
+            return;
+        }
+
+        _assetServer.SetCspHeaderForWindow(windowName, csp.BuildHeader());
     }
 
     /// <summary>
@@ -496,6 +531,40 @@ public class Application
     /// 获取窗口管理器实例，若平台应用未设置则返回 null。
     /// </summary>
     public IWindowManager? WindowManager => _windowManager;
+
+    /// <summary>
+    /// 获取原生 IPC 传输层实例（P0-C2），若未启用则返回 null。
+    /// <para>
+    /// 默认情况下（<see cref="UseNativeIpc"/> = <c>true</c>）应用启动时构造此实例，
+    /// 平台 <c>IPlatformApp.CreateWebviewWindow</c> 在创建窗口后调用
+    /// <see cref="INativeIpcTransport.RegisterWindow"/> 注册窗口。
+    /// </para>
+    /// <para>
+    /// 启用后，前端小消息（&lt; 512KB）通过 WebView 原生 postMessage 通道传输，
+    /// 替代 HTTP fetch 路径以降低延迟；大消息仍走 HTTP 分块上传。
+    /// </para>
+    /// </summary>
+    public INativeIpcTransport? NativeIpcTransport { get; private set; }
+
+    /// <summary>
+    /// 获取或设置是否启用原生 IPC 传输通道（P0-C2）。
+    /// <para>
+    /// 默认为 <c>true</c>：桌面端默认启用原生 postMessage 副通道，降低小消息延迟。
+    /// 设置为 <c>false</c> 可禁用此通道（如纯 Server 模式或无 WebView 的容器化部署）。
+    /// </para>
+    /// <para>
+    /// 启用时：
+    /// <list type="bullet">
+    /// <item>应用启动时构造 <see cref="INativeIpcTransport"/> 实例。</item>
+    /// <item>替换 <see cref="EventIPCTransport"/> 作为事件广播通道。</item>
+    /// <item>前端运行时自动探测原生通道并优先使用。</item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// 必须在应用启动前（<see cref="Run"/> 调用前）设置。
+    /// </para>
+    /// </summary>
+    public bool UseNativeIpc { get; set; } = true;
 
     /// <summary>
     /// 获取对话框管理器实例，若平台应用未设置则返回 null。
@@ -723,6 +792,9 @@ public class Application
         var window = new WebviewWindow(id, options.Name, options);
         _windows[id] = window;
 
+        // P0-4：注册窗口级 CSP 到 AssetServer（在平台创建窗口前完成，确保资源请求拦截时 CSP 已就绪）
+        RegisterWindowCsp(options.Name, options.Csp);
+
         _platformApp?.CreateWebviewWindow(id, options);
 
         return window;
@@ -788,6 +860,35 @@ public class Application
     }
 
     /// <summary>
+    /// 初始化原生 IPC 传输层（P0-C2）。
+    /// <para>
+    /// 仅当 <see cref="UseNativeIpc"/> 为 <c>true</c> 时执行：
+    /// <list type="number">
+    /// <item>确保 <see cref="MessageProcessor"/> 已构造（懒初始化）。</item>
+    /// <item>构造 <see cref="NativeIpcTransport"/> 实例并保存到 <see cref="NativeIpcTransport"/> 属性。</item>
+    /// <item>注册为事件监听器，替代 <see cref="EventIPCTransport"/> 作为事件广播通道。</item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// 之后平台 <c>IPlatformApp.CreateWebviewWindow</c> 在创建窗口后会调用
+    /// <see cref="INativeIpcTransport.RegisterWindow"/> 完成窗口级回调注册。
+    /// </para>
+    /// </summary>
+    private void InitializeNativeIpcTransport()
+    {
+        if (!UseNativeIpc)
+        {
+            return;
+        }
+
+        // 确保 MessageProcessor 已构造（NativeIpcTransport 需要它来路由消息）
+        _messageProcessor ??= new MessageProcessor(_bindings, _events, id => GetWindow(id), _commandDispatcher, _serviceProvider);
+
+        NativeIpcTransport = new NativeIpcTransport(_messageProcessor);
+        _events.AddWailsEventListener(NativeIpcTransport);
+    }
+
+    /// <summary>
     /// 运行应用主循环。
     /// 执行单实例检查、启动服务（按注册顺序）、启动资源服务器、启动传输层，
     /// 然后进入平台主循环（阻塞）。主循环退出后执行清理。
@@ -834,6 +935,10 @@ public class Application
         {
             _transport.StartAsync(_cts.Token).GetAwaiter().GetResult();
         }
+
+        // P0-C2：初始化原生 IPC 传输层（若启用）。
+        // 必须在传输层启动后、窗口创建前完成，以便平台 CreateWebviewWindow 能注册窗口。
+        InitializeNativeIpcTransport();
 
         // 触发 OnStartup 回调
         _options.OnStartup?.Invoke();
@@ -1254,6 +1359,45 @@ public class Application
             IsServerMode = _platformApp is null or Platform.ServerMode.ServerPlatformApp,
         };
 
+        // P0-D：Server 模式事件 API 完善 — 将传输层 URL 注入 RuntimeOptions，
+        // 使 ServerRuntime 生成的 JS 客户端代码能连接到正确的 WebSocket 端点。
+        // 对应 Wails v3 中通过 wails:// 将 transport 信息注入到前端 runtime 的机制。
+        if (options.IsServerMode)
+        {
+            if (_transport is WebSocketTransport wsTransport)
+            {
+                options.WebSocketUrl = wsTransport.WebSocketUrl;
+                options.AssetServerUrl = wsTransport.BaseUrl;
+            }
+            else if (_transport is HttpTransport httpTransport)
+            {
+                options.AssetServerUrl = httpTransport.BaseUrl;
+            }
+        }
+
         return RuntimeGenerator.Generate(options);
+    }
+
+    /// <summary>
+    /// 向所有已连接的前端客户端广播事件（P0-D：Server 模式事件 API 完善）。
+    /// <para>
+    /// 统一的事件广播入口，无论当前是桌面模式还是 Server 模式，均通过此方法广播事件：
+    /// <list type="bullet">
+    /// <item>桌面模式：通过 <see cref="NativeIpcTransport"/>（已注册窗口时）或
+    /// <see cref="EventIPCTransport"/>（无窗口兜底）将事件注入到 webview。</item>
+    /// <item>Server 模式：通过 <see cref="WebSocketTransport"/> 将事件推送到所有
+    /// 已连接的 WebSocket 客户端，前端 <c>ServerRuntime</c> 接收并触发本地回调。</item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// 对应 Wails v3 Go 版本 <c>Application.EmitEvent(name, data)</c>，
+    /// 与直接调用 <see cref="Events.Emit(name, data)"/> 等价，提供更直观的 API 表面。
+    /// </para>
+    /// </summary>
+    /// <param name="eventName">事件名称。</param>
+    /// <param name="data">事件数据，可为 null。</param>
+    public void BroadcastEvent(string eventName, object? data = null)
+    {
+        _events.Emit(eventName, data, null);
     }
 }

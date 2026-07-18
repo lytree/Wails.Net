@@ -1,3 +1,4 @@
+using Wails.Net.Application.Security;
 using Wails.Net.Application.Windows;
 
 namespace Wails.Net.Application.Options;
@@ -236,4 +237,11 @@ public class WebviewWindowOptions
     /// 是否显示开发者工具。
     /// </summary>
     public bool ShowDevmodeEnabled { get; set; } = false;
+
+    /// <summary>
+    /// 窗口级内容安全策略（CSP）配置。
+    /// 对应 Tauri v2 的 per-window CSP：覆盖 <see cref="ApplicationOptions.Csp"/> 全局配置。
+    /// 为 null 时回退到全局 CSP；设置为 <c>CspOptions.Enabled = false</c> 可禁用此窗口的 CSP。
+    /// </summary>
+    public CspOptions? Csp { get; set; }
 }

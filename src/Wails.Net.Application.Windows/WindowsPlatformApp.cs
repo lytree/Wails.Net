@@ -475,6 +475,12 @@ public sealed class WindowsPlatformApp : IPlatformApp
             }
         }
 
+        // P0-C2：若原生 IPC 已启用，将窗口注册到 NativeIpcTransport。
+        // 注册过程会调用 window.SetNativeMessageHandler 安装消息路由回调，
+        // 使 WebView2 的 WebMessageReceived 事件转发至 NativeIpcTransport.HandleIncomingAsync。
+        // 对应 Wails v3 runtime_windows.go 中 window.chrome.webview.postMessage 的接收端。
+        Application.Get()?.NativeIpcTransport?.RegisterWindow(id, window);
+
         // 显示窗口。Win32 CreateWindowEx 默认创建不可见窗口（无 WS_VISIBLE 样式），
         // 必须显式调用 ShowWindow 才能显示。对应 Wails v3 Go 版本中
         // window.Show() 的调用。

@@ -29,12 +29,20 @@ public sealed class WailsWebViewClient : WebViewClient
     private readonly Wails.Net.AssetServer.AssetServer? _assetServer;
 
     /// <summary>
+    /// 关联的窗口名称，用于 per-window CSP 注入（P0-4，对应 Tauri v2 per-window CSP）。
+    /// 可为 null（未指定窗口名时，不注入窗口级 CSP，仅回退到全局）。
+    /// </summary>
+    private readonly string? _windowName;
+
+    /// <summary>
     /// 构造 WailsWebViewClient 实例。
     /// </summary>
     /// <param name="assetServer">静态资源服务器引用，可为 null。</param>
-    public WailsWebViewClient(Wails.Net.AssetServer.AssetServer? assetServer)
+    /// <param name="windowName">关联的窗口名称，用于 per-window CSP 注入；可为 null。</param>
+    public WailsWebViewClient(Wails.Net.AssetServer.AssetServer? assetServer, string? windowName = null)
     {
         _assetServer = assetServer;
+        _windowName = windowName;
     }
 
     /// <summary>
@@ -80,7 +88,8 @@ public sealed class WailsWebViewClient : WebViewClient
         // 同步调用 AssetServer（ShouldInterceptRequest 不支持 async）。
         // 当前 AssetServer 中间件链基于 Task.FromResult 包装同步 AssetManager.Open 调用，
         // 实际无真正异步 I/O，不会死锁。
-        var content = _assetServer.ServeAsync(assetPath).GetAwaiter().GetResult();
+        // P0-4：传递窗口名称以支持 per-window CSP 注入
+        var content = _assetServer.ServeAsync(assetPath, _windowName).GetAwaiter().GetResult();
         if (content is not null && content.Length > 0)
         {
             var mimeType = _assetServer.GetMimeType(assetPath);
@@ -90,7 +99,7 @@ public sealed class WailsWebViewClient : WebViewClient
         // SPA 路由回退：无扩展名的路径（非 /api/）回退到 index.html
         if (ShouldFallbackToIndex(assetPath))
         {
-            var fallbackContent = _assetServer.ServeAsync("index.html").GetAwaiter().GetResult();
+            var fallbackContent = _assetServer.ServeAsync("index.html", _windowName).GetAwaiter().GetResult();
             if (fallbackContent is not null && fallbackContent.Length > 0)
             {
                 return new WebResourceResponse("text/html", "utf-8", new MemoryStream(fallbackContent));

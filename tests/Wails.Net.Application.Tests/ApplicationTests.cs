@@ -1,6 +1,8 @@
+using System.Text;
 using TUnit.Core;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform.ServerMode;
+using Wails.Net.Application.Security;
 using Wails.Net.Application.Windows;
 
 namespace Wails.Net.Application.Tests;
@@ -116,6 +118,158 @@ public sealed class ApplicationTests
 
         // 操作与断言
         await Assert.That(app.GetWindowByName("UnknownName")).IsNull();
+    }
+
+    // ========== P0-4：per-window CSP 集成测试（对应 Tauri v2 per-window CSP）==========
+
+    /// <summary>
+    /// 测试用 AssetServer 子类，允许直接注入字节数组作为资源内容。
+    /// </summary>
+    private sealed class StubAssetServer : Wails.Net.AssetServer.AssetServer
+    {
+        private readonly Func<string, byte[]?> _reader;
+
+        public StubAssetServer(Func<string, byte[]?> reader)
+            : base(new Wails.Net.AssetServer.AssetOptions { Handler = "stub" })
+        {
+            _reader = reader;
+        }
+
+        protected override byte[]? ReadAssetCore(string path)
+        {
+            return _reader(path) ?? base.ReadAssetCore(path);
+        }
+    }
+
+    [Test]
+    public async Task CreateWebviewWindow_WithCsp_RegistersWindowCspToAssetServer()
+    {
+        // 安排
+        var app = new Application(new ApplicationOptions());
+        var assetServer = new StubAssetServer(_ => Encoding.UTF8.GetBytes("<html><head></head><body></body></html>"));
+        app.AssetServer = assetServer;
+
+        var options = new WebviewWindowOptions
+        {
+            Name = "main",
+            Csp = new CspOptions { DefaultSrc = "'none'", Enabled = true }
+        };
+
+        // 操作
+        app.CreateWebviewWindow(options);
+
+        // 断言：通过 ServeAsync(path, "main") 注入的 CSP 应来自窗口级配置
+        var content = await assetServer.ServeAsync("/index.html", "main");
+        var html = Encoding.UTF8.GetString(content);
+        await Assert.That(html).Contains("default-src 'none'");
+    }
+
+    [Test]
+    public async Task CreateWebviewWindow_WithoutCsp_DoesNotRegisterWindowCsp()
+    {
+        // 安排
+        var app = new Application(new ApplicationOptions());
+        var assetServer = new StubAssetServer(_ => Encoding.UTF8.GetBytes("<html><head></head><body></body></html>"));
+        app.AssetServer = assetServer;
+
+        // 操作：未设置 Csp
+        app.CreateWebviewWindow(new WebviewWindowOptions { Name = "main" });
+
+        // 断言：未注册窗口级 CSP，未设置全局 → ServeAsync 返回原始内容
+        var content = await assetServer.ServeAsync("/index.html", "main");
+        await Assert.That(content).IsEquivalentTo(Encoding.UTF8.GetBytes("<html><head></head><body></body></html>"));
+    }
+
+    [Test]
+    public async Task CreateWebviewWindow_WithDisabledCsp_DoesNotRegisterWindowCsp()
+    {
+        // 安排
+        var app = new Application(new ApplicationOptions());
+        var assetServer = new StubAssetServer(_ => Encoding.UTF8.GetBytes("<html><head></head><body></body></html>"));
+        app.AssetServer = assetServer;
+
+        var options = new WebviewWindowOptions
+        {
+            Name = "main",
+            Csp = new CspOptions { Enabled = false } // 显式禁用
+        };
+
+        // 操作
+        app.CreateWebviewWindow(options);
+
+        // 断言：Enabled=false 时不注册 → 未注入 CSP
+        var content = await assetServer.ServeAsync("/index.html", "main");
+        await Assert.That(content).IsEquivalentTo(Encoding.UTF8.GetBytes("<html><head></head><body></body></html>"));
+    }
+
+    [Test]
+    public async Task CreateWebviewWindow_WithCsp_WindowLevelOverridesGlobal()
+    {
+        // 安排
+        var app = new Application(new ApplicationOptions());
+        var assetServer = new StubAssetServer(_ => Encoding.UTF8.GetBytes("<html><head></head><body></body></html>"));
+        app.AssetServer = assetServer;
+        assetServer.SetCspHeader("default-src 'self'"); // 全局 CSP
+
+        var options = new WebviewWindowOptions
+        {
+            Name = "main",
+            Csp = new CspOptions { DefaultSrc = "'none'", Enabled = true } // 窗口级覆盖
+        };
+
+        // 操作
+        app.CreateWebviewWindow(options);
+
+        // 断言：窗口级 CSP 优先于全局
+        var content = await assetServer.ServeAsync("/index.html", "main");
+        var html = Encoding.UTF8.GetString(content);
+        await Assert.That(html).Contains("default-src 'none'");
+        await Assert.That(html.Contains("default-src 'self'", StringComparison.Ordinal)).IsFalse();
+    }
+
+    [Test]
+    public async Task RegisterWindowCsp_WithNullCsp_DoesNothing()
+    {
+        // 安排
+        var app = new Application(new ApplicationOptions());
+        var assetServer = new StubAssetServer(_ => Encoding.UTF8.GetBytes("<html></html>"));
+        app.AssetServer = assetServer;
+
+        // 操作：csp 参数为 null
+        app.RegisterWindowCsp("main", null);
+
+        // 断言：未注册任何 CSP
+        var content = await assetServer.ServeAsync("/index.html", "main");
+        await Assert.That(content).IsEquivalentTo(Encoding.UTF8.GetBytes("<html></html>"));
+    }
+
+    [Test]
+    public async Task RegisterWindowCsp_WithNullOrEmptyWindowName_DoesNothing()
+    {
+        // 安排
+        var app = new Application(new ApplicationOptions());
+        var assetServer = new StubAssetServer(_ => Encoding.UTF8.GetBytes("<html></html>"));
+        app.AssetServer = assetServer;
+
+        // 操作：windowName 为 null/空
+        app.RegisterWindowCsp(null, new CspOptions { Enabled = true });
+        app.RegisterWindowCsp("", new CspOptions { Enabled = true });
+
+        // 断言：未注册窗口级 CSP（但 SetCspHeaderForWindow(null, ...) 会设置全局 _cspHeader）
+        // 这里 RegisterWindowCsp 内部直接 return，不调用 SetCspHeaderForWindow
+        var content = await assetServer.ServeAsync("/index.html", "main");
+        await Assert.That(content).IsEquivalentTo(Encoding.UTF8.GetBytes("<html></html>"));
+    }
+
+    [Test]
+    public async Task RegisterWindowCsp_WithNoAssetServer_DoesNothing()
+    {
+        // 安排：未设置 AssetServer
+        var app = new Application(new ApplicationOptions());
+
+        // 操作与断言：不应抛异常
+        app.RegisterWindowCsp("main", new CspOptions { Enabled = true });
+        await Assert.That(app.AssetServer).IsNull();
     }
 
     [Test]

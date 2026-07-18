@@ -20,9 +20,19 @@ public class EventProcessor
     private readonly List<Func<CustomEvent, bool>> _hooks = new();
 
     /// <summary>
-    /// 用于事件广播到传输层的监听器接口（如 IPC、WebSocket）。
+    /// 用于事件广播到传输层的监听器列表（如 IPC、WebSocket、EventIPC 兜底）。
+    /// 对应 Wails v3 Go 版本 application.go 中的 <c>wailsEventListeners []WailsEventListener</c> 字段。
+    /// <para>
+    /// 列表设计支持多种传输层并行广播事件：例如 HttpTransport 推送给 WebSocket 客户端的同时，
+    /// EventIPCTransport 通过 ExecJS 注入到桌面端 webview。
+    /// </para>
     /// </summary>
-    private IWailsEventListener? _wailsEventListener;
+    private readonly List<IWailsEventListener> _wailsEventListeners = new();
+
+    /// <summary>
+    /// 保护 <see cref="_wailsEventListeners"/> 的锁。
+    /// </summary>
+    private readonly object _listenersLock = new();
 
     /// <summary>
     /// 用于生成唯一监听器 ID 的计数器。
@@ -31,11 +41,61 @@ public class EventProcessor
 
     /// <summary>
     /// 设置传输层事件监听器，用于将事件广播到前端。
+    /// <para>
+    /// <b>兼容性说明</b>：此方法清除已有监听器列表后只保留单个监听器。
+    /// 推荐使用 <see cref="AddWailsEventListener"/> 追加监听器以支持多传输层并行广播。
+    /// </para>
     /// </summary>
     /// <param name="listener">传输层事件监听器。</param>
     public void SetWailsEventListener(IWailsEventListener listener)
     {
-        _wailsEventListener = listener;
+        lock (_listenersLock)
+        {
+            _wailsEventListeners.Clear();
+            _wailsEventListeners.Add(listener);
+        }
+    }
+
+    /// <summary>
+    /// 追加传输层事件监听器，支持多传输层并行广播事件。
+    /// 对应 Wails v3 Go 版本中 <c>App.wailsEventListeners = append(..., listener)</c> 的追加语义。
+    /// <para>
+    /// 典型用法：主 Transport（HttpTransport/WebSocketTransport）+ EventIPCTransport 兜底同时追加，
+    /// 确保事件可通过 WebSocket 推送到远程客户端的同时，也通过 ExecJS 注入到桌面端 webview。
+    /// </para>
+    /// </summary>
+    /// <param name="listener">要追加的传输层事件监听器。</param>
+    public void AddWailsEventListener(IWailsEventListener listener)
+    {
+        ArgumentNullException.ThrowIfNull(listener);
+        lock (_listenersLock)
+        {
+            _wailsEventListeners.Add(listener);
+        }
+    }
+
+    /// <summary>
+    /// 移除指定的传输层事件监听器。
+    /// </summary>
+    /// <param name="listener">要移除的传输层事件监听器。</param>
+    /// <returns>成功移除返回 true，否则返回 false。</returns>
+    public bool RemoveWailsEventListener(IWailsEventListener listener)
+    {
+        lock (_listenersLock)
+        {
+            return _wailsEventListeners.Remove(listener);
+        }
+    }
+
+    /// <summary>
+    /// 清除所有传输层事件监听器。
+    /// </summary>
+    public void ClearWailsEventListeners()
+    {
+        lock (_listenersLock)
+        {
+            _wailsEventListeners.Clear();
+        }
     }
 
     /// <summary>
@@ -119,8 +179,40 @@ public class EventProcessor
             return;
         }
 
-        // 通知传输层监听器（广播到前端）
-        _wailsEventListener?.NotifyEvent(name, data);
+        // 通知传输层监听器（广播到前端）。
+        // 对应 Wails v3 Go 版本 application.go 中的并行 goroutine 派发：
+        //   go dispatchEventToListeners(event)
+        //   go dispatchEventToWindows(event)
+        // 此处采用同步遍历保持简单，监听器实现应自行处理线程安全与异步派发。
+        // 拷贝一份列表避免在锁外枚举时被并发修改。
+        List<IWailsEventListener> snapshot;
+        lock (_listenersLock)
+        {
+            if (_wailsEventListeners.Count == 0)
+            {
+                snapshot = null!;
+            }
+            else
+            {
+                snapshot = new List<IWailsEventListener>(_wailsEventListeners);
+            }
+        }
+
+        if (snapshot is not null)
+        {
+            foreach (var listener in snapshot)
+            {
+                try
+                {
+                    listener.NotifyEvent(name, data);
+                }
+                catch
+                {
+                    // 单个监听器异常不应影响其他监听器或本地订阅者。
+                    // 对应 Wails v3 Go 版本 dispatchEventToWindows 中每个窗口独立 dispatch 的容错语义。
+                }
+            }
+        }
 
         // 通知本地订阅者
         if (_listeners.TryGetValue(name, out var listeners))

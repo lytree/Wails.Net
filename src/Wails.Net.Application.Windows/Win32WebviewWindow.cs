@@ -284,6 +284,14 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     private bool _runtimeInjected;
 
     /// <summary>
+    /// 原生 IPC 消息处理器（P0-C2）。
+    /// 当通过 <see cref="SetNativeMessageHandler"/> 注册后，前端 <c>postMessage</c> 发送的消息
+    /// 会路由到此处理器，而非默认的 <c>Application.HandleMessageFromFrontend</c> 路径。
+    /// 为 null 时保持原有行为。
+    /// </summary>
+    private Func<string, Task>? _nativeMessageHandler;
+
+    /// <summary>
     /// 窗口是否曾处于最小化状态，用于 SIZE_RESTORED 时判断是否应触发 WindowUnminimised 事件。
     /// </summary>
     private bool _wasMinimised;
@@ -674,7 +682,8 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                 }
 
                 // 同步读取资源，避免 await 导致后续在线程池线程执行
-                var content = assetServer.ServeAsync(assetPath).GetAwaiter().GetResult();
+                // P0-4：传递窗口名称以支持 per-window CSP 注入
+                var content = assetServer.ServeAsync(assetPath, _options.Name).GetAwaiter().GetResult();
                 if (content is not null && content.Length > 0)
                 {
                     // 使用 assetPath（已规范化为 index.html 等）而非原始 path（可能是 "/"）
@@ -693,7 +702,7 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                     !assetPath.Equals("index.html", StringComparison.OrdinalIgnoreCase) &&
                     !Path.HasExtension(assetPath))
                 {
-                    var fallbackContent = assetServer.ServeAsync("index.html").GetAwaiter().GetResult();
+                    var fallbackContent = assetServer.ServeAsync("index.html", _options.Name).GetAwaiter().GetResult();
                     if (fallbackContent is not null && fallbackContent.Length > 0)
                     {
                         var ms = new MemoryStream(fallbackContent);
@@ -725,7 +734,11 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     /// 对应 Wails v3 Go 版本中的 onWebMessageReceived。
     /// 接收前端通过 window.chrome.webview.postMessage() 发送的消息，
     /// 优先识别 <see cref="DragMessageType"/> 拖拽请求并直接调用 <see cref="StartDrag"/>，
-    /// 其他消息转发到 Application.HandleMessageFromFrontend 进行 IPC 消息处理。
+    /// 然后按以下优先级路由：
+    /// <list type="number">
+    /// <item>若已注册 <see cref="_nativeMessageHandler"/>（P0-C2），路由到原生 IPC 通道。</item>
+    /// <item>否则回退到 <see cref="Application.HandleMessageFromFrontend"/> 标准 HTTP 路径。</item>
+    /// </list>
     /// </summary>
     /// <param name="sender">事件发送者。</param>
     /// <param name="args">WebMessageReceived 事件参数。</param>
@@ -746,6 +759,16 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                 return;
             }
 
+            // P0-C2：若已注册原生 IPC 处理器，优先路由到原生通道。
+            // NativeIpcTransport.HandleIncomingAsync 会解析消息、调用 MessageProcessor、
+            // 并通过 PostNativeMessageAsync 将响应回推到前端。
+            if (_nativeMessageHandler is not null)
+            {
+                await _nativeMessageHandler(message);
+                return;
+            }
+
+            // 回退路径：未启用原生 IPC 时，使用标准 Application.HandleMessageFromFrontend。
             var app = Application.Get();
             if (app is not null)
             {
@@ -756,6 +779,32 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         {
             // 消息处理异常时忽略，避免中断 WebView2 消息循环
         }
+    }
+
+    /// <summary>
+    /// 注册原生 postMessage 消息处理器（P0-C2）。
+    /// 重写 <see cref="IWebviewWindowImpl.SetNativeMessageHandler"/> 默认实现。
+    /// 注册后，<see cref="OnWebMessageReceived"/> 会将非拖拽消息路由到此处理器。
+    /// </summary>
+    /// <param name="callback">消息回调，参数为前端发送的原始字符串内容。传 null 取消注册。</param>
+    public void SetNativeMessageHandler(Func<string, Task>? callback)
+    {
+        _nativeMessageHandler = callback;
+    }
+
+    /// <summary>
+    /// 通过 WebView2 原生 postMessage 通道向前端推送消息（P0-C2）。
+    /// 重写 <see cref="IWebviewWindowImpl.PostNativeMessageAsync"/> 默认实现。
+    /// 直接调用 <c>CoreWebView2.PostWebMessageAsString</c>，绕过 ExecJS 注入路径。
+    /// 前端通过 <c>window.chrome.webview.addEventListener('message', e =&gt; ...)</c> 接收。
+    /// </summary>
+    /// <param name="message">要推送的 JSON 字符串。</param>
+    /// <returns>表示推送操作的异步任务。</returns>
+    public Task PostNativeMessageAsync(string message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        _webview?.PostWebMessageAsString(message);
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -1614,6 +1663,10 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         }
 
         _closed = true;
+
+        // P0-C2：从 NativeIpcTransport 注销窗口，避免向已销毁窗口投递消息。
+        // 对应 Wails v3 runtime_windows.go 中关闭窗口时移除 postMessage 路由。
+        Application.Get()?.NativeIpcTransport?.UnregisterWindow(_id);
 
         if (!_hwnd.IsNull)
         {

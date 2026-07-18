@@ -8,7 +8,7 @@
 ## 1. 项目背景
 
 - **项目**：Wails.Net — Wails v3 (Go) 的 .NET 10 移植实现
-- **参考版本**：`wails v3.0.0-alpha.102`
+- **参考版本**：`wails v3.0.0-*`
 - **目标平台**：Windows、Linux、Android（macOS/iOS 暂不实现）
 - **实施计划**：详见 `.trae/documents/wails-net-dotnet10-implementation-plan.md`
 
