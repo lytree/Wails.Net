@@ -373,7 +373,7 @@ public sealed class MenuRoleTests
 
         // None 角色不应改写 Label 或 Callback
         await Assert.That(item.Label).IsEqualTo("Original");
-        await Assert.That(item.Callback!).IsNull();
+        await Assert.That(item.Callback is null).IsTrue();
     }
 
     [Test]
