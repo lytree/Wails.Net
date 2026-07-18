@@ -1,6 +1,6 @@
 # Wails.Net 插件开发指南
 
-本文档介绍如何开发和使用 Wails.Net 插件。
+本文档介绍如何开发和使用 Wails.Net 插件。Wails.Net 内置 **41 个插件**（37 桌面 + 4 移动端），覆盖系统、文件、网络、窗口、数据、更新、移动端等场景。
 
 ## 插件概念
 
@@ -172,6 +172,8 @@ context.Commands.MapCommand("myapp.work", (Func<ICommandContext, CancellationTok
 
 ## 内置插件列表
 
+Wails.Net 内置 41 个插件，按用途分类如下：
+
 ### 系统类插件
 
 | 插件 | 命令前缀 | 功能 |
@@ -180,6 +182,7 @@ context.Commands.MapCommand("myapp.work", (Func<ICommandContext, CancellationTok
 | `AppInfoPlugin` | `appinfo.*` | 应用信息（名称、版本、路径） |
 | `ClipboardPlugin` | `clipboard.*` | 剪贴板读写（文本、文件、图片） |
 | `NotificationPlugin` | `notification.*` | 系统通知发送 |
+| `DpiScalePlugin` | `dpi.*` | DPI 缩放查询与设置 |
 
 ### 文件类插件
 
@@ -203,9 +206,12 @@ context.Commands.MapCommand("myapp.work", (Func<ICommandContext, CancellationTok
 
 | 插件 | 命令前缀 | 功能 |
 |------|----------|------|
+| `WindowPlugin` | `window.*` | 当前窗口操作（P0：CSS 变量拖拽） |
+| `WindowsPlugin` | `windows.*` | 多窗口管理（getAll/setTitle 等） |
 | `WindowStatePlugin` | `windowstate.*` | 窗口状态持久化 |
 | `PositionerPlugin` | `positioner.*` | 窗口定位（9 种方位） |
 | `DeepLinkPlugin` | `deeplink.*` | 深度链接注册 |
+| `FileAssociationPlugin` | `fileassoc.*` | 文件关联 |
 
 ### 数据类插件
 
@@ -214,23 +220,123 @@ context.Commands.MapCommand("myapp.work", (Func<ICommandContext, CancellationTok
 | `StorePlugin` | `store.*` | 键值存储（持久化） |
 | `SqlPlugin` | `sql.*` | SQLite 数据库 |
 | `StrongholdPlugin` | `stronghold.*` | 加密存储（AES-GCM） |
+| `PersistedScopePlugin` | `scope.*` | 持久化文件范围（Tauri v2 对齐） |
+
+### 应用类插件
+
+| 插件 | 命令前缀 | 功能 |
+|------|----------|------|
+| `ApplicationPlugin` | `application.*` | 应用级操作（quit/hide/show 等） |
+| `MenuPlugin` | `menu.*` | 应用菜单与上下文菜单 |
+| `TrayPlugin` | `tray.*` | 系统托盘 |
+| `ScreenPlugin` | `screen.*` | 屏幕查询（所有显示器） |
+| `LogPlugin` | `log.*` | 日志记录（P1-3：与 `ILogger` 双向桥接） |
 
 ### 其他插件
 
 | 插件 | 命令前缀 | 功能 |
 |------|----------|------|
-| `LogPlugin` | `log.*` | 日志记录 |
-| `DialogPlugin` | `dialog.*` | 原生对话框 |
-| `OpenerPlugin` | `opener.*` | 安全打开 URL/文件 |
+| `DialogPlugin` | `dialog.*` | 原生对话框（打开/保存/消息框） |
+| `OpenerPlugin` | `opener.*` | 安全打开 URL/文件（带白名单） |
 | `ShellPlugin` | `shell.*` | 命令执行（带白名单） |
 | `ProcessPlugin` | `process.*` | 进程管理 |
 | `GlobalShortcutPlugin` | `shortcut.*` | 全局快捷键 |
 | `AutostartPlugin` | `autostart.*` | 开机自启动 |
-| `PowerManagementPlugin` | `power.*` | 电源管理 |
-| `UpdaterPlugin` | `updater.*` | 自动更新 |
-| `FileAssociationPlugin` | `fileassoc.*` | 文件关联 |
-| `LocalizationPlugin` | `i18n.*` | 国际化 |
-| `PersistedScopePlugin` | `scope.*` | 持久化文件范围 |
+| `PowerManagementPlugin` | `power.*` | 电源管理（阻止休眠） |
+| `LocalizationPlugin` | `i18n.*` | 国际化（语言切换） |
+
+### 更新类插件
+
+| 插件 | 命令前缀 | 功能 |
+|------|----------|------|
+| `UpdaterPlugin` | `updater.*` | 自动更新（P1-8：多 Provider — Http/GitHub/GitLab/自定义） |
+
+### 移动端插件（仅 Android）
+
+| 插件 | 命令前缀 | 功能 |
+|------|----------|------|
+| `BiometricPlugin` | `biometric.*` | 生物识别（指纹/面部）— `checkAvailability` / `authenticate` |
+| `NfcPlugin` | `nfc.*` | NFC 读写 — `read` / `write` / `cancel` |
+| `BarcodeScannerPlugin` | `barcode-scanner.*` | 条码/二维码扫描 — `scan` / `cancel` |
+| `HapticsPlugin` | `haptics.*` | 触觉反馈 — `vibrate` / `cancel` / `notification` |
+
+> 移动端插件位于 `Wails.Net.Application.Plugins.Mobile` 命名空间，仅在 `net10.0-android36.0` 目标下可用。Windows/Linux 上调用会返回 `PlatformNotSupportedException`。
+
+## P1 新能力
+
+### 1. Logger 双向桥接（P1-3）
+
+通过 `LogPlugin` + `UseBrowserConsoleLogReceiver`/`UseBrowserConsoleLogForwarder` 实现前后端日志双向打通：
+
+```csharp
+builder.UseBrowserConsoleLogReceiver();   // 前端 console.log → 后端 ILogger
+builder.UseBrowserConsoleLogForwarder();   // 后端 ILogger → 前端 DevTools console
+builder.UsePlugin<LogPlugin>();
+```
+
+### 2. 多 Provider Updater（P1-8）
+
+`UpdaterPlugin` 背后的 `UpdaterService` 支持多 Provider 链式检查，首个成功返回的 Provider 结果生效：
+
+```csharp
+builder.Services.AddSingleton<UpdaterService>(sp =>
+{
+    var service = new UpdaterService { CurrentVersion = "1.0.0" };
+    service.AddProvider(new GitHubUpdateProvider("owner/repo"));
+    service.AddProvider(new HttpUpdateProvider("https://example.com/update.json"));
+    return service;
+});
+builder.UsePlugin<UpdaterPlugin>();
+```
+
+内置 Provider：
+- `HttpUpdateProvider` — 标准 HTTP JSON 协议
+- `GitHubUpdateProvider` — GitHub Releases API
+- `GitLabUpdateProvider` — GitLab Releases API
+- 自定义 `IUpdateProvider` 实现
+
+### 3. Service Route 挂载（P1-6）
+
+通过 `app.RegisterService(handler, options)` 将 `IHttpServiceHandler` 直挂 AssetServer 路由，无需独立启动 ASP.NET Core 管道：
+
+```csharp
+app.RegisterService(new HealthHandler(), new ServiceOptions { Route = "/api/health" });
+```
+
+适用于健康检查、版本接口、轻量 API。
+
+### 4. 三平台 BrowserManager（P1-2）
+
+`IBrowserManager` 在三平台提供统一的"打开外部 URL"实现：
+
+| 平台 | 实现 | 底层 API |
+|------|------|---------|
+| Windows | `WindowsBrowserManager` | `ShellExecute` |
+| Linux | `LinuxBrowserManager` | `gtk_show_uri` |
+| Android | `AndroidBrowserManager` | `Intent.ACTION_VIEW` |
+| Server | `ServerBrowserManager` | no-op |
+
+### 5. Event Hooks（P1-7）
+
+通过 `ApplicationOptions` 暴露应用生命周期回调：
+
+```csharp
+app.Options.PostShutdown = () => { /* 所有清理完成 */ };
+app.Options.ShouldQuit   = () => true;  // 返回 false 可阻止退出
+```
+
+### 6. Frameless 拖拽 CSS 变量（P1-5）
+
+无需绑定监听，通过 CSS 变量即可启用原生拖拽区域：
+
+```css
+.title-bar { --wails-draggable: drag; }
+.button    { --wails-draggable: no-drag; }
+```
+
+### 7. ContextMenu 行为对齐（P1-4）
+
+通过 `app.Options.EnableDefaultContextMenu` 控制默认右键菜单，与 Wails v3 行为对齐。
 
 ## 使用内置插件
 

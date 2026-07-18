@@ -20,6 +20,7 @@ Wails.Net 在 Webview 启动时注入两段 JavaScript 代码：
 | `wails` | 顶层对象，包含 `call` 与所有子命名空间 | — |
 | `wails.bindings` | 按绑定 ID 调用后端方法 | Wails v3 bindings |
 | `wails.events` | 事件订阅与发布 | Wails v3 Events |
+| `wails.channels` | 双向流式通道（订阅/推送/关闭） | Wails v3 Channels |
 | `wails.window` | 当前窗口操作 | Tauri v2 window / Wails v3 Window |
 | `wails.tray` | 系统托盘 | Tauri v2 tray / Wails v3 SystemTray |
 | `wails.windows` | 多窗口管理 | Tauri v2 getAllWindows |
@@ -39,7 +40,27 @@ Wails.Net 在 Webview 启动时注入两段 JavaScript 代码：
 | `wails.shell` | Shell 调用 | Tauri v2 plugin-shell |
 | `wails.notification` | 系统通知 | Tauri v2 plugin-notification |
 | `wails.store` | 持久化键值存储 | Tauri v2 plugin-store |
-| `wails.log` | 日志 | Tauri v2 plugin-log |
+| `wails.log` | 日志（P1-3：与 `ILogger` 双向桥接） | Tauri v2 plugin-log |
+| `wails.updater` | 自动更新（P1-8：多 Provider） | Wails v3 Updater |
+| `wails.dpi` | DPI 缩放查询与设置 | — |
+| `wails.deeplink` | 深度链接注册与解析 | Tauri v2 plugin-deep-link |
+| `wails.windowstate` | 窗口状态持久化 | — |
+| `wails.positioner` | 窗口定位（9 种方位） | Tauri v2 plugin-positioner |
+| `wails.fileassoc` | 文件关联 | — |
+| `wails.i18n` | 国际化（语言切换） | Tauri v2 plugin-localization |
+| `wails.shortcut` | 全局快捷键 | Tauri v2 plugin-global-shortcut |
+| `wails.autostart` | 开机自启动 | Tauri v2 plugin-autostart |
+| `wails.opener` | 安全打开 URL/文件 | Tauri v2 plugin-opener |
+| `wails.appinfo` | 应用信息（名称/版本/路径） | — |
+| `wails.path` | 路径操作 | — |
+| `wails.upload` | 文件上传 | — |
+| `wails.websocket` | WebSocket 连接 | — |
+| `wails.cookie` | Cookie 管理 | — |
+| `wails.sql` | SQLite 数据库 | Tauri v2 plugin-sql |
+| `wails.biometric` | 生物识别（仅 Android） | Tauri v2 plugin-biometric |
+| `wails.nfc` | NFC 读写（仅 Android） | — |
+| `wails.barcode-scanner` | 条码/二维码扫描（仅 Android） | — |
+| `wails.haptics` | 触觉反馈（仅 Android） | Tauri v2 plugin-haptics |
 
 ### 运行时标志对象
 
@@ -1807,6 +1828,440 @@ await wails.log.error("请求后端 API 失败：" + err.message);
 
 ```javascript
 await wails.log.trace("state = " + JSON.stringify(state));
+```
+
+## 通道 API (wails.channels)
+
+双向流式通信通道，对应 Wails v3 Channels。由 [ChannelManager](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Channels/ChannelManager.cs) 管理，支持长连接、消息推送、双向消息流。
+
+通道适用于：进度推送、流式数据、长轮询替代、自定义协议通信。
+
+### wails.channels.open(name)
+
+打开或创建一个双向通道。
+
+**签名**
+
+```javascript
+wails.channels.open(name: string): Promise<Channel>
+```
+
+**Channel 对象**
+
+| 方法 | 签名 | 说明 |
+|------|------|------|
+| `onMessage(cb)` | `(data: any) => void` | 注册消息接收回调 |
+| `onClose(cb)` | `() => void` | 注册通道关闭回调 |
+| `send(data)` | `(data: any) => Promise<void>` | 向后端发送消息 |
+| `close()` | `() => Promise<void>` | 关闭通道 |
+
+**示例**
+
+```javascript
+const channel = await wails.channels.open("progress");
+
+// 接收后端推送
+channel.onMessage((data) => {
+  console.log("进度更新：", data.percent);
+});
+
+channel.onClose(() => {
+  console.log("通道已关闭");
+});
+
+// 向后端发送消息
+await channel.send({ command: "pause" });
+
+// 关闭通道
+await channel.close();
+```
+
+### wails.channels.close(name)
+
+关闭指定通道。
+
+```javascript
+await wails.channels.close("progress");
+```
+
+### wails.channels.list()
+
+列出当前所有活跃通道。
+
+```javascript
+const names = await wails.channels.list();
+// 例如：["progress", "logs", "notifications"]
+```
+
+## 更新 API (wails.updater)
+
+自动更新检查与下载（P1-8：多 Provider）。对应 [UpdaterPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/UpdaterPlugin.cs)，后端使用 `UpdaterService` 链式查询多个 Provider（Http/GitHub/GitLab/自定义）。
+
+### wails.updater.check()
+
+检查是否有可用更新。返回更新信息或 `null`（无更新）。
+
+**返回值**
+
+```typescript
+interface UpdateInfo {
+  version: string;        // 新版本号
+  releaseNotes?: string;  // 发行说明
+  releaseUrl?: string;     // 发行页面 URL
+  downloadUrl: string;     // 下载 URL
+  size?: number;           // 文件大小（字节）
+  date?: string;           // 发布日期（ISO 8601）
+  providerName: string;    // 提供该结果的 Provider 名称
+}
+```
+
+**示例**
+
+```javascript
+const update = await wails.updater.check();
+if (update) {
+  console.log(`发现新版本 ${update.version}（来源：${update.providerName}）`);
+  console.log(`发行说明：${update.releaseNotes}`);
+} else {
+  console.log("已是最新版本");
+}
+```
+
+### wails.updater.download(update)
+
+下载指定更新的安装包。返回下载进度回调的取消函数。
+
+**签名**
+
+```javascript
+wails.updater.download(update: UpdateInfo): Promise<DownloadResult>
+```
+
+**示例**
+
+```javascript
+const update = await wails.updater.check();
+if (update) {
+  const result = await wails.updater.download(update);
+  console.log(`已下载到：${result.path}（大小：${result.size} 字节）`);
+}
+```
+
+### wails.updater.install(path)
+
+安装已下载的更新包。
+
+```javascript
+await wails.updater.install(downloadResult.path);
+```
+
+### wails.updater.getCurrentVersion()
+
+获取当前应用版本号。
+
+```javascript
+const version = await wails.updater.getCurrentVersion();
+console.log(version); // 例如 "1.0.0"
+```
+
+### wails.updater.providers()
+
+列出已注册的 Provider 名称（按检查顺序）。
+
+```javascript
+const names = await wails.updater.providers();
+// 例如 ["GitHubUpdateProvider", "HttpUpdateProvider"]
+```
+
+## 深度链接 API (wails.deeplink)
+
+深度链接（Custom URL Scheme）注册与解析。对应 [DeepLinkPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/DeepLinkPlugin.cs)，参考 Tauri v2 plugin-deep-link。
+
+### wails.deeplink.register(scheme)
+
+注册自定义 URL Scheme（如 `myapp://`）。
+
+**签名**
+
+```javascript
+wails.deeplink.register(scheme: string): Promise<void>
+```
+
+**示例**
+
+```javascript
+// 注册 myapp:// scheme
+await wails.deeplink.register("myapp");
+// 此后系统会将以 myapp:// 开头的 URL 转发给本应用
+```
+
+### wails.deeplink.unregister(scheme)
+
+取消注册的 URL Scheme。
+
+```javascript
+await wails.deeplink.unregister("myapp");
+```
+
+### wails.deeplink.getCurrent()
+
+获取当前启动应用时所使用的深度链接（如果有）。
+
+```javascript
+const url = await wails.deeplink.getCurrent();
+// 例如 "myapp://open?file=123" 或 null
+```
+
+### wails.deeplink.onOpenUrl(callback)
+
+订阅深度链接事件。当系统将 URL 转发给应用时触发。
+
+**签名**
+
+```javascript
+wails.deeplink.onOpenUrl(callback: (url: string) => void): () => void
+```
+
+**返回值**
+
+返回取消订阅函数。
+
+**示例**
+
+```javascript
+const unsubscribe = wails.deeplink.onOpenUrl((url) => {
+  console.log("收到深度链接：", url);
+  // 例如：解析 url 并导航到对应页面
+  const params = new URLSearchParams(url.split("?")[1]);
+  const fileId = params.get("file");
+  if (fileId) {
+    openFile(fileId);
+  }
+});
+
+// 之后取消订阅
+unsubscribe();
+```
+
+### wails.deeplink.isRegistered(scheme)
+
+查询指定 Scheme 是否已注册。
+
+```javascript
+const registered = await wails.deeplink.isRegistered("myapp");
+```
+
+## DPI 缩放 API (wails.dpi)
+
+DPI 缩放查询与设置。对应 [DpiScalePlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/DpiScalePlugin.cs)。
+
+### wails.dpi.getScale()
+
+获取当前显示器的 DPI 缩放比例。
+
+```javascript
+const scale = await wails.dpi.getScale();
+// 例如 1.0（100%）、1.25（125%）、1.5（150%）、2.0（200%）
+```
+
+### wails.dpi.setScale(scale)
+
+设置应用的 DPI 缩放比例。
+
+```javascript
+await wails.dpi.setScale(1.5);
+```
+
+## 应用信息 API (wails.appinfo)
+
+应用信息查询。对应 [AppInfoPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/AppInfoPlugin.cs)。
+
+### wails.appinfo.getName()
+
+获取应用名称。
+
+```javascript
+const name = await wails.appinfo.getName();
+```
+
+### wails.appinfo.getVersion()
+
+获取应用版本号。
+
+```javascript
+const version = await wails.appinfo.getVersion();
+```
+
+### wails.appinfo.getPath()
+
+获取应用相关路径。
+
+```javascript
+const paths = await wails.appinfo.getPath();
+// 例如 { executable: "C:\\...\\MyApp.exe", dataDir: "...", tempDir: "..." }
+```
+
+## 路径 API (wails.path)
+
+跨平台路径操作。对应 [PathPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/PathPlugin.cs)。
+
+### wails.path.join(...segments)
+
+拼接路径。
+
+```javascript
+const fullPath = await wails.path.join("C:\\Users", "me", "Documents", "file.txt");
+```
+
+### wails.path.normalize(path)
+
+规范化路径。
+
+```javascript
+const normalized = await wails.path.normalize("C:\\Users\\..\\Users\\me");
+// "C:\\Users\\me"
+```
+
+### wails.path.dirname(path)
+
+获取父目录。
+
+```javascript
+const dir = await wails.path.dirname("C:\\Users\\me\\file.txt");
+// "C:\\Users\\me"
+```
+
+### wails.path.basename(path)
+
+获取文件名。
+
+```javascript
+const name = await wails.path.basename("C:\\Users\\me\\file.txt");
+// "file.txt"
+```
+
+### wails.path.extname(path)
+
+获取扩展名。
+
+```javascript
+const ext = await wails.path.extname("file.tar.gz");
+// ".gz"
+```
+
+### wails.path.sep()
+
+获取当前平台的路径分隔符。
+
+```javascript
+const sep = await wails.path.sep();
+// Windows: "\\"，Linux: "/"
+```
+
+## 移动端 API（仅 Android）
+
+以下命名空间仅在 `net10.0-android36.0` 目标下可用。在其他平台调用会返回 `PlatformNotSupportedException`。
+
+### 生物识别 API (wails.biometric)
+
+对应 [BiometricPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/Mobile/BiometricPlugin.cs)，调用 Android BiometricPrompt。
+
+#### wails.biometric.checkAvailability()
+
+查询设备是否支持生物识别。
+
+```javascript
+const result = await wails.biometric.checkAvailability();
+// { available: true, type: "fingerprint" | "face" | "none" }
+```
+
+#### wails.biometric.authenticate(reason)
+
+发起生物识别认证。
+
+```javascript
+const ok = await wails.biometric.authenticate("请验证指纹以登录");
+```
+
+### NFC API (wails.nfc)
+
+对应 [NfcPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/Mobile/NfcPlugin.cs)。
+
+#### wails.nfc.read()
+
+开始 NFC 读取。
+
+```javascript
+const data = await wails.nfc.read();
+// { id: string, payload: ArrayBuffer, tech: string }
+```
+
+#### wails.nfc.write(payload)
+
+写入 NFC 标签。
+
+```javascript
+await wails.nfc.write(new Uint8Array([1, 2, 3]));
+```
+
+#### wails.nfc.cancel()
+
+取消正在进行的 NFC 操作。
+
+```javascript
+await wails.nfc.cancel();
+```
+
+### 条码扫描 API (wails.barcode-scanner)
+
+对应 [BarcodeScannerPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/Mobile/BarcodeScannerPlugin.cs)，调用 Android CameraX / ML Kit。
+
+#### wails.barcode-scanner.scan(options?)
+
+启动条码/二维码扫描。
+
+```javascript
+const result = await wails.barcode-scanner.scan({
+  formats: ["qr_code", "ean_13"],
+  prompt: "将条码对准取景框"
+});
+// { format: "qr_code", value: "https://example.com", raw: ArrayBuffer }
+```
+
+#### wails.barcode-scanner.cancel()
+
+取消扫描。
+
+```javascript
+await wails.barcode-scanner.cancel();
+```
+
+### 触觉反馈 API (wails.haptics)
+
+对应 [HapticsPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/Mobile/HapticsPlugin.cs)。
+
+#### wails.haptics.vibrate(duration?)
+
+触发振动。
+
+```javascript
+await wails.haptics.vibrate(200);  // 振动 200ms
+```
+
+#### wails.haptics.notification(type)
+
+触发通知类型振动。
+
+```javascript
+await wails.haptics.notification("success");  // "success" | "warning" | "error"
+```
+
+#### wails.haptics.cancel()
+
+取消正在进行的振动。
+
+```javascript
+await wails.haptics.cancel();
 ```
 
 ## 内部机制

@@ -9,6 +9,8 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 - [快速入门](getting-started.md) - 从零开始构建第一个 Wails.Net 应用
 - [架构概览](architecture.md) - 框架整体分层与核心模式速览
 - [插件开发指南](plugins.md) - 内置插件清单与自定义插件开发
+- [功能对比：Wails.Net vs Tauri 2 vs Wails 3](comparison-with-tauri2-wails3.md) - 三方能力矩阵、独有能力、差距与路线图
+- [构建打包指南](development/build-and-pack.md) - 从开发到分发的完整流程（含 wails.json、签名、Android、CI/CD）
 
 ## 文档结构
 
@@ -20,10 +22,10 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 |------|------|
 | [宿主层与应用生命周期](architecture/hosting-and-lifecycle.md) | `DesktopApplicationBuilder`、Generic Host 集成、`DesktopHostedService`、启动/关闭顺序 |
 | [绑定系统与命令调度](architecture/binding-and-command-system.md) | `BindingManager`、`CommandDispatcher`、表达式树编译、FNV-1a 哈希、双轨调用路径 |
-| [插件框架](architecture/plugin-system.md) | `IPlugin` 契约、`IPluginContext`、命令注册、生命周期、30 个内置插件分类 |
-| [平台抽象层](architecture/platform-abstraction.md) | `IPlatformApp`、`IWebviewWindowImpl`、Server 模式降级、Windows/Linux 实现 |
-| [传输层与 IPC 通信](architecture/transport-and-ipc.md) | `ITransport`、AssetServerTransport、WebSocket 广播、消息格式 |
-| [安全与权限模型](architecture/security-and-permissions.md) | CSP、URL 白名单、IPC 来源验证、`Capability`、`PermissionManager` |
+| [插件框架](architecture/plugin-system.md) | `IPlugin` 契约、`IPluginContext`、命令注册、生命周期、41 个内置插件分类（含 4 个移动端） |
+| [平台抽象层](architecture/platform-abstraction.md) | `IPlatformApp`、`IWebviewWindowImpl`、Server 模式降级、Windows/Linux/Android 实现 |
+| [传输层与 IPC 通信](architecture/transport-and-ipc.md) | `ITransport`、AssetServerTransport、原生 IPC、WebSocket 广播、`EventIPCTransport` 回退、消息格式 |
+| [安全与权限模型](architecture/security-and-permissions.md) | CSP、URL 白名单、IPC 来源验证、`Capability` 自动加载、`PermissionManager`、Scope 校验 |
 
 ### 实现文档（`implementation/`）
 
@@ -47,6 +49,7 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 
 | 文档 | 内容 |
 |------|------|
+| [构建打包指南](development/build-and-pack.md) | 开发模式、构建、打包分发（zip/deb/rpm/appimage/nsis）、wails.json 配置、代码签名、Android 构建、CI/CD 示例 |
 | [测试指南](development/testing-guide.md) | TUnit 使用、测试组织、断言模式、平台特定测试、覆盖率要求 |
 | [贡献指南](development/contributing.md) | 编码规范、命名约定、Git 提交规范、PR 流程、代码审查要点 |
 | [发布指南](development/release-guide.md) | 版本号集中管理、发布流程、GitHub Actions CI/CD 流水线、NuGet 发布 |
@@ -68,7 +71,8 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 |------|------|
 | [快速入门](getting-started.md) | 环境要求、创建项目、核心概念、项目结构 |
 | [架构概览](architecture.md) | 分层架构图、9 大核心模块、设计模式、命名空间 |
-| [插件开发指南](plugins.md) | 插件接口、命令注册、30 个内置插件、最佳实践 |
+| [插件开发指南](plugins.md) | 插件接口、命令注册、41 个内置插件（含 4 个移动端）、最佳实践 |
+| [功能对比](comparison-with-tauri2-wails3.md) | Wails.Net vs Tauri 2 vs Wails 3 能力矩阵、独有能力、差距与路线图 |
 
 ## 阅读建议
 
@@ -102,6 +106,7 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 | Windows WebView | Microsoft.Web.WebView2 1.0.3240.44 |
 | Win32 互操作 | Microsoft.Windows.CsWin32 0.3.298 |
 | Linux GTK | GirCore 0.8.0 |
+| Android 工作负载 | `android` 36.1.43（`net10.0-android36.0`，最低 API Level 24） |
 | CLI 解析 | System.CommandLine 2.0.9 |
 | 测试框架 | TUnit 1.58.0 |
 | 脚本语言 | F# (.fsx) |
@@ -116,4 +121,4 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 
 ---
 
-**最后更新**：2026-07-13
+**最后更新**：2026-07-18（P1 阶段完成：三平台 BrowserManager + Logger 双向桥接 + 多 Provider Updater + Service Route 挂载等 8 项对齐）
