@@ -377,7 +377,46 @@ public static class RuntimeGenerator
             },
             popup: function(menu, x, y) {
               return window._wailsInvoke("menu.popup", { menu: menu, x: x || 0, y: y || 0 });
+            },
+            // === 角色菜单项（对应 Wails v3 / Tauri v2 PredefinedMenuItem）===
+            // role 参数使用 wails.MenuRole 常量（如 wails.MenuRole.Copy）
+            addRoleItem: function(parentId, role, label) {
+              return window._wailsInvoke("menu.addRoleItem", { parentId: parentId, role: role, label: label || null });
+            },
+            addStandardEditMenu: function(parentId) {
+              return window._wailsInvoke("menu.addStandardEditMenu", { parentId: parentId });
+            },
+            addStandardWindowMenu: function(parentId) {
+              return window._wailsInvoke("menu.addStandardWindowMenu", { parentId: parentId });
+            },
+            addStandardHelpMenu: function(parentId, metadata, label) {
+              return window._wailsInvoke("menu.addStandardHelpMenu", { parentId: parentId, metadata: metadata || null, label: label || null });
             }
+          },
+          // MenuRole 枚举常量（与后端 Wails.Net.Application.Menus.MenuRole 保持一致）
+          // 用于 wails.menu.addRoleItem 的 role 参数，前端无需硬编码字符串
+          MenuRole: {
+            None: "None",
+            Separator: "Separator",
+            Copy: "Copy",
+            Cut: "Cut",
+            Paste: "Paste",
+            SelectAll: "SelectAll",
+            Undo: "Undo",
+            Redo: "Redo",
+            Minimize: "Minimize",
+            Maximize: "Maximize",
+            Fullscreen: "Fullscreen",
+            CloseWindow: "CloseWindow",
+            Zoom: "Zoom",
+            About: "About",
+            Quit: "Quit",
+            Hide: "Hide",
+            HideOthers: "HideOthers",
+            ShowAll: "ShowAll",
+            Services: "Services",
+            BringAllToFront: "BringAllToFront",
+            ToggleFullScreen: "ToggleFullScreen"
           },
           application: {
             quit: function() {

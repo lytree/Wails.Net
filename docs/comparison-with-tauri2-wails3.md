@@ -2,8 +2,8 @@
 
 > 本文档对比 **Wails.Net**（当前项目，Wails v3 的 .NET 10 移植实现）、**Tauri 2**（Rust 桌面/移动框架）和 **Wails 3 v3.0.0-alpha.102**（Go 原版）三者的功能实现项与差异项。
 >
-> - **更新日期**：2026-07-18（P1 阶段全部完成）
-> - **对比基线**：基于本仓库当前 `src/` 实际代码状态（提交 `e11bdd4`）
+> - **更新日期**：2026-07-18（基于实际仓库代码核对，修正插件清单与已实现项）
+> - **对比基线**：基于本仓库当前 `src/` 实际代码状态（提交 `9fcaef2`）
 > - **架构融合策略**（见 [AGENTS.md](file:///f:/Code/Dotnet/Wails.Net/AGENTS.md) §1.1.1）：
 >   - Host/DI/Config/Logging → 学 ASP.NET Core（Microsoft.Extensions.* 全栈）
 >   - Runtime/Window/IPC → 学 Wails v3
@@ -73,7 +73,7 @@
 
 ### 关键差异
 
-- **Wails.Net** 通过 [GeneratedBindingRegistry](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Bindings/Bindings.cs) 在编译期生成 `TryGetInvoker` 委托，运行时优先走源生成器路径，反射仅作为兜底，兼顾性能与开发体验。
+- **Wails.Net** 通过 [BindingManager](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Bindings/Bindings.cs) 在编译期生成 `TryGetInvoker` 委托（由 [BindingSourceGenerator](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.SourceGenerators/BindingSourceGenerator.cs) 通过 `IIncrementalGenerator` 生成 `WailsGeneratedBindings.g.cs`，使用 `[ModuleInitializer]` 自动注册），运行时优先走源生成器路径，反射仅作为兜底，兼顾性能与开发体验。
 - **Tauri 2** 完全无反射，性能最优，但需要 Rust 宏学习成本。
 - **Wails 3** 与 Wails.Net 共享 FNV-1a 哈希算法，前端绑定 ID 可互通。
 
@@ -85,15 +85,16 @@
 |------|-----------|---------|---------|
 | **核心类型** | `EventProcessor` | `EventBus` / `Emitter` | `Events` struct |
 | **监听器存储** | `ConcurrentDictionary<string, List<EventListener>>` | `Vec<EventListener>` | `map[string][]EventListener` |
-| **Pre-emit 钩子** | ✅ `List<Func<CustomEvent, bool>>` | ❌ | ✅ Event Hooks |
+| **Pre-emit 钩子** | ✅ `List<Func<CustomEvent, bool>>`（返回 false 取消） | ❌ | ✅ Event Hooks |
 | **多传输层广播** | ✅ `IWailsEventListener` 列表并行广播 | 单一 IPC | 单一 in-memory bridge |
-| **事件命名空间** | `wails:window:*` / `wails:app:*` 等 | `tauri://*` | `wails:*` |
+| **事件命名空间** | `wails:window:*` / `wails:app:*` / `wails:updater:*` 等 | `tauri://*` | `wails:*` |
 | **JS 端 API** | `wails.events.on/off/emit` | `listen/unlisten/emit` | `wails.events.on/off/emit` |
 | **跨窗口广播** | ✅ 通过多传输层自动广播 | ✅ | ✅ |
 | **线程安全** | ✅ `ConcurrentDictionary` + 锁 | ✅ `Mutex` | ✅ `sync.RWMutex` |
 | **senderWindowId 传播** | ✅ EventProcessor/Transport 全链路携带（P1-2） | ❌ | ❌ |
 | **PostShutdown 钩子** | ✅ `ApplicationOptions.PostShutdown`（P1-7） | ❌ | ✅ `Options.PostShutdown` |
 | **ShouldQuit 回调** | ✅ `ApplicationOptions.ShouldQuit`（P1-7） | ❌ | ✅ `Options.ShouldQuit` |
+| **maxCalls 限制** | ✅ `OnMultiple` + `Once` | ✅ `once` | ✅ `Once` |
 
 ### 关键差异
 
@@ -110,24 +111,28 @@
 | 维度 | Wails.Net | Tauri 2 | Wails 3 |
 |------|-----------|---------|---------|
 | **传输抽象** | `ITransport` 接口 | `Invoke` 机制（编译期绑定） | `ITransport` 接口 |
-| **默认传输** | HttpTransport (HTTP POST + WebSocket) | 平台原生 IPC（WebView2 host object / WKWebView message handler / WebKitGTK） | in-memory bridge（前端 postMessage） |
+| **默认传输** | NativeIpcTransport（默认）+ HttpTransport + WebSocketTransport | 平台原生 IPC（WebView2 host object / WKWebView message handler / WebKitGTK） | in-memory bridge（前端 postMessage） |
 | **HTTP 端点** | `/wails/message` (POST) + `/wails/ws` (WS) | N/A | N/A |
-| **默认端口** | 34115 起递增 | N/A | N/A |
-| **WebSocket** | ✅ `WebSocketBroadcaster` | ❌（使用原生 IPC） | ❌ |
-| **原生 IPC** | ✅ `NativeIpcTransport`（P0-C2，可选） | ✅ 默认 | ✅ 默认 |
-| **Event IPC 回退** | ✅ `EventIPCTransport`（P0-C3） | ❌ | ❌ |
+| **默认端口** | 34115（HTTP） / 34116（WebSocket）起递增 | N/A | N/A |
+| **WebSocket 传输** | ✅ `WebSocketTransport`（独立 34116 端口） | ❌（使用原生 IPC） | ❌ |
+| **原生 IPC** | ✅ `NativeIpcTransport`（P0-C2，默认启用，`UseNativeIpc=true`） | ✅ 默认 | ✅ 默认 |
+| **Event IPC 回退** | ✅ `EventIPCTransport`（P0-C3，始终追加为兜底监听器） | ❌ | ❌ |
 | **AssetServer 传输** | ✅ `AssetServerTransport` | ❌ | ❌ |
+| **分块上传** | ✅ `x-wails-chunk-id/index/total` 协议（单 chunk ≤1MB，总 ≤64MB，会话 TTL 30s） | ❌ | ❌ |
 | **消息类型常量** | `MessageTypes`：Call/Event/Window/Query/Response/Error/Drag/ContextMenu/System/**Cancel** | `Invoke` / `Event` | Call/Event/Window/Query/Response/Error/Drag/ContextMenu/System |
 | **异步队列** | ✅ `Channel`-based 异步处理 | ✅ Tokio task | ✅ goroutine |
-| **CancellablePromise** | ✅ 链接 CTS，支持前端取消 | ✅ `Cancellation` | ✅ `CancelCall` |
+| **CancellablePromise** | ✅ `_runningCalls` 表 + 前端 `cancel` 消息 | ✅ `Cancellation` | ✅ `CancelCall` |
 | **运行中调用表** | `ConcurrentDictionary<string, CancellationTokenSource>` | N/A | `map[string]*CancelCall` |
-| **消息路由** | `MessageProcessor` 双路径：BindingManager + CommandDispatcher 回退 | `Invoke` 直接路由到命令 | `MessageProcessor` + `DispatchWindowAction` |
+| **CORS 配置** | ✅ `CorsOptions`（白名单回显，默认 `*`） | ✅ | N/A |
+| **IPC Origin 校验** | ✅ `IpcOriginValidator` + `OriginValidator.Validate` | ✅ | N/A |
+| **消息路由** | `MessageProcessor` 三路径：Call→BindingManager / Window→WindowPlugin / 其他→CommandDispatcher 兜底 | `Invoke` 直接路由到命令 | `MessageProcessor` + `DispatchWindowAction` |
 
 ### 关键差异
 
 - **Wails.Net** 是三者中**唯一**支持多传输层并行广播的方案（见 [HttpTransport.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Transport/HttpTransport.cs)），适用于容器化部署和调试场景。
+- **Wails.Net** 的 [NativeIpcTransport](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Transport/NativeIpcTransport.cs) 采用**混合策略**：小消息 (<512KB) 走原生 postMessage 通道，大消息自动回退 HTTP 分块，平衡延迟与容量。
+- **Wails.Net** 的 [MessageProcessor](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Transport/MessageProcessor.cs) 新增 `MessageTypes.Cancel` 消息类型，与 Wails 3 的 `CancelCall` 对齐；并采用 Tauri v2 "核心即插件" 哲学，未识别命名空间通过 `ProcessCommandFallbackAsync` 作为命令名派发到 CommandDispatcher。
 - **Tauri 2** 和 **Wails 3** 默认走原生 IPC，性能更高但调试不便。
-- **Wails.Net** 的 [MessageProcessor](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Transport/MessageProcessor.cs) 新增 `MessageTypes.Cancel` 消息类型，与 Wails 3 的 `CancelCall` 对齐。
 
 ---
 
@@ -135,8 +140,8 @@
 
 | 维度 | Wails.Net | Tauri 2 | Wails 3 |
 |------|-----------|---------|---------|
-| **窗口抽象** | `IWebviewWindowImpl` + `WebviewWindow` | `WebviewWindow` / `WebviewWindowBuilder` | `WebviewWindow` + `IWebviewWindowImpl` |
-| **窗口管理器** | `WindowManager` | `WebviewWindowBuilder` | `WindowManager` |
+| **窗口抽象** | `IWebviewWindowImpl` + `WebviewWindow`（100+ 方法） | `WebviewWindow` / `WebviewWindowBuilder` | `WebviewWindow` + `IWebviewWindowImpl` |
+| **窗口管理器** | `WindowManager`（`Interlocked.Increment` 线程安全 ID） | `WebviewWindowBuilder` | `WindowManager` |
 | **多窗口** | ✅ | ✅ | ✅ |
 | **窗口选项** | `WebviewWindowOptions` | `WebviewWindowOptions` | `WebviewWindowOptions` |
 | **Frameless** | ✅ | ✅ | ✅ |
@@ -149,10 +154,14 @@
 | **文件拖放** | ✅ `WM_DROPFILES` (Win) | ✅ | ✅ |
 | **DPI 适配** | ✅ `WM_DPICHANGED` (Win) | ✅ | ✅ |
 | **窗口菜单** | ✅ `WM_COMMAND` 分发 | ✅ | ✅ Menu Roles |
-| **热键** | ✅ `WM_HOTKEY` | ✅（plugin） | ✅ |
+| **热键** | ✅ `WM_HOTKEY` / `Win32KeyBindingManager` | ✅（plugin） | ✅ |
 | **Badge** | ✅ `SetBadgeCount/SetBadgeLabel` | ✅（plugin） | ✅ |
 | **多工作区** | ✅ `SetVisibleOnAllWorkspaces` | ✅ | ✅ |
 | **边框颜色** | ✅ `SetBorderColor` | ✅ | ✅ |
+| **任务栏进度** | ✅ `SetTaskbarProgress` / `SetOverlayIcon` | ✅（plugin） | ✅ |
+| **窗口效果** | ✅ `SetEffects`（Mica/Acrylic 等） | ✅ | ✅ |
+| **内容保护** | ✅ `SetContentProtection` | ✅ | ✅ |
+| **窗口级 CSP** | ✅ `SetCspHeaderForWindow`（P0-4，per-window） | ✅ | ❌ |
 | **命令路径** | `window.*` 命令通过 `WindowPlugin` 暴露 | `window.*` plugin 命令 | `wails.window.*` 前端 API |
 | **权限校验** | ✅ `window:default` / `window:allow-readonly` / `window:allow-dangerous` | ✅ `window:default` / `window:allow-*` | ❌ |
 | **上下文菜单数据** | ✅ `ContextMenuData` + `MenuManager`（P1-4） | ✅ Menu plugin | ✅ ContextMenu |
@@ -160,11 +169,11 @@
 
 ### 关键差异
 
-- **Wails.Net** 的 [WindowPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/WindowPlugin.cs) 借鉴 Tauri v2 的"核心即插件"哲学，将所有窗口操作以插件命令形式暴露，同时声明三层权限集（`window:default` / `window:allow-readonly` / `window:allow-dangerous`）。
+- **Wails.Net** 的 [WindowPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/WindowPlugin.cs) 借鉴 Tauri v2 的"核心即插件"哲学，将所有窗口操作以插件命令形式暴露，同时声明三层权限集（`window:default` / `window:allow-readonly` / `window:allow-dangerous`）。命令分为：标题与尺寸、显示/隐藏/状态、全屏与置顶、DevTools、缩放、导航、打印与导出、执行 JS 与注入 CSS、透明度、可调整大小、自定义协议、任务栏、查询类操作（有返回值）。
 - **Wails.Net** 自 P1-4 起新增 [MenuManager](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Managers/MenuManager.cs) 与 [ContextMenuData](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Menus/ContextMenuData.cs)，并让 [RuntimeGenerator](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 注入 ContextMenu 钩子，对齐 Wails v3 的右键菜单行为（[MessageProcessorContextMenuTests](file:///f:/Code/Dotnet/Wails.Net/tests/Wails.Net.Application.Tests/Transport/MessageProcessorContextMenuTests.cs) 验证）。
-- **Wails.Net** 自 P1-5 起统一三平台 Frameless 拖拽实现：[DragRegionHelper](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Windows/DragRegionHelper.cs) 统一使用 `--wails-drag-region` CSS 变量，Windows / Linux / Android 三平台 WebviewWindow 行为一致（[DragRegionHelperTests](file:///f:/Code/Dotnet/Wails.Net/tests/Wails.Net.Application.Tests/Windows/DragRegionHelperTests.cs) 验证）。
+- **Wails.Net** 自 P1-5 起统一三平台 Frameless 拖拽实现：[DragRegionHelper](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Windows/DragRegionHelper.cs) 统一使用 `--wails-drag-region` CSS 变量，Windows / Linux / Android 三平台 WebviewWindow 行为一致。
 - **Wails 3** 窗口 API 直接通过 `wails.window.*` 暴露，无权限校验。
-- **Wails.Net** Win32 实现 [Win32WebviewWindow](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Windows/Win32WebviewWindow.cs) 完整处理 WM_DESTROY/WM_CLOSE/WM_SIZE/WM_COMMAND/WM_SYSCOMMAND/WM_GETMINMAXINFO/WM_DPICHANGED/WM_HOTKEY/WM_DROPFILES/WM_SETTINGCHANGE/WM_MOVE/WM_NCLBUTTONDOWN/WM_SETICON/WM_ACTIVATE/WM_DISPLAYCHANGE/WM_CLIPBOARDUPDATE/WM_KEYDOWN/WM_CONTEXTMENU 等消息。
+- **Wails.Net** Win32 实现 [Win32WebviewWindow](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Windows/Win32WebviewWindow.cs) 完整处理 WM_DESTROY/WM_CLOSE/WM_SIZE/WM_COMMAND/WM_SYSCOMMAND/WM_GETMINMAXINFO/WM_DPICHANGED/WM_HOTKEY/WM_DROPFILES/WM_SETTINGCHANGE/WM_MOVE/WM_NCLBUTTONDOWN/WM_SETICON/WM_ACTIVATE/WM_DISPLAYCHANGE/WM_CLIPBOARDUPDATE/WM_KEYDOWN/WM_CONTEXTMENU 等 18+ 消息。
 
 ---
 
@@ -173,7 +182,7 @@
 | 维度 | Wails.Net | Tauri 2 | Wails 3 |
 |------|-----------|---------|---------|
 | **三层 ACL** | ✅ Capability + PermissionSet + Scope | ✅ Capability + Permission + Scope | ❌ |
-| **配置文件** | `appsettings.json` (Wails:Capabilities) | `capabilities/*.json` | N/A |
+| **配置文件** | `appsettings.json` (Wails:Capabilities) + `capabilities/*.json` | `capabilities/*.json` | N/A |
 | **权限声明** | `DeclarePermission` / `RegisterPermissionSet` | `default.toml` / `permissions.toml` | N/A |
 | **作用域类型** | `FileSystemScope` / `UrlScope` | `fs scope` / `http scope` / `asset protocol scope` | N/A |
 | **Deny 优先** | ✅ `_deniedPermissions` 优先于 `_grantedPermissions` | ✅ `deny-default` | N/A |
@@ -183,14 +192,15 @@
 | **运行时开关** | ✅ `PermissionManager.Enabled`（默认 false 保持向后兼容） | ✅ 默认启用 | N/A |
 | **本地源判定** | `wails://` / `localhost` / `127.0.0.1` / null | `tauri://localhost` / `http://localhost` | N/A |
 | **URL 白名单** | `UrlWhitelist` 通配符匹配 | `allowed-origins` | N/A |
+| **自动加载** | ✅ `LoadCapabilities` 从目录加载 capabilities/*.json | ✅ 启动时加载 | N/A |
 
 ### 关键差异
 
-- **Wails.Net** 的 [PermissionManager](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Security/PermissionManager.cs) 是对 Tauri v2 ACL 模型的完整移植，使用 5 个 `ConcurrentDictionary`（`_grantedPermissions` / `_declaredCapabilities` / `_permissionSets` / `_permissionScopes` / `_remoteUrlScopes` / `_deniedPermissions`）实现线程安全的权限管理。
+- **Wails.Net** 的 [PermissionManager](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Security/PermissionManager.cs) 是对 Tauri v2 ACL 模型的完整移植，使用 6 个 `ConcurrentDictionary`（`_grantedPermissions` / `_declaredCapabilities` / `_permissionSets` / `_permissionScopes` / `_remoteUrlScopes` / `_deniedPermissions`）实现线程安全的权限管理。
 - **Wails.Net** 默认 `Enabled=false` 保持向后兼容，迁移成本低于 Tauri 2（Tauri 2 默认强制启用）。
 - **Wails 3** 完全无 ACL 模型，依赖操作系统进程隔离。
 - **Wails.Net** 的 [Scopes](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Security/Scopes.cs) 支持：
-  - `FileSystemScope`：递归目录前缀匹配
+  - `FileSystemScope`：`Path.GetFullPath` 规范化 + 目录前缀匹配
   - `UrlScope`：通配符 URL 模式（委托 `UrlWhitelist`）
 
 ---
@@ -203,17 +213,24 @@
 | **iOS** | ❌ 暂不实现 | ✅ | ✅ 稳定支持 |
 | **Android Webview** | `Android.Webkit.WebView`（.NET Android 互操作） | Android WebView | Android WebView |
 | **iOS Webview** | N/A | WKWebView | WKWebView |
-| **移动端插件** | 4 个（Camera / Haptics / Vibration / Permissions + 4 个平台接口） | 20+ 移动端插件 | 有限 |
+| **移动端插件** | 4 个（BarcodeScanner / Biometric / Haptics / Nfc + 4 个平台接口） | 20+ 移动端插件 | 有限 |
 | **桌面专属 API** | ✅ 桌面方法在移动端 no-op（见 [AndroidWebviewWindow](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/AndroidWebviewWindow.cs)） | ✅ | ✅ |
-| **构建工具** | `cake build --target=Build-Android` | `tauri android build` | `wails3 task build` |
-| **TFM** | `net10.0-android36.0` | Kotlin/Java | Go mobile |
+| **构建工具** | `cake build --target=Dist-Android` | `tauri android build` | `wails3 task build` |
+| **TFM** | `net10.0-android36.0`（`SupportedOSPlatformVersion=24`） | Kotlin/Java | Go mobile |
 | **MAUI Controls** | ❌ 禁止引入（AGENTS.md §1.1） | N/A | N/A |
+| **Android Asset Server** | ✅ `AndroidAssetServer`（适配 Android Assets） | ✅ | ✅ |
+| **Android Clipboard** | ✅ `AndroidClipboard` | ✅ | ✅ |
+| **Android Browser Manager** | ✅ `AndroidBrowserManager` | ✅ | ✅ |
+| **Android 平台 App** | ✅ `AndroidPlatformApp` | ✅ | ✅ |
+| **自定义 ChromeClient** | ✅ `WailsWebChromeClient` | N/A | N/A |
+| **自定义 WebViewClient** | ✅ `WailsWebViewClient` | N/A | N/A |
+| **Message Listener** | ✅ `WailsWebMessageListener` | N/A | N/A |
 
 ### 关键差异
 
 - **Wails.Net** 仅支持 Android（API 24+），iOS 暂不实现；通过 .NET Android 工作负载直接调用 `Android.Webkit.WebView`，**不引入 MAUI Controls**。
 - **Tauri 2** 和 **Wails 3** 均已稳定支持 iOS + Android。
-- **Wails 3** 截至 2026-07 官方文档显示移动端已稳定支持（修正之前"coming soon"的认知）。
+- **Wails.Net** 通过自定义 `WailsWebChromeClient` / `WailsWebViewClient` / `WailsWebMessageListener` 三件套精细控制 Android WebView 行为。
 
 ---
 
@@ -227,34 +244,42 @@
 | **插件上下文** | `IPluginContext`（Commands / Permissions / Services） | `AppHandle` | `Manager` |
 | **命令注册** | `commands.MapCommand` | `invoke_handler` | `Application.Bind` |
 | **权限声明** | `context.Permissions.DeclarePermission` | `permissions/default.toml` | N/A |
-| **内置插件数** | **41 个桌面** + **4 个移动端** + 4 个平台接口 | 30+ 官方插件 | 有限 |
+| **内置插件数** | **37 个桌面** + **4 个移动端** = **41 个** | 30+ 官方插件 | 有限 |
 | **第三方加载** | ✅ 通过 `ConfigureServices` 注册 | ✅ `tauri-plugin-*` crate | ✅ Go import |
 | **IHostedService 适配** | ✅ 双重触发防护（`_started` / `_stopped` Interlocked） | N/A | N/A |
 
-### Wails.Net 内置插件清单（41 个桌面 + 4 个移动端）
+### Wails.Net 内置插件清单（37 个桌面 + 4 个移动端）
 
-**桌面插件**（37 个，位于 `src/Wails.Net.Application/Plugins/BuiltIn/`）：
-- **窗口/对话框/菜单**：WindowPlugin / DialogPlugin / MenuPlugin / ClipboardPlugin / ScreenPlugin
-- **系统**：SystemPlugin / ProcessPlugin / PowerPlugin / SingleInstancePlugin / ScreensaverPlugin
-- **文件/IO**：FilesystemPlugin / CsvPlugin / StorePlugin / LogPlugin
-- **网络**：HttpPlugin / WebSocketPlugin / FetchPlugin
-- **媒体**：AudioPlugin / VideoPlugin / CameraPlugin / ImagePlugin
-- **硬件**：BatteryPlugin / DevicePlugin / HardwarePlugin / SensorPlugin
-- **UI**：NotifyPlugin / ToastPlugin / TrayPlugin / BadgePlugin
-- **安全**：EncryptionPlugin / HashPlugin / RandomPlugin / MinisignPlugin
-- **应用**：UpdaterPlugin / BrowserPlugin / ShellPlugin / EbookPlugin
-- **其他**：MathPlugin / WeatherPlugin / TimePlugin / CalendarPlugin
+**桌面插件**（37 个，位于 `src/Wails.Net.Application/Plugins/BuiltIn/`，按插件名分组）：
+
+| 类别 | 插件（插件名 → 类名） |
+|------|---------------------|
+| **窗口/对话框/菜单/托盘** | window → WindowPlugin / dialog → DialogPlugin / menu → MenuPlugin / tray → TrayPlugin |
+| **剪贴板/屏幕/DPI** | clipboard → ClipboardPlugin / screen → ScreenPlugin / dpi-scale → DpiScalePlugin |
+| **文件系统/IO** | filesystem → FileSystemPlugin / fs-watch → FsWatchPlugin / path → PathPlugin / file-association → FileAssociationPlugin |
+| **存储/数据库** | store → StorePlugin / sqlite → SqlPlugin / stronghold → StrongholdPlugin / persisted-scope → PersistedScopePlugin |
+| **网络** | http → HttpPlugin / websocket → WebSocketPlugin / cookie → CookiePlugin / localhost → LocalhostPlugin / upload → UploadPlugin |
+| **系统/进程/电源** | os → OsInfoPlugin / app → AppInfoPlugin / application → ApplicationPlugin / process → ProcessPlugin / power-management → PowerManagementPlugin / windows → WindowsPlugin |
+| **日志/通知** | log → LogPlugin / notification → NotificationPlugin |
+| **Shell/浏览器** | shell → ShellPlugin / opener → OpenerPlugin |
+| **自启动/快捷键** | autostart → AutostartPlugin / globalshortcut → GlobalShortcutPlugin |
+| **窗口状态/定位** | window-state → WindowStatePlugin / positioner → PositionerPlugin |
+| **本地化/深链接** | localization → LocalizationPlugin / deep-link → DeepLinkPlugin |
+| **更新器** | updater → UpdaterPlugin |
 
 **移动端插件**（4 个，位于 `src/Wails.Net.Application/Plugins/Mobile/`）：
-- CameraPlugin / HapticsPlugin / VibrationPlugin / PermissionsPlugin
+- barcode-scanner → BarcodeScannerPlugin
+- biometric → BiometricPlugin
+- haptics → HapticsPlugin
+- nfc → NfcPlugin
 
-**附加插件**（4 个平台接口）：
-- MobilePlatformPlugin / DesktopPlatformPlugin / etc.
+**平台接口**（4 个，与移动端插件配套）：
+- IPlatformBarcodeScanner / IPlatformBiometric / IPlatformHaptics / IPlatformNfc
 
 ### 关键差异
 
 - **Wails.Net** 的 [IPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/IPlugin.cs) 4 阶段生命周期是最完整的：`ConfigureServices`（DI 注册）→ `Configure`（命令注册）→ `StartupAsync`（运行时初始化）→ `ShutdownAsync`（资源释放），并默认实现 `StartupAsync`/`ShutdownAsync` 返回 `Task.CompletedTask`。
-- **Wails.Net** 的 [PluginManager](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/PluginManager.cs) 通过 `Interlocked` 防止 `IHostedService` 适配器与 `Application.Run` 重复触发。
+- **Wails.Net** 的 [PluginManager](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/PluginManager.cs) 通过 `Interlocked.CompareExchange` 防止 `IHostedService` 适配器与 `Application.Run` 重复触发。
 - **Tauri 2** 插件生态最丰富（30+ 官方 + 大量社区），通过 Cargo 集成。
 - **Wails 3** 插件以 Service 模式为主，无独立权限声明。
 
@@ -265,20 +290,24 @@
 | 维度 | Wails.Net | Tauri 2 | Wails 3 |
 |------|-----------|---------|---------|
 | **内置 AssetServer** | ✅ `Wails.Net.AssetServer` 独立项目 | ✅ `tauri::Asset` | ✅ `assetserver` |
-| **中间件管道** | ✅ `IMiddleware` + `MiddlewareChain` | ❌ | ❌ |
+| **中间件管道** | ✅ `IMiddleware`（基于路径） + `IHttpMiddleware`（基于 HTTP 上下文） + `MiddlewareChain` | ❌ | ❌ |
 | **CSP Nonce 注入** | ✅ `NonceInjector` | ✅ | ✅ |
 | **隔离注入** | ✅ `IsolationInjector` | ✅ | ❌ |
 | **Range 请求** | ✅ `Content-Range` / `Accept-Ranges` | ✅ | ✅ |
 | **ETag** | ✅ `ETag` / `If-None-Match` | ✅ | ✅ |
 | **Last-Modified** | ✅ `Last-Modified` / `If-Modified-Since` | ✅ | ✅ |
-| **自定义 Header** | ✅ `Headers` 静态类 | ✅ | ✅ |
+| **自定义 Header** | ✅ `Headers` 静态类（含 `x-wails-window-id` / `x-wails-window-name`） | ✅ | ✅ |
 | **MIME 类型** | ✅ 内置映射 | ✅ | ✅ |
 | **Service Route 挂载** | ✅ `IHttpServiceHandler` 自定义路由（P1-6） | ❌ | ❌ |
+| **per-window CSP** | ✅ `SetCspHeaderForWindow`（P0-4） | ✅ | ❌ |
+| **AssetProvider 抽象** | ✅ `IAssetProvider` + `BundledAssetProvider` + `FileAssetProvider` | ✅ | ✅ |
+| **Android AssetServer** | ✅ `AndroidAssetServer`（适配 Android Assets） | ✅ | ✅ |
 
 ### 关键差异
 
-- **Wails.Net** 的 [AssetServer](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.AssetServer/AssetServer.cs) 是三者中**唯一**提供中间件管道（`IMiddleware` + `MiddlewareChain`）的方案，支持灵活扩展（如自定义鉴权、日志、压缩等中间件）。
-- **Wails.Net** 自 P1-6 起新增 [IHttpServiceHandler](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.AssetServer/IHttpServiceHandler.cs) 抽象，允许业务代码挂载自定义 HTTP 路由到 AssetServer（如 `/api/health`、`/api/data` 等），无需独立启动 ASP.NET Core 管道（[AssetServerServiceRouteTests](file:///f:/Code/Dotnet/Wails.Net/tests/Wails.Net.AssetServer.Tests/AssetServerServiceRouteTests.cs) 验证）。这是三者中**唯一**的方案。
+- **Wails.Net** 的 [AssetServer](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.AssetServer/AssetServer.cs) 是三者中**唯一**提供双中间件管道（`IMiddleware` 路径式 + `IHttpMiddleware` HTTP 上下文式）的方案，支持灵活扩展（如自定义鉴权、日志、压缩等中间件）。
+- **Wails.Net** 自 P1-6 起新增 [IHttpServiceHandler](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.AssetServer/IHttpServiceHandler.cs) 抽象，允许业务代码挂载自定义 HTTP 路由到 AssetServer（如 `/api/health`、`/api/data` 等），无需独立启动 ASP.NET Core 管道。服务路由匹配规则：精确匹配 + 前缀匹配（`route + "/"`）+ 最长匹配优先。
+- **Wails.Net** 自 P0-4 起支持 per-window CSP（`SetCspHeaderForWindow`），不同窗口可配置不同 CSP 策略，`ResolveCspHeader` 优先返回窗口级 CSP。
 - **Tauri 2** 和 **Wails 3** 的 AssetServer 功能完整但无中间件抽象，也无业务路由挂载能力。
 
 ---
@@ -293,25 +322,27 @@
 | **Provider 列表** | ✅ HttpUpdateProvider / GitHubUpdateProvider / GitLabUpdateProvider（P1-8） | N/A | 内置 |
 | **ProviderName 注入** | ✅ `UpdateManifest.ProviderName`（P1-8） | ❌ | ✅ |
 | **错误事件 payload** | ✅ `UpdateErrorInfo { stage, message, provider }`（P1-8） | ❌ | ✅ `ErrorInfo` |
-| **下载器** | ✅ `UpdateDownloader` | ✅ | ✅ |
-| **事件广播** | ✅ 通过 `EventProcessor` 广播更新事件 | ✅ | ✅ |
-| **签名校验** | ✅ Minisign（见 §11） | ✅ Minisign | ✅ Minisign |
-| **Helper Process** | ❌ | ❌ | ✅ 替换二进制 |
+| **下载器** | ✅ `UpdateDownloader`（断点续传 + SHA256 校验） | ✅ | ✅ |
+| **解压器** | ✅ `UpdateExtractor`（.zip / .tar.gz / .tgz / .tar + 路径遍历保护） | ✅ | ✅ |
+| **Helper Process** | ✅ `HelperProcess`（等待父进程退出 + 重试替换 + 重启应用） | ❌ | ✅ |
+| **事件广播** | ✅ 通过 `EventProcessor` 广播 10 个更新事件 | ✅ | ✅ |
+| **签名校验** | ✅ Minisign（BLAKE2b-512 + Ed25519）+ Authenticode + GPG | ✅ Minisign | ✅ Minisign |
 | **Windows 自动签名** | ✅ Authenticode | ❌ | ❌ |
 | **向后兼容** | ✅ 未注册 Provider 时回退到 `UpdateURL`（P1-8） | N/A | N/A |
+| **平台特定安装** | ✅ Windows .msi(msiexec) / .exe(/SILENT)；Linux .deb(dpkg) / .rpm(rpm) / .AppImage(chmod+x) | ✅ | ✅ |
 
 ### 关键差异
 
 - **Wails.Net** 自 P1-8 起实现完整的多 Provider Updater 系统（[UpdaterService](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Services/UpdaterService.cs)）：
   - **IUpdateProvider 接口**（[IUpdateProvider.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Services/Updater/IUpdateProvider.cs)）：抽象"检查更新"的来源，支持链式尝试（首个返回非 null 清单的胜出）。
   - **HttpUpdateProvider**（[HttpUpdateProvider.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Services/Updater/HttpUpdateProvider.cs)）：向后兼容默认 Provider，封装原有 `UpdateURL` 检查逻辑。
-  - **GitHubUpdateProvider**（[GitHubUpdateProvider.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Services/Updater/GitHubUpdateProvider.cs)）：通过 GitHub REST API `repos/{owner}/{repo}/releases/latest` 获取，支持 token 认证、企业版 API base、资产名称模式匹配。
-  - **GitLabUpdateProvider**（[GitLabUpdateProvider.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Services/Updater/GitLabUpdateProvider.cs)）：通过 GitLab REST API `projects/{projectId}/releases/permalink/latest` 获取，支持自托管 GitLab、URL 编码 projectId。
+  - **GitHubUpdateProvider**（[GitHubUpdateProvider.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Services/Updater/GitHubUpdateProvider.cs)）：通过 GitHub REST API `repos/{owner}/{repo}/releases/latest` 获取，从 `tag_name` 提取版本号（去除 'v' 前缀），支持 token 认证、企业版 API base、资产名称模式匹配。
+  - **GitLabUpdateProvider**（[GitLabUpdateProvider.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Services/Updater/GitLabUpdateProvider.cs)）：通过 GitLab REST API `projects/{projectId}/releases/permalink/latest` 获取，支持自托管 GitLab、URL 编码 projectId（如 `mygroup%2Fmyproject`）。
   - **ProviderName 注入**：`CheckForUpdatesAsync` 解析清单后注入 `ProviderName` 到 `UpdateManifest`，便于前端展示和日志追踪。
   - **UpdateErrorInfo**：对应 Wails v3 `ErrorInfo { stage, message, provider }` 的 payload 结构，用于错误事件。
+- **Wails.Net** 集成 [HelperProcess](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Services/Updater/HelperProcess.cs)（对应 Wails v3 Go helper.go）：环境变量 `WAILS_UPDATER_HELPER/ARCHIVE/TARGET/PID` 触发 helper 模式，等待父进程退出（30s 超时）→ 备份 → 重试替换（20 次，500ms 间隔）→ Linux chmod +x → 清除环境变量 → 重启应用 → 清理暂存目录。
+- **Wails.Net** 的 [SignatureVerifier](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Services/Updater/SignatureVerifier.cs) 支持 minisign 路径（`VerifyMinisignAsync`，BLAKE2b-512 + Ed25519）和旧路径（[Obsolete] Windows Authenticode via PowerShell + Linux GPG）。
 - **Wails.Net** 集成 Minisign 签名校验和 Authenticode 自动签名（见 §11），是三者中**唯一**支持 Windows Authenticode 自动签名的方案。
-- **Wails 3** 仍以多 provider 和 Helper Process 替换二进制为优势，Wails.Net 自 P1-8 起已追平多 Provider 能力。
-- **Tauri 2** 通过独立插件提供 Updater，仍是单一 Provider 模型。
 - **测试覆盖**：[UpdateProviderTests](file:///f:/Code/Dotnet/Wails.Net/tests/Wails.Net.Application.Tests/UpdateProviderTests.cs) 51 项测试覆盖三个 Provider 与链式检查行为。
 
 ---
@@ -322,23 +353,26 @@
 |------|-----------|---------|---------|
 | **构建工具** | Cake Frosting（C#） | `tauri build` (Rust) | `wails3 task build` (Taskfile) |
 | **脚本语言** | F# (.fsx)（AGENTS.md §7.5 禁止 Python） | Shell / PowerShell | Shell / PowerShell |
+| **构建任务数** | 11 个 Cake Frosting 任务 | N/A | N/A |
 | **Windows 安装包** | ✅ NSIS / MSI | ✅ NSIS / MSI | ✅ NSIS |
-| **Linux 安装包** | ✅ .deb / .rpm | ✅ .deb / .rpm / AppImage | ✅ .deb / .rpm |
+| **Linux 安装包** | ✅ .deb / .rpm / .tar.gz（dpkg-deb / rpmbuild 内联） | ✅ .deb / .rpm / AppImage | ✅ .deb / .rpm |
 | **macOS 安装包** | ❌（暂不支持 macOS） | ✅ .dmg / .app | ✅ .dmg / .app |
-| **Android APK/AAB** | ✅（.NET Android workload） | ✅ | ✅ |
+| **Android APK/AAB** | ✅（.NET Android workload，APK 默认） | ✅ | ✅ |
 | **iOS IPA** | ❌ | ✅ | ✅ |
-| **代码签名（Windows）** | ✅ Authenticode 自动签名 | ✅（手动配置） | ❌ |
+| **代码签名（Windows）** | ✅ Authenticode 自动签名（signtool / azuresigntool，环境变量门控） | ✅（手动配置） | ❌ |
 | **代码签名（Linux）** | ✅ GPG | ✅ GPG | ✅ GPG |
 | **代码签名（macOS）** | N/A | ✅ notarization | ✅ notarization |
+| **代码签名（Android）** | ✅ 正式/debug 签名（环境变量门控） | ✅ | ✅ |
 | **Minisign 签名** | ✅ 5 个 Minisign 相关文件 | ✅ | ✅ |
-| **CI runner** | Linux runner 构建 Linux 包（迁移自 Windows runner） | 跨平台 | 跨平台 |
-| **自包含构建** | ✅ 三平台自包含（无 .NET 运行时依赖） | ✅（Rust 编译） | ✅（Go 编译） |
+| **CI runner** | Windows + Linux runner（Linux 包在 Linux runner 构建） | 跨平台 | 跨平台 |
+| **自包含构建** | ✅ 三平台自包含（`PublishSingleFile=true`，无 .NET 运行时依赖） | ✅（Rust 编译） | ✅（Go 编译） |
+| **前端构建集成** | ✅ `FrontendTask`（自动检测 pnpm > yarn > npm） | ✅ | ✅ |
 
 ### 关键差异
 
 - **Wails.Net** 使用 **Cake Frosting**（C# 编写构建脚本）+ **F# .fsx** 脚本，符合 AGENTS.md §7.5 禁止 Python 的约束。
-- **Wails.Net** 是三者中**唯一**支持 Windows Authenticode **自动签名**的方案。
-- **Wails.Net** CI 已将 `dist-linux` 任务迁移到 Linux runner，提升构建效率。
+- **Wails.Net** 是三者中**唯一**支持 Windows Authenticode **自动签名**的方案（通过 `signtool` / `azuresigntool`，环境变量门控，签名失败非阻塞）。
+- **Wails.Net** CI 已将 `dist-linux` 任务迁移到 Linux runner，提升构建效率；Linux 包构建内联实现 `dpkg-deb --build` 和 `rpmbuild -bb`。
 
 ---
 
@@ -356,10 +390,11 @@
 | **Doctor 诊断** | ✅ `Doctor` 子命令 | ✅ `tauri info` | ✅ `wails3 doctor` |
 | **图标生成** | ✅ `Icon` 子命令 | ✅ `tauri icon` | ✅ |
 | **自更新** | ✅ `SelfUpdate` 子命令 | ✅ `tauri self update` | ✅ |
+| **部署** | ✅ `Deploy` 子命令 | ❌ | ❌ |
 
 ### 关键差异
 
-- **Wails.Net** 的 [Program.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Program.cs) 提供 16 个子命令，覆盖生成、诊断、构建、发布、打包、插件、版本、清理、信息、图标、签名、平台、自更新、部署。
+- **Wails.Net** 的 [Program.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Program.cs) 提供 16 个子命令，覆盖生成、诊断、构建、发布、打包、插件、版本、清理、信息、图标、签名、平台、自更新、部署，是三者中**唯一**内置 `Deploy` 子命令的方案。
 - **AGENTS.md §1.1 约束**：禁止使用 `McMaster.Extensions.CommandLineUtils`，必须使用 `System.CommandLine` 2.0.9。
 
 ---
@@ -400,6 +435,7 @@
 | **断言库** | `TUnit.Assertions`（必须 `await`） | `assert_eq!` | `testify/assert` |
 | **运行命令** | `dotnet run --project tests/...`（非 `dotnet test`） | `cargo test` | `go test` |
 | **禁止项** | MSTest / xUnit / NUnit | N/A | N/A |
+| **测试项目数** | 6 个（Application / Windows / Linux / Android / AssetServer / Cli） | N/A | N/A |
 | **平台特定测试** | Windows / Linux / Android / CLI 各自独立测试项目 | 跨平台 | 跨平台 |
 | **并发控制** | `[NotInParallel]` 属性 | `#[serial]` | `t.Parallel()` |
 | **测试命名** | `Method_Scenario_ExpectedBehavior` | `test_*` | `Test*` |
@@ -410,6 +446,7 @@
 - **Wails.Net** 是三者中**唯一**禁止使用主流测试框架（MSTest/xUnit/NUnit）的项目，强制使用 TUnit 1.58.0（AGENTS.md §1.1）。
 - **Wails.Net** .NET 10 SDK 不再支持 `dotnet test`（VSTest 模式），必须使用 `dotnet run --project`（MTP 模式）。
 - **Wails.Net** 测试覆盖要求最严格：公共 API 100% 方法覆盖、所有 `catch` 分支必须测试、边界条件、并发场景。
+- **Wails.Net** 拥有 6 个独立测试项目：Application.Tests（70+ 测试文件）/ Windows.Tests / Linux.Tests / Android.Tests / AssetServer.Tests / Cli.Tests。
 
 ---
 
@@ -417,67 +454,64 @@
 
 | 功能领域 | Wails.Net | Tauri 2 | Wails 3 |
 |---------|-----------|---------|---------|
-| **窗口** | WindowPlugin | window | WebviewWindow API |
-| **对话框** | DialogPlugin | dialog | dialog |
-| **菜单** | MenuPlugin | menu | menu |
-| **剪贴板** | ClipboardPlugin | clipboard-manager | clipboard |
-| **屏幕** | ScreenPlugin | (内置) | screen |
-| **文件系统** | FilesystemPlugin | fs | fs |
-| **HTTP** | HttpPlugin | http | http |
-| **WebSocket** | WebSocketPlugin | (社区) | (无) |
-| **Fetch** | FetchPlugin | http | (无) |
-| **存储** | StorePlugin | store | store |
-| **日志** | LogPlugin | log | log |
-| **通知** | NotifyPlugin | notification | notification |
-| **Toast** | ToastPlugin | (社区) | (无) |
-| **系统托盘** | TrayPlugin | tray | tray |
-| **Badge** | BadgePlugin | (社区) | (无) |
-| **加密** | EncryptionPlugin | (社区) | (无) |
-| **哈希** | HashPlugin | (社区) | (无) |
-| **随机数** | RandomPlugin | (社区) | (无) |
-| **Minisign** | MinisignPlugin | (内置 updater) | (内置 updater) |
-| **更新器** | UpdaterPlugin | updater | updater |
-| **浏览器** | BrowserPlugin | shell | browser |
-| **Shell** | ShellPlugin | shell | shell |
-| **进程** | ProcessPlugin | process | (无) |
-| **电源** | PowerPlugin | (社区) | (无) |
-| **单实例** | SingleInstancePlugin | single-instance | single-instance |
-| **屏幕保护** | ScreensaverPlugin | (无) | (无) |
-| **音频** | AudioPlugin | (社区) | (无) |
-| **视频** | VideoPlugin | (社区) | (无) |
-| **相机（桌面）** | CameraPlugin | (社区) | (无) |
-| **图像** | ImagePlugin | image | (无) |
-| **电池** | BatteryPlugin | (社区) | (无) |
-| **设备** | DevicePlugin | (社区) | (无) |
-| **硬件** | HardwarePlugin | (社区) | (无) |
-| **传感器** | SensorPlugin | (社区) | (无) |
-| **电子书** | EbookPlugin | (无) | (无) |
-| **数学** | MathPlugin | (无) | (无) |
-| **天气** | WeatherPlugin | (无) | (无) |
-| **时间** | TimePlugin | (无) | (无) |
-| **日历** | CalendarPlugin | (无) | (无) |
-| **系统** | SystemPlugin | os | (内置) |
-| **相机（移动）** | CameraPlugin (Mobile) | camera | camera |
-| **触觉反馈** | HapticsPlugin (Mobile) | haptics | haptics |
-| **振动** | VibrationPlugin (Mobile) | vibrate | vibrate |
-| **权限（移动）** | PermissionsPlugin (Mobile) | permissions | permissions |
-| **全局快捷键** | (WindowPlugin 内置) | global-shortcut | (内置) |
-| **深色模式** | (SystemPlugin 内置) | (内置) | (内置) |
-| **OAuth** | (无) | deep-link / oauth | (无) |
-| **Biometric** | (无) | biometric | (无) |
-| **Barcode Scanner** | (无) | barcode-scanner | (无) |
-| **Localhost** | (无) | localhost | (无) |
-| **Positioner** | (无) | positioner | (无) |
-| **SQL** | (无) | sql | (无) |
-| **Stronghold** | (无) | stronghold | (无) |
-| **Updater（签名）** | ✅ Minisign + Authenticode | ✅ Minisign | ✅ Minisign |
-| **WebSocket（原生）** | ✅ | (社区) | (无) |
+| **窗口** | WindowPlugin ✅ | window | WebviewWindow API |
+| **对话框** | DialogPlugin ✅ | dialog | dialog |
+| **菜单** | MenuPlugin ✅ | menu | menu |
+| **托盘** | TrayPlugin ✅ | tray | tray |
+| **剪贴板** | ClipboardPlugin ✅ | clipboard-manager | clipboard |
+| **屏幕** | ScreenPlugin ✅ | (内置) | screen |
+| **DPI 缩放** | DpiScalePlugin ✅ | (内置) | (内置) |
+| **文件系统** | FileSystemPlugin ✅ | fs | fs |
+| **文件监听** | FsWatchPlugin ✅ | fs (watch) | (无) |
+| **路径** | PathPlugin ✅ | path | (内置) |
+| **文件关联** | FileAssociationPlugin ✅ | (无) | (无) |
+| **HTTP** | HttpPlugin ✅ | http | http |
+| **WebSocket** | WebSocketPlugin ✅ | (社区) | (无) |
+| **Cookie** | CookiePlugin ✅ | (无) | (无) |
+| **Localhost** | LocalhostPlugin ✅ | localhost | (无) |
+| **分块上传** | UploadPlugin ✅ | (无) | (无) |
+| **存储** | StorePlugin ✅ | store | store |
+| **SQL** | SqlPlugin ✅ | sql | (无) |
+| **Stronghold** | StrongholdPlugin ✅ | stronghold | (无) |
+| **持久化作用域** | PersistedScopePlugin ✅ | (无) | (无) |
+| **日志** | LogPlugin ✅ | log | log |
+| **通知** | NotificationPlugin ✅ | notification | notification |
+| **Shell** | ShellPlugin ✅ | shell | shell |
+| **Opener** | OpenerPlugin ✅ | opener | (无) |
+| **OS 信息** | OsInfoPlugin ✅ | os | (内置) |
+| **App 信息** | AppInfoPlugin ✅ | app | (内置) |
+| **Application** | ApplicationPlugin ✅ | app | (内置) |
+| **进程** | ProcessPlugin ✅ | process | (无) |
+| **电源管理** | PowerManagementPlugin ✅ | (社区) | (无) |
+| **Windows 专属** | WindowsPlugin ✅ | (无) | (无) |
+| **自启动** | AutostartPlugin ✅ | autostart | (无) |
+| **全局快捷键** | GlobalShortcutPlugin ✅ | global-shortcut | (内置) |
+| **窗口状态** | WindowStatePlugin ✅ | window-state | (无) |
+| **定位器** | PositionerPlugin ✅ | positioner | (无) |
+| **本地化** | LocalizationPlugin ✅ | (无) | (无) |
+| **深链接** | DeepLinkPlugin ✅ | deep-link | (无) |
+| **更新器** | UpdaterPlugin ✅ | updater | updater |
+| **更新器签名** | ✅ Minisign + Authenticode + GPG | ✅ Minisign | ✅ Minisign |
+| **条码扫描（移动）** | BarcodeScannerPlugin ✅ | barcode-scanner | (无) |
+| **生物识别（移动）** | BiometricPlugin ✅ | biometric | (无) |
+| **触觉反馈（移动）** | HapticsPlugin ✅ | haptics | haptics |
+| **NFC（移动）** | NfcPlugin ✅ | nfc | (无) |
+| **全局快捷键** | GlobalShortcutPlugin ✅ | global-shortcut | (内置) |
+| **深色模式** | (OsInfoPlugin 内置) | (内置) | (内置) |
+| **OAuth** | (DeepLinkPlugin 可承载) | deep-link / oauth | (无) |
+| **Biometric** | BiometricPlugin ✅ | biometric | (无) |
+| **Barcode Scanner** | BarcodeScannerPlugin ✅ | barcode-scanner | (无) |
+| **Localhost** | LocalhostPlugin ✅ | localhost | (无) |
+| **Positioner** | PositionerPlugin ✅ | positioner | (无) |
+| **SQL** | SqlPlugin ✅ | sql | (无) |
+| **Stronghold** | StrongholdPlugin ✅ | stronghold | (无) |
 
 ### 关键差异
 
-- **Wails.Net** 内置插件数最多（41 桌面 + 4 移动 = 45 个），覆盖大量 Tauri 2 / Wails 3 需要社区插件或无实现的功能（如音频、视频、电池、硬件、传感器、电子书、数学、天气、时间、日历等）。
-- **Tauri 2** 官方插件 30+ 个，但部分功能（SQL / Stronghold / Biometric / Barcode Scanner / OAuth）Wails.Net 暂未实现。
+- **Wails.Net** 内置 37 桌面 + 4 移动端 = **41 个插件**，覆盖 Tauri 2 的 SQL / Stronghold / Biometric / Barcode Scanner / Localhost / Positioner / DeepLink 等能力（已全部实现）。
+- **Tauri 2** 官方插件 30+ 个，部分功能 Wails.Net 也已对齐（如 SQL / Stronghold / Biometric / Barcode Scanner / Localhost / Positioner / DeepLink）。
 - **Wails 3** 内置插件最少，依赖社区扩展。
+- **Wails.Net 独有插件**：CookiePlugin / FileAssociationPlugin / FsWatchPlugin / PathPlugin / PersistedScopePlugin / PowerManagementPlugin / UploadPlugin / WindowStatePlugin / WindowsPlugin / NfcPlugin（Tauri 2 / Wails 3 均无内置对应实现）。
 
 ---
 
@@ -494,31 +528,32 @@
 ### 16.3 CommandDispatcher 中间件管道
 [CommandDispatcher](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Commands/CommandDispatcher.cs) 支持 `ICommandMiddleware` 管道和命令超时，提供类似 ASP.NET Core 中间件的扩展点。
 
-### 16.4 AssetServer 中间件管道
-[AssetServer](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.AssetServer/AssetServer.cs) 通过 `IMiddleware` + `MiddlewareChain` 提供灵活的 HTTP 中间件扩展。
+### 16.4 AssetServer 双中间件管道
+[AssetServer](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.AssetServer/AssetServer.cs) 通过 `IMiddleware`（路径式）+ `IHttpMiddleware`（HTTP 上下文式）+ `MiddlewareChain` 提供灵活的 HTTP 中间件扩展。
 
 ### 16.5 Windows Authenticode 自动签名
-三方中唯一支持 Windows Authenticode 自动签名。
+三方中唯一支持 Windows Authenticode 自动签名（`signtool` / `azuresigntool`，环境变量门控）。
 
 ### 16.6 IPlugin 4 阶段生命周期
 最完整的插件生命周期：`ConfigureServices` → `Configure` → `StartupAsync` → `ShutdownAsync`。
 
 ### 16.7 Channel API
-[IChannel](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Channels/Channel.cs) + `ChannelManager` + `Interlocked` 线程安全，提供双向流式通信。
+[IChannel](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Channels/Channel.cs) + `ChannelManager` + `Interlocked` 线程安全，提供双向流式通信（对应 Tauri v2 Channel<T>）。
 
 ### 16.8 Microsoft.Extensions.* 全栈集成
 对 .NET 开发者最友好：Host / DI / Config / Options / Logging 全栈集成。
 
 ### 16.9 源生成器绑定 + 反射回退（双路径）
-[Bindings](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Bindings/Bindings.cs) 优先走源生成器路径（性能优），反射仅作为兜底（开发体验优）。
+[BindingManager](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Bindings/Bindings.cs) 优先走源生成器路径（性能优，由 [BindingSourceGenerator](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.SourceGenerators/BindingSourceGenerator.cs) 通过 `IIncrementalGenerator` + `[ModuleInitializer]` 自动注册），反射仅作为兜底（开发体验优）。
 
-### 16.10 内置 41 + 4 个插件
-内置插件数最多，覆盖音频/视频/电池/硬件/传感器/电子书/数学/天气/时间/日历等 Tauri 2 / Wails 3 无内置实现的功能。
+### 16.10 内置 41 个插件
+内置插件数最多（37 桌面 + 4 移动端），覆盖 Tauri 2 / Wails 3 全部对应能力（SQL / Stronghold / Biometric / Barcode Scanner / Localhost / Positioner / DeepLink 等）。
 
 ### 16.11 Logger ↔ 前端 console 双向桥接（P1-3）
 - **[BrowserConsoleLogReceiver](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Logging/BrowserConsoleLogReceiver.cs)** 接收前端 `console.log/info/warn/error` 调用，桥接到 `ILogger<T>`，使前端日志自动进入 .NET 日志管道。
 - **[BrowserConsoleLogForwarder](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Logging/BrowserConsoleLogForwarder.cs)** 将 `ILogger` 输出反向转发到前端 DevTools console，便于前端开发者查看后端日志。
 - **[LogServiceLoggerProvider](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Logging/LogServiceLoggerProvider.cs)** 集成到 `Microsoft.Extensions.Logging`，作为 `ILoggerProvider` 注册到 DI 容器。
+- **防回环机制**：同进程 `AsyncLocal<bool>` 防递归 + 跨方向检查 `source=browser` 字段。
 - 这是三者中**唯一**支持日志双向桥接的方案。
 
 ### 16.12 事件 senderWindowId 传播（P1-2）
@@ -528,10 +563,25 @@
 [IHttpServiceHandler](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.AssetServer/IHttpServiceHandler.cs) 允许业务代码挂载自定义 HTTP 路由到 AssetServer，无需独立启动 ASP.NET Core 管道。这是三者中**唯一**的方案。
 
 ### 16.14 多 Provider Updater + ProviderName 注入（P1-8）
-[IUpdateProvider](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Services/Updater/IUpdateProvider.cs) 接口支持链式尝试多个更新源（Http / GitHub / GitLab），并在 `UpdateManifest` 中注入 `ProviderName`，便于前端展示来源和日志追踪。这是三者中**第二个**实现多 Provider 的方案（Wails 3 已有，Tauri 2 仍为单一）。
+[IUpdateProvider](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Services/Updater/IUpdateProvider.cs) 接口支持链式尝试多个更新源（Http / GitHub / GitLab），并在 `UpdateManifest` 中注入 `ProviderName`，便于前端展示来源和日志追踪。
 
 ### 16.15 三平台 BrowserManager（P1-1）
-[IBrowserManager](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Browser/) 接口在 Windows / Linux / Android 三平台均有实现，支持打开外部 URL、验证 URL scheme。Server 模式下提供 `ServerBrowserManager` no-op 实现，保证 API 表面一致性。
+IBrowserManager 接口在 Windows / Linux / Android 三平台均有实现，支持打开外部 URL、验证 URL scheme。Server 模式下提供 `ServerBrowserManager` no-op 实现，保证 API 表面一致性。
+
+### 16.16 Helper Process 替换二进制
+[HelperProcess](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Services/Updater/HelperProcess.cs) 对齐 Wails v3 Go helper.go：环境变量触发 helper 模式，等待父进程退出 → 备份 → 重试替换（20 次，500ms 间隔）→ 重启应用 → 清理暂存目录。
+
+### 16.17 窗口级 CSP（P0-4）
+[AssetServer.SetCspHeaderForWindow](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.AssetServer/AssetServer.cs) 支持 per-window CSP 配置，不同窗口可配置不同 CSP 策略。
+
+### 16.18 分块上传协议
+[HttpTransport](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Transport/HttpTransport.cs) 支持 `x-wails-chunk-id/index/total` 协议，单 chunk ≤1MB、总 ≤64MB、会话 TTL 30s，绕过 HTTP 请求体大小限制。
+
+### 16.19 NativeIpcTransport 混合策略
+[NativeIpcTransport](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Transport/NativeIpcTransport.cs) 小消息 (<512KB) 走原生 postMessage 通道，大消息自动回退 HTTP 分块，平衡延迟与容量。
+
+### 16.20 Deploy CLI 子命令
+[Wails.Net.Cli](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Program.cs) 提供 16 个子命令，包含三者中**唯一**的 `Deploy` 子命令。
 
 ---
 
@@ -542,23 +592,21 @@
 | 差距项 | 优先级 | 对标 | 说明 |
 |-------|--------|------|------|
 | **macOS / iOS 支持** | P2 | Tauri 2 / Wails 3 | 暂不实现，未来考虑通过 .NET macOS 工作负载 + WKWebView 补齐 |
-| **OAuth / 深度链接** | P2 | Tauri 2 | deep-link 插件未实现 |
-| **Biometric** | P2 | Tauri 2 | 生物识别插件未实现 |
-| **Barcode Scanner** | P2 | Tauri 2 | 条码扫描插件未实现 |
-| **SQL 插件** | P2 | Tauri 2 | SQL 数据库插件未实现 |
-| **Stronghold** | P3 | Tauri 2 | 加密存储插件未实现 |
-| **Localhost 插件** | P3 | Tauri 2 | 本地主机插件未实现 |
-| **Positioner** | P3 | Tauri 2 | 窗口定位插件未实现 |
-| **Helper Process 替换二进制** | P2 | Wails 3 | 当前无 Helper Process |
-| **移动端插件生态** | P2 | Tauri 2 | 仅 4 个移动端插件，Tauri 2 有 20+ |
+| **移动端插件生态深度** | P2 | Tauri 2 | 仅 4 个移动端插件，Tauri 2 有 20+（Camera / Vibration / Permissions 等可扩充） |
+| **AppImage 打包** | P3 | Tauri 2 | Wails.Net 仅支持 .deb / .rpm / .tar.gz，无 AppImage |
+| **MSI 打包** | P3 | Tauri 2 | Wails.Net 仅支持 NSIS，MSI 待补齐 |
+| **社区插件生态** | P3 | Tauri 2 | Tauri 2 拥有大量社区 Cargo crate，Wails.Net 待建设 |
+| **OAuth 独立插件** | P3 | Tauri 2 | 当前由 DeepLinkPlugin 承载，无独立 OAuth 插件 |
 
 ### 17.2 已完成对齐项（P0 + P1）
 
 #### P0 阶段（已完成）
-- ✅ CancellablePromise + CancelCall 全链路测试
-- ✅ EventIPCTransport 回退机制完善
-- ✅ 原生 IPC（NativeIpcTransport）作为默认传输
+- ✅ CancellablePromise + CancelCall 全链路测试（`_runningCalls` + 前端 `cancel` 消息）
+- ✅ EventIPCTransport 回退机制完善（始终追加为兜底监听器）
+- ✅ 原生 IPC（NativeIpcTransport）作为默认传输（混合策略：<512KB 原生 / 大消息 HTTP 分块）
 - ✅ Server 模式事件 API 完善
+- ✅ P0-4 窗口级 CSP（per-window）
+- ✅ P0-C1 分块上传协议
 
 #### P1 阶段（已完成）
 - ✅ P1-1：BrowserManager 三平台实现（Windows / Linux / Android / Server）
@@ -574,13 +622,12 @@
 
 1. **中期（P2）**：
    - macOS / iOS 平台支持（.NET macOS + WKWebView）
-   - OAuth / 深度链接插件
-   - 移动端插件扩充（Biometric / Barcode Scanner / Localhost / Positioner）
-   - Helper Process 替换二进制（对齐 Wails 3）
-   - SQL 插件
+   - 移动端插件扩充（Camera / Vibration / Permissions 等）
+   - MSI 打包补齐
+   - 独立 OAuth 插件
 
 2. **长期（P3）**：
-   - Stronghold 加密存储
+   - AppImage 打包
    - 社区插件生态建设
 
 ---
@@ -591,8 +638,8 @@
 
 | 项目 | 定位 | 优势 | 劣势 |
 |------|------|------|------|
-| **Wails.Net** | Wails v3 的 .NET 10 移植，融合 ASP.NET Core + Wails v3 + Tauri v2 三家之长 | .NET 全栈集成 / Server 模式 / 多传输层 / 41+ 插件 / 源生成器绑定 / 完整 ACL / Authenticode 自动签名 / Logger 双向桥接 / 多 Provider Updater / senderWindowId 传播 / AssetServer Service Route | 无 macOS/iOS / 移动端插件少 / 无 SQL/Stronghold/OAuth / 无 Helper Process |
-| **Tauri 2** | Rust 桌面/移动框架，安全优先 | 全平台（5 个）/ 30+ 官方插件 / 完整 ACL / 编译期绑定（性能最优）/ 强大生态 | Rust 学习曲线 / 无 Server 模式 / 无中间件管道 / 无日志双向桥接 / 单一 Updater Provider |
+| **Wails.Net** | Wails v3 的 .NET 10 移植，融合 ASP.NET Core + Wails v3 + Tauri v2 三家之长 | .NET 全栈集成 / Server 模式 / 多传输层 / 41 个插件（含 SQL/Stronghold/DeepLink/Biometric/BarcodeScanner 等已实现）/ 源生成器绑定 / 完整 ACL / Authenticode 自动签名 / Logger 双向桥接 / 多 Provider Updater / senderWindowId 传播 / AssetServer Service Route / Helper Process / 窗口级 CSP / 分块上传 / Deploy CLI | 无 macOS/iOS / 移动端插件少于 Tauri 2 / 无 AppImage / 无 MSI |
+| **Tauri 2** | Rust 桌面/移动框架，安全优先 | 全平台（5 个）/ 30+ 官方插件 / 完整 ACL / 编译期绑定（性能最优）/ 强大生态 | Rust 学习曲线 / 无 Server 模式 / 无中间件管道 / 无日志双向桥接 / 单一 Updater Provider / 无 Authenticode 自动签名 |
 | **Wails 3** | Go 桌面/移动框架，简洁实用 | 全平台 / Go 语言易上手 / 多 Provider Updater / Helper Process / Event Hooks | 无 ACL / 无中间件管道 / 插件生态弱 / 无 Authenticode / 无日志双向桥接 / 无 senderWindowId |
 
 ### 18.2 Wails.Net 的核心价值
@@ -600,23 +647,23 @@
 1. **对 .NET 开发者最友好**：完整集成 Microsoft.Extensions.* 全栈，复用 ASP.NET Core 经验。
 2. **架构融合创新**：三家之长（ASP.NET Core 的 Host/DI + Wails v3 的 Runtime/IPC + Tauri v2 的 Plugin/Capability）。
 3. **企业级特性**：Server 模式（容器化部署）+ Authenticode 自动签名 + 完整 ACL + 中间件管道。
-4. **插件生态最丰富（内置）**：41 桌面 + 4 移动端插件，开箱即用。
+4. **插件生态最完整（内置）**：37 桌面 + 4 移动端插件，开箱即用，已对齐 Tauri 2 的 SQL / Stronghold / Biometric / Barcode Scanner / Localhost / Positioner / DeepLink 等能力。
 5. **调试与运维友好**（P1 阶段新增）：
    - Logger 双向桥接：前端 console ↔ 后端 ILogger 双向流转，便于联调。
    - senderWindowId 传播：多窗口场景下可按来源窗口过滤事件。
    - AssetServer Service Route：业务路由直接挂载到 AssetServer，无需独立 Kestrel。
-6. **更新能力完整**（P1-8 完成）：多 Provider Updater 与 Wails 3 持平，支持 GitHub / GitLab / HTTP 三种来源。
+6. **更新能力完整**（P1-8 完成）：多 Provider Updater 与 Wails 3 持平，支持 GitHub / GitLab / HTTP 三种来源 + Helper Process 替换二进制。
 
 ### 18.3 选型建议
 
-- **.NET 团队 / 企业级桌面应用**：选 Wails.Net（复用 .NET 技能栈 + Server 模式 + Authenticode + Logger 双向桥接 + 多 Provider Updater）
-- **Rust 团队 / 安全敏感应用**：选 Tauri 2（编译期绑定 + 完整 ACL + 全平台）
+- **.NET 团队 / 企业级桌面应用**：选 Wails.Net（复用 .NET 技能栈 + Server 模式 + Authenticode + Logger 双向桥接 + 多 Provider Updater + 41 个内置插件）
+- **Rust 团队 / 安全敏感应用**：选 Tauri 2（编译期绑定 + 完整 ACL + 全平台 + 强大生态）
 - **Go 团队 / 快速原型**：选 Wails 3（Go 语言简洁 + 多 Provider Updater + Helper Process）
 - **需要 macOS/iOS**：暂选 Tauri 2 或 Wails 3（Wails.Net 暂不支持）
-- **需要 Helper Process 替换二进制**：暂选 Wails 3（Wails.Net 在 P2 路线图中）
+- **需要 AppImage / MSI**：暂选 Tauri 2（Wails.Net 在 P3 路线图中）
 
 ---
 
 **文档结束**
 
-> 本文档基于 2026-07-18 仓库代码状态生成（提交 `e11bdd4`，P1 阶段全部完成）。如发现信息过时或错误，请提交 Issue 或 PR 更新。
+> 本文档基于 2026-07-18 仓库代码状态生成（提交 `9fcaef2`，P1 阶段全部完成，已修正插件清单与已实现项）。如发现信息过时或错误，请提交 Issue 或 PR 更新。

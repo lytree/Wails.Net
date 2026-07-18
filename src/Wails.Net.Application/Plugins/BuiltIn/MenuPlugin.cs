@@ -104,6 +104,53 @@ public class MenuPlugin : IPlugin
 
             ApplyMenuItemProperties(item, opts.Properties);
         }));
+
+        // === 角色菜单项（MenuRole，对应 Wails v3 / Tauri v2 PredefinedMenuItem）===
+        // menu.addRoleItem — 向指定父菜单追加一个角色菜单项，返回新菜单项 ID
+        commands.MapCommand("menu.addRoleItem", (Func<ICommandContext, MenuAddRoleItemOptions, string>)((ctx, opts) =>
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(opts.ParentId);
+            var manager = GetMenuManagerOrThrow(ctx);
+            var parent = FindMenuItemById(manager, opts.ParentId)
+                ?? throw new InvalidOperationException($"找不到 ID 为 '{opts.ParentId}' 的父菜单项");
+            var item = parent.AddRoleItem(opts.Role, opts.Label);
+            return item.ID.ToString(CultureInfo.InvariantCulture);
+        }));
+
+        // menu.addStandardEditMenu — 向指定父菜单追加标准编辑菜单项（Undo/Redo/Sep/Cut/Copy/Paste/SelectAll）
+        commands.MapCommand("menu.addStandardEditMenu", (Action<ICommandContext, MenuParentOptions>)((ctx, opts) =>
+        {
+            var parent = ResolveParentOrThrow(ctx, opts.ParentId);
+            parent.AddStandardEditMenu();
+        }));
+
+        // menu.addStandardWindowMenu — 向指定父菜单追加标准窗口菜单项（Minimize/Maximize/Sep/CloseWindow）
+        commands.MapCommand("menu.addStandardWindowMenu", (Action<ICommandContext, MenuParentOptions>)((ctx, opts) =>
+        {
+            var parent = ResolveParentOrThrow(ctx, opts.ParentId);
+            parent.AddStandardWindowMenu();
+        }));
+
+        // menu.addStandardHelpMenu — 向指定父菜单追加标准帮助菜单项（About）
+        commands.MapCommand("menu.addStandardHelpMenu", (Action<ICommandContext, MenuAddStandardHelpOptions>)((ctx, opts) =>
+        {
+            var parent = ResolveParentOrThrow(ctx, opts.ParentId);
+            parent.AddStandardHelpMenu(opts.Metadata, opts.Label);
+        }));
+    }
+
+    /// <summary>
+    /// 解析父菜单项。父菜单必须为应用菜单中的 MenuItem（可带子菜单）。
+    /// </summary>
+    /// <param name="ctx">命令上下文。</param>
+    /// <param name="parentId">父菜单项 ID（字符串形式的 <see cref="uint"/>）。</param>
+    /// <returns>父菜单实例。</returns>
+    private static Menu ResolveParentOrThrow(ICommandContext ctx, string parentId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(parentId);
+        var manager = GetMenuManagerOrThrow(ctx);
+        return FindMenuItemById(manager, parentId)
+            ?? throw new InvalidOperationException($"找不到 ID 为 '{parentId}' 的父菜单项");
     }
 
     /// <summary>
@@ -350,4 +397,40 @@ public sealed class MenuPopupOptions
 
     /// <summary>透传到菜单项点击回调的额外数据，可为 null。</summary>
     public string? Data { get; set; }
+}
+
+/// <summary>menu.addRoleItem 命令参数。</summary>
+public sealed class MenuAddRoleItemOptions
+{
+    /// <summary>父菜单项 ID（字符串形式的 <see cref="uint"/>）。</summary>
+    public string ParentId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 要添加的角色。
+    /// 前端传字符串（如 "Copy"），由 System.Text.Json 反序列化为 <see cref="MenuRole"/> 枚举。
+    /// </summary>
+    public MenuRole Role { get; set; } = MenuRole.None;
+
+    /// <summary>标签文本，留空时由平台实现提供默认本地化文本。</summary>
+    public string? Label { get; set; }
+}
+
+/// <summary>menu.addStandardEditMenu / menu.addStandardWindowMenu 命令参数。</summary>
+public sealed class MenuParentOptions
+{
+    /// <summary>父菜单项 ID（字符串形式的 <see cref="uint"/>）。</summary>
+    public string ParentId { get; set; } = string.Empty;
+}
+
+/// <summary>menu.addStandardHelpMenu 命令参数。</summary>
+public sealed class MenuAddStandardHelpOptions
+{
+    /// <summary>父菜单项 ID（字符串形式的 <see cref="uint"/>）。</summary>
+    public string ParentId { get; set; } = string.Empty;
+
+    /// <summary>关于对话框元数据，可为 null。</summary>
+    public AboutMetadata? Metadata { get; set; }
+
+    /// <summary>标签文本，留空时使用默认文本。</summary>
+    public string? Label { get; set; }
 }

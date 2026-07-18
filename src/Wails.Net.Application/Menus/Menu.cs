@@ -142,9 +142,73 @@ public class Menu
     {
         var separator = new MenuItem
         {
-            IsSeparator = true
+            IsSeparator = true,
+            Role = MenuRole.Separator
         };
         Append(separator);
+    }
+
+    /// <summary>
+    /// 添加角色菜单项。对应 Wails v3 的预定义菜单项机制。
+    /// </summary>
+    /// <param name="role">菜单项角色。</param>
+    /// <param name="label">标签文本，留空时由平台实现提供默认本地化文本。</param>
+    /// <returns>新创建的角色菜单项。</returns>
+    public MenuItem AddRoleItem(MenuRole role, string? label = null)
+    {
+        var item = new MenuItem
+        {
+            Role = role,
+            Label = label
+        };
+        if (role == MenuRole.Separator)
+        {
+            item.IsSeparator = true;
+        }
+        Append(item);
+        return item;
+    }
+
+    /// <summary>
+    /// 添加标准 Edit 菜单（Undo/Redo/Separator/Cut/Copy/Paste/SelectAll）。
+    /// 对应 Wails v3 / Tauri v2 的 Edit 角色组合。
+    /// </summary>
+    /// <returns>当前菜单实例（便于链式调用）。</returns>
+    public Menu AddStandardEditMenu()
+    {
+        Append(MenuItem.CreateUndo());
+        Append(MenuItem.CreateRedo());
+        Append(MenuItem.CreateSeparator());
+        Append(MenuItem.CreateCut());
+        Append(MenuItem.CreateCopy());
+        Append(MenuItem.CreatePaste());
+        Append(MenuItem.CreateSelectAll());
+        return this;
+    }
+
+    /// <summary>
+    /// 添加标准 Window 菜单（Minimize/Maximize/Separator/CloseWindow）。
+    /// </summary>
+    /// <returns>当前菜单实例（便于链式调用）。</returns>
+    public Menu AddStandardWindowMenu()
+    {
+        Append(MenuItem.CreateMinimize());
+        Append(MenuItem.CreateMaximize());
+        Append(MenuItem.CreateSeparator());
+        Append(MenuItem.CreateCloseWindow());
+        return this;
+    }
+
+    /// <summary>
+    /// 添加标准 Help 菜单（About）。
+    /// </summary>
+    /// <param name="metadata">关于对话框元数据，可为 null。</param>
+    /// <param name="label">标签文本，留空时使用默认文本。</param>
+    /// <returns>当前菜单实例（便于链式调用）。</returns>
+    public Menu AddStandardHelpMenu(AboutMetadata? metadata = null, string? label = null)
+    {
+        Append(MenuItem.CreateAbout(label, metadata));
+        return this;
     }
 
     /// <summary>

@@ -17,6 +17,9 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Wails.Net.Application.Tests" />
+    <!-- 平台实现项目需要访问 MenuRoleHelper 等内部类型以实现 ApplyRole -->
+    <InternalsVisibleTo Include="Wails.Net.Application.Windows" />
+    <InternalsVisibleTo Include="Wails.Net.Application.Linux" />
   </ItemGroup>
 
   <ItemGroup>

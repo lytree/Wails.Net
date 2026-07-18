@@ -75,4 +75,14 @@ public interface IMenuImpl
     /// </summary>
     /// <param name="bitmap">位图字节数据，可为 null。</param>
     void SetBitmap(byte[]? bitmap);
+
+    /// <summary>
+    /// 应用角色到平台原生命令。在菜单项添加/更新时由基类调用。
+    /// 当 <see cref="MenuItem.Role"/> 不为 <see cref="MenuRole.None"/> 时，
+    /// 平台实现应：1) 填充默认 Label（若为空）；2) 绑定默认 Accelerator；
+    /// 3) 注册到 KeyBindingManager（若需要全局热键）；4) 设置 Callback 为角色对应系统命令。
+    /// </summary>
+    /// <param name="item">菜单项。</param>
+    /// <param name="window">关联窗口（用于角色命令的目标），可为 null。</param>
+    void ApplyRole(MenuItem item, Windows.IWebviewWindowImpl? window);
 }
