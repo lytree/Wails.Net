@@ -63,7 +63,7 @@ public class ServerPlatformApp : IPlatformApp
     }
 
     /// <inheritdoc />
-    public void Destroy()
+    public virtual void Destroy()
     {
         // 释放主循环阻塞，确保 Run() 能够返回。
         SignalShutdown();

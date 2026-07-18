@@ -191,6 +191,28 @@ public interface IMenuManager
     /// </summary>
     /// <returns>菜单实例，可为 null。</returns>
     Menu? GetApplicationMenu();
+
+    /// <summary>
+    /// 注册上下文菜单（P1-4）。
+    /// 将 <see cref="ContextMenu"/> 按字符串 ID 注册到全局表，供前端通过 ID 触发弹出。
+    /// 对应 Wails v3 Go 版本 <c>application.go</c> 中的 <c>contextMenus</c> 字典。
+    /// </summary>
+    /// <param name="id">菜单 ID，由前端 CSS 变量 <c>--custom-contextmenu</c> 引用。</param>
+    /// <param name="menu">要注册的上下文菜单实例。</param>
+    void RegisterContextMenu(string id, ContextMenu menu);
+
+    /// <summary>
+    /// 根据 ID 获取已注册的上下文菜单（P1-4）。
+    /// </summary>
+    /// <param name="id">菜单 ID。</param>
+    /// <returns>匹配的上下文菜单实例，若未注册则返回 null。</returns>
+    ContextMenu? GetContextMenu(string id);
+
+    /// <summary>
+    /// 移除已注册的上下文菜单（P1-4）。
+    /// </summary>
+    /// <param name="id">要移除的菜单 ID。</param>
+    void RemoveContextMenu(string id);
 }
 
 /// <summary>

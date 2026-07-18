@@ -42,7 +42,11 @@ public interface IWailsEventListener
     /// </summary>
     /// <param name="eventName">事件名称。</param>
     /// <param name="data">事件数据，可为 null。</param>
-    void NotifyEvent(string eventName, object? data);
+    /// <param name="senderWindowId">事件来源窗口 ID，可为 null（应用级事件）。
+    /// 对应 Wails v3 Go 版本 CustomEvent.Sender 字段语义：标识事件来源窗口，
+    /// 传输层应将其包含在前端载荷中使前端可识别事件发起方。
+    /// 默认 null 保持与既有调用方的兼容。</param>
+    void NotifyEvent(string eventName, object? data, uint? senderWindowId = null);
 }
 
 /// <summary>

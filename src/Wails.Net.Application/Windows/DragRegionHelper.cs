@@ -2,18 +2,32 @@ namespace Wails.Net.Application.Windows;
 
 /// <summary>
 /// 无边框窗口 CSS 拖拽区域辅助类。
-/// 对应 Tauri v2 / Electron 的 -webkit-app-region: drag CSS 属性支持。
-/// 通过注入 JavaScript 监听 mousedown 事件，检查目标元素的计算样式，
-/// 当值为 drag 时调用后端 StartDrag 方法启动窗口拖拽。
+/// <para>
+/// 对应 Wails v3 前端 <c>drag.ts</c> 的拖拽检测逻辑。
+/// 通过注入 JavaScript 监听 <c>mousedown</c> 事件，检查目标元素的计算样式：
+/// </para>
+/// <para>
+/// 支持两种 CSS 变量约定（同时识别，便于跨框架复用）：
+/// <list type="bullet">
+/// <item><c>--wails-draggable: drag</c> — Wails v3 标准，优先级最高。</item>
+/// <item><c>-webkit-app-region: drag</c> — Tauri v2 / Electron 兼容回退。</item>
+/// </list>
+/// </para>
+/// <para>
+/// 元素祖先链中 <c>--wails-draggable: no-drag</c> / <c>-webkit-app-region: no-drag</c>
+/// 会覆盖外层 <c>drag</c> 设置，允许在拖拽区域内嵌入可交互元素。
+/// </para>
+/// <para>
+/// 为避免拖拽误触滚动条，参照 Wails v3 <c>drag.ts</c> 的边界检查：
+/// 仅当 <c>offsetX - paddingLeft &lt; clientWidth</c> 且 <c>offsetY - paddingTop &lt; clientHeight</c>
+/// 时才视为有效拖拽点。
+/// </para>
 /// </summary>
 public static class DragRegionHelper
 {
     /// <summary>
     /// 获取要注入的 JavaScript 代码，用于实现 CSS 拖拽区域。
     /// 此代码应在页面加载完成后通过 ExecJS 注入。
-    /// 监听 mousedown 事件，遍历目标元素祖先链查找 -webkit-app-region 计算样式：
-    /// - 值为 drag 时调用 window.__wails_startDrag__() 触发后端拖拽；
-    /// - 值为 no-drag 时允许默认交互（覆盖祖先的 drag 设置）。
     /// </summary>
     /// <returns>JavaScript 代码字符串。</returns>
     public static string GetDragRegionScript()
@@ -23,11 +37,25 @@ public static class DragRegionHelper
                 if (window.__wailsDragRegionInitialized) return;
                 window.__wailsDragRegionInitialized = true;
 
+                // 读取元素的计算样式，按优先级返回 'drag' / 'no-drag' / null。
+                // 优先 --wails-draggable（Wails v3 标准），回退 -webkit-app-region（Tauri/Electron 兼容）。
+                function getDragRegionValue(el) {
+                    var style = window.getComputedStyle(el);
+                    var wailsDrag = style.getPropertyValue('--wails-draggable').trim();
+                    if (wailsDrag === 'drag' || wailsDrag === 'no-drag') {
+                        return wailsDrag;
+                    }
+                    var appRegion = style.getPropertyValue('-webkit-app-region').trim();
+                    if (appRegion === 'drag' || appRegion === 'no-drag') {
+                        return appRegion;
+                    }
+                    return null;
+                }
+
                 function getEffectiveDragRegion(element) {
                     var el = element;
                     while (el && el !== document.body) {
-                        var style = window.getComputedStyle(el);
-                        var region = style.getPropertyValue('-webkit-app-region');
+                        var region = getDragRegionValue(el);
                         if (region === 'drag') return 'drag';
                         if (region === 'no-drag') return 'no-drag';
                         el = el.parentElement;
@@ -40,7 +68,16 @@ public static class DragRegionHelper
                     if (e.target === document || e.target === document.documentElement) return;
 
                     var region = getEffectiveDragRegion(e.target);
-                    if (region === 'drag') {
+                    if (region !== 'drag') return;
+
+                    // Wails v3 边界检查：避免在滚动条区域触发拖拽。
+                    // offsetX/Y 包含 padding，需减去 paddingLeft/Top 后与 clientWidth/Height 比较。
+                    var target = e.target;
+                    var style = window.getComputedStyle(target);
+                    var paddingLeft = parseFloat(style.paddingLeft) || 0;
+                    var paddingTop = parseFloat(style.paddingTop) || 0;
+                    if (e.offsetX - paddingLeft < target.clientWidth &&
+                        e.offsetY - paddingTop < target.clientHeight) {
                         e.preventDefault();
                         e.stopPropagation();
                         if (typeof window.__wails_startDrag__ === 'function') {
@@ -61,12 +98,23 @@ public static class DragRegionHelper
     }
 
     /// <summary>
-    /// 获取 CSS 规则，为 -webkit-app-region: drag 元素设置默认样式。
+    /// 获取 CSS 规则，为拖拽区域元素设置默认样式。
+    /// 同时匹配 Wails v3 (<c>--wails-draggable: drag</c>) 和 Tauri v2 (<c>-webkit-app-region: drag</c>) 约定。
     /// </summary>
     /// <returns>CSS 字符串。</returns>
     public static string GetDragRegionCss()
     {
-        return "[style*=\"-webkit-app-region: drag\"], [data-wails-drag] { -webkit-user-select: none; user-select: none; cursor: default; }";
+        return """
+            [style*="--wails-draggable: drag"],
+            [style*="--wails-draggable:drag"],
+            [style*="-webkit-app-region: drag"],
+            [style*="-webkit-app-region:drag"],
+            [data-wails-drag] {
+                -webkit-user-select: none;
+                user-select: none;
+                cursor: default;
+            }
+            """;
     }
 
     /// <summary>

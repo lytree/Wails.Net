@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Wails.Net.Application.Bindings;
 using Wails.Net.Application.Events;
+using Wails.Net.Application.Logging;
 using Wails.Net.Application.Managers;
 using Wails.Net.Application.Platform;
 using Wails.Net.Application.Plugins;
@@ -68,6 +69,12 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<NotificationService>();
         services.AddSingleton<SqliteService>();
         services.AddSingleton<UpdaterService>();
+
+        // P1-3：注册 LogServiceLoggerProvider 为 ILoggerProvider，
+        // 使所有 ILogger<T> 写入自动进入 LogService 的 handler 链，
+        // 完成 Application.Logger 与 LogService 的连通。
+        services.AddSingleton<ILoggerProvider>(sp =>
+            new LogServiceLoggerProvider(sp.GetRequiredService<LogService>()));
 
         return services;
     }

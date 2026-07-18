@@ -326,6 +326,49 @@ public sealed class NativeIpcTransportTests
     }
 
     [Test]
+    public async Task NotifyEvent_WithSenderWindowId_IncludesFieldInPayload()
+    {
+        // P1-2：验证 senderWindowId 出现在事件载荷中，前端可据此识别事件发起窗口
+        var (processor, _, _) = CreateProcessor();
+        var transport = new NativeIpcTransport(processor);
+        var (stub, _, posted) = CreateStub();
+        transport.RegisterWindow(1u, stub);
+
+        transport.NotifyEvent("from.window", "payload", senderWindowId: 42u);
+
+        await Task.Yield();
+        await Task.Delay(50);
+
+        await Assert.That(posted.Count).IsEqualTo(1);
+        var postedJson = posted[0];
+        using var doc = JsonDocument.Parse(postedJson);
+        var root = doc.RootElement;
+        await Assert.That(root.GetProperty("type").GetString()).IsEqualTo("event");
+        await Assert.That(root.GetProperty("name").GetString()).IsEqualTo("from.window");
+        await Assert.That(root.GetProperty("senderWindowId").GetUInt32()).IsEqualTo(42u);
+    }
+
+    [Test]
+    public async Task NotifyEvent_WithNullSenderWindowId_PayloadContainsNullSenderField()
+    {
+        // P1-2：应用级事件（无来源窗口）载荷中 senderWindowId 应为 null
+        var (processor, _, _) = CreateProcessor();
+        var transport = new NativeIpcTransport(processor);
+        var (stub, _, posted) = CreateStub();
+        transport.RegisterWindow(1u, stub);
+
+        transport.NotifyEvent("app.event", null, senderWindowId: null);
+
+        await Task.Yield();
+        await Task.Delay(50);
+
+        await Assert.That(posted.Count).IsEqualTo(1);
+        var postedJson = posted[0];
+        using var doc = JsonDocument.Parse(postedJson);
+        await Assert.That(doc.RootElement.GetProperty("senderWindowId").ValueKind).IsEqualTo(JsonValueKind.Null);
+    }
+
+    [Test]
     public async Task RegisterWindow_InstallsHandlerThatCallsHandleIncomingAsync()
     {
         // 端到端验证：注册后，调用 stub.ReceivedHandler 应与直接调用 HandleIncomingAsync 等价

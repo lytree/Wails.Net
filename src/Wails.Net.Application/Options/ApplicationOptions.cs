@@ -66,8 +66,42 @@ public class ApplicationOptions
 
     /// <summary>
     /// 应用关闭时执行的回调，可为 null。
+    /// 对应 Wails v3 Go 版本 <c>Options.OnShutdown</c>：在所有关闭任务（<see cref="ShutdownTasks"/>）中首先执行。
     /// </summary>
     public Action? OnShutdown { get; set; }
+
+    /// <summary>
+    /// 应用完全关闭后执行的回调，可为 null。
+    /// <para>
+    /// 对应 Wails v3 Go 版本 <c>Options.PostShutdown</c>：
+    /// 在 <see cref="Application.Shutdown"/> 方法的最末尾、所有清理工作完成之后调用。
+    /// 与 <see cref="OnShutdown"/> 的区别：
+    /// <list type="bullet">
+    /// <item><c>OnShutdown</c> 在关闭流程开始时调用，此时窗口、服务、传输层等仍可访问。</item>
+    /// <item><c>PostShutdown</c> 在关闭流程结束后调用，此时所有资源已释放、平台已销毁。</item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// 典型用途：刷新日志、释放外部资源（如文件句柄、命名管道）、上报关闭指标等。
+    /// </para>
+    /// </summary>
+    public Action? PostShutdown { get; set; }
+
+    /// <summary>
+    /// 决定应用是否应该退出的回调，可为 null。返回 true 表示允许退出；返回 false 表示阻止退出。
+    /// <para>
+    /// 对应 Wails v3 Go 版本 <c>Options.ShouldQuit</c>：
+    /// 由平台信号处理器在收到退出信号（如最后一个窗口关闭、系统关机、Ctrl+C）时调用。
+    /// 若返回 false，平台将不触发关闭流程，应用继续运行。
+    /// </para>
+    /// <para>
+    /// 默认行为（为 null 时）：始终返回 true，即允许退出。
+    /// </para>
+    /// <para>
+    /// 典型用途：未保存数据提示、下载任务进行中阻止退出、托盘最小化而非退出等。
+    /// </para>
+    /// </summary>
+    public Func<bool>? ShouldQuit { get; set; }
 
     /// <summary>
     /// 服务列表。

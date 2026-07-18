@@ -1,3 +1,4 @@
+using Wails.Net.Application.Browser;
 using Wails.Net.Application.Managers;
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.Platform;
@@ -33,6 +34,10 @@ public static class WindowsApplicationExtensions
 
         // 注册快捷键绑定管理器，委托给 Win32KeyBindingManager 的 RegisterHotKey 实现。
         app.KeyBindingManager = new Win32KeyBindingManager();
+
+        // 注册浏览器管理器，委托给 WindowsBrowserManager 通过 ShellExecuteW 打开默认浏览器。
+        // 对应 Wails v3 internal/browser 包的 Windows 实现。
+        app.BrowserManager = new WindowsBrowserManager();
 
         return app;
     }

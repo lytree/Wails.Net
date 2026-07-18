@@ -644,6 +644,17 @@ public class WebviewWindow
     public void OpenContextMenu(int x, int y) => ImplRequired.OpenContextMenu(x, y);
 
     /// <summary>
+    /// 按 <see cref="Menus.ContextMenuData"/> 打开已注册的上下文菜单（P1-4）。
+    /// 对应 Wails v3 Go 版本 <c>window.OpenContextMenu(data *ContextMenuData)</c> 契约。
+    /// </summary>
+    /// <param name="data">上下文菜单数据。</param>
+    public void OpenContextMenu(Menus.ContextMenuData data)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        Impl?.OpenContextMenu(data);
+    }
+
+    /// <summary>
     /// 将窗口内容导出为 PDF（字节数组选项重载）。
     /// </summary>
     /// <param name="pageOptions">PDF 导出选项字节数组，可为 null。</param>

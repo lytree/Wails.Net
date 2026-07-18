@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 using Wails.Net.Application.Bindings;
 using Wails.Net.Application.Commands;
 using Wails.Net.Application.Events;
+using Wails.Net.Application.Menus;
 using Wails.Net.Application.Windows;
 using Wails.Net.Errors;
 
@@ -641,7 +642,14 @@ public class MessageProcessor
 
     /// <summary>
     /// 处理上下文菜单消息（右键菜单）。
-    /// 将上下文菜单事件转发为标准的 Wails 事件进行广播。
+    /// <para>
+    /// P1-4：与 Wails v3 行为对齐。解析 <see cref="ContextMenuPayload"/>，
+    /// 通过 <see cref="_windowLookup"/> 查找目标 <see cref="WebviewWindow"/>，
+    /// 调用 <c>window.Impl.OpenContextMenu(ContextMenuData)</c> 弹出已注册的上下文菜单。
+    /// </para>
+    /// <para>
+    /// 同时保留 <c>wails:contextmenu</c> 事件广播作为额外的可订阅钩子（不影响主路径）。
+    /// </para>
     /// </summary>
     /// <param name="message">上下文菜单消息。</param>
     /// <returns>始终返回 null（上下文菜单事件无需响应）。</returns>
@@ -653,8 +661,34 @@ public class MessageProcessor
             return null;
         }
 
-        // 将上下文菜单事件转发为标准事件广播
+        // 将上下文菜单事件转发为标准事件广播（保留钩子）
         _events.Emit("wails:contextmenu", menuPayload, message.WindowId);
+
+        // P1-4：与 Wails v3 对齐，查找目标窗口并调用 OpenContextMenu(ContextMenuData)
+        if (_windowLookup is not null && message.WindowId is { } windowId)
+        {
+            var window = _windowLookup(windowId);
+            if (window?.Impl is not null)
+            {
+                var data = new ContextMenuData
+                {
+                    // 兼容旧前端格式：Id 优先，为空时回退到 ContextId
+                    Id = !string.IsNullOrEmpty(menuPayload.Id) ? menuPayload.Id : (menuPayload.ContextId ?? string.Empty),
+                    X = menuPayload.X,
+                    Y = menuPayload.Y,
+                    Data = menuPayload.Data
+                };
+                try
+                {
+                    window.Impl.OpenContextMenu(data);
+                }
+                catch (Exception ex)
+                {
+                    _events.Emit("wails:error", new { source = "contextmenu", error = ex.Message }, windowId);
+                }
+            }
+        }
+
         return null;
     }
 
@@ -1251,33 +1285,50 @@ public class DragPayload
 
 /// <summary>
 /// 上下文菜单消息的载荷。
-/// 对应 Wails v3 前端右键菜单事件。
+/// 对应 Wails v3 Go 版本 <c>messageprocessor_contextmenu.go</c> 中的 <c>ContextMenuData</c> 结构（P1-4）。
+/// <para>
+/// 字段命名与 Wails v3 前端 <c>contextmenu.ts</c> 发送格式一致：
+/// <c>{id, x, y, data}</c>。windowId 来自 <see cref="Message.WindowId"/>，不在此重复。
+/// </para>
+/// <para>
+/// 兼容性：保留 <c>ContextId</c> 字段以接受旧前端格式（值为 <c>"contextId"</c>），
+/// 读取时优先使用 <c>Id</c>，若 <c>Id</c> 为空则回退到 <c>ContextId</c>。
+/// </para>
 /// </summary>
 public class ContextMenuPayload
 {
     /// <summary>
-    /// 鼠标 X 坐标。
+    /// 已注册的上下文菜单 ID。
+    /// 对应前端 CSS 变量 <c>--custom-contextmenu</c> 的值。
+    /// </summary>
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    /// <summary>
+    /// 鼠标 X 坐标（clientX，相对于浏览器视口）。
     /// </summary>
     [JsonPropertyName("x")]
     public int X { get; set; }
 
     /// <summary>
-    /// 鼠标 Y 坐标。
+    /// 鼠标 Y 坐标（clientY，相对于浏览器视口）。
     /// </summary>
     [JsonPropertyName("y")]
     public int Y { get; set; }
 
     /// <summary>
-    /// 触发上下文菜单的元素标识。
+    /// 来自前端 CSS 变量 <c>--custom-contextmenu-data</c> 的额外数据字符串。
+    /// 透传到菜单项点击回调。
+    /// </summary>
+    [JsonPropertyName("data")]
+    public string? Data { get; set; }
+
+    /// <summary>
+    /// 兼容旧前端格式的元素标识。
+    /// 若 <see cref="Id"/> 为空，则回退使用此值作为菜单 ID。
     /// </summary>
     [JsonPropertyName("contextId")]
     public string? ContextId { get; set; }
-
-    /// <summary>
-    /// 发送窗口 ID。
-    /// </summary>
-    [JsonPropertyName("windowId")]
-    public uint? WindowId { get; set; }
 }
 
 /// <summary>

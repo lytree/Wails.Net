@@ -54,8 +54,11 @@ public class WebSocketBroadcaster
     /// </summary>
     /// <param name="eventName">事件名称。</param>
     /// <param name="data">事件数据。</param>
+    /// <param name="senderWindowId">事件来源窗口 ID，可为 null（应用级事件）。
+    /// 包含在前端载荷中使前端可识别事件发起方。
+    /// 对应 Wails v3 Go 版本 CustomEvent.Sender 字段语义。</param>
     /// <returns>表示广播操作的异步任务。</returns>
-    public async Task BroadcastEventAsync(string eventName, object? data)
+    public async Task BroadcastEventAsync(string eventName, object? data, uint? senderWindowId = null)
     {
         if (_clients.IsEmpty)
         {
@@ -66,7 +69,8 @@ public class WebSocketBroadcaster
         {
             type = "event",
             name = eventName,
-            data
+            data,
+            senderWindowId
         };
 
         var json = JsonSerializer.Serialize(message, JsonOptions.DefaultSerializerOptions);
@@ -84,9 +88,10 @@ public class WebSocketBroadcaster
     /// </summary>
     /// <param name="eventName">事件名称。</param>
     /// <param name="data">事件数据。</param>
-    public void BroadcastEvent(string eventName, object? data)
+    /// <param name="senderWindowId">事件来源窗口 ID，可为 null（应用级事件）。</param>
+    public void BroadcastEvent(string eventName, object? data, uint? senderWindowId = null)
     {
-        _ = BroadcastEventAsync(eventName, data);
+        _ = BroadcastEventAsync(eventName, data, senderWindowId);
     }
 
     /// <summary>
@@ -136,14 +141,16 @@ public class WebSocketBroadcaster
     /// <param name="exceptClientId">要排除的客户端 ID。</param>
     /// <param name="eventName">事件名称。</param>
     /// <param name="data">事件数据。</param>
+    /// <param name="senderWindowId">事件来源窗口 ID，可为 null（应用级事件）。</param>
     /// <returns>表示广播操作的异步任务。</returns>
-    public async Task BroadcastEventExceptAsync(string exceptClientId, string eventName, object? data)
+    public async Task BroadcastEventExceptAsync(string exceptClientId, string eventName, object? data, uint? senderWindowId = null)
     {
         var message = new
         {
             type = "event",
             name = eventName,
-            data
+            data,
+            senderWindowId
         };
 
         var json = JsonSerializer.Serialize(message, JsonOptions.DefaultSerializerOptions);

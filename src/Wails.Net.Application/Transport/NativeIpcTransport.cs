@@ -142,16 +142,20 @@ public sealed class NativeIpcTransport : INativeIpcTransport
     /// </summary>
     /// <param name="eventName">事件名称。</param>
     /// <param name="data">事件数据，可为 null。</param>
-    public void NotifyEvent(string eventName, object? data)
+    /// <param name="senderWindowId">事件来源窗口 ID，可为 null（应用级事件）。
+    /// 包含在事件载荷 <see cref="EventPayload.SenderWindowId"/> 中推送到前端，
+    /// 使前端可识别事件发起方。</param>
+    public void NotifyEvent(string eventName, object? data, uint? senderWindowId = null)
     {
         if (_windowImpls.IsEmpty)
         {
             return;
         }
 
-        // 构造事件消息：{ type: "event", name, data }
+        // 构造事件消息：{ type: "event", name, data, senderWindowId }
         // 前端通过 __wailsNative.onMessage 接收，按 type 分发到事件监听器
-        var payload = new EventPayload(eventName, data);
+        // P1-2：包含 senderWindowId 使前端可识别事件来源窗口
+        var payload = new EventPayload(eventName, data, senderWindowId);
         var json = JsonSerializer.Serialize(payload, JsonOptions.DefaultSerializerOptions);
 
         foreach (var windowId in _windowImpls.Keys)
@@ -174,10 +178,17 @@ public sealed class NativeIpcTransport : INativeIpcTransport
         /// <summary>事件数据。</summary>
         public object? Data { get; }
 
-        public EventPayload(string name, object? data)
+        /// <summary>
+        /// 事件来源窗口 ID，可为 null（应用级事件）。
+        /// 对应 Wails v3 Go 版本 CustomEvent.Sender 字段语义。
+        /// </summary>
+        public uint? SenderWindowId { get; }
+
+        public EventPayload(string name, object? data, uint? senderWindowId)
         {
             Name = name;
             Data = data;
+            SenderWindowId = senderWindowId;
         }
     }
 }

@@ -113,6 +113,19 @@ public class AssetServer
     private readonly ConcurrentDictionary<string, string> _windowCspHeaders = new();
 
     /// <summary>
+    /// 服务路由表（P1-6 新增）：路由前缀到 <see cref="IHttpServiceHandler"/> 的映射。
+    /// <para>
+    /// 对应 Wails v3 Go 版本 <c>services.go</c> 中通过 <c>ServiceOptions.Route</c> 挂载
+    /// 实现 <c>http.Handler</c> 的服务到 AssetServer 的机制。
+    /// </para>
+    /// <para>
+    /// 键为已规范化的路由前缀（以 <c>/</c> 开头，不以 <c>/</c> 结尾，根路由 <c>/</c> 例外）。
+    /// 匹配规则：精确匹配或 <c>path</c> 以 <c>route + "/"</c> 开头；多个路由匹配时取最长匹配。
+    /// </para>
+    /// </summary>
+    private readonly ConcurrentDictionary<string, IHttpServiceHandler> _serviceRoutes = new(StringComparer.Ordinal);
+
+    /// <summary>
     /// 获取资源服务器选项。
     /// </summary>
     public AssetOptions Options => _options;
@@ -247,6 +260,161 @@ public class AssetServer
         }
 
         return _cspHeader;
+    }
+
+    /// <summary>
+    /// 挂载服务路由到 AssetServer（P1-6 新增）。
+    /// <para>
+    /// 对应 Wails v3 Go 版本 <c>services.go</c> 中通过 <c>ServiceOptions.Route</c> 挂载
+    /// 实现 <c>http.Handler</c> 的服务到内部 AssetServer 的机制。
+    /// </para>
+    /// <para>
+    /// 挂载后，所有路径匹配 <paramref name="route"/> 前缀的 HTTP 请求将被转发到
+    /// <paramref name="handler"/> 处理，绕过 AssetServer 默认的静态资源处理流程
+    /// （CSP/Nonce 注入、中间件链、SPA 回退）。
+    /// </para>
+    /// <para>
+    /// CORS 响应头（<c>Access-Control-Allow-Origin: *</c>）仍会被设置，
+    /// 以确保前端页面能跨源访问服务路由。
+    /// </para>
+    /// </summary>
+    /// <param name="route">
+    /// 路由前缀。会被规范化为以 <c>/</c> 开头、不以 <c>/</c> 结尾。
+    /// 例如：<c>"api"</c> → <c>"/api"</c>；<c>"/api/"</c> → <c>"/api"</c>；<c>"/"</c> 保留（根路由）。
+    /// </param>
+    /// <param name="handler">HTTP 服务处理器实例。</param>
+    /// <exception cref="ArgumentNullException">handler 为 null。</exception>
+    /// <exception cref="ArgumentException">route 为 null、空或仅空白字符。</exception>
+    public void MountServiceRoute(string route, IHttpServiceHandler handler)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(route);
+        ArgumentNullException.ThrowIfNull(handler);
+
+        var normalizedRoute = NormalizeRoute(route);
+        _serviceRoutes[normalizedRoute] = handler;
+    }
+
+    /// <summary>
+    /// 取消挂载指定路由前缀的服务路由（P1-6 新增）。
+    /// </summary>
+    /// <param name="route">要取消挂载的路由前缀（会被同样规范化）。</param>
+    /// <returns>是否成功移除；若路由未注册则返回 false。</returns>
+    public bool UnmountServiceRoute(string route)
+    {
+        if (string.IsNullOrWhiteSpace(route))
+        {
+            return false;
+        }
+
+        var normalizedRoute = NormalizeRoute(route);
+        return _serviceRoutes.TryRemove(normalizedRoute, out _);
+    }
+
+    /// <summary>
+    /// 查询指定路由前缀是否已挂载服务（P1-6 新增）。
+    /// </summary>
+    /// <param name="route">路由前缀。</param>
+    /// <returns>若已挂载返回 true；否则 false。</returns>
+    public bool IsServiceRouteMounted(string route)
+    {
+        if (string.IsNullOrWhiteSpace(route))
+        {
+            return false;
+        }
+
+        var normalizedRoute = NormalizeRoute(route);
+        return _serviceRoutes.ContainsKey(normalizedRoute);
+    }
+
+    /// <summary>
+    /// 获取所有已挂载的路由前缀的只读列表（P1-6 新增）。
+    /// </summary>
+    public IReadOnlyList<string> MountedServiceRoutes => _serviceRoutes.Keys.ToList().AsReadOnly();
+
+    /// <summary>
+    /// 尝试按请求路径匹配已挂载的服务路由（P1-6 新增）。
+    /// </summary>
+    /// <param name="path">请求路径（如 <c>/api/users</c>）。</param>
+    /// <param name="route">匹配到的路由前缀；未匹配时为 null。</param>
+    /// <param name="handler">匹配到的处理器；未匹配时为 null。</param>
+    /// <returns>是否匹配到路由。</returns>
+    /// <remarks>
+    /// 匹配规则：
+    /// <list type="bullet">
+    /// <item>精确匹配：<c>path == route</c>（如 <c>/api</c> 匹配 <c>/api</c>）。</item>
+    /// <item>前缀匹配：<c>path</c> 以 <c>route + "/"</c> 开头（如 <c>/api/users</c> 匹配 <c>/api</c>）。</item>
+    /// <item>不匹配：<c>/apiv2</c> 不匹配 <c>/api</c>（避免前缀歧义）。</item>
+    /// </list>
+    /// 当多个路由都能匹配时，选择最长匹配（最具体）。
+    /// </remarks>
+    public bool TryMatchServiceRoute(string path, out string? route, out IHttpServiceHandler? handler)
+    {
+        if (string.IsNullOrEmpty(path))
+        {
+            route = null;
+            handler = null;
+            return false;
+        }
+
+        string? bestRoute = null;
+        IHttpServiceHandler? bestHandler = null;
+
+        foreach (var kv in _serviceRoutes)
+        {
+            var candidateRoute = kv.Key;
+            if (MatchesRoute(path, candidateRoute))
+            {
+                if (bestRoute is null || candidateRoute.Length > bestRoute.Length)
+                {
+                    bestRoute = candidateRoute;
+                    bestHandler = kv.Value;
+                }
+            }
+        }
+
+        route = bestRoute;
+        handler = bestHandler;
+        return bestRoute is not null;
+    }
+
+    /// <summary>
+    /// 规范化路由前缀：确保以 <c>/</c> 开头，去除尾部 <c>/</c>（根路由 <c>/</c> 保留）。
+    /// </summary>
+    /// <param name="route">原始路由字符串。</param>
+    /// <returns>规范化后的路由。</returns>
+    private static string NormalizeRoute(string route)
+    {
+        var trimmed = route.Trim();
+        if (!trimmed.StartsWith('/'))
+        {
+            trimmed = "/" + trimmed;
+        }
+        while (trimmed.Length > 1 && trimmed.EndsWith('/'))
+        {
+            trimmed = trimmed[..^1];
+        }
+        return trimmed;
+    }
+
+    /// <summary>
+    /// 判断指定路径是否匹配给定路由前缀。
+    /// </summary>
+    private static bool MatchesRoute(string path, string route)
+    {
+        if (route.Length == 1 && route[0] == '/')
+        {
+            // 根路由匹配任意路径
+            return true;
+        }
+
+        if (string.Equals(path, route, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return path.Length > route.Length &&
+               path[route.Length] == '/' &&
+               path.StartsWith(route, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -388,6 +556,44 @@ public class AssetServer
         // 添加 CORS 响应头
         response.Headers[Headers.AccessControlAllowOrigin] = "*";
 
+        var path = request.Url?.AbsolutePath ?? "/";
+        // 去除查询参数，仅保留路径部分
+        path = path.Split('?')[0];
+
+        // P1-6：服务路由转发 — 在 CSP/Nonce/OPTIONS/中间件链之前优先匹配服务路由。
+        // 服务作为独立的 HTTP 处理器，自行负责所有 HTTP 语义（包括 OPTIONS 预检和 CSP 头管理）。
+        // 对应 Wails v3 Go 版本中 Service 通过 ServiceOptions.Route 挂载到 AssetServer mux 的机制。
+        if (TryMatchServiceRoute(path, out var matchedRoute, out var serviceHandler) && serviceHandler is not null)
+        {
+            _logger?.LogDebug("Service route matched: {Path} → {Route}", path, matchedRoute);
+            try
+            {
+                await serviceHandler.HandleAsync(context, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Service route handler threw exception: {Route}", matchedRoute);
+                if (context.Response.ContentLength64 == 0 && !context.Response.SendChunked)
+                {
+                    // 仅在响应尚未写入时回填 500；已写入时让原始响应保持
+                    try
+                    {
+                        context.Response.StatusCode = 500;
+                        context.Response.ContentType = "text/plain; charset=utf-8";
+                        var body = Encoding.UTF8.GetBytes($"500 Service Handler Error: {ex.Message}");
+                        context.Response.ContentLength64 = body.Length;
+                        await context.Response.OutputStream.WriteAsync(body, cancellationToken);
+                    }
+                    catch
+                    {
+                        // 二级异常（如客户端已断开）忽略
+                    }
+                }
+                try { context.Response.Close(); } catch { /* 忽略 */ }
+            }
+            return;
+        }
+
         // 解析窗口名称（P0-4：用于 per-window CSP 查找，对应 Tauri v2 的 remote CSP）
         var windowName = request.Headers[Headers.WindowName];
         if (string.IsNullOrEmpty(windowName))
@@ -421,10 +627,6 @@ public class AssetServer
             response.Close();
             return;
         }
-
-        var path = request.Url?.AbsolutePath ?? "/";
-        // 去除查询参数，仅保留路径部分
-        path = path.Split('?')[0];
 
         // 先执行 HTTP 中间件链：若中间件已处理则返回，否则执行核心资源处理
         await _middlewareChain.ExecuteHttpAsync(context, async () =>

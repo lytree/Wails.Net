@@ -117,9 +117,9 @@ public static class ServerModeTransportExtensions
         }
 
         /// <inheritdoc />
-        public void NotifyEvent(string eventName, object? data)
+        public void NotifyEvent(string eventName, object? data, uint? senderWindowId = null)
         {
-            _transport.NotifyEvent(eventName, data);
+            _transport.NotifyEvent(eventName, data, senderWindowId);
         }
     }
 

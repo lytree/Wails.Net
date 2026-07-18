@@ -1,3 +1,4 @@
+using Wails.Net.Application.Logging;
 using Wails.Net.Application.Menus;
 
 namespace Wails.Net.Application.Windows;
@@ -547,6 +548,30 @@ public interface IWebviewWindowImpl
     }
 
     /// <summary>
+    /// 按 <see cref="Menus.ContextMenuData"/> 打开已注册的上下文菜单（P1-4）。
+    /// <para>
+    /// 对应 Wails v3 Go 版本 <c>window.OpenContextMenu(data *ContextMenuData)</c> 契约。
+    /// 平台实现应：
+    /// <list type="bullet">
+    /// <item>通过 <see cref="Managers.IMenuManager.GetContextMenu"/> 按 <see cref="Menus.ContextMenuData.Id"/>
+    /// 查找已注册的 <see cref="Menus.ContextMenu"/> 实例。</item>
+    /// <item>构造平台原生菜单（如 Win32 HMENU、GTK PopoverMenu）。</item>
+    /// <item>在 <see cref="Menus.ContextMenuData.X"/> / <see cref="Menus.ContextMenuData.Y"/> 坐标处弹出
+    /// （需将 clientX/clientY 视口坐标转换为屏幕坐标）。</item>
+    /// <item>将 <see cref="Menus.ContextMenuData.Data"/> 透传到菜单项点击回调。</item>
+    /// </list>
+    /// </para>
+    /// 默认实现为 no-op，确保未实现的平台不抛异常。
+    /// </summary>
+    /// <param name="data">上下文菜单数据，包含菜单 ID、坐标、可选透传数据。</param>
+    void OpenContextMenu(Menus.ContextMenuData data)
+    {
+        // 默认空实现，平台实现可重写。
+        // 故意不依赖 OpenContextMenu(int, int) 重载：平台实现需要查找菜单实例并构建原生菜单，
+        // 仅有坐标不足以完成弹出。基类提供 no-op 默认以保持接口稳定。
+    }
+
+    /// <summary>
     /// 将窗口内容导出为 PDF（字节数组选项重载）。
     /// </summary>
     /// <param name="pageOptions">PDF 导出选项字节数组，可为 null。</param>
@@ -734,6 +759,33 @@ public interface IWebviewWindowImpl
     /// </summary>
     /// <param name="callback">消息回调，参数为前端发送的原始字符串内容。</param>
     void SetNativeMessageHandler(Func<string, Task>? callback)
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
+    /// 注册浏览器控制台消息回调（P1-3-4：前端 console → 后端日志）。
+    /// <para>
+    /// 平台实现应连接 WebView 的控制台消息事件：
+    /// <list type="bullet">
+    /// <item>Windows: WebView2 <c>CoreWebView2.ConsoleMessage</c> 事件</item>
+    /// <item>Linux: WebKitGTK <c>console-message-sent</c> 信号</item>
+    /// <item>Android: <c>WebChromeClient.onConsoleMessage</c> 回调</item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// 注册后，前端 JavaScript 调用 <c>console.log/info/warn/error/debug</c> 时，
+    /// 消息会通过此回调转发到后端，由 <see cref="BrowserConsoleLogReceiver"/> 写入 <see cref="Services.LogService"/>。
+    /// </para>
+    /// <para>
+    /// 默认实现为空操作。传 null 取消注册。
+    /// </para>
+    /// </summary>
+    /// <param name="handler">
+    /// 控制台消息回调：参数依次为消息级别、消息文本。
+    /// 传 null 取消注册。
+    /// </param>
+    void SetConsoleMessageHandler(Action<BrowserConsoleMessageLevel, string>? handler)
     {
         // 默认空实现，平台实现可重写。
     }

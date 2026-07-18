@@ -186,9 +186,10 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
     /// </summary>
     /// <param name="eventName">事件名称。</param>
     /// <param name="data">事件数据。</param>
-    public void NotifyEvent(string eventName, object? data)
+    /// <param name="senderWindowId">事件来源窗口 ID，可为 null（应用级事件）。</param>
+    public void NotifyEvent(string eventName, object? data, uint? senderWindowId = null)
     {
-        _broadcaster.BroadcastEvent(eventName, data);
+        _broadcaster.BroadcastEvent(eventName, data, senderWindowId);
     }
 
     /// <summary>

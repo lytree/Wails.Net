@@ -7,6 +7,28 @@ using Wails.Net.Application.Services.Updater;
 namespace Wails.Net.Application.Services;
 
 /// <summary>
+/// 更新错误信息，包含错误发生的阶段和来源提供者。
+/// 对应 Wails v3 js-src/updater.ts 中 ErrorInfo { stage, message, provider } 的 payload 结构。
+/// </summary>
+public sealed class UpdateErrorInfo
+{
+    /// <summary>
+    /// 获取或设置错误发生的阶段（如 "check"、"download"、"install"）。
+    /// </summary>
+    public string Stage { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 获取或设置错误消息。
+    /// </summary>
+    public string Message { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 获取或设置来源提供者名称（如 "http"、"github"、"gitlab"）。
+    /// </summary>
+    public string Provider { get; init; } = string.Empty;
+}
+
+/// <summary>
 /// 更新信息，包含版本检查结果。
 /// </summary>
 public sealed class UpdateInfo
@@ -58,6 +80,37 @@ public class UpdaterService : IServiceStartup, IServiceShutdown
     /// 更新服务配置。
     /// </summary>
     private UpdaterConfig _config = new();
+
+    /// <summary>
+    /// 已注册的更新源提供者列表（P1-8 多 Provider 支持）。
+    /// <para>
+    /// 在 <see cref="CheckForUpdatesAsync"/> 中按注册顺序依次尝试，
+    /// 首个返回非 null 清单的提供者胜出。空列表时回退到
+    /// <see cref="HttpUpdateProvider"/>（基于 <see cref="UpdaterConfig.UpdateURL"/>）。
+    /// </para>
+    /// </summary>
+    private readonly List<IUpdateProvider> _providers = new();
+
+    /// <summary>
+    /// 获取已注册的更新源提供者只读列表。
+    /// </summary>
+    public IReadOnlyList<IUpdateProvider> Providers => _providers;
+
+    /// <summary>
+    /// 添加更新源提供者到链尾。
+    /// </summary>
+    /// <param name="provider">要添加的提供者实例。</param>
+    /// <exception cref="ArgumentNullException">provider 为 null。</exception>
+    public void AddProvider(IUpdateProvider provider)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+        _providers.Add(provider);
+    }
+
+    /// <summary>
+    /// 清空已注册的更新源提供者列表。
+    /// </summary>
+    public void ClearProviders() => _providers.Clear();
 
     /// <summary>
     /// 获取或设置当前应用版本号，用于判断是否有可用更新。
@@ -232,37 +285,76 @@ public class UpdaterService : IServiceStartup, IServiceShutdown
     }
 
     /// <summary>
-    /// 异步检查更新。向配置的 UpdateURL 发送 GET 请求，解析响应为 UpdateManifest。
-    /// 如果发现新版本，发射 UpdaterEventUpdateAvailable 事件；
-    /// 否则发射 UpdaterEventNoUpdateAvailable 事件。
-    /// 如果配置了 AutoDownload，自动调用 DownloadUpdateAsync。
+    /// 异步检查更新。按注册顺序依次尝试 <see cref="Providers"/> 列表中的提供者，
+    /// 首个返回非 null 清单的提供者胜出；若提供者列表为空，回退到基于
+    /// <see cref="UpdaterConfig.UpdateURL"/> 的 <see cref="HttpUpdateProvider"/>。
+    /// <para>
+    /// 如果发现新版本，发射 <see cref="UpdateEvents.UpdaterEventUpdateAvailable"/> 事件；
+    /// 否则发射 <see cref="UpdateEvents.UpdaterEventNoUpdateAvailable"/> 事件。
+    /// 如果配置了 <see cref="UpdaterConfig.AutoDownload"/>，自动调用 <see cref="DownloadUpdateAsync"/>。
+    /// </para>
     /// </summary>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>解析得到的更新清单。</returns>
-    /// <exception cref="InvalidOperationException">UpdateURL 未配置。</exception>
+    /// <exception cref="InvalidOperationException">
+    /// 既未注册任何 provider，也未配置 <see cref="UpdaterConfig.UpdateURL"/>。
+    /// </exception>
     public async Task<UpdateManifest> CheckForUpdatesAsync(CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(_config.UpdateURL))
+        // 构建本次检查使用的 provider 列表：
+        // - 若显式注册了 provider，优先使用注册列表；
+        // - 否则回退到基于 UpdateURL 的 HttpUpdateProvider（向后兼容）。
+        var providers = _providers.Count > 0
+            ? _providers
+            : string.IsNullOrWhiteSpace(_config.UpdateURL)
+                ? Array.Empty<IUpdateProvider>()
+                : (IReadOnlyList<IUpdateProvider>)new[] { new HttpUpdateProvider(_httpClient, _config.UpdateURL, _config.Headers) };
+
+        if (providers.Count == 0)
         {
-            throw new InvalidOperationException("更新检查 URL 未配置，请设置 UpdaterConfig.UpdateURL。");
+            throw new InvalidOperationException(
+                "未配置更新源：请通过 AddProvider 注册 IUpdateProvider，或设置 UpdaterConfig.UpdateURL 以使用默认 HTTP 提供者。");
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, _config.UpdateURL);
-        foreach (var header in _config.Headers)
+        UpdateManifest? manifest = null;
+        Exception? lastError = null;
+        string winningProvider = string.Empty;
+
+        foreach (var provider in providers)
         {
-            if (!string.IsNullOrEmpty(header.Key))
+            try
             {
-                request.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                var result = await provider.CheckAsync(cancellationToken);
+                if (result is not null)
+                {
+                    manifest = result;
+                    winningProvider = provider.Name;
+                    break;
+                }
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+                EmitEvent(UpdateEvents.UpdaterEventDownloadError, new UpdateErrorInfo
+                {
+                    Stage = "check",
+                    Message = ex.Message,
+                    Provider = provider.Name
+                });
+                // 继续尝试下一个 provider
             }
         }
 
-        using var response = await _httpClient.SendAsync(
-            request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        if (manifest is null)
+        {
+            var message = lastError is not null
+                ? $"所有更新源均无可用清单；最后错误：{lastError.Message}"
+                : "所有更新源均无可用清单。";
+            throw new InvalidOperationException(message);
+        }
 
-        var json = await response.Content.ReadAsStringAsync(cancellationToken);
-        var manifest = JsonSerializer.Deserialize<UpdateManifest>(json)
-            ?? throw new InvalidDataException("更新清单 JSON 反序列化失败。");
+        // 注入来源提供者名称到 manifest（便于前端展示和日志追踪）
+        manifest.ProviderName = winningProvider;
 
         if (IsNewerVersion(manifest.Version, CurrentVersion))
         {

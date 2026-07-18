@@ -52,6 +52,12 @@ public class WindowManager : IWindowManager
     public int Count => _windows.Count;
 
     /// <summary>
+    /// 窗口创建事件，在新窗口创建后触发。
+    /// 用于让外部组件（如日志桥接器）订阅新窗口的生命周期事件。
+    /// </summary>
+    public event Action<WebviewWindow>? WindowCreated;
+
+    /// <summary>
     /// 创建新窗口，并注册窗口关闭事件监听器以自动清理窗口列表。
     /// </summary>
     /// <param name="options">窗口选项。</param>
@@ -86,6 +92,9 @@ public class WindowManager : IWindowManager
 
         // 通知平台应用创建窗口
         _platformApp?.CreateWebviewWindow(id, options);
+
+        // P1-3-4：触发窗口创建事件，让外部组件可以订阅新窗口的控制台消息等
+        WindowCreated?.Invoke(window);
 
         return id;
     }

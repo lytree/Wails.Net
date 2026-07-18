@@ -227,7 +227,7 @@ public class LogService : IServiceStartup, IServiceShutdown
     /// </summary>
     /// <param name="level">日志级别。</param>
     /// <param name="message">日志消息。</param>
-    private void Log(LogLevel level, string message)
+    internal void Log(LogLevel level, string message)
     {
         WriteLog(level, message, null);
     }

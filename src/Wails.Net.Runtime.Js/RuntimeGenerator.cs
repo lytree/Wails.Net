@@ -24,7 +24,7 @@ public static class RuntimeGenerator
     /// <summary>
     /// 生成完整的运行时 JavaScript 代码。
     /// 根据 <see cref="RuntimeOptions.IsServerMode" /> 选择桌面或 Server 运行时，
-    /// 并组合标志对象、API 对象、传输层模板与平台运行时代码。
+    /// 并组合标志对象、API 对象、上下文菜单钩子、传输层模板与平台运行时代码。
     /// </summary>
     /// <param name="options">运行时生成选项。</param>
     /// <returns>生成的完整运行时 JavaScript 代码字符串。</returns>
@@ -34,12 +34,13 @@ public static class RuntimeGenerator
 
         var flags = GenerateFlags(options);
         var api = GenerateApi(options);
+        var contextMenuHook = GenerateContextMenuHook(options);
         var transport = LoadTemplate(TransportTemplateFileName, options);
         var platformRuntime = options.IsServerMode
             ? ServerRuntime.Generate(options)
             : DesktopRuntime.Generate(options);
 
-        return $"{flags}\n{api}\n{transport}\n{platformRuntime}";
+        return $"{flags}\n{api}\n{contextMenuHook}\n{transport}\n{platformRuntime}";
     }
 
     /// <summary>
@@ -648,6 +649,132 @@ public static class RuntimeGenerator
             }
           }
         };
+        """;
+    }
+
+    /// <summary>
+    /// 生成前端上下文菜单事件钩子（P1-4）。
+    /// <para>
+    /// 对应 Wails v3 前端 <c>contextmenu.ts</c> 的行为：
+    /// 监听 <c>window.contextmenu</c> 事件，依据 CSS 变量决定是否弹出已注册的上下文菜单，
+    /// 或按 <c>--default-contextmenu</c> 策略显示/隐藏默认菜单。
+    /// </para>
+    /// <para>
+    /// 支持的 CSS 变量：
+    /// <list type="bullet">
+    /// <item><c>--custom-contextmenu</c>：自定义菜单 ID。命中时 <c>preventDefault</c> 并通过
+    ///   <c>_wailsInvoke("contextmenu", {id, x, y, data})</c> 触发后端弹出菜单。</item>
+    /// <item><c>--custom-contextmenu-data</c>：附加数据字符串，原样透传到后端。</item>
+    /// <item><c>--default-contextmenu</c>：默认菜单策略，取值 <c>auto</c>（默认，按内容类型决定）、
+    ///   <c>show</c>（强制显示）、<c>hide</c>（强制隐藏）。</item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// Debug 构建（<see cref="RuntimeOptions.IsDebug" />）下始终放行默认右键菜单，
+    /// 便于开发者使用浏览器原生右键菜单进行调试。
+    /// </para>
+    /// </summary>
+    /// <param name="options">运行时生成选项。</param>
+    /// <returns>包含上下文菜单事件钩子的 JavaScript 代码字符串。</returns>
+    public static string GenerateContextMenuHook(RuntimeOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        var isDebug = FormatBool(options.IsDebug);
+
+        return $$"""
+        // Wails.NET ContextMenu Hook - 自动生成，请勿手动修改
+        // 对应 Wails v3 前端 contextmenu.ts
+        (function() {
+          if (window.__wailsContextMenuHooked) return;
+          window.__wailsContextMenuHooked = true;
+
+          var isDebug = {{isDebug}};
+
+          function openContextMenu(id, x, y, data) {
+            return window._wailsInvoke("contextmenu", { id: id, x: x, y: y, data: data || null });
+          }
+
+          function processDefaultContextMenu(event, target) {
+            // Debug 构建始终放行默认菜单，便于使用浏览器开发者上下文
+            if (isDebug) {
+              return;
+            }
+
+            var defaultPolicy = '';
+            try {
+              defaultPolicy = window.getComputedStyle(target).getPropertyValue('--default-contextmenu').trim();
+            } catch (e) {}
+
+            switch (defaultPolicy) {
+              case 'show':
+                return;
+              case 'hide':
+                event.preventDefault();
+                return;
+            }
+
+            // 可编辑元素（contentEditable）保留默认菜单
+            if (target.isContentEditable) {
+              return;
+            }
+
+            // 选中文本时保留默认菜单（仅当选择范围位于当前目标内）
+            var selection = window.getSelection ? window.getSelection() : null;
+            var hasSelection = selection && selection.toString().length > 0;
+            if (hasSelection) {
+              try {
+                for (var i = 0; i < selection.rangeCount; i++) {
+                  var range = selection.getRangeAt(i);
+                  var rects = range.getClientRects();
+                  for (var j = 0; j < rects.length; j++) {
+                    var rect = rects[j];
+                    if (document.elementFromPoint(rect.left, rect.top) === target) {
+                      return;
+                    }
+                  }
+                }
+              } catch (e) {}
+            }
+
+            // input/textarea 在可编辑状态保留默认菜单
+            if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+              if (hasSelection || (!target.readOnly && !target.disabled)) {
+                return;
+              }
+            }
+
+            // 默认隐藏原生右键菜单
+            event.preventDefault();
+          }
+
+          function contextMenuHandler(event) {
+            var target = event.target || event.srcElement;
+            if (!target) {
+              return;
+            }
+
+            // 检查自定义上下文菜单
+            var customContextMenu = '';
+            try {
+              customContextMenu = window.getComputedStyle(target).getPropertyValue('--custom-contextmenu').trim();
+            } catch (e) {}
+
+            if (customContextMenu) {
+              event.preventDefault();
+              var data = '';
+              try {
+                data = window.getComputedStyle(target).getPropertyValue('--custom-contextmenu-data');
+              } catch (e) {}
+              // 透传视口坐标（clientX/clientY），后端负责转换为屏幕坐标
+              openContextMenu(customContextMenu, event.clientX, event.clientY, data);
+            } else {
+              processDefaultContextMenu(event, target);
+            }
+          }
+
+          window.addEventListener('contextmenu', contextMenuHandler);
+        })();
         """;
     }
 

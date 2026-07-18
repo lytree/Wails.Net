@@ -131,4 +131,12 @@ public sealed class UpdateManifest
     /// </summary>
     [JsonPropertyName("publishedDate")]
     public DateTime? PublishedDate { get; set; }
+
+    /// <summary>
+    /// 获取或设置来源提供者名称（如 "http"、"github"、"gitlab"）。
+    /// 由 <see cref="UpdaterService.CheckForUpdatesAsync"/> 在解析清单后注入，
+    /// 不来自远程 JSON。用于错误事件 payload 和日志追踪。
+    /// </summary>
+    [JsonIgnore]
+    public string? ProviderName { get; set; }
 }

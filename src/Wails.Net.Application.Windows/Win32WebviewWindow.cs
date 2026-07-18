@@ -286,10 +286,19 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     /// <summary>
     /// 原生 IPC 消息处理器（P0-C2）。
     /// 当通过 <see cref="SetNativeMessageHandler"/> 注册后，前端 <c>postMessage</c> 发送的消息
-    /// 会路由到此处理器，而非默认的 <c>Application.HandleMessageFromFrontend</c> 路径。
+    /// 会路由到此处理器，而非默认的 <see cref="Application.HandleMessageFromFrontend"/> 路径。
     /// 为 null 时保持原有行为。
     /// </summary>
     private Func<string, Task>? _nativeMessageHandler;
+
+    /// <summary>
+    /// 浏览器控制台消息处理器（P1-3-4）。
+    /// 当通过 <see cref="SetConsoleMessageHandler"/> 注册后，前端 JavaScript 调用
+    /// <c>console.log/info/warn/error/debug</c> 时会转发到此处理器，由
+    /// <see cref="Wails.Net.Application.Logging.BrowserConsoleLogReceiver"/> 写入后端 LogService。
+    /// 为 null 时不转发。
+    /// </summary>
+    private Action<Wails.Net.Application.Logging.BrowserConsoleMessageLevel, string>? _consoleMessageHandler;
 
     /// <summary>
     /// 窗口是否曾处于最小化状态，用于 SIZE_RESTORED 时判断是否应触发 WindowUnminimised 事件。
@@ -544,6 +553,13 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
             // 对应 Wails v3 Go 版本中的 NavigationCompleted 事件处理。
             _webview.NavigationCompleted += OnNavigationCompleted;
 
+            // P1-3-4：注入 console 拦截脚本，将前端 console 调用通过 postMessage 转发到后端。
+            // WebView2 1.0.3240.44 未提供 CoreWebView2.ConsoleMessage 事件，
+            // 这里通过 AddScriptToExecuteOnDocumentCreatedAsync 注入一段 JS 拦截脚本，
+            // 重写 console.log/info/warn/error/debug 方法，将消息通过 WebMessage 通道回传。
+            // OnWebMessageReceived 中识别 __wails_console 消息类型并转发到 _consoleMessageHandler。
+            InjectConsoleHookScript();
+
             // 注入 Wails 运行时 JS（必须在导航之前！）
             // 使用 AddScriptToExecuteOnDocumentCreatedAsync 注册的脚本会在页面脚本执行前运行，
             // 确保 window.wails 在页面脚本中可用。
@@ -759,6 +775,14 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                 return;
             }
 
+            // P1-3-4：识别前端 console 拦截脚本回传的 console 消息，转发到 _consoleMessageHandler。
+            // 消息格式：{"__wails_console":true,"level":"info","message":"..."}
+            // 若未注册 _consoleMessageHandler 或消息不匹配，则继续走标准 IPC 路由。
+            if (_consoleMessageHandler is not null && TryHandleConsoleMessage(message))
+            {
+                return;
+            }
+
             // P0-C2：若已注册原生 IPC 处理器，优先路由到原生通道。
             // NativeIpcTransport.HandleIncomingAsync 会解析消息、调用 MessageProcessor、
             // 并通过 PostNativeMessageAsync 将响应回推到前端。
@@ -790,6 +814,132 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     public void SetNativeMessageHandler(Func<string, Task>? callback)
     {
         _nativeMessageHandler = callback;
+    }
+
+    /// <summary>
+    /// 注册浏览器控制台消息处理器（P1-3-4）。
+    /// 重写 <see cref="IWebviewWindowImpl.SetConsoleMessageHandler"/> 默认实现。
+    /// 注册后，前端 JavaScript 调用 <c>console.log/info/warn/error/debug</c> 时，
+    /// <see cref="OnConsoleMessage"/> 会将消息转发到此处理器。
+    /// </summary>
+    /// <param name="handler">控制台消息回调：参数依次为消息级别、消息文本。传 null 取消注册。</param>
+    public void SetConsoleMessageHandler(Action<Wails.Net.Application.Logging.BrowserConsoleMessageLevel, string>? handler)
+    {
+        _consoleMessageHandler = handler;
+    }
+
+    /// <summary>
+    /// 注入前端 console 拦截脚本（P1-3-4）。
+    /// 重写 <c>console.log/info/warn/error/debug</c> 方法：先调用原始方法保留前端行为，
+    /// 再通过 <c>window.chrome.webview.postMessage</c> 将消息回传到后端。
+    /// 消息格式：<c>{"__wails_console":true,"level":"info","message":"..."}</c>。
+    /// </summary>
+    private void InjectConsoleHookScript()
+    {
+        if (_webview is null)
+        {
+            return;
+        }
+
+        // 脚本通过 try/catch 保护，避免影响页面正常加载。
+        // message 字段使用宽松的字符串化（String(arg)）处理多参数情况，与 console 行为保持一致。
+        // 注意：此脚本在 AddScriptToExecuteOnDocumentCreatedAsync 注册后，会在每次页面加载时自动执行。
+        const string consoleHookJs = """
+            (function() {
+                if (window.__wailsConsoleHooked) return;
+                window.__wailsConsoleHooked = true;
+                var originalConsole = window.console;
+                var methods = ['log', 'info', 'warn', 'error', 'debug'];
+                methods.forEach(function(method) {
+                    var original = originalConsole[method];
+                    if (typeof original !== 'function') return;
+                    originalConsole[method] = function() {
+                        try {
+                            original.apply(originalConsole, arguments);
+                        } catch (e) {}
+                        try {
+                            var parts = [];
+                            for (var i = 0; i < arguments.length; i++) {
+                                var arg = arguments[i];
+                                if (arg === null) parts.push('null');
+                                else if (arg === undefined) parts.push('undefined');
+                                else if (typeof arg === 'string') parts.push(arg);
+                                else if (typeof arg === 'number' || typeof arg === 'boolean') parts.push(String(arg));
+                                else {
+                                    try { parts.push(JSON.stringify(arg)); }
+                                    catch (e) { parts.push(String(arg)); }
+                                }
+                            }
+                            var message = parts.join(' ');
+                            var payload = { __wails_console: true, level: method, message: message };
+                            window.chrome.webview.postMessage(JSON.stringify(payload));
+                        } catch (e) {}
+                    };
+                });
+            })();
+            """;
+
+        _ = _webview.AddScriptToExecuteOnDocumentCreatedAsync(consoleHookJs);
+    }
+
+    /// <summary>
+    /// 尝试将消息识别为前端 console 拦截脚本回传的 console 消息（P1-3-4）。
+    /// </summary>
+    /// <param name="message">前端发送的原始 JSON 字符串。</param>
+    /// <returns>若消息被识别并转发到 <see cref="_consoleMessageHandler"/> 则返回 true，否则 false。</returns>
+    private bool TryHandleConsoleMessage(string message)
+    {
+        // 快速路径：console 消息包含特征字段 __wails_console，避免无谓的 JSON 解析开销。
+        // 普通 IPC 消息不会包含此字段。
+        if (message.Length == 0 || message[0] != '{'
+            || message.IndexOf("__wails_console", StringComparison.Ordinal) < 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(message);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("__wails_console", out var markerProp)
+                || !markerProp.GetBoolean())
+            {
+                return false;
+            }
+
+            if (!root.TryGetProperty("level", out var levelProp)
+                || !root.TryGetProperty("message", out var messageProp))
+            {
+                return false;
+            }
+
+            var level = MapConsoleLevelString(levelProp.GetString() ?? "log");
+            var msg = messageProp.GetString() ?? string.Empty;
+            _consoleMessageHandler?.Invoke(level, msg);
+            return true;
+        }
+        catch
+        {
+            // 解析失败时按非 console 消息处理，继续标准 IPC 路由
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 将前端 console 方法名映射到 <see cref="Wails.Net.Application.Logging.BrowserConsoleMessageLevel"/>。
+    /// </summary>
+    /// <param name="level">console 方法名（log/info/warn/error/debug）。</param>
+    /// <returns>Wails.Net 浏览器控制台消息级别。</returns>
+    private static Wails.Net.Application.Logging.BrowserConsoleMessageLevel MapConsoleLevelString(string level)
+    {
+        return level switch
+        {
+            "debug" => Wails.Net.Application.Logging.BrowserConsoleMessageLevel.Debug,
+            "info" or "log" => Wails.Net.Application.Logging.BrowserConsoleMessageLevel.Info,
+            "warn" => Wails.Net.Application.Logging.BrowserConsoleMessageLevel.Warning,
+            "error" => Wails.Net.Application.Logging.BrowserConsoleMessageLevel.Error,
+            _ => Wails.Net.Application.Logging.BrowserConsoleMessageLevel.Info,
+        };
     }
 
     /// <summary>
@@ -859,7 +1009,8 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     /// 处理 WebView2 NavigationCompleted 事件。
     /// 对应 Wails v3 Go 版本中的 onNavigationCompleted。
     /// 导航完成后注入运行时 JS 并触发 WindowRuntimeReady 事件。
-    /// 若窗口为无边框模式，同时注入 CSS 拖拽区域脚本以支持 -webkit-app-region: drag。
+    /// 若窗口为无边框模式，同时注入 CSS 拖拽区域脚本以支持 <c>--wails-draggable: drag</c>（Wails v3 标准）
+    /// 与 <c>-webkit-app-region: drag</c>（Tauri v2/Electron 兼容）。
     /// </summary>
     /// <param name="sender">事件发送者。</param>
     /// <param name="args">NavigationCompleted 事件参数。</param>
@@ -873,8 +1024,8 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         // 运行时 JS 已在 InitializeWebViewAsync 中通过 AddScriptToExecuteOnDocumentCreatedAsync
         // 注入，无需在此重复注入。
 
-        // 无边框窗口注入 CSS 拖拽区域脚本，支持 -webkit-app-region: drag。
-        // 对应 Tauri v2 / Electron 的 frameless window drag region 实现。
+        // 无边框窗口注入 CSS 拖拽区域脚本，支持 --wails-draggable: drag（Wails v3 标准）。
+        // 同时兼容 -webkit-app-region: drag（Tauri v2 / Electron）。
         if (_options.Frameless)
         {
             // 先注册全局拖拽回调，再注入拖拽区域监听脚本。
@@ -2148,6 +2299,122 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
             Win32Menu.TryDispatchCommand((uint)cmdValue);
         }
     }
+
+    /// <summary>
+    /// 按 <see cref="IWebviewWindowImpl.OpenContextMenu(Menus.ContextMenuData)"/> 契约弹出已注册的上下文菜单（P1-4）。
+    /// <para>
+    /// 通过 <see cref="Application.MenuManager"/> 按 <see cref="Menus.ContextMenuData.Id"/> 查找已注册的
+    /// <see cref="Menus.ContextMenu"/>，构造临时 <see cref="Win32Menu"/>（弹出式）并在屏幕坐标处弹出。
+    /// </para>
+    /// <para>
+    /// <see cref="Menus.ContextMenuData.X"/> / <see cref="Menus.ContextMenuData.Y"/> 是浏览器视口坐标
+    /// （clientX/clientY），需要转换为屏幕坐标：使用 WebView2 的 PointToScreen，
+    /// 若 WebView2 未初始化完成则回退到 ClientToScreen(hwnd)。
+    /// </para>
+    /// </summary>
+    /// <param name="data">上下文菜单数据。</param>
+    public void OpenContextMenu(Menus.ContextMenuData data)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        if (_hwnd.IsNull || string.IsNullOrEmpty(data.Id))
+        {
+            return;
+        }
+
+        // 通过 Application.MenuManager 查找已注册的 ContextMenu。
+        var app = Application.Get();
+        var menu = app?.MenuManager?.GetContextMenu(data.Id);
+        if (menu is null)
+        {
+            // 未找到菜单时记录诊断日志，避免静默失败
+            System.Diagnostics.Trace.WriteLine($"[ContextMenu] 未找到 ID 为 '{data.Id}' 的已注册上下文菜单");
+            return;
+        }
+
+        // 构造临时弹出式 Win32Menu，使用后立即销毁避免 GDI 句柄泄漏。
+        var win32Menu = new Win32Menu(menu, isPopup: true);
+        win32Menu.Build();
+        try
+        {
+            // 将浏览器视口坐标（clientX/clientY）转换为屏幕坐标。
+            // 优先使用 WebView2 的 PointToScreen（基于 WebView2 控件位置），
+            // 回退到 Win32 ClientToScreen(hwnd)（基于窗口客户区）。
+            var screenPoint = ViewportToScreen(data.X, data.Y);
+
+            PInvoke.SetForegroundWindow(_hwnd);
+            unsafe
+            {
+                var cmd = PInvoke.TrackPopupMenu(
+                    win32Menu.Hmenu,
+                    TRACK_POPUP_MENU_FLAGS.TPM_LEFTALIGN | TRACK_POPUP_MENU_FLAGS.TPM_TOPALIGN |
+                    TRACK_POPUP_MENU_FLAGS.TPM_RETURNCMD | TRACK_POPUP_MENU_FLAGS.TPM_NONOTIFY,
+                    screenPoint.X, screenPoint.Y, 0, _hwnd, null);
+
+                var cmdValue = *(int*)&cmd;
+                if (cmdValue != 0)
+                {
+                    Win32Menu.TryDispatchCommand((uint)cmdValue);
+                }
+            }
+        }
+        finally
+        {
+            win32Menu.Destroy();
+        }
+    }
+
+    /// <summary>
+    /// 将浏览器视口坐标（clientX/clientY）转换为屏幕坐标（P1-4）。
+    /// <para>
+    /// 浏览器视口原点相对于 WebView2 控件的左上角。WebView2 控件在 Win32 窗口客户区内有偏移
+    /// （由窗口边框、标题栏等决定）。计算方式：
+    /// <c>screen = ClientToScreen(hwnd) + webView2Offset + (clientX, clientY)</c>。
+    /// </para>
+    /// <para>
+    /// 当 WebView2 未初始化完成时，WebView2 偏移按 (0,0) 处理，仅做窗口客户区坐标转换。
+    /// </para>
+    /// </summary>
+    /// <param name="clientX">浏览器视口 X 坐标。</param>
+    /// <param name="clientY">浏览器视口 Y 坐标。</param>
+    /// <returns>屏幕坐标。</returns>
+    private System.Drawing.Point ViewportToScreen(int clientX, int clientY)
+    {
+        // WebView2 控件在窗口客户区内的偏移（通常为 0,0，因为 WebView2 通常填充整个客户区）。
+        // 若未来支持 WebView2 在窗口内偏移（如带工具栏），需读取 _controller.Bounds 转换。
+        var webViewOffsetX = 0;
+        var webViewOffsetY = 0;
+        if (_controller is not null)
+        {
+            // CoreWebView2Controller.Bounds 返回相对于父窗口客户区的逻辑坐标。
+            var bounds = _controller.Bounds;
+            webViewOffsetX = bounds.X;
+            webViewOffsetY = bounds.Y;
+        }
+
+        // 窗口客户区坐标 = WebView2 偏移 + 浏览器视口坐标
+        var clientPoint = new POINT
+        {
+            x = webViewOffsetX + clientX,
+            y = webViewOffsetY + clientY
+        };
+
+        // ClientToScreen 将窗口客户区坐标转换为屏幕坐标
+        // CsWin32 源生成器未生成 ClientToScreen，使用手动 DllImport（见下方声明）。
+        ClientToScreen(_hwnd, ref clientPoint);
+        return new System.Drawing.Point(clientPoint.x, clientPoint.y);
+    }
+
+    /// <summary>
+    /// ClientToScreen 的手动 P/Invoke 声明。
+    /// CsWin32 源生成器未生成此函数，因此使用手动 DllImport 作为回退。
+    /// 对应 Win32 user32.dll 中的 ClientToScreen 函数。
+    /// </summary>
+    /// <param name="hWnd">窗口句柄。</param>
+    /// <param name="lpPoint">输入为客户区坐标，输出为屏幕坐标。</param>
+    /// <returns>成功返回 true，否则 false。</returns>
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ClientToScreen(HWND hWnd, ref POINT lpPoint);
 
     /// <inheritdoc />
     public void StartDrag()

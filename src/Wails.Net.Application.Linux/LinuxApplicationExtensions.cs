@@ -1,3 +1,4 @@
+using Wails.Net.Application.Browser;
 using Wails.Net.Application.Managers;
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.Platform;
@@ -32,6 +33,10 @@ public static class LinuxApplicationExtensions
 
         // 注册快捷键绑定管理器，委托给 LinuxKeyBindingManager 的 GTK4 ShortcutController 实现。
         app.KeyBindingManager = new LinuxKeyBindingManager();
+
+        // 注册浏览器管理器，委托给 LinuxBrowserManager 通过 xdg-open 打开默认浏览器。
+        // 对应 Wails v3 internal/browser 包的 Linux 实现。
+        app.BrowserManager = new LinuxBrowserManager();
 
         return app;
     }

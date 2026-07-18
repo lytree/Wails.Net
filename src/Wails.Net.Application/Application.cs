@@ -85,6 +85,13 @@ public class Application
     private Wails.Net.AssetServer.AssetServer? _assetServer;
 
     /// <summary>
+    /// 待挂载的服务路由列表（P1-6 新增）。
+    /// 当服务在 AssetServer 注入前注册且配置了 <see cref="Services.ServiceOptions.Route"/> 时，
+    /// 暂存到此处；待 <see cref="AssetServer"/> setter 触发时统一挂载。
+    /// </summary>
+    private readonly List<(string Route, Wails.Net.AssetServer.IHttpServiceHandler Handler)> _pendingServiceRoutes = new();
+
+    /// <summary>
     /// 自定义 URI scheme 到 AssetServer 的映射。
     /// 通过 <see cref="RegisterScheme"/> 注册，平台 WebviewWindow 在创建时可查询此映射以拦截请求。
     /// </summary>
@@ -402,11 +409,26 @@ public class Application
 
     /// <summary>
     /// 获取或设置资源服务器实例。
+    /// <para>
+    /// Setter 触发时会自动将待挂载的服务路由（在 AssetServer 注入前通过
+    /// <see cref="RegisterService(object, Services.ServiceOptions)"/> 注册的服务）应用到新设置的 AssetServer。
+    /// </para>
     /// </summary>
     public Wails.Net.AssetServer.AssetServer? AssetServer
     {
         get => _assetServer;
-        set => _assetServer = value;
+        set
+        {
+            _assetServer = value;
+            if (value is not null && _pendingServiceRoutes.Count > 0)
+            {
+                foreach (var (route, handler) in _pendingServiceRoutes)
+                {
+                    value.MountServiceRoute(route, handler);
+                }
+                _pendingServiceRoutes.Clear();
+            }
+        }
     }
 
     /// <summary>
@@ -692,8 +714,46 @@ public class Application
     /// <param name="service">要注册的服务实例。</param>
     public virtual void RegisterService(object service)
     {
-        _serviceRegistry.Register(service);
+        RegisterService(service, ServiceOptions.Default);
+    }
+
+    /// <summary>
+    /// 注册服务并附带选项。同时将服务的公共方法注册到绑定管理器。
+    /// <para>
+    /// 对应 Wails v3 Go 版本 <c>NewServiceWithOptions</c> 函数。
+    /// 当 <paramref name="options"/>.<see cref="ServiceOptions.Route"/> 非空且
+    /// <paramref name="service"/> 实现 <see cref="Wails.Net.AssetServer.IHttpServiceHandler"/> 时，
+    /// 自动将服务挂载到 <see cref="AssetServer"/> 此前缀下。
+    /// </para>
+    /// <para>
+    /// 若 <see cref="AssetServer"/> 尚未注入，路由信息将暂存到待挂载列表，
+    /// 待 AssetServer 注入时（通过 setter）自动应用。
+    /// </para>
+    /// </summary>
+    /// <param name="service">要注册的服务实例。</param>
+    /// <param name="options">服务选项；为 null 时使用 <see cref="ServiceOptions.Default"/>。</param>
+    public virtual void RegisterService(object service, ServiceOptions? options)
+    {
+        ArgumentNullException.ThrowIfNull(service);
+        var opts = options ?? ServiceOptions.Default;
+
+        _serviceRegistry.Register(service, opts);
         _bindings.Add(service);
+
+        // 若服务实现 IHttpServiceHandler 且配置了 Route，挂载到 AssetServer
+        if (service is Wails.Net.AssetServer.IHttpServiceHandler handler &&
+            !string.IsNullOrWhiteSpace(opts.Route))
+        {
+            if (_assetServer is not null)
+            {
+                _assetServer.MountServiceRoute(opts.Route!, handler);
+            }
+            else
+            {
+                // AssetServer 尚未注入，暂存待后续 setter 触发时应用
+                _pendingServiceRoutes.Add((opts.Route!, handler));
+            }
+        }
     }
 
     /// <summary>
@@ -1057,14 +1117,59 @@ public class Application
         // 注：IHostApplicationLifetime.ApplicationStopped 事件由 StopApplication() 内部触发，
         // 此处不再手动调用。StopApplication() 会先触发 ApplicationStopping，
         // 然后在所有 hosted service 停止后触发 ApplicationStopped。
+
+        // P1-7：在所有清理完成后触发 PostShutdown 回调。
+        // 对应 Wails v3 Go 版本 application.go 中 cleanup() 末尾的 PostShutdown 调用：
+        //   a.postQuit()
+        //   if a.options.PostShutdown != nil { a.options.PostShutdown() }
+        // 与 OnShutdown 的区别：此时所有资源（窗口/服务/传输/平台）均已释放，
+        // 适合执行刷新日志、释放外部资源、上报关闭指标等收尾工作。
+        // 异常被吞掉以避免影响已完成的关闭流程。
+        try
+        {
+            _options.PostShutdown?.Invoke();
+        }
+        catch
+        {
+            // PostShutdown 中的异常不应中断已完成的关闭流程
+        }
     }
 
     /// <summary>
     /// 退出应用，触发关闭流程。
+    /// 对应 Wails v3 Go 版本 application.go 中的 Quit 方法。
     /// </summary>
+    /// <remarks>
+    /// 注意：此方法为用户主动退出，<c>不</c>会调用 <see cref="ShouldQuit"/> 回调。
+    /// <see cref="ShouldQuit"/> 仅由平台信号处理器在收到系统级退出信号时调用
+    /// （如最后一个窗口关闭、系统关机、Ctrl+C）。
+    /// </remarks>
     public virtual void Quit()
     {
         Shutdown();
+    }
+
+    /// <summary>
+    /// 判断应用是否应该退出。对应 Wails v3 Go 版本 <c>(a *App) shouldQuit() bool</c> 方法。
+    /// <para>
+    /// 由平台信号处理器在收到退出信号时调用。若返回 false，平台应取消退出流程，应用继续运行。
+    /// 默认行为（<see cref="ApplicationOptions.ShouldQuit"/> 为 null 时）：始终返回 true。
+    /// </para>
+    /// <para>
+    /// 典型用法：在窗口关闭事件、系统退出事件中调用此方法：
+    /// <code>
+    /// if (!Application.Get().ShouldQuit())
+    /// {
+    ///     // 用户取消退出，阻止窗口关闭
+    ///     e.Cancel = true;
+    /// }
+    /// </code>
+    /// </para>
+    /// </summary>
+    /// <returns>若应用应退出返回 true；否则返回 false。</returns>
+    public virtual bool ShouldQuit()
+    {
+        return _options.ShouldQuit?.Invoke() ?? true;
     }
 
     /// <summary>

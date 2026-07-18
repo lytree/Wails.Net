@@ -204,7 +204,9 @@ public class EventProcessor
             {
                 try
                 {
-                    listener.NotifyEvent(name, data);
+                    // P1-2：将 senderWindowID 传递给传输层监听器，使前端可识别事件来源窗口。
+                    // 对应 Wails v3 Go 版本 CustomEvent.Sender 字段的端到端传递语义。
+                    listener.NotifyEvent(name, data, senderWindowID);
                 }
                 catch
                 {

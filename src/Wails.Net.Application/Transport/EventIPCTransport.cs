@@ -73,7 +73,10 @@ public sealed class EventIPCTransport : IWailsEventListener
     /// </summary>
     /// <param name="eventName">事件名称。</param>
     /// <param name="data">事件数据，可为 null。</param>
-    public void NotifyEvent(string eventName, object? data)
+    /// <param name="senderWindowId">事件来源窗口 ID，可为 null（应用级事件）。
+    /// 将作为第三个参数传递给前端 <c>window._wailsEmitEvent(name, data, senderWindowId)</c>，
+    /// 使前端可识别事件发起方并据此过滤或显示。</param>
+    public void NotifyEvent(string eventName, object? data, uint? senderWindowId = null)
     {
         if (string.IsNullOrEmpty(eventName))
         {
@@ -117,13 +120,15 @@ public sealed class EventIPCTransport : IWailsEventListener
             return;
         }
 
-        // 构造注入脚本：window._wailsEmitEvent(name, data);
+        // 构造注入脚本：window._wailsEmitEvent(name, data, senderWindowId);
         // 使用 JSON 序列化数据，避免拼接字符串时的转义问题。
+        // P1-2：senderWindowId 作为第三个参数传递，前端可据此识别事件来源窗口。
         var nameJson = JsonSerializer.Serialize(eventName, JsonOptions);
         var dataJson = data is null
             ? "null"
             : JsonSerializer.Serialize(data, data.GetType(), JsonOptions);
-        var js = $"window._wailsEmitEvent && window._wailsEmitEvent({nameJson}, {dataJson});";
+        var senderJson = senderWindowId is null ? "null" : senderWindowId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var js = $"window._wailsEmitEvent && window._wailsEmitEvent({nameJson}, {dataJson}, {senderJson});";
 
         // 对应 Wails v3 EventIPCTransport.DispatchWailsEvent：
         //   for _, window := range windows {
