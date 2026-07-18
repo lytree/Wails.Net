@@ -5,6 +5,9 @@ using Wails.Net.Application.Hosting;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Plugins;
 using Wails.Net.Application.Plugins.BuiltIn;
+using Wails.Net.Application.Services;
+using Wails.Net.Application.Services.Updater;
+using Wails.Net.Demo;
 using Wails.Net.Demo.Plugins;
 using Wails.Net.Demo.Services;
 
@@ -28,10 +31,31 @@ builder.Configure(options =>
     options.Assets.EnableSpaFallback = true;
 });
 
+// P1-3：Logger ↔ 前端 console 双向桥接
+// UseBrowserConsoleLogReceiver：前端 console.log → 后端 ILogger
+// UseBrowserConsoleLogForwarder：后端 ILogger → 前端 DevTools console
+builder.UseBrowserConsoleLogReceiver();
+builder.UseBrowserConsoleLogForwarder();
+
 // 注册绑定服务到 DI 容器
 // 这些服务的公共方法将自动暴露给前端 JavaScript
 builder.Services.AddSingleton<GreetingService>();
 builder.Services.AddSingleton<TodoService>();
+builder.Services.AddSingleton<P1FeaturesService>();
+
+// P1-8：注册 UpdaterService（多 Provider Updater）
+// 实际应用中应配置真实的 UpdateURL 或 GitHub/GitLab Provider
+builder.Services.AddSingleton<UpdaterService>(sp =>
+{
+    var service = new UpdaterService
+    {
+        CurrentVersion = "1.0.0",
+    };
+    // 演示：注册一个自定义的 Mock Provider，始终返回"无更新"
+    // 实际应用中替换为 HttpUpdateProvider / GitHubUpdateProvider / GitLabUpdateProvider
+    service.AddProvider(new MockUpdateProvider());
+    return service;
+});
 
 // 使用内置插件（每个插件提供一组前端可调用的命令）
 builder.UsePlugin<WindowPlugin>();           // 窗口操作（将 wails.window.* 转为插件命令）
@@ -48,6 +72,7 @@ builder.UsePlugin<OsInfoPlugin>();           // 操作系统信息
 builder.UsePlugin<StorePlugin>();            // 键值存储
 builder.UsePlugin<PathPlugin>();             // 路径操作
 builder.UsePlugin<AppInfoPlugin>();           // 应用信息
+builder.UsePlugin<UpdaterPlugin>();          // 更新插件（P1-8）
 
 // 使用自定义插件
 builder.UsePlugin<MyCustomPlugin>();          // 自定义计数器插件
@@ -64,13 +89,37 @@ var desktopApp = builder.Build();
 var app = desktopApp.Application;
 
 // 设置 ApplicationOptions 中 DesktopHostOptions 未覆盖的选项
-app.Options.EnableDefaultContextMenu = true;
+app.Options.EnableDefaultContextMenu = true;  // P1-4：ContextMenu 行为对齐
 app.Options.DragAndDrop = true;
+
+// P1-7：Event Hooks 补齐（PostShutdown / ShouldQuit）
+// 注意：这两个回调定义在 ApplicationOptions 上，不是 DesktopHostOptions。
+app.Options.PostShutdown = () =>
+{
+    // 此回调在 Application.Shutdown 末尾、所有清理完成后调用。
+    // 实际应用中可用于：释放外部资源、写入退出日志、通知守护进程等。
+    Console.WriteLine("[Demo] PostShutdown 回调已触发 — 所有清理完成");
+};
+
+app.Options.ShouldQuit = () =>
+{
+    // 此回调由平台信号处理器在收到系统级退出信号时调用。
+    // 返回 false 可阻止退出（例如：有未保存的数据）。
+    // 此处始终返回 true 以允许退出。
+    return true;
+};
+
+// P1-6：Service Route 挂载能力（IHttpServiceHandler）
+// 将 /api/health 和 /api/version 路由挂载到 AssetServer，无需独立启动 ASP.NET Core 管道。
+// 实际应用中可用于：健康检查、版本接口、轻量 API 等。
+app.RegisterService(new DemoHealthHandler(), new ServiceOptions { Route = "/api/health" });
+app.RegisterService(new DemoVersionHandler(), new ServiceOptions { Route = "/api/version" });
 
 // 从 DI 容器获取绑定服务并注册到 BindingManager。
 // 对应 ASP.NET Core 风格：DI 是单一注册点，避免双重实例。
 app.RegisterBindings<GreetingService>();
 app.RegisterBindings<TodoService>();
+app.RegisterBindings<P1FeaturesService>();
 
 // 应用启动后创建主窗口
 app.Options.OnAfterStart = () =>
@@ -81,7 +130,7 @@ app.Options.OnAfterStart = () =>
     app.CreateWebviewWindow(new WebviewWindowOptions
     {
         Name = "main",
-        Title = "Wails.Net Demo - 桌面应用示例",
+        Title = "Wails.Net Demo - 桌面应用示例（含 P1 新能力）",
         Width = 1200,
         Height = 800,
         MinWidth = 800,

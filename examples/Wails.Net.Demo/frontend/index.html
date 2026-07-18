@@ -20,6 +20,7 @@
             <button class="tab" data-tab="todo">待办事项</button>
             <button class="tab" data-tab="counter">计数器插件</button>
             <button class="tab" data-tab="system">系统信息</button>
+            <button class="tab" data-tab="p1features">P1 新能力</button>
         </nav>
 
         <!-- 问候服务面板 -->
@@ -107,6 +108,56 @@
                 <input type="text" id="notificationInput" placeholder="通知内容" value="Hello from Wails.Net!">
                 <button id="notifyBtn" class="btn">发送通知</button>
             </div>
+        </section>
+
+        <!-- P1 新能力面板 -->
+        <section id="p1features" class="panel">
+            <h2>P1 阶段新能力演示</h2>
+            <p class="description">展示 Wails.Net P1 阶段对齐的 8 项新能力</p>
+
+            <h3>P1-1 BrowserManager（三平台浏览器管理）</h3>
+            <div class="form-group">
+                <input type="text" id="browserUrlInput" placeholder="输入 URL" value="https://wails.io">
+                <button id="openUrlBtn" class="btn">打开 URL</button>
+            </div>
+            <div id="browserResult" class="result"></div>
+
+            <h3>P1-3 Logger ↔ 前端 console 双向桥接</h3>
+            <div class="form-group">
+                <select id="logLevelSelect">
+                    <option value="information">Information</option>
+                    <option value="warning">Warning</option>
+                    <option value="error">Error</option>
+                </select>
+                <input type="text" id="logMessageInput" placeholder="日志消息" value="来自前端的测试日志">
+                <button id="logFromBackendBtn" class="btn">后端写日志</button>
+            </div>
+            <div id="logResult" class="result"></div>
+            <p class="description">提示：后端 ILogger 输出会自动转发到前端 DevTools console（BrowserConsoleLogForwarder）</p>
+
+            <h3>P1-6 Service Route 挂载（AssetServer 自定义路由）</h3>
+            <div class="form-group">
+                <button id="fetchHealthBtn" class="btn">GET /api/health</button>
+                <button id="fetchVersionBtn" class="btn">GET /api/version</button>
+            </div>
+            <div id="serviceRouteResult" class="result"></div>
+
+            <h3>P1-7 Event Hooks（PostShutdown / ShouldQuit）</h3>
+            <div class="form-group">
+                <button id="getAppStatusBtn" class="btn">获取应用状态</button>
+                <button id="triggerShutdownBtn" class="btn btn-danger">触发 Shutdown</button>
+            </div>
+            <div id="appStatusResult" class="result"></div>
+
+            <h3>P1-8 多 Provider Updater</h3>
+            <div class="form-group">
+                <button id="getProvidersBtn" class="btn">查看已注册 Provider</button>
+                <button id="checkUpdatesBtn" class="btn">检查更新</button>
+            </div>
+            <div id="updaterResult" class="result"></div>
+
+            <h3>P1-4 / P1-5 ContextMenu 与 Frameless 拖拽</h3>
+            <p class="description">右键点击页面查看原生上下文菜单（P1-4）。Frameless 拖拽 CSS 变量（P1-5）在 Frameless=true 时生效。</p>
         </section>
     </div>
 

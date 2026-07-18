@@ -1,0 +1,56 @@
+{
+  "$schema": "https://wails.net/schema/wails.json",
+  "name": "Wails.Net.Demo",
+  "version": "1.0.0",
+  "author": {
+    "name": "Wails.Net",
+    "email": "demo@example.com"
+  },
+  "description": "Wails.Net 框架的示例应用，演示了绑定服务、自定义插件、窗口管理、P1 新能力和前端交互等核心功能。",
+
+  "outputFilename": "Wails.Net.Demo",
+  "assetDir": "frontend",
+
+  "frontend": {
+    "dir": "frontend",
+    "installCommand": "echo \"Demo 使用纯 HTML/CSS/JS，无需安装前端依赖\"",
+    "buildCommand": "echo \"Demo 使用纯 HTML/CSS/JS，无需前端构建\"",
+    "outputDir": "."
+  },
+
+  "bindings": {
+    "outputDir": "frontend/src/wails"
+  },
+
+  "wailsJsDir": "frontend",
+
+  "bundle": {
+    "identifier": "io.wailsnet.demo",
+    "iconPath": "build/icons",
+    "category": "Developer Tools",
+    "shortDescription": "Wails.Net Demo — .NET 10 桌面应用框架示例",
+    "longDescription": "演示 Wails.Net 的绑定服务、插件系统、窗口管理、Logger 双向桥接、多 Provider Updater、Service Route 挂载等 P1 阶段新能力。",
+    "copyright": "Copyright © 2026 Wails.Net",
+    "windows": {
+      "publisher": "Wails.Net",
+      "webviewInstallMode": true
+    },
+    "linux": {
+      "maintainer": "Wails.Net <demo@example.com>",
+      "debDependencies": [
+        "libwebkit2gtk-4.1-0",
+        "libgtk-3-0"
+      ],
+      "rpmDependencies": [
+        "webkit2gtk3",
+        "gtk3"
+      ]
+    }
+  },
+
+  "beforeBuildCommand": "echo \"[hook] 开始构建 Wails.Net.Demo\"",
+  "afterBuildCommand": "echo \"[hook] Wails.Net.Demo 构建完成\"",
+
+  "beforeDevCommand": "echo \"[hook] 启动开发模式\"",
+  "afterDevCommand": "echo \"[hook] 开发模式已退出\""
+}

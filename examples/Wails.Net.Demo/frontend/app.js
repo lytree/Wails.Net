@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initTodoPanel();
     initCounterPanel();
     initSystemPanel();
+    initP1FeaturesPanel();
 });
 
 // =========================================================================
@@ -252,6 +253,124 @@ function initSystemPanel() {
             await wails.call('notification.show', [{ title: 'Wails.Net Demo', body: text }]);
         } catch (err) {
             console.error('通知失败:', err);
+        }
+    });
+}
+
+// =========================================================================
+// P1 新能力面板
+// =========================================================================
+function initP1FeaturesPanel() {
+    // P1-1：BrowserManager 打开外部 URL
+    document.getElementById('openUrlBtn')?.addEventListener('click', async () => {
+        const url = document.getElementById('browserUrlInput').value;
+        if (!url) return;
+        try {
+            const result = await wails.call('P1FeaturesService.OpenExternalUrl', [url]);
+            document.getElementById('browserResult').textContent = result;
+        } catch (err) {
+            console.error('打开 URL 失败:', err);
+            document.getElementById('browserResult').textContent = `错误: ${err}`;
+        }
+    });
+
+    // P1-3：后端写日志（Logger 双向桥接）
+    document.getElementById('logFromBackendBtn')?.addEventListener('click', async () => {
+        const level = document.getElementById('logLevelSelect').value;
+        const message = document.getElementById('logMessageInput').value;
+        if (!message) return;
+        try {
+            const result = await wails.call('P1FeaturesService.LogFromBackend', [level, message]);
+            document.getElementById('logResult').textContent = result;
+            // 同时在前端 console 打印，对比双向桥接效果
+            console.log(`[前端 console] 后端已写入 ${level} 日志: ${message}`);
+        } catch (err) {
+            console.error('写日志失败:', err);
+        }
+    });
+
+    // P1-6：Service Route 挂载（fetch 自定义路由）
+    document.getElementById('fetchHealthBtn')?.addEventListener('click', async () => {
+        try {
+            const response = await fetch('/api/health');
+            const text = await response.text();
+            document.getElementById('serviceRouteResult').textContent =
+                `GET /api/health → ${response.status}\n${text}`;
+        } catch (err) {
+            document.getElementById('serviceRouteResult').textContent = `请求失败: ${err}`;
+        }
+    });
+
+    document.getElementById('fetchVersionBtn')?.addEventListener('click', async () => {
+        try {
+            const response = await fetch('/api/version');
+            const text = await response.text();
+            document.getElementById('serviceRouteResult').textContent =
+                `GET /api/version → ${response.status}\n${text}`;
+        } catch (err) {
+            document.getElementById('serviceRouteResult').textContent = `请求失败: ${err}`;
+        }
+    });
+
+    // P1-7：Event Hooks（获取应用状态）
+    document.getElementById('getAppStatusBtn')?.addEventListener('click', async () => {
+        try {
+            const json = await wails.call('P1FeaturesService.GetApplicationStatus', []);
+            const status = JSON.parse(json);
+            const resultDiv = document.getElementById('appStatusResult');
+            resultDiv.innerHTML = `
+                <div class="info-row"><strong>isRunning:</strong> ${status.isRunning}</div>
+                <div class="info-row"><strong>shouldQuit:</strong> ${status.shouldQuit}</div>
+                <div class="info-row"><strong>hasPostShutdownHook:</strong> ${status.hasPostShutdownHook}</div>
+                <div class="info-row"><strong>hasShouldQuitHook:</strong> ${status.hasShouldQuitHook}</div>
+            `;
+        } catch (err) {
+            console.error('获取状态失败:', err);
+        }
+    });
+
+    // P1-7：触发 Shutdown（会关闭应用，谨慎使用）
+    document.getElementById('triggerShutdownBtn')?.addEventListener('click', async () => {
+        if (!confirm('确认要触发 Shutdown 吗？应用将退出并执行 PostShutdown 回调。')) return;
+        try {
+            await wails.call('P1FeaturesService.TriggerShutdown', []);
+        } catch (err) {
+            // 应用关闭时连接会断开，错误可忽略
+            console.log('应用正在关闭');
+        }
+    });
+
+    // P1-8：多 Provider Updater
+    document.getElementById('getProvidersBtn')?.addEventListener('click', async () => {
+        try {
+            const json = await wails.call('P1FeaturesService.GetRegisteredProviders', []);
+            const providers = JSON.parse(json);
+            document.getElementById('updaterResult').textContent =
+                providers.length > 0
+                    ? `已注册 Provider: ${providers.join(', ')}`
+                    : '未注册任何 Provider';
+        } catch (err) {
+            console.error('获取 Provider 失败:', err);
+        }
+    });
+
+    document.getElementById('checkUpdatesBtn')?.addEventListener('click', async () => {
+        try {
+            const json = await wails.call('P1FeaturesService.CheckForUpdatesAsync', []);
+            const result = JSON.parse(json);
+            const resultDiv = document.getElementById('updaterResult');
+            if (result.error) {
+                resultDiv.textContent = `检查失败: ${result.error}`;
+            } else {
+                resultDiv.innerHTML = `
+                    <div class="info-row"><strong>version:</strong> ${result.version}</div>
+                    <div class="info-row"><strong>provider:</strong> ${result.provider}</div>
+                    <div class="info-row"><strong>isNewer:</strong> ${result.isNewer}</div>
+                    <div class="info-row"><strong>releaseNotes:</strong> ${result.releaseNotes || '(无)'}</div>
+                `;
+            }
+        } catch (err) {
+            console.error('检查更新失败:', err);
         }
     });
 }

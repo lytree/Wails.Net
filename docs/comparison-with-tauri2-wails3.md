@@ -2,8 +2,8 @@
 
 > 本文档对比 **Wails.Net**（当前项目，Wails v3 的 .NET 10 移植实现）、**Tauri 2**（Rust 桌面/移动框架）和 **Wails 3 v3.0.0-alpha.102**（Go 原版）三者的功能实现项与差异项。
 >
-> - **更新日期**：2026-07-18
-> - **对比基线**：基于本仓库当前 `src/` 实际代码状态
+> - **更新日期**：2026-07-18（P1 阶段全部完成）
+> - **对比基线**：基于本仓库当前 `src/` 实际代码状态（提交 `e11bdd4`）
 > - **架构融合策略**（见 [AGENTS.md](file:///f:/Code/Dotnet/Wails.Net/AGENTS.md) §1.1.1）：
 >   - Host/DI/Config/Logging → 学 ASP.NET Core（Microsoft.Extensions.* 全栈）
 >   - Runtime/Window/IPC → 学 Wails v3
@@ -91,10 +91,15 @@
 | **JS 端 API** | `wails.events.on/off/emit` | `listen/unlisten/emit` | `wails.events.on/off/emit` |
 | **跨窗口广播** | ✅ 通过多传输层自动广播 | ✅ | ✅ |
 | **线程安全** | ✅ `ConcurrentDictionary` + 锁 | ✅ `Mutex` | ✅ `sync.RWMutex` |
+| **senderWindowId 传播** | ✅ EventProcessor/Transport 全链路携带（P1-2） | ❌ | ❌ |
+| **PostShutdown 钩子** | ✅ `ApplicationOptions.PostShutdown`（P1-7） | ❌ | ✅ `Options.PostShutdown` |
+| **ShouldQuit 回调** | ✅ `ApplicationOptions.ShouldQuit`（P1-7） | ❌ | ✅ `Options.ShouldQuit` |
 
 ### 关键差异
 
 - **Wails.Net** 的 [EventProcessor](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Events/EventProcessor.cs) 同时支持 Pre-emit 钩子（学 Wails 3）和**多传输层并行广播**（独有）：一次 `Emit` 会同时通过 HttpTransport + WebSocketBroadcaster + EventIPCTransport + AssetServerTransport + NativeIpcTransport 广播，确保所有连接的前端都能收到。
+- **Wails.Net** 自 P1-2 起在 EventProcessor 与 Transport 层全链路传播 `senderWindowId`，前端可按 `windowId` 过滤事件来源（[EventSenderWindowPropagationTests](file:///f:/Code/Dotnet/Wails.Net/tests/Wails.Net.Application.Tests/Transport/EventSenderWindowPropagationTests.cs) 验证），这是三者中**唯一**支持事件来源窗口标识的方案。
+- **Wails.Net** 自 P1-7 起补齐 [PostShutdown / ShouldQuit](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Application.cs) 事件钩子，对齐 Wails v3 的 `cleanup()` 末尾调用与平台信号处理器 `shouldQuit()` 拦截机制。
 - **Tauri 2** 事件总线单一 IPC，但提供 `emit_to` / `emit_filter` 精细控制。
 - **Wails 3** 通过 Event Hooks 实现服务端拦截，与 Wails.Net 的 Pre-emit 钩子等价。
 
@@ -150,10 +155,14 @@
 | **边框颜色** | ✅ `SetBorderColor` | ✅ | ✅ |
 | **命令路径** | `window.*` 命令通过 `WindowPlugin` 暴露 | `window.*` plugin 命令 | `wails.window.*` 前端 API |
 | **权限校验** | ✅ `window:default` / `window:allow-readonly` / `window:allow-dangerous` | ✅ `window:default` / `window:allow-*` | ❌ |
+| **上下文菜单数据** | ✅ `ContextMenuData` + `MenuManager`（P1-4） | ✅ Menu plugin | ✅ ContextMenu |
+| **Frameless 拖拽 CSS 变量** | ✅ `--wails-drag-region` 统一变量（P1-5） | ✅ `data-tauri-drag-region` | ✅ `--wails-drag-region` |
 
 ### 关键差异
 
 - **Wails.Net** 的 [WindowPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/WindowPlugin.cs) 借鉴 Tauri v2 的"核心即插件"哲学，将所有窗口操作以插件命令形式暴露，同时声明三层权限集（`window:default` / `window:allow-readonly` / `window:allow-dangerous`）。
+- **Wails.Net** 自 P1-4 起新增 [MenuManager](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Managers/MenuManager.cs) 与 [ContextMenuData](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Menus/ContextMenuData.cs)，并让 [RuntimeGenerator](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 注入 ContextMenu 钩子，对齐 Wails v3 的右键菜单行为（[MessageProcessorContextMenuTests](file:///f:/Code/Dotnet/Wails.Net/tests/Wails.Net.Application.Tests/Transport/MessageProcessorContextMenuTests.cs) 验证）。
+- **Wails.Net** 自 P1-5 起统一三平台 Frameless 拖拽实现：[DragRegionHelper](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Windows/DragRegionHelper.cs) 统一使用 `--wails-drag-region` CSS 变量，Windows / Linux / Android 三平台 WebviewWindow 行为一致（[DragRegionHelperTests](file:///f:/Code/Dotnet/Wails.Net/tests/Wails.Net.Application.Tests/Windows/DragRegionHelperTests.cs) 验证）。
 - **Wails 3** 窗口 API 直接通过 `wails.window.*` 暴露，无权限校验。
 - **Wails.Net** Win32 实现 [Win32WebviewWindow](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Windows/Win32WebviewWindow.cs) 完整处理 WM_DESTROY/WM_CLOSE/WM_SIZE/WM_COMMAND/WM_SYSCOMMAND/WM_GETMINMAXINFO/WM_DPICHANGED/WM_HOTKEY/WM_DROPFILES/WM_SETTINGCHANGE/WM_MOVE/WM_NCLBUTTONDOWN/WM_SETICON/WM_ACTIVATE/WM_DISPLAYCHANGE/WM_CLIPBOARDUPDATE/WM_KEYDOWN/WM_CONTEXTMENU 等消息。
 
@@ -264,11 +273,13 @@
 | **Last-Modified** | ✅ `Last-Modified` / `If-Modified-Since` | ✅ | ✅ |
 | **自定义 Header** | ✅ `Headers` 静态类 | ✅ | ✅ |
 | **MIME 类型** | ✅ 内置映射 | ✅ | ✅ |
+| **Service Route 挂载** | ✅ `IHttpServiceHandler` 自定义路由（P1-6） | ❌ | ❌ |
 
 ### 关键差异
 
 - **Wails.Net** 的 [AssetServer](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.AssetServer/AssetServer.cs) 是三者中**唯一**提供中间件管道（`IMiddleware` + `MiddlewareChain`）的方案，支持灵活扩展（如自定义鉴权、日志、压缩等中间件）。
-- **Tauri 2** 和 **Wails 3** 的 AssetServer 功能完整但无中间件抽象。
+- **Wails.Net** 自 P1-6 起新增 [IHttpServiceHandler](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.AssetServer/IHttpServiceHandler.cs) 抽象，允许业务代码挂载自定义 HTTP 路由到 AssetServer（如 `/api/health`、`/api/data` 等），无需独立启动 ASP.NET Core 管道（[AssetServerServiceRouteTests](file:///f:/Code/Dotnet/Wails.Net/tests/Wails.Net.AssetServer.Tests/AssetServerServiceRouteTests.cs) 验证）。这是三者中**唯一**的方案。
+- **Tauri 2** 和 **Wails 3** 的 AssetServer 功能完整但无中间件抽象，也无业务路由挂载能力。
 
 ---
 
@@ -278,18 +289,30 @@
 |------|-----------|---------|---------|
 | **Updater 服务** | ✅ `UpdaterService`（`IServiceStartup` / `IServiceShutdown`） | ✅ `tauri-plugin-updater` | ✅ `Updater` |
 | **UpdateInfo 结构** | ✅ `Version` / `DownloadUrl` / `UpdateAvailable` / `ReleaseNotes` | ✅ | ✅ |
-| **多 Provider** | ❌（单一） | ❌（单一） | ✅ 多 provider |
+| **多 Provider** | ✅ `IUpdateProvider` 接口 + 链式尝试（P1-8） | ❌（单一） | ✅ 多 provider |
+| **Provider 列表** | ✅ HttpUpdateProvider / GitHubUpdateProvider / GitLabUpdateProvider（P1-8） | N/A | 内置 |
+| **ProviderName 注入** | ✅ `UpdateManifest.ProviderName`（P1-8） | ❌ | ✅ |
+| **错误事件 payload** | ✅ `UpdateErrorInfo { stage, message, provider }`（P1-8） | ❌ | ✅ `ErrorInfo` |
 | **下载器** | ✅ `UpdateDownloader` | ✅ | ✅ |
 | **事件广播** | ✅ 通过 `EventProcessor` 广播更新事件 | ✅ | ✅ |
 | **签名校验** | ✅ Minisign（见 §11） | ✅ Minisign | ✅ Minisign |
 | **Helper Process** | ❌ | ❌ | ✅ 替换二进制 |
 | **Windows 自动签名** | ✅ Authenticode | ❌ | ❌ |
+| **向后兼容** | ✅ 未注册 Provider 时回退到 `UpdateURL`（P1-8） | N/A | N/A |
 
 ### 关键差异
 
-- **Wails.Net** 的 [UpdaterService](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Services/UpdaterService.cs) 集成 Minisign 签名校验和 Authenticode 自动签名（见 §11）。
-- **Wails 3** 支持多 provider 和 Helper Process 替换二进制，功能最完整。
-- **Tauri 2** 通过独立插件提供 Updater，与 Wails.Net 模型类似。
+- **Wails.Net** 自 P1-8 起实现完整的多 Provider Updater 系统（[UpdaterService](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Services/UpdaterService.cs)）：
+  - **IUpdateProvider 接口**（[IUpdateProvider.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Services/Updater/IUpdateProvider.cs)）：抽象"检查更新"的来源，支持链式尝试（首个返回非 null 清单的胜出）。
+  - **HttpUpdateProvider**（[HttpUpdateProvider.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Services/Updater/HttpUpdateProvider.cs)）：向后兼容默认 Provider，封装原有 `UpdateURL` 检查逻辑。
+  - **GitHubUpdateProvider**（[GitHubUpdateProvider.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Services/Updater/GitHubUpdateProvider.cs)）：通过 GitHub REST API `repos/{owner}/{repo}/releases/latest` 获取，支持 token 认证、企业版 API base、资产名称模式匹配。
+  - **GitLabUpdateProvider**（[GitLabUpdateProvider.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Services/Updater/GitLabUpdateProvider.cs)）：通过 GitLab REST API `projects/{projectId}/releases/permalink/latest` 获取，支持自托管 GitLab、URL 编码 projectId。
+  - **ProviderName 注入**：`CheckForUpdatesAsync` 解析清单后注入 `ProviderName` 到 `UpdateManifest`，便于前端展示和日志追踪。
+  - **UpdateErrorInfo**：对应 Wails v3 `ErrorInfo { stage, message, provider }` 的 payload 结构，用于错误事件。
+- **Wails.Net** 集成 Minisign 签名校验和 Authenticode 自动签名（见 §11），是三者中**唯一**支持 Windows Authenticode 自动签名的方案。
+- **Wails 3** 仍以多 provider 和 Helper Process 替换二进制为优势，Wails.Net 自 P1-8 起已追平多 Provider 能力。
+- **Tauri 2** 通过独立插件提供 Updater，仍是单一 Provider 模型。
+- **测试覆盖**：[UpdateProviderTests](file:///f:/Code/Dotnet/Wails.Net/tests/Wails.Net.Application.Tests/UpdateProviderTests.cs) 51 项测试覆盖三个 Provider 与链式检查行为。
 
 ---
 
@@ -345,13 +368,15 @@
 
 | 维度 | Wails.Net | Tauri 2 | Wails 3 |
 |------|-----------|---------|---------|
-| **无 GUI 模式** | ✅ `ServerPlatformApp` + `ServerWebviewWindow` + `ServerClipboard` | ❌ | ✅ Headless 模式 |
+| **无 GUI 模式** | ✅ `ServerPlatformApp` + `ServerWebviewWindow` + `ServerClipboard` + `ServerBrowserManager`（P1-1） | ❌ | ✅ Headless 模式 |
 | **阻塞模型** | ✅ `ManualResetEventSlim` 阻塞直到 `SignalShutdown` | N/A | ✅ |
 | **GUI 操作** | 全部 no-op | N/A | 全部 no-op |
 | **单实例锁** | ✅ 始终返回 true（视作首实例） | N/A | ✅ |
 | **对话框** | 返回默认值（首个按钮 / null） | N/A | ✅ |
 | **屏幕查询** | 返回 null / 空数组 | N/A | ✅ |
 | **主线程分发** | 同步执行 `action()` | N/A | ✅ |
+| **浏览器管理** | ✅ `ServerBrowserManager` no-op（P1-1） | N/A | ✅ |
+| **Destroy 可重写** | ✅ `virtual` 修饰符支持测试 override（P1-7） | N/A | N/A |
 | **应用场景** | 容器化部署 / 自动化测试 / 服务端渲染 | N/A | 自动化测试 |
 
 ### 关键差异
@@ -360,6 +385,8 @@
   - 容器化部署（Docker / Kubernetes）
   - 自动化 UI 测试（无窗口环境）
   - 服务端预渲染
+- **Wails.Net** 自 P1-1 起补齐 [ServerBrowserManager](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Platform/ServerMode/ServerBrowserManager.cs)，使 IBrowserManager 接口在 Server 模式下 no-op，保证 API 表面一致性。
+- **Wails.Net** 自 P1-7 起将 `ServerPlatformApp.Destroy()` 改为 `virtual`，支持单元测试中 override 验证 Shutdown 流程（[ApplicationEventHooksTests](file:///f:/Code/Dotnet/Wails.Net/tests/Wails.Net.Application.Tests/ApplicationEventHooksTests.cs)）。
 - **Wails 3** 的 Headless 模式功能类似，但 API 表面不如 Wails.Net 完整。
 - **Tauri 2** 无内置 Server 模式。
 
@@ -488,6 +515,24 @@
 ### 16.10 内置 41 + 4 个插件
 内置插件数最多，覆盖音频/视频/电池/硬件/传感器/电子书/数学/天气/时间/日历等 Tauri 2 / Wails 3 无内置实现的功能。
 
+### 16.11 Logger ↔ 前端 console 双向桥接（P1-3）
+- **[BrowserConsoleLogReceiver](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Logging/BrowserConsoleLogReceiver.cs)** 接收前端 `console.log/info/warn/error` 调用，桥接到 `ILogger<T>`，使前端日志自动进入 .NET 日志管道。
+- **[BrowserConsoleLogForwarder](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Logging/BrowserConsoleLogForwarder.cs)** 将 `ILogger` 输出反向转发到前端 DevTools console，便于前端开发者查看后端日志。
+- **[LogServiceLoggerProvider](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Logging/LogServiceLoggerProvider.cs)** 集成到 `Microsoft.Extensions.Logging`，作为 `ILoggerProvider` 注册到 DI 容器。
+- 这是三者中**唯一**支持日志双向桥接的方案。
+
+### 16.12 事件 senderWindowId 传播（P1-2）
+[EventProcessor](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Events/EventProcessor.cs) 与 Transport 层全链路携带 `senderWindowId`，前端可按 `windowId` 过滤事件来源。这是三者中**唯一**支持事件来源窗口标识的方案，对多窗口调试与隔离场景特别有用。
+
+### 16.13 AssetServer Service Route 挂载（P1-6）
+[IHttpServiceHandler](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.AssetServer/IHttpServiceHandler.cs) 允许业务代码挂载自定义 HTTP 路由到 AssetServer，无需独立启动 ASP.NET Core 管道。这是三者中**唯一**的方案。
+
+### 16.14 多 Provider Updater + ProviderName 注入（P1-8）
+[IUpdateProvider](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Services/Updater/IUpdateProvider.cs) 接口支持链式尝试多个更新源（Http / GitHub / GitLab），并在 `UpdateManifest` 中注入 `ProviderName`，便于前端展示来源和日志追踪。这是三者中**第二个**实现多 Provider 的方案（Wails 3 已有，Tauri 2 仍为单一）。
+
+### 16.15 三平台 BrowserManager（P1-1）
+[IBrowserManager](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Browser/) 接口在 Windows / Linux / Android 三平台均有实现，支持打开外部 URL、验证 URL scheme。Server 模式下提供 `ServerBrowserManager` no-op 实现，保证 API 表面一致性。
+
 ---
 
 ## 17. Wails.Net 差距与路线图
@@ -496,36 +541,46 @@
 
 | 差距项 | 优先级 | 对标 | 说明 |
 |-------|--------|------|------|
-| **macOS / iOS 支持** | P1 | Tauri 2 / Wails 3 | 暂不实现，未来考虑通过 .NET macOS 工作负载 + WKWebView 补齐 |
-| **OAuth / 深度链接** | P1 | Tauri 2 | deep-link 插件未实现 |
+| **macOS / iOS 支持** | P2 | Tauri 2 / Wails 3 | 暂不实现，未来考虑通过 .NET macOS 工作负载 + WKWebView 补齐 |
+| **OAuth / 深度链接** | P2 | Tauri 2 | deep-link 插件未实现 |
 | **Biometric** | P2 | Tauri 2 | 生物识别插件未实现 |
 | **Barcode Scanner** | P2 | Tauri 2 | 条码扫描插件未实现 |
 | **SQL 插件** | P2 | Tauri 2 | SQL 数据库插件未实现 |
 | **Stronghold** | P3 | Tauri 2 | 加密存储插件未实现 |
 | **Localhost 插件** | P3 | Tauri 2 | 本地主机插件未实现 |
 | **Positioner** | P3 | Tauri 2 | 窗口定位插件未实现 |
-| **多 Provider Updater** | P2 | Wails 3 | 当前仅单一 provider |
 | **Helper Process 替换二进制** | P2 | Wails 3 | 当前无 Helper Process |
-| **原生 IPC 默认化** | P1 | Tauri 2 / Wails 3 | 当前默认 HttpTransport，原生 IPC 为可选 |
-| **移动端插件生态** | P1 | Tauri 2 | 仅 4 个移动端插件，Tauri 2 有 20+ |
+| **移动端插件生态** | P2 | Tauri 2 | 仅 4 个移动端插件，Tauri 2 有 20+ |
 
-### 17.2 路线图建议
+### 17.2 已完成对齐项（P0 + P1）
 
-1. **短期（P0）**：
-   - 完成 CancellablePromise + CancelCall 全链路测试
-   - EventIPCTransport 回退机制完善
-   - 原生 IPC（NativeIpcTransport）作为默认传输
-   - Server 模式事件 API 完善
+#### P0 阶段（已完成）
+- ✅ CancellablePromise + CancelCall 全链路测试
+- ✅ EventIPCTransport 回退机制完善
+- ✅ 原生 IPC（NativeIpcTransport）作为默认传输
+- ✅ Server 模式事件 API 完善
 
-2. **中期（P1）**：
+#### P1 阶段（已完成）
+- ✅ P1-1：BrowserManager 三平台实现（Windows / Linux / Android / Server）
+- ✅ P1-2：事件 senderWindowId 传播（EventProcessor + Transport 全链路）
+- ✅ P1-3：Logger ↔ 前端 console 双向桥接（BrowserConsoleLogReceiver + Forwarder + LoggerProvider）
+- ✅ P1-4：ContextMenu 行为对齐（MenuManager + ContextMenuData + RuntimeGenerator 钩子）
+- ✅ P1-5：Frameless 拖拽 CSS 变量统一（`--wails-drag-region`，三平台一致）
+- ✅ P1-6：AssetServer Service Route 挂载能力（IHttpServiceHandler）
+- ✅ P1-7：Event Hooks 补齐（PostShutdown / ShouldQuit）
+- ✅ P1-8：多 Provider Updater（HttpUpdateProvider / GitHubUpdateProvider / GitLabUpdateProvider）
+
+### 17.3 路线图建议
+
+1. **中期（P2）**：
    - macOS / iOS 平台支持（.NET macOS + WKWebView）
    - OAuth / 深度链接插件
    - 移动端插件扩充（Biometric / Barcode Scanner / Localhost / Positioner）
-   - 多 Provider Updater
+   - Helper Process 替换二进制（对齐 Wails 3）
+   - SQL 插件
 
-3. **长期（P2/P3）**：
-   - SQL / Stronghold 插件
-   - Helper Process 替换二进制
+2. **长期（P3）**：
+   - Stronghold 加密存储
    - 社区插件生态建设
 
 ---
@@ -536,9 +591,9 @@
 
 | 项目 | 定位 | 优势 | 劣势 |
 |------|------|------|------|
-| **Wails.Net** | Wails v3 的 .NET 10 移植，融合 ASP.NET Core + Wails v3 + Tauri v2 三家之长 | .NET 全栈集成 / Server 模式 / 多传输层 / 41+ 插件 / 源生成器绑定 / 完整 ACL / Authenticode 自动签名 | 无 macOS/iOS / 移动端插件少 / 无 SQL/Stronghold/OAuth |
-| **Tauri 2** | Rust 桌面/移动框架，安全优先 | 全平台（5 个）/ 30+ 官方插件 / 完整 ACL / 编译期绑定（性能最优）/ 强大生态 | Rust 学习曲线 / 无 Server 模式 / 无中间件管道 |
-| **Wails 3** | Go 桌面/移动框架，简洁实用 | 全平台 / Go 语言易上手 / 多 Provider Updater / Helper Process / Event Hooks | 无 ACL / 无中间件管道 / 插件生态弱 / 无 Authenticode |
+| **Wails.Net** | Wails v3 的 .NET 10 移植，融合 ASP.NET Core + Wails v3 + Tauri v2 三家之长 | .NET 全栈集成 / Server 模式 / 多传输层 / 41+ 插件 / 源生成器绑定 / 完整 ACL / Authenticode 自动签名 / Logger 双向桥接 / 多 Provider Updater / senderWindowId 传播 / AssetServer Service Route | 无 macOS/iOS / 移动端插件少 / 无 SQL/Stronghold/OAuth / 无 Helper Process |
+| **Tauri 2** | Rust 桌面/移动框架，安全优先 | 全平台（5 个）/ 30+ 官方插件 / 完整 ACL / 编译期绑定（性能最优）/ 强大生态 | Rust 学习曲线 / 无 Server 模式 / 无中间件管道 / 无日志双向桥接 / 单一 Updater Provider |
+| **Wails 3** | Go 桌面/移动框架，简洁实用 | 全平台 / Go 语言易上手 / 多 Provider Updater / Helper Process / Event Hooks | 无 ACL / 无中间件管道 / 插件生态弱 / 无 Authenticode / 无日志双向桥接 / 无 senderWindowId |
 
 ### 18.2 Wails.Net 的核心价值
 
@@ -546,16 +601,22 @@
 2. **架构融合创新**：三家之长（ASP.NET Core 的 Host/DI + Wails v3 的 Runtime/IPC + Tauri v2 的 Plugin/Capability）。
 3. **企业级特性**：Server 模式（容器化部署）+ Authenticode 自动签名 + 完整 ACL + 中间件管道。
 4. **插件生态最丰富（内置）**：41 桌面 + 4 移动端插件，开箱即用。
+5. **调试与运维友好**（P1 阶段新增）：
+   - Logger 双向桥接：前端 console ↔ 后端 ILogger 双向流转，便于联调。
+   - senderWindowId 传播：多窗口场景下可按来源窗口过滤事件。
+   - AssetServer Service Route：业务路由直接挂载到 AssetServer，无需独立 Kestrel。
+6. **更新能力完整**（P1-8 完成）：多 Provider Updater 与 Wails 3 持平，支持 GitHub / GitLab / HTTP 三种来源。
 
 ### 18.3 选型建议
 
-- **.NET 团队 / 企业级桌面应用**：选 Wails.Net（复用 .NET 技能栈 + Server 模式 + Authenticode）
+- **.NET 团队 / 企业级桌面应用**：选 Wails.Net（复用 .NET 技能栈 + Server 模式 + Authenticode + Logger 双向桥接 + 多 Provider Updater）
 - **Rust 团队 / 安全敏感应用**：选 Tauri 2（编译期绑定 + 完整 ACL + 全平台）
 - **Go 团队 / 快速原型**：选 Wails 3（Go 语言简洁 + 多 Provider Updater + Helper Process）
 - **需要 macOS/iOS**：暂选 Tauri 2 或 Wails 3（Wails.Net 暂不支持）
+- **需要 Helper Process 替换二进制**：暂选 Wails 3（Wails.Net 在 P2 路线图中）
 
 ---
 
 **文档结束**
 
-> 本文档基于 2026-07-18 仓库代码状态生成。如发现信息过时或错误，请提交 Issue 或 PR 更新。
+> 本文档基于 2026-07-18 仓库代码状态生成（提交 `e11bdd4`，P1 阶段全部完成）。如发现信息过时或错误，请提交 Issue 或 PR 更新。
