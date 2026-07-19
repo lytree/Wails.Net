@@ -241,4 +241,72 @@ public sealed class AndroidPlatformAppTests
         // 断言：无按钮时直接返回 0
         await Assert.That(result).IsEqualTo(0);
     }
+
+    // ---------------------------------------------------------------------
+    // SAF（Storage Access Framework）文件对话框测试
+    // 非 Android 环境下 _activity 为 null，所有文件对话框应降级返回 null
+    // ---------------------------------------------------------------------
+
+    [Test]
+    public async Task OpenFileDialog_ReturnsNull_WhenNoActivity()
+    {
+        // 安排：非 Android 环境下未注入 Activity（_activity 为 null）
+        var app = new AndroidPlatformApp(new ApplicationOptions { Name = "TestApp" });
+        var options = new OpenFileDialogOptions();
+
+        // 操作
+        var result = await app.OpenFileDialog(options);
+
+        // 断言：无 Activity 时返回 null（不启动 SAF Intent）
+        await Assert.That(result).IsNull();
+    }
+
+    [Test]
+    public async Task SaveFileDialog_ReturnsNull_WhenNoActivity()
+    {
+        // 安排
+        var app = new AndroidPlatformApp(new ApplicationOptions { Name = "TestApp" });
+        var options = new SaveFileDialogOptions { Filename = "test.txt" };
+
+        // 操作
+        var result = await app.SaveFileDialog(options);
+
+        // 断言：无 Activity 时返回 null
+        await Assert.That(result).IsNull();
+    }
+
+    [Test]
+    public async Task OpenMultipleFilesDialog_ReturnsNull_WhenNoActivity()
+    {
+        // 安排
+        var app = new AndroidPlatformApp(new ApplicationOptions { Name = "TestApp" });
+        var options = new OpenFileDialogOptions { CanChooseMultiple = true };
+
+        // 操作
+        var result = await app.OpenMultipleFilesDialog(options);
+
+        // 断言：无 Activity 时返回 null
+        await Assert.That(result).IsNull();
+    }
+
+    [Test]
+    public async Task HandleActivityResult_IsNoOp_WhenNoCallbackRegistered()
+    {
+        // 安排：未启动任何 SAF 对话框，注册表为空
+        var app = new AndroidPlatformApp(new ApplicationOptions { Name = "TestApp" });
+
+        // 操作与断言：传入未注册的 requestCode 不应抛异常（静默忽略）
+        await Assert.That(() => app.HandleActivityResult(0x9999, Result.Canceled, null)).ThrowsNothing();
+    }
+
+    [Test]
+    public async Task HandleActivityResult_IsNoOp_WhenActivityDestroyed()
+    {
+        // 安排：模拟 Activity 销毁后调用 HandleActivityResult
+        var app = new AndroidPlatformApp(new ApplicationOptions { Name = "TestApp" });
+
+        // 操作与断言：OnActivityDestroyed 后注册表仍为空，调用应不抛异常
+        app.OnActivityDestroyed();
+        await Assert.That(() => app.HandleActivityResult(0x1001, Result.Canceled, null)).ThrowsNothing();
+    }
 }
