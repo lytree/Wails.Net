@@ -61,6 +61,8 @@ Wails.Net 在 Webview 启动时注入两段 JavaScript 代码：
 | `wails.nfc` | NFC 读写（仅 Android） | — |
 | `wails.barcode-scanner` | 条码/二维码扫描（仅 Android） | — |
 | `wails.haptics` | 触觉反馈（仅 Android） | Tauri v2 plugin-haptics |
+| `wails.device` / `wails.toast` | Android 设备信息 / Toast 提示（仅 Android） | Wails v3 androidDeviceInfo / androidShowToast |
+| `wails.MenuRole` | MenuRole 常量枚举（21 个值，供 `menu.addRoleItem` 使用） | Wails v3 Role 常量 |
 
 ### 运行时标志对象
 
@@ -1033,6 +1035,92 @@ await wails.menu.popup([
   { id: "copy", label: "复制" }
 ], 200, 300);
 ```
+
+### wails.menu.addRoleItem(parentId, role, label?)
+
+向指定父菜单追加一个 MenuRole 角色菜单项，返回新菜单项 ID（字符串形式的 uint）。对应 [MenuPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/MenuPlugin.cs) 与 [MenuRole](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Menus/MenuRole.cs)。
+
+**签名**
+
+```javascript
+wails.menu.addRoleItem(parentId: string, role: string, label?: string): Promise<string>
+```
+
+**参数**
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `parentId` | string | 父菜单项 ID（字符串形式的 uint） |
+| `role` | string | MenuRole 常量，使用 `wails.MenuRole.*`（如 `wails.MenuRole.Copy`） |
+| `label` | string? | 自定义标签，留空时由平台实现提供默认本地化文本 |
+
+**示例**
+
+```javascript
+const itemId = await wails.menu.addRoleItem(parentId, wails.MenuRole.Copy);
+const aboutId = await wails.menu.addRoleItem(parentId, wails.MenuRole.About, "关于本应用");
+```
+
+### wails.menu.addStandardEditMenu(parentId)
+
+向指定父菜单追加标准编辑菜单项（Undo / Redo / Separator / Cut / Copy / Paste / SelectAll）。对应 [Menu.AddStandardEditMenu](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Menus/Menu.cs)。
+
+```javascript
+await wails.menu.addStandardEditMenu(parentId);
+```
+
+### wails.menu.addStandardWindowMenu(parentId)
+
+向指定父菜单追加标准窗口菜单项（Minimize / Maximize / Separator / CloseWindow）。
+
+```javascript
+await wails.menu.addStandardWindowMenu(parentId);
+```
+
+### wails.menu.addStandardHelpMenu(parentId, metadata?, label?)
+
+向指定父菜单追加标准帮助菜单项（About）。`metadata` 用于定制关于对话框内容。
+
+**签名**
+
+```javascript
+wails.menu.addStandardHelpMenu(
+  parentId: string,
+  metadata?: { Name?, Version?, ShortVersion?, Authors?, Copyright?, License?, Website?, WebsiteLabel?, Comments? } | null,
+  label?: string
+): Promise<void>
+```
+
+**示例**
+
+```javascript
+await wails.menu.addStandardHelpMenu(parentId, {
+  Name: "MyApp",
+  Version: "1.0.0",
+  Copyright: "© 2026",
+  Website: "https://example.com"
+});
+```
+
+### wails.MenuRole — MenuRole 常量
+
+[RuntimeGenerator](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 注入 `wails.MenuRole` 常量对象，包含全部 21 个角色枚举值字符串，供 `wails.menu.addRoleItem` 的 `role` 参数使用：
+
+```javascript
+wails.MenuRole = {
+  None: "None", Separator: "Separator",
+  Copy: "Copy", Cut: "Cut", Paste: "Paste", SelectAll: "SelectAll",
+  Undo: "Undo", Redo: "Redo",
+  Minimize: "Minimize", Maximize: "Maximize", Fullscreen: "Fullscreen",
+  CloseWindow: "CloseWindow", Zoom: "Zoom",
+  About: "About", Quit: "Quit",
+  Hide: "Hide", HideOthers: "HideOthers", ShowAll: "ShowAll",
+  Services: "Services", BringAllToFront: "BringAllToFront",
+  ToggleFullScreen: "ToggleFullScreen"
+};
+```
+
+> macOS 专属角色（`Hide` / `HideOthers` / `ShowAll` / `Services` / `BringAllToFront` / `Zoom` / `ToggleFullScreen`）在 Windows / Linux 上静默 no-op，由 [MenuRoleHelper.IsMacOSExclusive](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Menus/MenuRoleHelper.cs) 在运行时判定。
 
 ## 应用 API (wails.application)
 
@@ -2263,6 +2351,37 @@ await wails.haptics.notification("success");  // "success" | "warning" | "error"
 ```javascript
 await wails.haptics.cancel();
 ```
+
+### Android 运行时 API (wails.device / wails.toast)
+
+对应 [AndroidRuntimePlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/Mobile/AndroidRuntimePlugin.cs)，提供 Android 平台专属的设备信息与 Toast 提示能力。对应 Wails v3 `messageprocessor_android.go` 中的 `androidDeviceInfo` / `androidShowToast`。
+
+#### wails.device.info()
+
+获取 Android 设备信息。通过 `Android.OS.Build` 读取硬件信息。
+
+```javascript
+const info = await wails.call('device.info', []);
+// {
+//   platform: "android",
+//   manufacturer: "Google",
+//   brand: "google",
+//   model: "Pixel 7",
+//   device: "panther",
+//   version: "14",
+//   sdkInt: 34
+// }
+```
+
+#### wails.toast.show(message)
+
+显示 Android Toast 提示（短时长）。通过 `Toast.MakeText` 显示。
+
+```javascript
+await wails.call('toast.show', [{ message: "已保存" }]);
+```
+
+**权限**：插件注册 `android-runtime:default` 权限集，包含 `android-runtime:allow-device-info` 与 `android-runtime:allow-toast`，需在 Capability 中声明后才能调用。
 
 ## 内部机制
 

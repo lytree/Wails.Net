@@ -193,7 +193,7 @@ EventHook.ForEvent(processor, "wails:window:closed", evt =>
 
 ### 3.1 ApplicationEventType — 应用级事件
 
-[ApplicationEventType.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Events/ApplicationEventType.cs) 定义 25 个应用级事件（取值 `0..24`），覆盖应用生命周期、系统状态、URL 加载等：
+[ApplicationEventType.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Events/ApplicationEventType.cs) 定义 30 个应用级事件（取值 `0..29`），覆盖应用生命周期、系统状态、URL 加载、移动端平台事件等：
 
 | 事件 | 值 | 名称（KnownEvents） |
 |------|----|----|
@@ -201,15 +201,25 @@ EventHook.ForEvent(processor, "wails:window:closed", evt =>
 | Shutdown | 1 | `wails:shutdown` |
 | ThemeChanged | 2 | `wails:theme:changed` |
 | FileDropped | 3 | `wails:file:dropped` |
-| WindowClosing | 4 | `wails:window:closing` |
+| WindowClosing / WindowClosed | 4 / 5 | `wails:window:closing` / `wails:window:closed` |
 | WindowFocus / WindowFocusLost | 6 / 7 | `wails:window:focus` / `wails:window:focuslost` |
 | DPIChanged | 8 | `wails:dpi:changed` |
+| BatteryChanged / NetworkChanged | 9 / 10 | `wails:battery:changed` / `wails:network:changed` |
 | Resume / Suspend | 11 / 12 | `wails:resume` / `wails:suspend` |
+| DisplayChanged | 13 | `wails:display:changed` |
 | ClipboardChanged | 14 | `wails:clipboard:changed` |
-| SystemTrayClicked | 15 | `wails:tray:click` |
+| SystemTrayClicked / SystemTrayMenuOpened | 15 / 16 | `wails:tray:click` / `wails:tray:menu:open` |
 | WindowRuntimeReady | 17 | `wails:window:runtime:ready` |
-| URLStartsLoading / URLFinishedLoading / URLLoadFailed | 20–23 | `wails:url:*` |
+| WindowEnterFullScreen / WindowExitFullScreen | 18 / 19 | `wails:window:enter:fullscreen` / `wails:window:exit:fullscreen` |
+| URLStartsLoading / URLFinishedLoading / URLLoadFailed | 20 / 21 / 23 | `wails:url:*` |
+| WindowBeforeUnload | 22 | `wails:window:before:unload` |
 | DeepLinkReceived | 24 | `wails:deeplink:received` |
+| ApplicationActive / ApplicationInactive | 25 / 26 | `wails:application:active` / `wails:application:inactive` |
+| LowMemory | 27 | `wails:low:memory` |
+| ScreenLocked | 28 | `wails:screen:locked` |
+| ScreenUnlocked | 29 | `wails:screen:unlocked` |
+
+> **P2 新增**：`LowMemory`、`ScreenLocked`、`ScreenUnlocked` 三个事件对应 Wails v3 Go 版本 `Common.LowMemory = 1290`、`Common.ScreenLocked = 1288`、`Common.ScreenUnlocked = 1289`，由 Android 平台事件（见 [§3.7 Android 平台事件映射](#37-android-平台事件映射)）转发而来，使移动端与桌面端可以订阅同一组公共事件名。
 
 ### 3.2 WindowEventType — 窗口事件
 
@@ -337,6 +347,72 @@ var loginEvent = new TypedEvent<UserInfo>("app:user:login", app.Events);
 loginEvent.On(user => Console.WriteLine($"用户登录: {user.Name}"));
 loginEvent.Emit(new UserInfo { Name = "alice" }, senderWindowID: 1);
 ```
+
+### 3.7 Android 平台事件映射
+
+[AndroidPlatformEvents.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/AndroidPlatformEvents.cs) 对应 Wails v3 Go 版本 `events_common_android.go` 中的 `commonApplicationEventMap`，将 Android 平台专属事件 ID 映射到上表的公共 `ApplicationEventType`，使应用层代码可以跨平台订阅统一事件名。
+
+**Android 平台事件 ID（12 个，对应 Wails v3 `events.Android.*` 常量）**：
+
+| 常量 | 值 | 说明 |
+|------|----|------|
+| `ActivityCreated` | 1267 | Activity onCreate |
+| `ActivityStarted` | 1268 | Activity onStart |
+| `ActivityResumed` | 1269 | Activity onResume |
+| `ActivityPaused` | 1270 | Activity onPause |
+| `ActivityStopped` | 1271 | Activity onStop |
+| `ActivityDestroyed` | 1272 | Activity onDestroy |
+| `ApplicationLowMemory` | 1273 | 系统内存不足（onLowMemory） |
+| `BatteryChanged` | 1281 | 电池状态广播 |
+| `NetworkChanged` | 1282 | 网络状态广播 |
+| `ThemeChanged` | 1283 | 系统主题变化广播 |
+| `ScreenLocked` | 1284 | 屏幕锁定广播 |
+| `ScreenUnlocked` | 1285 | 屏幕解锁广播 |
+
+**Android → Common 事件映射（7 个，仅这些被转发为公共事件）**：
+
+| Android 平台事件 | 公共 ApplicationEventType | 公共事件名 |
+|------------------|--------------------------|-----------|
+| `ActivityCreated` (1267) | `Started` (0) | `wails:startup` |
+| `ApplicationLowMemory` (1273) | `LowMemory` (27) | `wails:low:memory` |
+| `BatteryChanged` (1281) | `BatteryChanged` (9) | `wails:battery:changed` |
+| `NetworkChanged` (1282) | `NetworkChanged` (10) | `wails:network:changed` |
+| `ThemeChanged` (1283) | `ThemeChanged` (2) | `wails:theme:changed` |
+| `ScreenLocked` (1284) | `ScreenLocked` (28) | `wails:screen:locked` |
+| `ScreenUnlocked` (1285) | `ScreenUnlocked` (29) | `wails:screen:unlocked` |
+
+> 其余 5 个 Activity 生命周期事件（`ActivityStarted` / `ActivityResumed` / `ActivityPaused` / `ActivityStopped` / `ActivityDestroyed`）保留为 Android 专属事件，未映射到公共事件，对应 Wails v3 中"仅 Android 平台可订阅"的语义。
+
+**API**：
+
+```csharp
+// 将 Android 平台事件 ID 映射到公共事件；未映射返回 null
+public static ApplicationEventType? MapToCommonEvent(uint androidEventId);
+
+// 判断 Android 事件是否已映射到公共事件
+public static bool HasCommonMapping(uint androidEventId);
+```
+
+**`AndroidPlatformApp` 分发流程**：
+
+```
+Activity 生命周期回调 / BroadcastReceiver
+        │
+        ▼
+AndroidPlatformApp.On(uint androidEventId)
+        │
+        ├─ 若 HasCommonMapping(androidEventId):
+        │     └─ Application.HandlePlatformEvent((uint)MapToCommonEvent(androidEventId))
+        │           └─ EventProcessor.Emit(KnownEvents.GetEventName(commonEvent), data, null)
+        │                 └─ 前端 wails.events.on("wails:screen:locked", ...) 被触发
+        │
+        └─ 否则: 仅作为 Android 专属事件分发（订阅者通过原始 ID 监听）
+```
+
+`MapToCommonEvent` 设计的关键点：
+- **跨平台事件名统一**：用户代码订阅 `wails:screen:locked` 即可在 Android（来自广播）与未来 iOS（若实现）上同时工作。
+- **零侵入式转发**：未映射的 Android 事件不会被丢弃，仍可由 Android 专属监听器处理，对应 Wails v3 的双轨事件策略。
+- **映射表不可变**：`_commonEventMap` 为 `private static readonly Dictionary<uint, ApplicationEventType>`，构造期确定，运行期只读，无需加锁。
 
 ## 4. 前端事件 API
 
@@ -668,5 +744,6 @@ private ResponseMessage? ProcessEvent(Message message)
 | 系统事件命名 | `KnownEvents` 常量 + `GetEventName` 映射 | [KnownEvents.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Events/KnownEvents.cs) |
 | 名称冲突防护 | `CommonEvents.IsKnownEvent` | [CommonEvents.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Events/CommonEvents.cs) |
 | 一次性订阅 | `OnMultiple(maxCalls:1)` + `IsExpired` 自动清理 | [EventProcessor.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Events/EventProcessor.cs) |
+| Android 平台事件转发 | `AndroidPlatformEvents.MapToCommonEvent` + 7 事件映射表 | [AndroidPlatformEvents.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/AndroidPlatformEvents.cs) |
 
 事件系统通过"统一处理器 + 传输层监听器 + 跨窗口广播器"三层结构，实现了与 Wails v3 Go 版本对等的事件模型，同时借助 .NET 的 `ConcurrentDictionary`、`Interlocked` 与 `CancellationTokenSource` 提供了原生的并发安全与取消语义。
