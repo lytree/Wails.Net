@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wails.Net Demo - Keybindings</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>⌨️ 全局快捷键</h1>
+            <p class="subtitle">Wails.Net Demo - KeyBindingManager + GlobalShortcutPlugin</p>
+        </header>
+        <main class="content">
+            <section class="card">
+                <h2>已注册的后端热键</h2>
+                <p class="desc">由 Program.cs 在 OnAfterStart 中通过 KeyBindingManager.RegisterKeyBinding 注册。</p>
+                <ul class="hotkey-list">
+                    <li><code>Ctrl+Alt+T</code> — 触发测试事件</li>
+                    <li><code>Ctrl+Alt+H</code> — 隐藏主窗口</li>
+                    <li><code>Ctrl+Alt+S</code> — 显示主窗口</li>
+                    <li><code>F9</code> — 纯功能键触发</li>
+                </ul>
+            </section>
+
+            <section class="card">
+                <h2>动态注册前端快捷键</h2>
+                <p class="desc">通过 globalshortcut.register / unregister 命令运行时注册/注销。</p>
+                <div class="form-group">
+                    <label>加速键:</label>
+                    <input type="text" id="acceleratorInput" placeholder="如 Ctrl+Shift+P" value="Ctrl+Shift+P">
+                    <button id="registerBtn">注册</button>
+                    <button id="unregisterBtn" class="danger">注销</button>
+                    <button id="isRegisteredBtn">查询</button>
+                </div>
+                <div id="registerResult" class="result"></div>
+                <p class="desc">提示：注册成功的快捷键触发时，前端会收到 globalshortcut:pressed 事件。</p>
+            </section>
+
+            <section class="card">
+                <h2>触发历史</h2>
+                <p class="desc">订阅 keybinding:pressed（后端）和 globalshortcut:pressed（前端）事件。</p>
+                <div class="form-group">
+                    <button id="refreshBtn">刷新历史</button>
+                    <button id="statsBtn">查询统计</button>
+                    <button id="clearBtn" class="danger">清空历史</button>
+                </div>
+                <div id="statsResult" class="result"></div>
+                <table class="history-table">
+                    <thead>
+                        <tr><th>序号</th><th>来源</th><th>快捷键</th><th>消息</th><th>时间</th></tr>
+                    </thead>
+                    <tbody id="historyBody">
+                        <tr><td colspan="5" class="empty">（暂无记录）</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="card">
+                <h2>说明</h2>
+                <p class="desc">后端通过 <code>Application.KeyBindingManager.RegisterKeyBinding</code> 注册全局热键，Windows 使用 RegisterHotKey API。</p>
+                <p class="desc">前端通过 <code>globalshortcut.register</code> 插件命令注册，触发时由 GlobalShortcutPlugin 广播 <code>globalshortcut:pressed</code> 事件。</p>
+                <p class="desc">支持格式：Ctrl/Alt/Shift/Win 修饰键 + 主键，如 "Ctrl+C"、"Alt+F4"、"Ctrl+Shift+P"、"F9"。</p>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

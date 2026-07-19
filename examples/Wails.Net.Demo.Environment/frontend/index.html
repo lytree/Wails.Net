@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wails.Net Demo - Environment</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>🖥️ 环境信息</h1>
+            <p class="subtitle">Wails.Net Demo - OsInfo + Path + AppInfo 插件</p>
+        </header>
+        <main class="content">
+            <section class="card">
+                <h2>操作系统信息</h2>
+                <div class="form-group">
+                    <button id="refreshOsBtn">刷新 (os.*)</button>
+                </div>
+                <table class="info-table">
+                    <tbody>
+                        <tr><th>平台 (os.platform)</th><td id="osPlatform">—</td></tr>
+                        <tr><th>主机名 (os.hostname)</th><td id="osHostname">—</td></tr>
+                        <tr><th>架构 (os.arch)</th><td id="osArch">—</td></tr>
+                        <tr><th>区域 (os.locale)</th><td id="osLocale">—</td></tr>
+                        <tr><th>版本 (os.version)</th><td id="osVersion">—</td></tr>
+                        <tr><th>类型 (os.type)</th><td id="osType">—</td></tr>
+                        <tr><th>时区 (system.timezone)</th><td id="systemTimezone">—</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="card">
+                <h2>环境变量</h2>
+                <div class="form-group">
+                    <input type="text" id="envKeyInput" placeholder="变量名（如 PATH）">
+                    <button id="getEnvBtn">获取 (前端读取)</button>
+                    <button id="setEnvBtn">设置 (前端写入)</button>
+                </div>
+                <div id="envResult" class="result"></div>
+            </section>
+
+            <section class="card">
+                <h2>路径信息</h2>
+                <div class="form-group">
+                    <button id="refreshPathBtn">刷新 (path.*)</button>
+                </div>
+                <table class="info-table">
+                    <tbody>
+                        <tr><th>临时目录 (path.tempDir)</th><td id="pathTemp">—</td></tr>
+                        <tr><th>应用数据 (path.appDataDir)</th><td id="pathAppData">—</td></tr>
+                        <tr><th>应用配置 (path.appConfigDir)</th><td id="pathAppConfig">—</td></tr>
+                        <tr><th>当前目录 (path.runtimeDir)</th><td id="pathRuntime">—</td></tr>
+                        <tr><th>主目录 (path.homeDir)</th><td id="pathHome">—</td></tr>
+                        <tr><th>下载目录 (path.downloadDir)</th><td id="pathDownload">—</td></tr>
+                        <tr><th>文档目录 (path.documentDir)</th><td id="pathDocument">—</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="card">
+                <h2>应用信息</h2>
+                <div class="form-group">
+                    <button id="refreshAppBtn">刷新 (app.*)</button>
+                </div>
+                <table class="info-table">
+                    <tbody>
+                        <tr><th>应用名称 (app.getName)</th><td id="appName">—</td></tr>
+                        <tr><th>版本 (app.getVersion)</th><td id="appVersion">—</td></tr>
+                        <tr><th>描述 (app.getDescription)</th><td id="appDescription">—</td></tr>
+                        <tr><th>框架版本 (app.getTauriVersion)</th><td id="appTauriVer">—</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="card">
+                <h2>查询日志</h2>
+                <div class="form-group">
+                    <button id="refreshLogBtn">刷新</button>
+                    <button id="clearLogBtn" class="danger">清空</button>
+                </div>
+                <ul id="logList" class="log-list">
+                    <li class="empty">（暂无查询）</li>
+                </ul>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

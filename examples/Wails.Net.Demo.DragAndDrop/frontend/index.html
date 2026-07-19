@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wails.Net Demo - DragAndDrop</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>📂 文件拖放</h1>
+            <p class="subtitle">Wails.Net Demo - KnownEvents.WindowFileDropped + FileDropService</p>
+        </header>
+        <main class="content">
+            <section class="card drop-zone" id="dropZone">
+                <h2>拖放区域</h2>
+                <p class="desc">将文件从资源管理器拖入应用窗口任意位置，下方实时显示拖入的文件路径。</p>
+                <div id="dropIndicator" class="drop-indicator">等待文件拖入...</div>
+                <div class="form-group">
+                    <button id="toggleDropBtn">禁用拖放</button>
+                </div>
+                <div id="toggleResult" class="result"></div>
+            </section>
+
+            <section class="card">
+                <h2>本次拖入</h2>
+                <p class="desc">最新一次拖放事件的文件列表（订阅 wails:window:file:dropped 事件）。</p>
+                <table class="history-table">
+                    <thead>
+                        <tr><th>序号</th><th>文件名</th><th>路径</th></tr>
+                    </thead>
+                    <tbody id="currentDropBody">
+                        <tr><td colspan="3" class="empty">（暂无）</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="card">
+                <h2>拖放历史与统计</h2>
+                <div class="form-group">
+                    <button id="refreshBtn">刷新历史</button>
+                    <button id="statsBtn">查询统计</button>
+                    <button id="clearBtn" class="danger">清空历史</button>
+                </div>
+                <div id="statsResult" class="result"></div>
+                <table class="history-table">
+                    <thead>
+                        <tr><th>序号</th><th>文件名</th><th>扩展名</th><th>大小</th><th>拖入时间</th></tr>
+                    </thead>
+                    <tbody id="historyBody">
+                        <tr><td colspan="5" class="empty">（暂无记录）</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="card">
+                <h2>说明</h2>
+                <p class="desc">平台层在窗口收到文件拖放事件后，通过 KnownEvents.WindowFileDropped（"wails:window:file:dropped"）广播文件路径数组。</p>
+                <p class="desc">前端订阅此事件后，调用 FileDropService.RecordDrop 绑定方法将路径列表传给后端持久化。</p>
+                <p class="desc">window.setFileDropEnabled 命令可在运行时启用/禁用拖放，禁用后不再触发事件。</p>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

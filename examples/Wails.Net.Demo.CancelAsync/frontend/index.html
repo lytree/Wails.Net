@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wails.Net Demo - CancelAsync</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>⏱️ 异步取消</h1>
+            <p class="subtitle">Wails.Net Demo - CancellationToken + CancellablePromise</p>
+        </header>
+        <main class="content">
+            <section class="card">
+                <h2>启动长任务</h2>
+                <div class="form-group">
+                    <label>时长（秒）：</label>
+                    <input type="number" id="durationInput" value="10" min="1" max="60">
+                    <button id="startBtn">开始任务</button>
+                    <button id="cancelBtn" class="danger">取消任务</button>
+                    <button id="cancelServerBtn">服务端取消</button>
+                </div>
+                <div class="progress-wrap">
+                    <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+                    <span id="progressText">0%</span>
+                </div>
+                <div class="status">
+                    状态: <strong id="statusText">空闲</strong>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>运行日志</h2>
+                <div id="log" class="result"></div>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

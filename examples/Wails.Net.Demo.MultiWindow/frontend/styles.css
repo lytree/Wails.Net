@@ -1,0 +1,33 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f5f5; color: #333; }
+.app { max-width: 900px; margin: 0 auto; padding: 24px; }
+.header { text-align: center; margin-bottom: 24px; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; }
+.subtitle { opacity: 0.9; margin-top: 4px; }
+.content { display: flex; flex-direction: column; gap: 16px; }
+.card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+.card h2 { margin-bottom: 12px; color: #2d3748; }
+
+.form-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.form-group { margin-bottom: 12px; display: flex; align-items: center; gap: 12px; }
+
+input { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; flex: 1; min-width: 160px; }
+button { padding: 8px 16px; border: none; border-radius: 4px; background: #667eea; color: white; cursor: pointer; font-size: 14px; }
+button:hover { background: #5568d3; }
+button.danger { background: #e53e3e; }
+button.danger:hover { background: #c53030; }
+button.small { padding: 4px 10px; font-size: 12px; }
+
+.hint { color: #a0aec0; font-size: 12px; }
+
+.result { margin-top: 8px; padding: 12px; background: #f7fafc; border-left: 3px solid #667eea; min-height: 20px; font-family: monospace; white-space: pre-wrap; word-break: break-word; }
+
+.window-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+.window-table th, .window-table td { padding: 8px; border: 1px solid #e2e8f0; text-align: left; }
+.window-table th { background: #edf2f7; color: #4a5568; }
+.window-table td.empty { text-align: center; color: #a0aec0; }
+.window-table td:nth-child(2), .window-table td:nth-child(3) { font-family: monospace; }
+.window-table .actions { display: flex; gap: 4px; }
+
+.log { background: #1a202c; color: #cbd5e0; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 12px; min-height: 120px; max-height: 220px; overflow-y: auto; }
+.log-line { padding: 2px 0; }
+.log-line.event { color: #68d391; }

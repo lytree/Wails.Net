@@ -5,6 +5,8 @@
     <IsPackable>true</IsPackable>
     <PackageId>Wails.Net.Application.Linux</PackageId>
     <Description>Wails.Net Linux 平台实现：GTK4 + WebKitGTK 6.0（GirCore 0.8.0）。</Description>
+    <!-- 平台注册器使用 [ModuleInitializer] 实现自动注册（替代反射路径），CA2255 警告不适用 -->
+    <NoWarn>CA2255</NoWarn>
   </PropertyGroup>
 
   <!-- 标记整个程序集为 Linux 平台特定，消除 CA1416 平台兼容性警告 -->

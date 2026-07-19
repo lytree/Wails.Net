@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wails.Net Demo - Screen</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>🖥️ 屏幕信息</h1>
+            <p class="subtitle">Wails.Net Demo - ScreenPlugin</p>
+        </header>
+        <main class="content">
+            <section class="card">
+                <h2>主屏幕</h2>
+                <div class="form-group">
+                    <button id="loadPrimaryBtn">查询主屏 (screen.getPrimary)</button>
+                    <button id="refreshBtn">刷新</button>
+                </div>
+                <div id="primaryInfo" class="screen-card primary-card">
+                    <p class="empty">（点击按钮查询主屏信息）</p>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>所有屏幕</h2>
+                <div class="form-group">
+                    <button id="loadAllBtn">查询所有屏幕 (screen.getAll)</button>
+                </div>
+                <div id="allScreens" class="screen-list">
+                    <p class="empty">（点击按钮查询所有屏幕）</p>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>查询日志</h2>
+                <ul id="logList" class="log-list">
+                    <li class="empty">（暂无查询记录）</li>
+                </ul>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

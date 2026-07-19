@@ -38,14 +38,7 @@ public sealed class OpenerPluginTests
     /// 通过命令注册表调用命令。
     /// </summary>
     private static object? InvokeCommand(CommandRegistry registry, string name, params object?[] args)
-    {
-        var entry = registry.Find(name);
-        if (entry is null)
-        {
-            throw new InvalidOperationException($"命令未找到: {name}");
-        }
-        return entry.Method.Invoke(entry.Instance, args);
-    }
+        => CommandTestHelper.Invoke(registry, name, args);
 
     /// <summary>
     /// 通过命令注册表调用返回 bool 的命令。

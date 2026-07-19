@@ -14,6 +14,8 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PackageId>Wails.Net.Application.Windows</PackageId>
     <Description>Wails.Net Windows 平台实现：WebView2 + Win32（CsWin32 源生成器）。</Description>
+    <!-- 平台注册器使用 [ModuleInitializer] 实现自动注册（替代反射路径），CA2255 警告不适用 -->
+    <NoWarn>CA2255</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

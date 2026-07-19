@@ -63,7 +63,7 @@ public class ShellPlugin : IPlugin
         // 使用带 [ScopeParameter] 特性的方法组注册
         // 对应 Tauri v2 的 shell scope：限定可执行的命令和可打开的路径
         context.Commands.MapCommand("shell.execute", (Func<string, string?, ShellResult>)ExecuteScoped);
-        context.Commands.MapCommand("shell.executeAsync", (Func<string, string?, Task<ShellResult>>)ExecuteScopedAsync);
+        context.Commands.MapCommandAsync("shell.executeAsync", (Func<string, string?, Task<ShellResult>>)ExecuteScopedAsync);
         context.Commands.MapCommand("shell.open", (Action<string>)OpenPath);
         context.Commands.MapCommand("shell.openUrl", (Action<string>)OpenUrl);
     }

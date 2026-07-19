@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wails.Net Demo - Menu</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>📋 应用菜单</h1>
+            <p class="subtitle">Wails.Net Demo - MenuPlugin + Application.SetApplicationMenu</p>
+        </header>
+        <main class="content">
+            <section class="card">
+                <h2>菜单结构</h2>
+                <ul class="menu-tree">
+                    <li><strong>文件</strong>：新建、打开、<span class="muted">保存（已禁用）</span>、退出</li>
+                    <li><strong>编辑</strong>：标准角色菜单（Undo/Redo/Cut/Copy/Paste/SelectAll）</li>
+                    <li><strong>视图</strong> → 主题：浅色（默认选中）、深色</li>
+                    <li><strong>视图</strong>：显示侧边栏（复选，默认选中）</li>
+                    <li><strong>帮助</strong>：关于、文档</li>
+                </ul>
+                <p class="hint">点击窗口顶部菜单栏的菜单项，下方会实时显示点击事件。</p>
+            </section>
+
+            <section class="card">
+                <h2>最新点击事件</h2>
+                <div class="latest-row">
+                    <span>最近点击：</span>
+                    <strong id="latestClick">（暂无）</strong>
+                </div>
+                <div id="clickResult" class="result"></div>
+            </section>
+
+            <section class="card">
+                <h2>点击历史</h2>
+                <div class="form-group">
+                    <button id="refreshBtn">刷新历史</button>
+                    <button id="clearBtn" class="danger">清空历史</button>
+                </div>
+                <ul id="historyList" class="history-list">
+                    <li class="empty">（暂无记录）</li>
+                </ul>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

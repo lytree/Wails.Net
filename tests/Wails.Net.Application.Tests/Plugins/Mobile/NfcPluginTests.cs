@@ -44,21 +44,7 @@ public sealed class NfcPluginTests
     }
 
     private static object? InvokeCommand(CommandRegistry registry, string name, params object?[] args)
-    {
-        var entry = registry.Find(name);
-        if (entry is null)
-        {
-            throw new InvalidOperationException($"命令未找到: {name}");
-        }
-        try
-        {
-            return entry.Method.Invoke(entry.Instance, args);
-        }
-        catch (TargetInvocationException ex) when (ex.InnerException is not null)
-        {
-            throw ex.InnerException;
-        }
-    }
+        => CommandTestHelper.Invoke(registry, name, args);
 
     [Test]
     public async Task Name_ReturnsNfc()

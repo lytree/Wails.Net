@@ -83,8 +83,8 @@ public class FileSystemPlugin : IPlugin
         context.Commands.MapCommand("fs.stat", (Func<string, FileStat>)StatFile);
 
         // 异步命令
-        context.Commands.MapCommand("fs.readAsync", (Func<string, Task<string>>)ReadTextAsync);
-        context.Commands.MapCommand("fs.writeAsync", (Func<string, string, Task>)WriteTextAsync);
+        context.Commands.MapCommandAsync("fs.readAsync", (Func<string, Task<string>>)ReadTextAsync);
+        context.Commands.MapCommandAsync("fs.writeAsync", (Func<string, string, Task>)WriteTextAsync);
 
         // 目录操作
         context.Commands.MapCommand("fs.mkdir", (Action<string>)MakeDirectory);

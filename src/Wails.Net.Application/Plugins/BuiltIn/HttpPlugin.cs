@@ -40,15 +40,15 @@ public class HttpPlugin : IPlugin
         context.Permissions.DeclarePermission("http:allow-fetch", "允许发起 HTTP 请求");
         context.Permissions.DeclarePermission("http:allow-request", "允许发送自定义 HTTP 请求");
 
-        context.Commands.MapCommand("http.fetch", (Func<HttpRequestOptions, Task<HttpResponseResult>>)(async options =>
+        context.Commands.MapCommandAsync("http.fetch", (Func<HttpRequestOptions, Task<HttpResponseResult>>)(async options =>
             await FetchAsync(options)));
 
         // http.get/post/put/delete 使用方法组注册，以便在参数上加 [ScopeParameter] 特性
         // 对应 Tauri v2 的 http scope：限定可访问的 URL 范围
-        context.Commands.MapCommand("http.get", (Func<string, Task<HttpResponseResult>>)GetAsyncWithScope);
-        context.Commands.MapCommand("http.post", (Func<string, string?, Task<HttpResponseResult>>)PostAsyncWithScope);
-        context.Commands.MapCommand("http.put", (Func<string, string?, Task<HttpResponseResult>>)PutAsyncWithScope);
-        context.Commands.MapCommand("http.delete", (Func<string, Task<HttpResponseResult>>)DeleteAsyncWithScope);
+        context.Commands.MapCommandAsync("http.get", (Func<string, Task<HttpResponseResult>>)GetAsyncWithScope);
+        context.Commands.MapCommandAsync("http.post", (Func<string, string?, Task<HttpResponseResult>>)PostAsyncWithScope);
+        context.Commands.MapCommandAsync("http.put", (Func<string, string?, Task<HttpResponseResult>>)PutAsyncWithScope);
+        context.Commands.MapCommandAsync("http.delete", (Func<string, Task<HttpResponseResult>>)DeleteAsyncWithScope);
     }
 
     /// <summary>

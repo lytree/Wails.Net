@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wails.Net Demo - Services</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>🌐 Service Route</h1>
+            <p class="subtitle">Wails.Net Demo - 多 HTTP 路由 + 绑定方法对比</p>
+        </header>
+        <main class="content">
+            <section class="card">
+                <h2>用户</h2>
+                <div class="form-group">
+                    <button id="listUsersBtn">列出用户 (GET /api/users)</button>
+                </div>
+                <div class="form-group">
+                    <input type="text" id="userName" placeholder="用户名">
+                    <input type="text" id="userEmail" placeholder="邮箱">
+                    <button id="createUserBtn">创建用户 (POST /api/users)</button>
+                </div>
+                <div id="userResult" class="result"></div>
+            </section>
+
+            <section class="card">
+                <h2>产品</h2>
+                <div class="form-group">
+                    <button id="listProductsBtn">列出产品 (GET /api/products)</button>
+                </div>
+                <div class="form-group">
+                    <input type="text" id="productName" placeholder="产品名">
+                    <input type="number" id="productPrice" placeholder="价格" step="0.01">
+                    <button id="createProductBtn">创建产品 (POST /api/products)</button>
+                </div>
+                <div id="productResult" class="result"></div>
+            </section>
+
+            <section class="card">
+                <h2>订单</h2>
+                <div class="form-group">
+                    <button id="listOrdersBtn">列出订单 (GET /api/orders)</button>
+                </div>
+                <div class="form-group">
+                    <input type="number" id="orderUserId" placeholder="用户 ID">
+                    <input type="number" id="orderProductId" placeholder="产品 ID">
+                    <input type="number" id="orderQty" placeholder="数量" value="1" min="1">
+                    <button id="createOrderBtn">创建订单 (POST /api/orders)</button>
+                </div>
+                <div id="orderResult" class="result"></div>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

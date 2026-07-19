@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wails.Net Demo - Frameless</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <!-- 自定义标题栏：使用 --wails-draggable: drag 启用窗口拖拽 -->
+        <header class="titlebar">
+            <div class="titlebar-title">Wails.Net Demo - Frameless</div>
+            <div class="titlebar-buttons">
+                <button id="minBtn" class="titlebar-btn" title="最小化">&#x2014;</button>
+                <button id="maxBtn" class="titlebar-btn" title="最大化/还原">&#x25A1;</button>
+                <button id="closeBtn" class="titlebar-btn danger" title="关闭">&#x2715;</button>
+            </div>
+        </header>
+
+        <main class="content">
+            <section class="card">
+                <h2>无边框窗口演示</h2>
+                <p>本窗口启用了 <code>Frameless = true</code>，没有原生标题栏与边框。</p>
+                <ul class="hint-list">
+                    <li>拖拽顶部标题栏区域可移动窗口</li>
+                    <li>右上方按钮分别调用 <code>window.minimize</code> / <code>window.maximize</code> / <code>window.close</code></li>
+                    <li>窗口状态会保存到后端 <code>WindowStateService</code></li>
+                </ul>
+            </section>
+
+            <section class="card">
+                <h2>当前窗口状态</h2>
+                <div class="state-row">
+                    <span>保存的状态：</span>
+                    <strong id="savedState">normal</strong>
+                    <button id="refreshBtn">刷新状态</button>
+                </div>
+                <div class="state-row">
+                    <span>实际最大化：</span>
+                    <strong id="isMaximised">-</strong>
+                    <button id="queryBtn">查询窗口</button>
+                </div>
+                <div id="stateResult" class="result"></div>
+            </section>
+
+            <section class="card">
+                <h2>操作日志</h2>
+                <div id="log" class="log"></div>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

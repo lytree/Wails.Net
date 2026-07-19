@@ -1,8 +1,10 @@
+using System.Collections.Concurrent;
 using Android.App;
 using Android.Content;
 using Android.Content.Res;
 using Android.OS;
 using Wails.Net.Application.Android;
+using Wails.Net.Application.Android.Mobile;
 using Wails.Net.Application.Dialogs;
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
@@ -62,8 +64,53 @@ public sealed class AndroidPlatformApp : IPlatformApp
     /// <summary>
     /// 当前 Activity 引用，由 <see cref="SetActivity"/> 注入。
     /// 用于 WebView 创建时附加到 Activity 视图层级（调用 <c>Activity.SetContentView</c>）。
+    /// 也用于 SAF 文件对话框启动 <c>StartActivityForResult</c>。
     /// </summary>
     private Activity? _activity;
+
+    /// <summary>
+    /// SAF（Storage Access Framework）文件对话框请求码基址。
+    /// 使用 0x1000+ 范围避免与 Android 系统/其他库的请求码冲突。
+    /// </summary>
+    private const int RequestOpenFile = 0x1001;
+
+    /// <summary>SAF 保存文件对话框请求码。</summary>
+    private const int RequestSaveFile = 0x1002;
+
+    /// <summary>SAF 多选文件对话框请求码。</summary>
+    private const int RequestOpenMultipleFiles = 0x1003;
+
+    /// <summary>
+    /// 待处理的 Activity 结果回调注册表，按请求码索引。
+    /// SAF 文件对话框启动 <c>StartActivityForResult</c> 时注册回调，
+    /// <see cref="HandleActivityResult"/> 在 <c>Activity.OnActivityResult</c> 中查找并完成对应的 TaskCompletionSource。
+    /// 使用 <see cref="ConcurrentDictionary{TKey, TValue}"/> 保证注册（任意线程）与回调（主线程）的线程安全。
+    /// </summary>
+    private readonly ConcurrentDictionary<int, Action<Result, Intent?>> _pendingActivityResultCallbacks = new();
+
+    /// <summary>
+    /// Android 震动反馈实现，由 <c>UseAndroid</c> 扩展方法注入。
+    /// 对应 Wails v3 messageprocessor_android.go 中的 <c>androidHapticsVibrate</c>。
+    /// </summary>
+    public AndroidHaptics? MobileHaptics { get; set; }
+
+    /// <summary>
+    /// Android 生物识别实现，由 <c>UseAndroid</c> 扩展方法注入。
+    /// 对应 Tauri v2 <c>@tauri-apps/plugin-biometric</c> 的 Android 后端。
+    /// </summary>
+    public AndroidBiometric? MobileBiometric { get; set; }
+
+    /// <summary>
+    /// Android NFC 实现，由 <c>UseAndroid</c> 扩展方法注入。
+    /// 对应 Tauri v2 <c>@tauri-apps/plugin-nfc</c> 的 Android 后端。
+    /// </summary>
+    public AndroidNfc? MobileNfc { get; set; }
+
+    /// <summary>
+    /// Android 条码扫描实现，由 <c>UseAndroid</c> 扩展方法注入。
+    /// 对应 Tauri v2 <c>@tauri-apps/plugin-barcode-scanner</c> 的 Android 后端。
+    /// </summary>
+    public AndroidBarcodeScanner? MobileBarcodeScanner { get; set; }
 
     /// <summary>
     /// 构造 AndroidPlatformApp 实例。
@@ -108,6 +155,25 @@ public sealed class AndroidPlatformApp : IPlatformApp
     internal Activity? GetActivity()
     {
         return _activity;
+    }
+
+    /// <summary>
+    /// 处理 <c>Activity.OnActivityResult</c> 回调，根据 <paramref name="requestCode"/> 路由到对应的 SAF 文件对话框回调。
+    /// 在 <c>MainActivity.OnActivityResult</c> 中调用此方法，将结果转发给正在等待的 <c>TaskCompletionSource</c>。
+    /// <para>
+    /// 若 <paramref name="requestCode"/> 未在注册表中找到对应回调（如未启动 SAF 对话框或已被取消），
+    /// 此方法为 no-op，不抛异常。
+    /// </para>
+    /// </summary>
+    /// <param name="requestCode">请求码，由 <see cref="OpenFileDialog"/> / <see cref="SaveFileDialog"/> / <see cref="OpenMultipleFilesDialog"/> 启动时传入。</param>
+    /// <param name="resultCode">Activity 结果码（<see cref="Result.Ok"/> / <see cref="Result.Canceled"/>）。</param>
+    /// <param name="data">返回的 Intent，包含选中的文件 URI（<c>Intent.Data</c> 或 <c>Intent.ClipData</c>）。</param>
+    public void HandleActivityResult(int requestCode, Result resultCode, Intent? data)
+    {
+        if (_pendingActivityResultCallbacks.TryRemove(requestCode, out var callback))
+        {
+            callback(resultCode, data);
+        }
     }
 
     /// <inheritdoc />
@@ -190,7 +256,12 @@ public sealed class AndroidPlatformApp : IPlatformApp
     public void On(uint id)
     {
         // 将平台事件分发到主线程并交由 Application.HandlePlatformEvent 处理。
-        DispatchPlatformEventOnMainThread(id);
+        // 对应 Wails v3 events_common_android.go 中的 setupCommonEvents 转发：
+        // 若传入 Android 平台事件 ID（如 ActivityCreated=1267）且存在 Common 事件映射，
+        // 则转发为公共事件 ID；否则按原 ID 分发。
+        var commonEvent = AndroidPlatformEvents.MapToCommonEvent(id);
+        var dispatchId = commonEvent is not null ? (uint)commonEvent.Value : id;
+        DispatchPlatformEventOnMainThread(dispatchId);
     }
 
     /// <inheritdoc />
@@ -198,6 +269,75 @@ public sealed class AndroidPlatformApp : IPlatformApp
     {
         // 将事件 ID 分发到主线程执行。
         DispatchPlatformEventOnMainThread(id);
+    }
+
+    // ---------------------------------------------------------------------
+    // Activity 生命周期集成（对应 Wails v3 events_common_android.go 中
+    // 由 Activity JNI 回调触发的 Android.* 事件，转发到 Common 事件）
+    // ---------------------------------------------------------------------
+
+    /// <summary>
+    /// 在 Activity.OnCreate 中调用，触发 <c>Android.ActivityCreated</c> 平台事件，
+    /// 经 <see cref="AndroidPlatformEvents"/> 映射为 <c>Common.ApplicationStarted</c> 公共事件。
+    /// 对应 Wails v3 <c>androidApp.onActivityCreate</c>。
+    /// </summary>
+    /// <param name="activity">当前 Activity 实例。</param>
+    public void OnActivityCreated(Activity activity)
+    {
+        SetActivity(activity);
+        On(AndroidPlatformEvents.ActivityCreated);
+    }
+
+    /// <summary>
+    /// 在 Activity.OnStart 中调用，触发 <c>Android.ActivityStarted</c> 平台事件。
+    /// 该事件未映射到公共事件，仅按 Android 专属事件 ID 分发。
+    /// </summary>
+    public void OnActivityStarted()
+    {
+        DispatchPlatformEventOnMainThread(AndroidPlatformEvents.ActivityStarted);
+    }
+
+    /// <summary>
+    /// 在 Activity.OnResume 中调用，触发 <c>Android.ActivityResumed</c> 平台事件。
+    /// </summary>
+    public void OnActivityResumed()
+    {
+        DispatchPlatformEventOnMainThread(AndroidPlatformEvents.ActivityResumed);
+    }
+
+    /// <summary>
+    /// 在 Activity.OnPause 中调用，触发 <c>Android.ActivityPaused</c> 平台事件。
+    /// </summary>
+    public void OnActivityPaused()
+    {
+        DispatchPlatformEventOnMainThread(AndroidPlatformEvents.ActivityPaused);
+    }
+
+    /// <summary>
+    /// 在 Activity.OnStop 中调用，触发 <c>Android.ActivityStopped</c> 平台事件。
+    /// </summary>
+    public void OnActivityStopped()
+    {
+        DispatchPlatformEventOnMainThread(AndroidPlatformEvents.ActivityStopped);
+    }
+
+    /// <summary>
+    /// 在 Activity.OnDestroy 中调用，触发 <c>Android.ActivityDestroyed</c> 平台事件并清理 Activity 引用。
+    /// </summary>
+    public void OnActivityDestroyed()
+    {
+        DispatchPlatformEventOnMainThread(AndroidPlatformEvents.ActivityDestroyed);
+        _activity = null;
+    }
+
+    /// <summary>
+    /// 在 Activity.onLowMemory 中调用，触发 <c>Android.ApplicationLowMemory</c> 平台事件，
+    /// 经 <see cref="AndroidPlatformEvents"/> 映射为 <c>Common.LowMemory</c> 公共事件。
+    /// 对应 Wails v3 <c>androidApp.onLowMemory</c>。
+    /// </summary>
+    public void OnLowMemory()
+    {
+        On(AndroidPlatformEvents.ApplicationLowMemory);
     }
 
     /// <summary>
@@ -380,37 +520,208 @@ public sealed class AndroidPlatformApp : IPlatformApp
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Android 平台通过 Storage Access Framework（SAF）实现文件选择：
+    /// 使用 <c>Intent.ActionOpenDocument</c> 启动系统文件选择器，通过 <c>Activity.StartActivityForResult</c>
+    /// 等待用户选择，在 <c>OnActivityResult</c> 中通过 <c>TaskCompletionSource</c> 完成回调。
+    /// 返回的字符串为内容 URI（如 <c>content://com.android.providers.documents/document/abc</c>），
+    /// 前端可通过 <c>ContentResolver.OpenInputStream</c> 读取。
+    /// <para>
+    /// 非 Android 环境（单元测试）或未注入 Activity 时返回 null。
+    /// </para>
+    /// </remarks>
     public Task<string?> OpenFileDialog(OpenFileDialogOptions options)
     {
-        // Android Storage Access Framework 需要 Activity 上下文启动 Intent：
-        //   var intent = new Intent(Intent.ActionOpenDocument);
-        //   intent.SetType("*/*");
-        //   intent.AddCategory(Intent.CategoryOpenable);
-        //   if (options.CanChooseMultiple) intent.PutExtra(Intent.ExtraAllowMultiple, true);
-        //   Activity.StartActivityForResult(intent, REQUEST_OPEN_FILE);
-        // 然后在 Activity.OnActivityResult 中通过 TaskCompletionSource<string?> 完成回调。
-        // 骨架实现无 Activity 引用，返回 null。完整实现需注入 Activity 引用。
-        return Task.FromResult<string?>(null);
+        var activity = _activity;
+        if (activity is null)
+        {
+            // 非 Android 环境或未注入 Activity：返回 null（测试场景降级）
+            return Task.FromResult<string?>(null);
+        }
+
+        var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // 注册回调：在 OnActivityResult 中根据结果码完成 TaskCompletionSource
+        _pendingActivityResultCallbacks[RequestOpenFile] = (resultCode, data) =>
+        {
+            if (resultCode == Result.Ok && data?.Data is not null)
+            {
+                tcs.TrySetResult(data.Data.ToString());
+            }
+            else
+            {
+                tcs.TrySetResult(null);
+            }
+        };
+
+        // 在主线程启动 SAF Intent（StartActivityForResult 必须在 UI 线程调用）
+        DispatchOnMainThread(() =>
+        {
+            try
+            {
+                var intent = new Intent(Intent.ActionOpenDocument);
+                intent.AddCategory(Intent.CategoryOpenable);
+                intent.SetType(BuildMimeType(options.Filters));
+                // 单选模式：显式设置 ExtraAllowMultiple=false
+                intent.PutExtra(Intent.ExtraAllowMultiple, false);
+                activity.StartActivityForResult(intent, RequestOpenFile);
+            }
+            catch (Exception)
+            {
+                // 启动失败（如无 Activity 处理该 Intent）：移除回调并完成 Task
+                _pendingActivityResultCallbacks.TryRemove(RequestOpenFile, out _);
+                tcs.TrySetResult(null);
+            }
+        });
+
+        return tcs.Task;
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Android 平台通过 SAF 的 <c>Intent.ActionCreateDocument</c> 实现保存文件对话框。
+    /// 用户选择目标位置后返回内容 URI，前端可通过 <c>ContentResolver.OpenOutputStream</c> 写入。
+    /// <para>
+    /// 非 Android 环境（单元测试）或未注入 Activity 时返回 null。
+    /// </para>
+    /// </remarks>
     public Task<string?> SaveFileDialog(SaveFileDialogOptions options)
     {
-        // 使用 Intent.ActionCreateDocument + Activity.StartActivityForResult。
-        //   var intent = new Intent(Intent.ActionCreateDocument);
-        //   intent.SetType("*/*");
-        //   intent.AddCategory(Intent.CategoryOpenable);
-        //   if (!string.IsNullOrEmpty(options.Filename)) intent.PutExtra(Intent.ExtraTitle, options.Filename);
-        // 骨架实现无 Activity 引用，返回 null。
-        return Task.FromResult<string?>(null);
+        var activity = _activity;
+        if (activity is null)
+        {
+            return Task.FromResult<string?>(null);
+        }
+
+        var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        _pendingActivityResultCallbacks[RequestSaveFile] = (resultCode, data) =>
+        {
+            if (resultCode == Result.Ok && data?.Data is not null)
+            {
+                tcs.TrySetResult(data.Data.ToString());
+            }
+            else
+            {
+                tcs.TrySetResult(null);
+            }
+        };
+
+        DispatchOnMainThread(() =>
+        {
+            try
+            {
+                var intent = new Intent(Intent.ActionCreateDocument);
+                intent.AddCategory(Intent.CategoryOpenable);
+                intent.SetType(BuildMimeType(options.Filters));
+                // 设置建议文件名（作为对话框标题栏的默认输入）
+                if (!string.IsNullOrEmpty(options.Filename))
+                {
+                    intent.PutExtra(Intent.ExtraTitle, options.Filename);
+                }
+                activity.StartActivityForResult(intent, RequestSaveFile);
+            }
+            catch (Exception)
+            {
+                _pendingActivityResultCallbacks.TryRemove(RequestSaveFile, out _);
+                tcs.TrySetResult(null);
+            }
+        });
+
+        return tcs.Task;
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Android 平台通过 SAF 的 <c>Intent.ActionOpenDocument</c> + <c>Intent.ExtraAllowMultiple=true</c>
+    /// 实现多选文件对话框。在 <c>OnActivityResult</c> 中解析 <c>Intent.ClipData</c> 获取多个 URI。
+    /// <para>
+    /// 非 Android 环境（单元测试）或未注入 Activity 时返回 null。
+    /// </para>
+    /// </remarks>
     public Task<string[]?> OpenMultipleFilesDialog(OpenFileDialogOptions options)
     {
-        // 使用 Intent.ActionOpenDocument + Intent.ExtraAllowMultiple + Activity.StartActivityForResult。
-        // 在 OnActivityResult 中解析 ClipData 获取多个 URI。
-        // 骨架实现无 Activity 引用，返回 null。
-        return Task.FromResult<string[]?>(null);
+        var activity = _activity;
+        if (activity is null)
+        {
+            return Task.FromResult<string[]?>(null);
+        }
+
+        var tcs = new TaskCompletionSource<string[]?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        _pendingActivityResultCallbacks[RequestOpenMultipleFiles] = (resultCode, data) =>
+        {
+            if (resultCode != Result.Ok || data is null)
+            {
+                tcs.TrySetResult(null);
+                return;
+            }
+
+            // 多选模式下，URI 通过 ClipData 返回（Intent.Data 仅包含第一项）
+            var uris = new List<string>();
+            var clipData = data.ClipData;
+            if (clipData is not null)
+            {
+                for (int i = 0; i < clipData.ItemCount; i++)
+                {
+                    var item = clipData.GetItemAt(i);
+                    if (item?.Uri is not null)
+                    {
+                        uris.Add(item.Uri.ToString()!);
+                    }
+                }
+            }
+            else if (data.Data is not null)
+            {
+                // 某些设备在用户只选一个文件时仍走 Data 路径
+                uris.Add(data.Data.ToString()!);
+            }
+
+            tcs.TrySetResult(uris.Count > 0 ? uris.ToArray() : null);
+        };
+
+        DispatchOnMainThread(() =>
+        {
+            try
+            {
+                var intent = new Intent(Intent.ActionOpenDocument);
+                intent.AddCategory(Intent.CategoryOpenable);
+                intent.SetType(BuildMimeType(options.Filters));
+                intent.PutExtra(Intent.ExtraAllowMultiple, true);
+                activity.StartActivityForResult(intent, RequestOpenMultipleFiles);
+            }
+            catch (Exception)
+            {
+                _pendingActivityResultCallbacks.TryRemove(RequestOpenMultipleFiles, out _);
+                tcs.TrySetResult(null);
+            }
+        });
+
+        return tcs.Task;
+    }
+
+    /// <summary>
+    /// 根据文件过滤器数组构建 SAF MIME 类型。
+    /// Wails 过滤器格式为 <c>"描述 (*.ext1;*.ext2)"</c>，SAF 的 <c>SetType</c> 仅接受单一 MIME 类型。
+    /// <para>
+    /// 转换规则（保守实现，与 Wails v3 Android 行为一致）：
+    /// <list type="bullet">
+    ///   <item>过滤器为 null/空数组 → <c>"*/*"</c>（所有文件）。</item>
+    ///   <item>无法识别的扩展名 → <c>"*/*"</c>。</item>
+    /// </list>
+    /// </para>
+    /// </summary>
+    /// <param name="filters">文件过滤器数组，可为 null。</param>
+    /// <returns>SAF 兼容的 MIME 类型字符串。</returns>
+    private static string BuildMimeType(string[]? filters)
+    {
+        if (filters is null || filters.Length == 0)
+        {
+            return "*/*";
+        }
+
+        // 简化实现：SAF SetType 仅支持单一 MIME 类型，多过滤器场景使用 */*
+        // 完整的 MIME 推断需要扩展名映射表，此处保持与 Wails v3 一致的保守行为
+        return "*/*";
     }
 }

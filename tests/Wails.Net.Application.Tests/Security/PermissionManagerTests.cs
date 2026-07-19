@@ -500,23 +500,6 @@ public sealed class PermissionManagerTests
     }
 
     [Test]
-    public async Task ValidateCommand_WithOrigin_RespectsRemotePatterns()
-    {
-        // 安排：定义一个带 [RequireCapability] 的方法（通过反射获取本测试类的辅助方法）
-        var manager = CreateManager(enabled: true, denyByDefault: true);
-        manager.Grant("fs:allow-read", windowName: null, remotePatterns: new[] { "https://*.example.com" });
-
-        var method = typeof(PermissionManagerTests).GetMethod(
-            nameof(SampleMethodWithRequireCapability), BindingFlags.NonPublic | BindingFlags.Static);
-
-        // 操作与断言
-        await Assert.That(method).IsNotNull();
-        await Assert.That(manager.ValidateCommand(method!, null, "https://api.example.com")).IsTrue();
-        await Assert.That(manager.ValidateCommand(method!, null, "https://evil.com")).IsFalse();
-        await Assert.That(manager.ValidateCommand(method!, null, null)).IsTrue();
-    }
-
-    [Test]
     public async Task ValidateCapabilities_WithOrigin_RespectsRemotePatterns()
     {
         // 安排
@@ -542,12 +525,6 @@ public sealed class PermissionManagerTests
         await Assert.That(manager.IsGranted("fs:allow-read", "settings", "https://api.example.com")).IsTrue();
         await Assert.That(manager.IsGranted("fs:allow-read", "settings", "https://evil.com")).IsFalse();
     }
-
-    /// <summary>
-    /// 供 ValidateCommand 测试使用的辅助方法，标记 RequireCapability 以验证远程 URL 校验。
-    /// </summary>
-    [RequireCapability("fs:allow-read")]
-    private static void SampleMethodWithRequireCapability() { }
 
     // ============== Deny 权限测试（对应 P0-3）==============
 

@@ -1,8 +1,8 @@
-using System.Reflection;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using TUnit.Assertions;
 using TUnit.Core;
+using Wails.Net.Application.Bindings;
 using Wails.Net.Application.Commands;
 using Wails.Net.Application.Security;
 
@@ -14,6 +14,7 @@ namespace Wails.Net.Application.Tests.Security;
 /// CommandDispatcher 的 [ScopeParameter] 特性和 IScopeParameter 接口提取、
 /// <see cref="ScopeInitializer"/> 配置加载。
 /// 对应 Tauri v2 的参数级 Scope 校验。
+/// 遵循 AGENTS.md §3.4 禁令：零反射，全部通过源生成器编译期构建的 ScopeExtractor 提取。
 /// </summary>
 [NotInParallel]
 public sealed class ScopeValidationTests
@@ -98,59 +99,67 @@ public sealed class ScopeValidationTests
     }
 
     /// <summary>
-    /// 测试 [ScopeParameter] 特性标记的 string 参数被 CommandDispatcher 正确提取。
-    /// 通过反射调用 private 方法 ExtractScopeValues 进行验证。
+    /// 测试 IScopeParameter 接口实现可直接返回 Scope 值。
+    /// 模拟源生成器生成的 ScopeExtractor 在编译期构造 IScopeParameter 实例并调用 GetScopeValues() 的行为，
+    /// 但本测试直接调用接口方法以验证实现契约，零反射。
     /// </summary>
     [Test]
-    public async Task ScopeParameter_Attribute_ExtractsStringParameter()
+    public async Task IScopeParameter_Interface_ReturnsScopeValues()
     {
-        // 安排：定义带 [ScopeParameter] 特性的测试方法
-        var method = typeof(ScopeValidationTests).GetMethod(
-            nameof(TestCommandWithScopeAttribute), BindingFlags.NonPublic | BindingFlags.Static)!;
-        var json = JsonDocument.Parse(@"{""path"":""/tmp/test.txt""}").RootElement;
+        // 安排：构造 TestScopeOptions 实例并设置 URL
+        var options = new TestScopeOptions
+        {
+            Url = "https://example.com"
+        };
 
-        // 操作：通过反射调用 CommandDispatcher.ExtractScopeValues
-        var result = InvokeExtractScopeValues(method, json);
+        // 操作：直接调用 GetScopeValues，模拟源生成器生成的 ScopeExtractor 在编译期构造 IScopeParameter 后调用接口方法
+        var scopeValues = options.GetScopeValues().ToList();
 
-        // 断言：提取到 ("fs:allow-read", "/tmp/test.txt")
-        await Assert.That(result.Count).IsEqualTo(1);
-        await Assert.That(result[0].PermissionId).IsEqualTo("fs:allow-read");
-        await Assert.That(result[0].Value).IsEqualTo("/tmp/test.txt");
+        // 断言：返回 ("http:allow-fetch", "https://example.com")
+        await Assert.That(scopeValues.Count).IsEqualTo(1);
+        await Assert.That(scopeValues[0].PermissionId).IsEqualTo("http:allow-fetch");
+        await Assert.That(scopeValues[0].Value).IsEqualTo("https://example.com");
     }
 
     /// <summary>
-    /// 测试实现 IScopeParameter 的 Options 类被 CommandDispatcher 正确提取。
-    /// </summary>
-    [Test]
-    public async Task IScopeParameter_Interface_ExtractsValues()
-    {
-        // 安排：定义接收 TestScopeOptions 参数的测试方法
-        var method = typeof(ScopeValidationTests).GetMethod(
-            nameof(TestCommandWithScopeOptions), BindingFlags.NonPublic | BindingFlags.Static)!;
-        var json = JsonDocument.Parse(@"{""url"":""https://example.com""}").RootElement;
-
-        // 操作：通过反射调用 ExtractScopeValues
-        var result = InvokeExtractScopeValues(method, json);
-
-        // 断言：提取到 ("http:allow-fetch", "https://example.com")
-        await Assert.That(result.Count).IsEqualTo(1);
-        await Assert.That(result[0].PermissionId).IsEqualTo("http:allow-fetch");
-        await Assert.That(result[0].Value).IsEqualTo("https://example.com");
-    }
-
-    /// <summary>
-    /// 端到端测试：CommandDispatcher 调度 fs.read 命令时，
-    /// 若路径超出 Scope 范围，命令被拒绝。
+    /// 端到端测试：CommandDispatcher 调度命令时，
+    /// 若参数路径超出 Scope 范围，命令被拒绝。
+    /// Scope 提取器通过 GeneratedBindingRegistry 在测试中手动注册（模拟源生成器输出）。
+    /// 调用器通过 CompiledCommandInvoker 强类型委托提供，零反射。
     /// </summary>
     [Test]
     public async Task CommandDispatcher_ScopeValidation_RejectsOutOfScopePath()
     {
-        // 安排：注册测试命令到 CommandRegistry
+        // 安排：手动注册 ScopeExtractor 到 GeneratedBindingRegistry（模拟源生成器编译期生成）。
+        // 注意：不调用 Clear()，因为该注册表是全局静态状态，包含源生成器为其他测试（如
+        // CancellablePromiseEndToEndTests、NativeIpcTransportTests）通过 [ModuleInitializer]
+        // 注册的调用器。Clear() 会破坏其他测试，导致 GeneratedBindingRegistry.Count=0。
+        // 测试命令名 "test.scope.check" 唯一，重复注册会覆盖，无需 Clear。
+        var scopeExtractor = (ScopeExtractor)(p =>
+        {
+            if (p.TryGetProperty("path", out var v) && v.ValueKind == JsonValueKind.String)
+            {
+                var path = v.GetString();
+                if (!string.IsNullOrEmpty(path)) return ("fs:allow-read", path);
+            }
+            return null;
+        });
+        var dummyInvoker = (GeneratedInvoker)((_, _, _) => Task.FromResult<object?>(null));
+        GeneratedBindingRegistry.Register("test.scope.check", dummyInvoker,
+            typeof(TestCommandTarget).FullName ?? "TestCommandTarget",
+            requiredCapabilities: null,
+            scopeExtractors: new[] { scopeExtractor });
+
+        // 注册测试命令到 CommandRegistry，使用 CompiledCommandInvoker 委托（替代原 MethodInfo 反射路径）
         var registry = new CommandRegistry();
         var testInstance = new TestCommandTarget();
-        registry.Register("test.scope.check",
-            testInstance,
-            typeof(TestCommandTarget).GetMethod(nameof(TestCommandTarget.CheckPath))!);
+        var compiledInvoker = (CompiledCommandInvoker)((instance, parameters, _) =>
+        {
+            var path = parameters.GetProperty("path").GetString() ?? string.Empty;
+            var target = (TestCommandTarget)(instance ?? testInstance);
+            return Task.FromResult<object?>(target.CheckPath(path));
+        });
+        registry.Register("test.scope.check", compiledInvoker);
 
         // 授权 fs:allow-read 权限但只允许 TempPath 范围
         var manager = CreateManager(enabled: true, denyByDefault: true, "fs:allow-read");
@@ -168,9 +177,60 @@ public sealed class ScopeValidationTests
 
         var response = await dispatcher.DispatchAsync(request);
 
-        // 断言：命令被 Scope 校验拒绝
+        // 断言：命令被 Scope 校验拒绝（在到达 Invoker 前被拦截）
         await Assert.That(response.Success).IsFalse();
         await Assert.That(response.Error).Contains("Scope denied");
+    }
+
+    /// <summary>
+    /// 端到端测试：当参数路径在 Scope 范围内时，命令正常执行。
+    /// 与 <see cref="CommandDispatcher_ScopeValidation_RejectsOutOfScopePath"/> 互补，
+    /// 覆盖通过 Scope 校验的合法路径。
+    /// </summary>
+    [Test]
+    public async Task CommandDispatcher_ScopeValidation_PassesInScopePath()
+    {
+        // 不调用 Clear()，原因同上：避免破坏其他测试的全局注册状态。
+        var scopeExtractor = (ScopeExtractor)(p =>
+        {
+            if (p.TryGetProperty("path", out var v) && v.ValueKind == JsonValueKind.String)
+            {
+                var path = v.GetString();
+                if (!string.IsNullOrEmpty(path)) return ("fs:allow-read", path);
+            }
+            return null;
+        });
+        var dummyInvoker = (GeneratedInvoker)((_, _, _) => Task.FromResult<object?>(null));
+        GeneratedBindingRegistry.Register("test.scope.check", dummyInvoker,
+            typeof(TestCommandTarget).FullName ?? "TestCommandTarget",
+            requiredCapabilities: null,
+            scopeExtractors: new[] { scopeExtractor });
+
+        var registry = new CommandRegistry();
+        var testInstance = new TestCommandTarget();
+        var compiledInvoker = (CompiledCommandInvoker)((instance, parameters, _) =>
+        {
+            var path = parameters.GetProperty("path").GetString() ?? string.Empty;
+            var target = (TestCommandTarget)(instance ?? testInstance);
+            return Task.FromResult<object?>(target.CheckPath(path));
+        });
+        registry.Register("test.scope.check", compiledInvoker);
+
+        var manager = CreateManager(enabled: true, denyByDefault: true, "fs:allow-read");
+        var fsScope = new FileSystemScope();
+        fsScope.AddPath(Path.GetTempPath());
+        manager.SetScope("fs:allow-read", fsScope);
+
+        var dispatcher = new CommandDispatcher(registry, NullServiceProvider.Instance,
+            NullLogger<CommandDispatcher>.Instance, manager);
+
+        var allowedPath = Path.Combine(Path.GetTempPath(), "allowed.txt");
+        var request = new InvokeRequest(Guid.NewGuid(), "test.scope.check",
+            JsonDocument.Parse($@"{{""path"":""{allowedPath.Replace("\\", "\\\\")}""}}").RootElement);
+
+        var response = await dispatcher.DispatchAsync(request);
+
+        await Assert.That(response.Success).IsTrue();
     }
 
     [Test]
@@ -224,26 +284,12 @@ public sealed class ScopeValidationTests
         await Assert.That(manager.ValidateScopes([("fs:allow-read", "/any/path")])).IsTrue();
     }
 
-    // ===== 测试辅助方法 =====
-
-#pragma warning disable CA1822, IDE0060 // 测试方法签名不需要 static/参数
-    private static void TestCommandWithScopeAttribute([ScopeParameter("fs:allow-read")] string path) { }
-    private static void TestCommandWithScopeOptions(TestScopeOptions options) { }
-#pragma warning restore CA1822, IDE0060
-
-    /// <summary>
-    /// 通过反射调用 CommandDispatcher.ExtractScopeValues 私有方法。
-    /// </summary>
-    private static List<(string PermissionId, string Value)> InvokeExtractScopeValues(MethodInfo method, JsonElement parameters)
-    {
-        var dispatcherType = typeof(CommandDispatcher);
-        var methodInfo = dispatcherType.GetMethod("ExtractScopeValues",
-            BindingFlags.NonPublic | BindingFlags.Static)!;
-        return (List<(string PermissionId, string Value)>)methodInfo.Invoke(null, [method, parameters])!;
-    }
+    // ===== 测试辅助类型 =====
 
     /// <summary>
     /// 测试用 IScopeParameter 实现。
+    /// 模拟源生成器编译期生成的 ScopeExtractor 对 Options 类型的处理：
+    /// 反序列化参数 → 调用 IScopeParameter.GetScopeValues()。
     /// </summary>
     private sealed class TestScopeOptions : IScopeParameter
     {

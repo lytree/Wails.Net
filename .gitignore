@@ -54,3 +54,7 @@ package-lock.json
 artifacts/
 
 .fake
+
+# 临时诊断/调试文件
+.tmp/
+*.binlog

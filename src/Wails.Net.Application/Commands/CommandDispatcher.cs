@@ -1,18 +1,18 @@
-using System.Reflection;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Wails.Net.Application.Bindings;
 using Wails.Net.Application.Security;
 
 // 预定义注入类型集合，Scope 校验时跳过这些参数。
-// 与 CommandInvokerCompiler 和 ExecuteCommandAsync 的参数绑定逻辑一致。
+// 与 MapCommandExtensions 和 ExecuteCommandAsync 的参数绑定逻辑一致。
 
 namespace Wails.Net.Application.Commands;
 
 /// <summary>
 /// 命令调度器，处理前端调用请求。
 /// 对应 Wails v3 Go 版本 bindings.go 中的调用分发逻辑。
-/// 通过 <see cref="CommandRegistry"/> 查找命令并反射调用，
+/// 通过 <see cref="CommandRegistry"/> 查找命令，调用编译期生成的强类型 <see cref="CompiledCommandInvoker"/>，
 /// 支持异步方法、依赖注入参数、JSON 参数绑定、
 /// <see cref="ICommandMiddleware"/> 中间件管道和命令超时机制。
 /// </summary>
@@ -77,7 +77,7 @@ public sealed class CommandDispatcher
     /// 处理调用请求。
     /// 查找命令、执行中间件管道、绑定参数（支持 <see cref="ICommandContext"/>、
     /// <see cref="CancellationToken"/>、<see cref="IServiceProvider"/> 特殊参数类型和 JSON 反序列化参数），
-    /// 反射调用并处理异步返回值。
+    /// 调用编译期生成的强类型调用器并处理异步返回值。
     /// 若设置了 <see cref="_defaultTimeout"/>，通过 <see cref="CancellationTokenSource"/>
     /// 实现自动超时取消。
     /// </summary>
@@ -133,29 +133,28 @@ public sealed class CommandDispatcher
                 return new InvokeResponse(request.Id, false, null, $"Command not found: {request.Method}");
             }
 
-            // 权限校验：检查 [RequireCapability] 特性和 CommandEntry.RequiredCapabilities
-            // 同时传入 ctx.WindowName 实现窗口级 Capability 运行时隔离（对应 Tauri v2 Capability.Windows）
-            // 同时传入 ctx.Origin 实现 Capability.remote 远程 URL 校验（对应 Tauri v2 Capability.remote）
+            // 权限校验：合并 CommandEntry.RequiredCapabilities（注册时显式声明）
+            // 和 GeneratedBindingRegistry 中编译期生成的能力列表（来自 [RequireCapability] 特性），
+            // 统一通过 ValidateCapabilities 校验。
+            // 同时传入 ctx.WindowName 实现窗口级 Capability 运行时隔离（对应 Tauri v2 Capability.Windows）。
+            // 同时传入 ctx.Origin 实现 Capability.remote 远程 URL 校验（对应 Tauri v2 Capability.remote）。
             if (_permissionManager is not null)
             {
-                if (!_permissionManager.ValidateCommand(entry.Method, ctx.WindowName, ctx.Origin))
-                {
-                    _logger?.LogWarning("权限拒绝: 命令 {Method}（窗口={Window}，来源={Origin}）",
-                        request.Method, ctx.WindowName ?? "未知",
-                        string.IsNullOrEmpty(ctx.Origin) ? "本地" : ctx.Origin);
-                    return new InvokeResponse(request.Id, false, null, $"Permission denied: {request.Method}");
-                }
-
-                if (entry.RequiredCapabilities.Count > 0 && !_permissionManager.ValidateCapabilities(entry.RequiredCapabilities, ctx.WindowName, ctx.Origin))
+                // 收集所需能力：entry.RequiredCapabilities + 源生成器编译期生成列表
+                var requiredCapabilities = CollectRequiredCapabilities(request.Method, entry.RequiredCapabilities);
+                if (requiredCapabilities.Count > 0 && !_permissionManager.ValidateCapabilities(requiredCapabilities, ctx.WindowName, ctx.Origin))
                 {
                     _logger?.LogWarning("权限拒绝: 命令 {Method} 需要能力 {Capabilities}（窗口={Window}，来源={Origin}）",
-                        request.Method, string.Join(", ", entry.RequiredCapabilities),
+                        request.Method, string.Join(", ", requiredCapabilities),
                         ctx.WindowName ?? "未知", string.IsNullOrEmpty(ctx.Origin) ? "本地" : ctx.Origin);
                     return new InvokeResponse(request.Id, false, null, $"Permission denied: {request.Method}");
                 }
 
-                // Scope 校验：检查实现 IScopeParameter 的参数对象
-                var scopeValues = ExtractScopeValues(entry.Method, request.Parameters);
+                // Scope 校验：通过源生成器编译期生成的 ScopeExtractor 委托提取参数值，
+                // 适配 [ScopeParameter] 标记的 string 参数。
+                // 实现 IScopeParameter 的 Options 类的 Scope 提取应由源生成器扩展生成 ScopeExtractor，
+                // 不再通过运行时反射枚举参数（遵循 AGENTS.md §3.4）。
+                var scopeValues = ExtractScopeValues(request.Method, request.Parameters);
                 if (scopeValues.Count > 0 && !_permissionManager.ValidateScopes(scopeValues))
                 {
                     _logger?.LogWarning("Scope 拒绝: 命令 {Method}", request.Method);
@@ -194,23 +193,57 @@ public sealed class CommandDispatcher
     }
 
     /// <summary>
-    /// Scope 校验用 JSON 序列化选项（与 CommandInvokerCompiler 保持一致）。
+    /// Scope 校验用 JSON 序列化选项（与 MapCommandExtensions 保持一致）。
     /// </summary>
     private static readonly JsonSerializerOptions _scopeJsonOptions = new(JsonSerializerDefaults.Web);
 
     /// <summary>
-    /// 从命令参数中提取 Scope 校验值。
-    /// 遍历方法参数，支持两种提取方式：
+    /// 收集命令所需的能力列表。
+    /// 合并两个来源：
     /// <list type="bullet">
-    /// <item>实现 <see cref="IScopeParameter"/> 的 Options 类：反序列化后调用 <see cref="IScopeParameter.GetScopeValues"/></item>
-    /// <item>标记 <see cref="ScopeParameterAttribute"/> 的 <c>string</c> 参数：从 JSON 中按参数名提取值</item>
+    /// <item><see cref="CommandRegistry.CommandEntry.RequiredCapabilities"/>：在 <see cref="CommandRegistry.Register"/> 注册时显式传入的能力列表。</item>
+    /// <item><see cref="GeneratedBindingRegistry"/>：源生成器在编译期从 <see cref="RequireCapabilityAttribute"/> 特性提取的能力列表。</item>
     /// </list>
+    /// 两来源去重后返回。无任何能力时返回空列表。
+    /// </summary>
+    /// <param name="methodName">命令名（与 <see cref="GeneratedBindingRegistry"/> 注册时的键一致）。</param>
+    /// <param name="declaredCapabilities">注册时显式声明的能力列表。</param>
+    /// <returns>去重后的能力列表，可能为空。</returns>
+    private static IReadOnlyList<string> CollectRequiredCapabilities(
+        string methodName,
+        IReadOnlyList<string> declaredCapabilities)
+    {
+        // 若源生成器未生成能力列表（或生成空列表），直接返回注册时显式声明的能力
+        if (!GeneratedBindingRegistry.TryGetCapabilities(methodName, out var generated) ||
+            generated is null or { Count: 0 })
+        {
+            return declaredCapabilities;
+        }
+
+        // 合并两来源并去重
+        var merged = new List<string>(declaredCapabilities);
+        var seen = new HashSet<string>(declaredCapabilities, StringComparer.Ordinal);
+        foreach (var cap in generated)
+        {
+            if (seen.Add(cap))
+            {
+                merged.Add(cap);
+            }
+        }
+        return merged;
+    }
+
+    /// <summary>
+    /// 从命令参数中提取 Scope 校验值。
+    /// 仅使用源生成器编译期生成的 <see cref="ScopeExtractor"/> 委托，
+    /// 由源生成器从标记 <see cref="ScopeParameterAttribute"/> 的参数生成，运行时零反射。
     /// 对应 Tauri v2 的参数级 Scope 校验。
     /// </summary>
-    /// <param name="method">命令方法信息。</param>
+    /// <param name="methodName">命令名（与 <see cref="GeneratedBindingRegistry"/> 注册时的键一致）。</param>
     /// <param name="parameters">前端传入的 JSON 参数。</param>
     /// <returns>需要 Scope 校验的 (权限标识, 值) 对列表，可能为空。</returns>
-    private static List<(string PermissionId, string Value)> ExtractScopeValues(MethodInfo method, JsonElement parameters)
+    private static List<(string PermissionId, string Value)> ExtractScopeValues(
+        string methodName, JsonElement parameters)
     {
         var result = new List<(string PermissionId, string Value)>();
 
@@ -220,53 +253,16 @@ public sealed class CommandDispatcher
             return result;
         }
 
-        var methodParams = method.GetParameters();
-        var rawText = parameters.GetRawText();
-
-        foreach (var param in methodParams)
+        // 源生成器编译期生成的 ScopeExtractor 委托（来自 [ScopeParameter] 参数）
+        if (GeneratedBindingRegistry.TryGetScopeExtractors(methodName, out var extractors) &&
+            extractors is { Count: > 0 })
         {
-            var paramType = param.ParameterType;
-
-            // 跳过注入类型
-            if (paramType == typeof(ICommandContext) ||
-                paramType == typeof(CancellationToken) ||
-                paramType == typeof(IServiceProvider))
+            foreach (var extractor in extractors)
             {
-                continue;
-            }
-
-            // 分支 1：实现 IScopeParameter 的 Options 类
-            if (typeof(IScopeParameter).IsAssignableFrom(paramType))
-            {
-                try
+                var extracted = extractor(parameters);
+                if (extracted is { } pair && !string.IsNullOrEmpty(pair.Value))
                 {
-                    var obj = JsonSerializer.Deserialize(rawText, paramType, _scopeJsonOptions);
-                    if (obj is IScopeParameter scopeParam)
-                    {
-                        result.AddRange(scopeParam.GetScopeValues());
-                    }
-                }
-                catch (JsonException)
-                {
-                    // 反序列化失败时跳过此参数（让命令执行时的正常反序列化报错）
-                }
-                continue;
-            }
-
-            // 分支 2：标记 [ScopeParameter] 特性的 string 参数
-            var scopeAttr = param.GetCustomAttribute<ScopeParameterAttribute>();
-            if (scopeAttr is not null && paramType == typeof(string))
-            {
-                var propName = scopeAttr.JsonPropertyName ?? ToCamelCase(param.Name ?? string.Empty);
-                if (!string.IsNullOrEmpty(propName) &&
-                    parameters.TryGetProperty(propName, out var propValue) &&
-                    propValue.ValueKind == JsonValueKind.String)
-                {
-                    var value = propValue.GetString();
-                    if (!string.IsNullOrEmpty(value))
-                    {
-                        result.Add((scopeAttr.PermissionId, value));
-                    }
+                    result.Add(pair);
                 }
             }
         }
@@ -283,7 +279,7 @@ public sealed class CommandDispatcher
         => string.IsNullOrEmpty(s) ? s : char.ToLowerInvariant(s[0]) + s[1..];
 
     /// <summary>
-    /// 执行命令的终端处理器：参数绑定、反射调用和异步返回值处理。
+    /// 执行命令的终端处理器：调用编译期生成的强类型调用器并处理异步返回值。
     /// 此方法作为中间件管道的终端，由最后一个中间件通过 <paramref name="next"/> 委托调用。
     /// </summary>
     /// <param name="entry">命令条目。</param>
@@ -295,72 +291,21 @@ public sealed class CommandDispatcher
     {
         try
         {
-            object? result;
-
-            // 优先使用编译后的强类型调用器（零反射）
-            if (entry.Invoker is not null)
+            // 使用编译期构建的强类型调用器（零反射）。
+            // 调用器由 MapCommandExtensions 强类型泛型重载在编译期构建闭包，
+            // 或由源生成器在编译期生成。
+            // Invoker 为 null 表示命令未正确注册，不再回退到反射调用（AGENTS.md §3.4 禁止反射获取方法）。
+            if (entry.Invoker is null)
             {
-                result = entry.Invoker(entry.Instance, request.Parameters, ctx);
-            }
-            else
-            {
-                // 回退到反射调用（编译失败或特殊场景）
-                var parameters = entry.Method.GetParameters();
-                var args = new object?[parameters.Length];
-
-                for (var i = 0; i < parameters.Length; i++)
-                {
-                    if (parameters[i].ParameterType == typeof(ICommandContext))
-                    {
-                        args[i] = ctx;
-                    }
-                    else if (parameters[i].ParameterType == typeof(CancellationToken))
-                    {
-                        args[i] = ctx.CancellationToken;
-                    }
-                    else if (parameters[i].ParameterType == typeof(IServiceProvider))
-                    {
-                        args[i] = ctx.Services;
-                    }
-                    else
-                    {
-                        // 从 JSON 参数绑定
-                        args[i] = request.Parameters.Deserialize(parameters[i].ParameterType);
-                    }
-                }
-
-                result = entry.Method.Invoke(entry.Instance, args);
+                throw new InvalidOperationException(
+                    $"命令 '{request.Method}' 未注册调用器（Invoker 为 null），请检查 MapCommand 注册代码");
             }
 
-            // 处理异步方法
-            object? returnValue;
-            if (result is Task task)
-            {
-                await task.ConfigureAwait(false);
-
-                // 如果是 Task<T>，需要获取 Result
-                if (task.GetType().IsGenericType)
-                {
-                    var resultProperty = task.GetType().GetProperty("Result");
-                    returnValue = resultProperty?.GetValue(task);
-                }
-                else
-                {
-                    returnValue = null;
-                }
-            }
-            else
-            {
-                returnValue = result;
-            }
+            // CompiledCommandInvoker 委托统一返回 Task<object?>：闭包内部已 await 异步方法并装箱结果。
+            // 调用方仅需 await，无需运行时反射提取 Task.Result（遵循 AGENTS.md §3.4）。
+            var returnValue = await entry.Invoker(entry.Instance, request.Parameters, ctx).ConfigureAwait(false);
 
             return new InvokeResponse(request.Id, true, returnValue, null);
-        }
-        catch (TargetInvocationException ex) when (ex.InnerException != null)
-        {
-            // 仅反射回退路径可能抛出 TargetInvocationException
-            _logger?.LogError(ex.InnerException, "命令执行异常: {Method}", request.Method);
-            return new InvokeResponse(request.Id, false, null, ex.InnerException.Message);
         }
         catch (Exception ex)
         {

@@ -1,11 +1,14 @@
 using System.Runtime.InteropServices;
+using Windows.Win32;
 
 namespace Wails.Net.Application.Windows;
 
 /// <summary>
 /// Windows 任务栏进度条和叠加图标的 COM 互操作封装。
 /// 对应 Windows Shell API 的 ITaskbarList3 接口（Windows 7+）。
-/// 手写 COM 互操作以避免依赖 PInvoke.* 包（符合 AGENTS.md 禁令）。
+/// 通过 CsWin32 生成的 <see cref="PInvoke.CoCreateInstance"/> P/Invoke 替代
+/// <c>Type.GetTypeFromCLSID</c> + <c>Activator.CreateInstance</c> 反射调用，
+/// 符合 AGENTS.md §3.4 禁令与 AOT 友好要求。
 /// </summary>
 internal static class Win32Taskbar
 {
@@ -21,34 +24,42 @@ internal static class Win32Taskbar
 
     /// <summary>
     /// 创建 ITaskbarList3 COM 实例。
+    /// 使用 P/Invoke <see cref="PInvoke.CoCreateInstance"/> 直接创建 COM 实例，
+    /// 替代 <c>Type.GetTypeFromCLSID</c> + <c>Activator.CreateInstance</c> + <c>Marshal.GetObjectForIUnknown</c> 反射链。
     /// </summary>
     /// <returns>ITaskbarList3 实例，失败返回 null。</returns>
-    internal static ITaskbarList3? CreateTaskbarList()
+    internal static unsafe ITaskbarList3? CreateTaskbarList()
     {
         try
         {
-            var type = Type.GetTypeFromCLSID(ClsidTaskbarList);
-            if (type is null)
+            // 通过 P/Invoke 直接创建 COM 实例（CLSCTX_INPROC_SERVER 创建进程内 COM 对象）
+            // CsWin32 0.3.298 在生成 CoCreateInstance 时自动拉取 CLSCTX 类型（位于 Windows.Win32.System.Com 命名空间）。
+            var clsid = ClsidTaskbarList;
+            var iid = IidITaskbarList3;
+            var hr = PInvoke.CoCreateInstance(
+                &clsid,
+                null,
+                global::Windows.Win32.System.Com.CLSCTX.CLSCTX_INPROC_SERVER,
+                &iid,
+                out var ppv);
+            if (hr.Failed)
             {
                 return null;
             }
 
-            var instance = Activator.CreateInstance(type);
-            if (instance is null)
-            {
-                return null;
-            }
-
-            var ptr = Marshal.GetIUnknownForObject(instance);
             try
             {
-                var taskbar = (ITaskbarList3)Marshal.GetObjectForIUnknown(ptr);
+                // COM 实例的接口指针由运行时映射为 RCW
+                var taskbar = (ITaskbarList3)Marshal.GetObjectForIUnknown((nint)ppv);
                 taskbar.HrInit();
                 return taskbar;
             }
             finally
             {
-                Marshal.Release(ptr);
+                if (ppv != null)
+                {
+                    Marshal.Release((nint)ppv);
+                }
             }
         }
         catch

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wails.Net Demo - Notifications</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>🔔 系统通知</h1>
+            <p class="subtitle">Wails.Net Demo - NotificationPlugin + 绑定方法</p>
+        </header>
+        <main class="content">
+            <section class="card">
+                <h2>发送通知</h2>
+                <div class="form-group">
+                    <label>标题:</label>
+                    <input type="text" id="titleInput" placeholder="通知标题" value="Wails.Net 通知">
+                </div>
+                <div class="form-group">
+                    <label>内容:</label>
+                    <input type="text" id="bodyInput" placeholder="通知内容" value="这是一条来自 Wails.Net 的系统通知">
+                </div>
+                <div class="form-group">
+                    <label>延迟秒数:</label>
+                    <input type="number" id="delayInput" value="3" min="1" max="60">
+                </div>
+                <div class="form-group">
+                    <button id="sendNowBtn">立即发送</button>
+                    <button id="scheduleBtn">延迟发送</button>
+                </div>
+                <div id="sendResult" class="result"></div>
+            </section>
+
+            <section class="card">
+                <h2>通知历史</h2>
+                <div class="form-group">
+                    <button id="refreshBtn">刷新历史</button>
+                    <button id="clearBtn" class="danger">清空历史</button>
+                </div>
+                <table class="history-table">
+                    <thead>
+                        <tr><th>序号</th><th>标题</th><th>内容</th><th>发送时间</th></tr>
+                    </thead>
+                    <tbody id="historyBody">
+                        <tr><td colspan="4" class="empty">（暂无记录）</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="card">
+                <h2>说明</h2>
+                <p class="desc">立即发送：调用 NotificationService.SendNotification 绑定方法，立即触发系统通知。</p>
+                <p class="desc">延迟发送：调用 NotificationService.ScheduleNotification 绑定方法，后端 Task.Delay 等待指定秒数后发送通知。</p>
+                <p class="desc">前端也可直接调用 notification.show 插件命令发送通知（本 Demo 通过绑定方法封装以演示后端调度能力）。</p>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

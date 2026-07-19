@@ -86,17 +86,23 @@ public interface IWebviewWindowImpl
 
 ### 子接口列表
 
-平台抽象不仅覆盖顶层应用与窗口，还细分为多个职责清晰的子接口。下表列出每个接口的职责与三平台实现：
+平台抽象不仅覆盖顶层应用与窗口，还细分为多个职责清晰的子接口。下表列出每个接口的职责与各平台实现：
 
-| 接口 | 命名空间 | Windows 实现 | Linux 实现 | Server 实现 |
-|------|---------|-------------|-----------|------------|
-| `IPlatformApp` | `Wails.Net.Application.Platform` | `WindowsPlatformApp` | `LinuxPlatformApp` | `ServerPlatformApp` |
-| `IWebviewWindowImpl` | `Wails.Net.Application.Windows` | `Win32WebviewWindow` | `LinuxWebviewWindow` | `ServerWebviewWindow` |
-| `IClipboardImpl` | `Wails.Net.Application.Clipboard` | `WindowsClipboard` | `LinuxClipboard` | `ServerClipboard` |
-| `IMenuImpl` | `Wails.Net.Application.Menus` | `Win32Menu` | `LinuxMenu` | （未实现） |
-| `ISystemTrayImpl` | `Wails.Net.Application.SystemTray` | `Win32SystemTray` | `LinuxSystemTray` | （未实现） |
-| `IKeyBindingManager` | `Wails.Net.Application.Managers` | `Win32KeyBindingManager` | `LinuxKeyBindingManager` | （未实现） |
-| `IWebView` | `Wails.Net.Application.WebViews` | （由 `Win32WebviewWindow` 内嵌 `CoreWebView2` 实现） | （由 `LinuxWebviewWindow` 内嵌 WebKitGTK `WebView` 实现） | （无） |
+| 接口 | 命名空间 | Windows 实现 | Linux 实现 | Android 实现 | Server 实现 |
+|------|---------|-------------|-----------|-------------|------------|
+| `IPlatformApp` | `Wails.Net.Application.Platform` | `WindowsPlatformApp` | `LinuxPlatformApp` | `AndroidPlatformApp` | `ServerPlatformApp` |
+| `IWebviewWindowImpl` | `Wails.Net.Application.Windows` | `Win32WebviewWindow` | `LinuxWebviewWindow` | `AndroidWebviewWindow` | `ServerWebviewWindow` |
+| `IClipboardImpl` | `Wails.Net.Application.Clipboard` | `WindowsClipboard` | `LinuxClipboard` | `AndroidClipboard` | `ServerClipboard` |
+| `IMenuImpl` | `Wails.Net.Application.Menus` | `Win32Menu` | `LinuxMenu` | （未实现，MenuRole 不可用） | （未实现） |
+| `ISystemTrayImpl` | `Wails.Net.Application.SystemTray` | `Win32SystemTray` | `LinuxSystemTray` | （未实现） | （未实现） |
+| `IKeyBindingManager` | `Wails.Net.Application.Managers` | `Win32KeyBindingManager` | `LinuxKeyBindingManager` | （未实现） | （未实现） |
+| `IWebView` | `Wails.Net.Application.WebViews` | （由 `Win32WebviewWindow` 内嵌 `CoreWebView2` 实现） | （由 `LinuxWebviewWindow` 内嵌 WebKitGTK `WebView` 实现） | （由 `AndroidWebviewWindow` 内嵌 `Android.Webkit.WebView` 实现） | （无） |
+| `IPlatformBiometric` | `Wails.Net.Application.Plugins.Mobile` | （未实现） | （未实现） | `AndroidBiometric` | （未实现） |
+| `IPlatformNfc` | `Wails.Net.Application.Plugins.Mobile` | （未实现） | （未实现） | `AndroidNfc` | （未实现） |
+| `IPlatformBarcodeScanner` | `Wails.Net.Application.Plugins.Mobile` | （未实现） | （未实现） | `AndroidBarcodeScanner` | （未实现） |
+| `IPlatformHaptics` | `Wails.Net.Application.Plugins.Mobile` | （未实现） | （未实现） | `AndroidHaptics` | （未实现） |
+
+> **Android 移动端插件抽象**：5 个移动端接口（`IPlatformBiometric` / `IPlatformNfc` / `IPlatformBarcodeScanner` / `IPlatformHaptics` + `AndroidRuntimePlugin` 平台类）的 Android 实现位于 [Wails.Net.Application.Android/Mobile](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/Mobile)，通过 `AndroidPlatformApp` 注入委托解耦 Activity 生命周期。
 
 [IManagers.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Managers/IManagers.cs) 还包含一组与平台无关的管理器接口（`IWindowManager`、`IDialogManager`、`IEventManager`、`IScreenManager`、`ISystemTrayManager`、`IBrowserManager`、`IAutostartManager`、`IEnvironmentManager` 等），它们位于核心层，委托到上述平台子接口完成实际工作。
 
@@ -265,6 +271,38 @@ _webView?.LoadUri(wailsUrl);
 ```
 
 请求由 `OnWailsSchemeRequest` 处理，从 `Application.AssetServer` 读取静态资源并通过 `URISchemeResponse` 返回。
+
+## Android 平台实现
+
+### AndroidPlatformApp — .NET Android + WebView
+
+[AndroidPlatformApp](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/AndroidPlatformApp.cs) 是 Android 平台的 `IPlatformApp` 实现，使用 .NET Android 工作负载（`net10.0-android36.0`，最低 API Level 24）直接调用 `Android.Webkit.WebView` 等原生 API。关键设计：
+
+- **Activity 模型**：`MainActivity` 继承 `WailsActivity`，在 `OnCreate` 中初始化 `AndroidPlatformApp`，并通过 `AndroidApplicationExtensions` 提供扩展方法。
+- **WebView**：通过 `Android.Webkit.WebView` 加载前端，使用 `WebViewClient.ShouldInterceptRequest` 拦截 `wails://` 资源请求并委托到 `AssetServer`；通过 `WebMessageListener` 实现 IPC 双向通信。
+- **主线程分发**：通过 `Handler(Looper.MainLooper)` 将回调投递到 Android 主线程。
+- **单实例锁**：Android 系统默认单 Activity 实例，无需额外锁。
+- **平台事件**：[AndroidPlatformEvents](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/AndroidPlatformEvents.cs) 定义 12 个 Android 平台事件 ID（1267–1273, 1281–1285），对应 Activity 生命周期、电池、网络、主题、屏幕锁定等系统广播。`MapToCommonEvent(uint)` 将其中 7 个事件映射到公共 `ApplicationEventType`，由 `HandlePlatformEvent(uint)` 调用 `Application.Get()?.HandlePlatformEvent` 分发到事件系统。
+
+### AndroidWebviewWindow — Android.Webkit.WebView 封装
+
+`AndroidWebviewWindow` 是 Android 平台的 `IWebviewWindowImpl` 实现，将 `Android.Webkit.WebView` 包装为 Wails.Net 窗口模型。关键能力：
+- HTML/URL 加载、JS 执行（`EvaluateJavascript`）、CSS 注入、前进后退、DevTools（`setWebContentsDebuggingEnabled`）。
+- 通过 `WebMessageListener` 接收前端 `postMessage`，转发到 `MessageProcessor`。
+
+### 移动端插件平台后端
+
+5 个移动端插件的 Android 实现位于 [Wails.Net.Application.Android/Mobile](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/Mobile)：
+
+| 平台类 | 底层 Android API | 关键设计 |
+|------|------|------|
+| `AndroidBiometric` | `BiometricManager`（API 29+）+ `BiometricPrompt`（API 28+） | 通过 `Func<CancellationToken, Task<bool>>` 委托注入解耦 `FragmentActivity` |
+| `AndroidNfc` | `NfcAdapter` + `Activity.OnNewIntent` | 通过读写委托注入，非 Android 环境降级 no-op |
+| `AndroidBarcodeScanner` | `Intent.ActionGetContent` + 第三方扫描应用 | 通过 `Func<CancellationToken, Task<string>>` 委托注入 |
+| `AndroidHaptics` | `Vibrator` / `VibratorManager`（API 31+） + `VibrationEffect`（API 26+） | 平台守卫用 `OperatingSystem.IsAndroidVersionAtLeast(int)` |
+| `AndroidRuntimePlugin` | `Android.OS.Build` + `Toast.MakeText` | 提供 `device.info` / `toast.show` 命令，对应 Wails v3 `androidDeviceInfo` / `androidShowToast` |
+
+**委托注入模式**：Activity 生命周期相关 API（`BiometricPrompt`、`OnNewIntent`、`OnActivityResult`）无法在单元测试中直接触发，因此平台类通过构造函数接受 `Func<...>` / `Action` 委托参数。`AndroidPlatformApp` 在 Activity 可用时注入实际实现，单元测试环境使用默认 null 委托降级为 no-op。这使 `Wails.Net.Application.Android.Tests` 可在 Windows 上运行（无需模拟器），详见 AGENTS.md §4.4。
 
 ## Server 模式
 

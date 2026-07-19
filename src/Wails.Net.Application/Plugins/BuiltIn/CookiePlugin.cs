@@ -38,7 +38,7 @@ public class CookiePlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
-        context.Commands.MapCommand("cookie.get", (Func<ICommandContext, string, Task<string>>)(async (ctx, url) =>
+        context.Commands.MapCommandAsync("cookie.get", (Func<ICommandContext, string, Task<string>>)(async (ctx, url) =>
         {
             await Task.CompletedTask;
             // 从内存存储中返回当前所有 Cookie，序列化为 JSON 对象。
@@ -47,7 +47,7 @@ public class CookiePlugin : IPlugin
             return JsonSerializer.Serialize(dict);
         }));
 
-        context.Commands.MapCommand("cookie.set", (Func<ICommandContext, string, string, Task<bool>>)(async (ctx, name, value) =>
+        context.Commands.MapCommandAsync("cookie.set", (Func<ICommandContext, string, string, Task<bool>>)(async (ctx, name, value) =>
         {
             var window = GetFirstWindow(ctx);
             if (window is null)
@@ -63,7 +63,7 @@ public class CookiePlugin : IPlugin
             return true;
         }));
 
-        context.Commands.MapCommand("cookie.delete", (Func<ICommandContext, string, Task<bool>>)(async (ctx, name) =>
+        context.Commands.MapCommandAsync("cookie.delete", (Func<ICommandContext, string, Task<bool>>)(async (ctx, name) =>
         {
             var window = GetFirstWindow(ctx);
             if (window is null)
@@ -79,7 +79,7 @@ public class CookiePlugin : IPlugin
             return true;
         }));
 
-        context.Commands.MapCommand("cookie.clear", (Func<ICommandContext, Task<bool>>)(async (ctx) =>
+        context.Commands.MapCommandAsync("cookie.clear", (Func<ICommandContext, Task<bool>>)(async (ctx) =>
         {
             var window = GetFirstWindow(ctx);
             if (window is null)

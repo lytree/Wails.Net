@@ -410,12 +410,12 @@ internal static class FileAssociationPluginTestExtensions
 
         // 调用 fileassociation.getRegistered 命令
         var entry = commands.Find("fileassociation.getRegistered");
-        if (entry is null)
+        if (entry is null || entry.Invoker is null)
         {
             return [];
         }
 
-        var result = entry.Method.Invoke(entry.Instance, null);
+        var result = entry.Invoker(entry.Instance, default, ctx: null).GetAwaiter().GetResult();
         return result is string[] arr ? arr : Array.Empty<string>();
     }
 }

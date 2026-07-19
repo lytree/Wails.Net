@@ -85,4 +85,13 @@ public enum ApplicationEventType : uint
 
     /// <summary>应用失活（失去前台活动状态）。</summary>
     ApplicationInactive = 26,
+
+    /// <summary>系统内存不足（对应 Wails v3 Common.LowMemory = 1290）。</summary>
+    LowMemory = 27,
+
+    /// <summary>屏幕已锁定（对应 Wails v3 Common.ScreenLocked = 1288）。</summary>
+    ScreenLocked = 28,
+
+    /// <summary>屏幕已解锁（对应 Wails v3 Common.ScreenUnlocked = 1289）。</summary>
+    ScreenUnlocked = 29,
 }

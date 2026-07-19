@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wails.Net Demo - Server</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>🖥️ Server 模式</h1>
+            <p class="subtitle">Wails.Net Demo - 无 GUI 后台服务</p>
+        </header>
+        <main class="content">
+            <section class="card">
+                <h2>服务运行中</h2>
+                <p>本 Demo 不创建 GUI 窗口，运行于 ServerPlatformApp 之上。</p>
+                <p>使用 <code>Ctrl+C</code> 退出服务。</p>
+            </section>
+
+            <section class="card">
+                <h2>HTTP 端点</h2>
+                <table class="api-table">
+                    <thead>
+                        <tr><th>方法</th><th>路径</th><th>说明</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>GET</td><td><code>/api/status</code></td><td>查询后台任务状态（JSON）</td></tr>
+                        <tr><td>GET</td><td><code>/index.html</code></td><td>本静态页面</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="card">
+                <h2>测试命令</h2>
+                <pre class="cmd">curl http://&lt;host&gt;:&lt;port&gt;/api/status</pre>
+                <pre class="cmd">curl http://&lt;host&gt;:&lt;port&gt;/index.html</pre>
+            </section>
+        </main>
+    </div>
+</body>
+</html>

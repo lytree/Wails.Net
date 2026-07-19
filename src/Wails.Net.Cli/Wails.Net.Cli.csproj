@@ -25,4 +25,27 @@
     <ProjectReference Include="..\Wails.Net.Events\Wails.Net.Events.csproj" />
   </ItemGroup>
 
+  <!--
+    在编译期生成版本常量文件 VersionConstants.g.cs，零反射获取版本信息。
+    替代运行时 Assembly.GetCustomAttribute<T>() 反射调用，遵循 AGENTS.md §3.4。
+    由 MSBuild WriteLinesToFile 任务在 CoreCompile 之前生成，每行通过 ItemGroup 提供。
+  -->
+  <Target Name="GenerateVersionConstants" BeforeTargets="CoreCompile">
+    <ItemGroup>
+      <VersionConstantsLines Include="// &lt;auto-generated/&gt;" />
+      <VersionConstantsLines Include="namespace Wails.Net.Cli%3B" />
+      <VersionConstantsLines Include="internal static class VersionConstants" />
+      <VersionConstantsLines Include="{" />
+      <VersionConstantsLines Include='    public const string InformationalVersion = "$(InformationalVersion)"%3B' />
+      <VersionConstantsLines Include='    public const string Version = "$(Version)"%3B' />
+      <VersionConstantsLines Include="}" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(IntermediateOutputPath)VersionConstants.g.cs"
+                      Lines="@(VersionConstantsLines)"
+                      Overwrite="true" />
+    <ItemGroup>
+      <Compile Include="$(IntermediateOutputPath)VersionConstants.g.cs" AutoGen="true" />
+    </ItemGroup>
+  </Target>
+
 </Project>

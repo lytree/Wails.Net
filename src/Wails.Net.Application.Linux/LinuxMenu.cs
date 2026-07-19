@@ -1,6 +1,8 @@
 using Gtk;
+using Wails.Net.Application.Dialogs;
 using Wails.Net.Application.Menus;
 using Menu = Wails.Net.Application.Menus.Menu;
+using WailsApplication = Wails.Net.Application.Application;
 
 namespace Wails.Net.Application.Platform;
 
@@ -93,6 +95,12 @@ public sealed class LinuxMenu : IMenuImpl, IDisposable
     /// <inheritdoc />
     public void AddMenuItem(MenuItem item, int position)
     {
+        // 应用角色（如有）：填充默认 Label、绑定 Callback、注册全局热键
+        if (item.Role != MenuRole.None)
+        {
+            ApplyRole(item, window: null);
+        }
+
         // GMenu 不支持局部更新，整体重建模型。
         if (item.Callback is not null)
         {
@@ -182,6 +190,162 @@ public sealed class LinuxMenu : IMenuImpl, IDisposable
     {
         // GTK4 菜单项图标通过 Gio.Icon 设置，简化实现暂存状态。
         _menu.Bitmap = bitmap;
+    }
+
+    /// <inheritdoc />
+    public void ApplyRole(MenuItem item, Windows.IWebviewWindowImpl? window)
+    {
+        if (item is null || item.Role == MenuRole.None)
+        {
+            return;
+        }
+
+        // macOS 专属角色在 Linux 上静默 no-op
+        if (MenuRoleHelper.IsMacOSExclusive(item.Role))
+        {
+            return;
+        }
+
+        // 准备菜单项：填充默认 Label、Accelerator，设置 Callback
+        MenuRoleHelper.PrepareRoleItem(item, window, ExecuteRole);
+
+        // 若角色带默认加速键，注册到 KeyBindingManager（GTK4 通过 ShortcutController 生效）
+        var accelerator = item.Accelerator;
+        if (!string.IsNullOrEmpty(accelerator) && item.Callback is not null)
+        {
+            try
+            {
+                var keyBindingManager = WailsApplication.Get()?.KeyBindingManager;
+                if (keyBindingManager is not null)
+                {
+                    keyBindingManager.RegisterKeyBinding(accelerator, item.Callback);
+                }
+            }
+            catch
+            {
+                // 已注册过或注册失败时忽略，不阻断菜单构建
+            }
+        }
+    }
+
+    /// <summary>
+    /// 执行角色对应的系统命令。
+    /// </summary>
+    /// <param name="role">菜单角色。</param>
+    /// <param name="window">目标窗口。</param>
+    /// <param name="aboutMetadata">关于对话框元数据（仅 About 角色使用）。</param>
+    private static void ExecuteRole(MenuRole role, Windows.IWebviewWindowImpl? window, AboutMetadata? aboutMetadata)
+    {
+        try
+        {
+            switch (role)
+            {
+                case MenuRole.Copy:
+                    SendEditorCommand(window, "copy");
+                    break;
+                case MenuRole.Cut:
+                    SendEditorCommand(window, "cut");
+                    break;
+                case MenuRole.Paste:
+                    SendEditorCommand(window, "paste");
+                    break;
+                case MenuRole.SelectAll:
+                    SendEditorCommand(window, "selectAll");
+                    break;
+                case MenuRole.Undo:
+                    SendEditorCommand(window, "undo");
+                    break;
+                case MenuRole.Redo:
+                    SendEditorCommand(window, "redo");
+                    break;
+                case MenuRole.Minimize:
+                case MenuRole.Maximize:
+                    // Minimize/Maximize 角色在 Linux 上不常见于标准应用菜单栏，
+                    // 但通过 KeyBindingManager 仍可触发。此处委托窗口方法。
+                    if (role == MenuRole.Minimize)
+                    {
+                        window?.Minimise();
+                    }
+                    else
+                    {
+                        if (window?.IsMaximised() == true)
+                        {
+                            window?.UnMaximise();
+                        }
+                        else
+                        {
+                            window?.Maximise();
+                        }
+                    }
+                    break;
+                case MenuRole.Fullscreen:
+                case MenuRole.ToggleFullScreen:
+                    if (window?.IsFullscreen() == true)
+                    {
+                        window?.UnFullscreen();
+                    }
+                    else
+                    {
+                        window?.Fullscreen();
+                    }
+                    break;
+                case MenuRole.CloseWindow:
+                    window?.Close();
+                    break;
+                case MenuRole.Quit:
+                    WailsApplication.Get()?.Quit();
+                    break;
+                case MenuRole.About:
+                    ShowAboutDialog(aboutMetadata);
+                    break;
+            }
+        }
+        catch
+        {
+            // 角色命令执行失败不应中断菜单回调
+        }
+    }
+
+    /// <summary>
+    /// 通过 WebKitGTK EvaluateJavascriptAsync 调用 document.execCommand。
+    /// </summary>
+    /// <param name="window">目标窗口。</param>
+    /// <param name="command">编辑命令名（copy/cut/paste/selectAll/undo/redo）。</param>
+    private static void SendEditorCommand(Windows.IWebviewWindowImpl? window, string command)
+    {
+        if (window is LinuxWebviewWindow win)
+        {
+            win.ExecJS($"document.execCommand('{command}')");
+        }
+    }
+
+    /// <summary>
+    /// 显示关于对话框。使用应用级 Dialog API 弹出信息提示框。
+    /// </summary>
+    /// <param name="about">关于对话框元数据。</param>
+    private static void ShowAboutDialog(AboutMetadata? about)
+    {
+        var app = WailsApplication.Get();
+        var dialog = app?.DialogManager;
+        if (dialog is null)
+        {
+            return;
+        }
+
+        var name = about?.Name ?? "Application";
+        var version = about?.Version ?? "1.0.0";
+        var copyright = about?.Copyright ?? string.Empty;
+        var comments = about?.Comments ?? string.Empty;
+        var website = about?.Website ?? string.Empty;
+
+        var lines = new List<string> { name, $"版本 {version}" };
+        if (!string.IsNullOrEmpty(copyright)) lines.Add(copyright);
+        if (!string.IsNullOrEmpty(comments)) lines.Add(comments);
+        if (!string.IsNullOrEmpty(website)) lines.Add(website);
+
+        var message = string.Join(Environment.NewLine, lines);
+        // 异步触发，不等待（菜单回调为同步）
+        _ = dialog.ShowMessageDialog("关于", message, DialogStyle.Info, new[] { "确定" });
     }
 
     /// <summary>

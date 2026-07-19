@@ -738,7 +738,7 @@ public class Application
         var opts = options ?? ServiceOptions.Default;
 
         _serviceRegistry.Register(service, opts);
-        _bindings.Add(service);
+        _bindings.RegisterInstance(service);
 
         // 若服务实现 IHttpServiceHandler 且配置了 Route，挂载到 AssetServer
         if (service is Wails.Net.AssetServer.IHttpServiceHandler handler &&
@@ -782,7 +782,7 @@ public class Application
         }
 
         var service = _serviceProvider.GetRequiredService<T>();
-        _bindings.Add(service);
+        _bindings.RegisterInstance(service);
         return service;
     }
 

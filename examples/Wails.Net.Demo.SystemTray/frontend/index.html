@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wails.Net Demo - SystemTray</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>📍 系统托盘</h1>
+            <p class="subtitle">Wails.Net Demo - TrayPlugin + ISystemTrayManager</p>
+        </header>
+        <main class="content">
+            <section class="card">
+                <h2>托盘操作</h2>
+                <p class="desc">通过 tray.* 插件命令操作已创建的托盘实例。</p>
+                <div class="form-group">
+                    <label>提示文本:</label>
+                    <input type="text" id="tooltipInput" value="Wails.Net 自定义提示">
+                    <button id="setTooltipBtn">设置提示</button>
+                </div>
+                <div class="form-group">
+                    <label>标签文本:</label>
+                    <input type="text" id="labelInput" value="Custom">
+                    <button id="setLabelBtn">设置标签</button>
+                </div>
+                <div class="form-group">
+                    <button id="showBtn">显示托盘</button>
+                    <button id="hideBtn">隐藏托盘</button>
+                    <button id="isVisibleBtn">查询可见性</button>
+                </div>
+                <div id="trayResult" class="result"></div>
+            </section>
+
+            <section class="card">
+                <h2>发送通知</h2>
+                <p class="desc">调用 TrayLogService.SendTrayNotification 绑定方法，由后端通过框架 NotificationService 发送系统通知。</p>
+                <div class="form-group">
+                    <label>标题:</label>
+                    <input type="text" id="titleInput" value="Wails.Net 通知">
+                </div>
+                <div class="form-group">
+                    <label>内容:</label>
+                    <input type="text" id="bodyInput" value="这是一条来自 SystemTray Demo 的通知">
+                </div>
+                <div class="form-group">
+                    <button id="notifyBtn">发送通知</button>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>事件历史</h2>
+                <p class="desc">订阅 tray:clicked / tray:event 事件，并显示后端记录的所有事件。</p>
+                <div class="form-group">
+                    <button id="refreshBtn">刷新历史</button>
+                    <button id="clearBtn" class="danger">清空历史</button>
+                </div>
+                <table class="history-table">
+                    <thead>
+                        <tr><th>序号</th><th>类型</th><th>消息</th><th>时间</th></tr>
+                    </thead>
+                    <tbody id="historyBody">
+                        <tr><td colspan="4" class="empty">（暂无记录）</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="card">
+                <h2>说明</h2>
+                <p class="desc">托盘实例由 Program.cs 在 OnAfterStart 中创建，并通过 TrayHolder 单例暴露给 TrayPlugin。</p>
+                <p class="desc">右键托盘可显示菜单（显示窗口 / 隐藏窗口 / 发送通知 / 退出）；左键点击托盘会显示主窗口并触发 tray:clicked 事件。</p>
+                <p class="desc">前端通过 wails.call('tray.*') 调用插件命令，通过 wails.call('TrayLogService.*') 调用绑定方法。</p>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

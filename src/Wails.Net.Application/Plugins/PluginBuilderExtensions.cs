@@ -1,4 +1,3 @@
-using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Wails.Net.Application.Hosting;
 
@@ -51,34 +50,24 @@ public static class PluginBuilderExtensions
 
     /// <summary>
     /// 从程序集自动发现插件并注册到 DI 容器。
-    /// 发现的插件同样会立即调用 <see cref="IPlugin.ConfigureServices"/> 并添加到构建器跟踪列表。
     /// </summary>
     /// <param name="builder">桌面应用构建器。</param>
-    /// <param name="assembly">要扫描的程序集，为 null 时使用入口程序集。</param>
-    /// <returns>当前构建器实例，用于链式调用。</returns>
+    /// <param name="assembly">已弃用参数，仅用于向后兼容签名。</param>
+    /// <returns>当前构建器实例。</returns>
+    /// <remarks>
+    /// 此方法已弃用并禁止使用。原实现依赖运行时反射扫描程序集类型（<c>Assembly.GetTypes</c>）+
+    /// <c>Activator.CreateInstance</c> 创建实例，违反 AGENTS.md §3.4 "禁止使用反射" 的禁令。
+    /// 请改用 <see cref="UsePlugin{TPlugin}"/> 显式注册插件类型。
+    /// </remarks>
+    /// <exception cref="NotSupportedException">始终抛出。原反射实现已移除。</exception>
+    [Obsolete("此方法已弃用并禁止使用。原反射实现已移除（遵循 AGENTS.md §3.4）。请使用 UsePlugin<TPlugin>() 显式注册插件。")]
     public static DesktopApplicationBuilder UsePluginsFromAssembly(
         this DesktopApplicationBuilder builder,
-        Assembly? assembly = null)
+        object? assembly = null)
     {
-        assembly ??= Assembly.GetEntryAssembly();
-        if (assembly is null)
-        {
-            return builder;
-        }
-
-        var pluginTypes = assembly.GetTypes()
-            .Where(t => typeof(IPlugin).IsAssignableFrom(t)
-                && !t.IsAbstract
-                && !t.IsInterface
-                && t.GetConstructor(Type.EmptyTypes) is not null);
-
-        foreach (var type in pluginTypes)
-        {
-            var plugin = (IPlugin)Activator.CreateInstance(type)!;
-            UsePlugin(builder, plugin);
-        }
-
-        return builder;
+        throw new NotSupportedException(
+            "UsePluginsFromAssembly 已弃用并禁止使用。原反射实现已移除（遵循 AGENTS.md §3.4）。" +
+            "请使用 UsePlugin<TPlugin>() 显式注册插件类型。");
     }
 
     /// <summary>

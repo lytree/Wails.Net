@@ -12,6 +12,12 @@ namespace Wails.Net.Application.Tests.Platform;
 /// <remarks>
 /// 此类修改环境变量，必须 <see cref="NotInParallelAttribute"/> 避免并行竞争。
 /// 每个测试在 finally 块恢复原始环境变量值。
+/// <para>
+/// PlatformFactory 采用手动委托注册模式（遵循 AGENTS.md §3.4 禁止反射）。
+/// 此测试项目仅引用 <c>Wails.Net.Application</c>，未引用平台特定项目（Wails.Net.Application.Windows 等），
+/// 因此 [ModuleInitializer] 不会注册任何平台委托，对未注册的平台的调用会抛出
+/// <see cref="InvalidOperationException"/>。
+/// </para>
 /// </remarks>
 [NotInParallel]
 public sealed class PlatformFactoryTests
@@ -99,7 +105,7 @@ public sealed class PlatformFactoryTests
     // ---------------------------------------------------------------------
 
     [Test]
-    public async Task CreatePlatformApp_WailsPlatformLinux_ReturnsLinuxPlatformApp()
+    public async Task CreatePlatformApp_WailsPlatformLinux_ThrowsWhenNotRegistered()
     {
         // 安排：强制 Linux 平台，但 Server 模式必须关闭
         using var s1 = SetEnvVar(ServerModeEnvVar, null);
@@ -107,11 +113,12 @@ public sealed class PlatformFactoryTests
         var options = new ApplicationOptions { Name = "TestLinuxApp" };
 
         // 操作与断言：环境变量被正确解析为 linux（Level 2 命中），
-        // 由于 Linux 平台程序集在 Windows 测试环境下不存在，Assembly.Load 抛 FileNotFoundException。
+        // 由于测试项目未引用 Wails.Net.Application.Linux，[ModuleInitializer] 未注册 Linux 委托，
+        // PlatformFactory 抛出 InvalidOperationException（遵循 AGENTS.md §3.4 禁止反射）。
         // 这证明平台检测正确识别为 linux，而非降级到 ServerPlatformApp。
         // 若降级到 ServerPlatformApp，则不会抛异常。
         await Assert.That(() => PlatformFactory.CreatePlatformApp(options))
-            .ThrowsExactly<FileNotFoundException>();
+            .ThrowsExactly<InvalidOperationException>();
     }
 
     [Test]
@@ -124,10 +131,11 @@ public sealed class PlatformFactoryTests
 
         // 操作与断言：无效环境变量被忽略（Level 2 未命中），
         // Level 3 RuntimeInformation 在 Windows 上命中，识别为 windows。
-        // 由于测试项目未引用 Wails.Net.Application.Windows，Assembly.Load 抛 FileNotFoundException。
+        // 由于测试项目未引用 Wails.Net.Application.Windows，[ModuleInitializer] 未注册 Windows 委托，
+        // PlatformFactory 抛出 InvalidOperationException（遵循 AGENTS.md §3.4 禁止反射）。
         // 这证明无效环境变量被正确忽略，并继续到 Level 3 自动检测。
         await Assert.That(() => PlatformFactory.CreatePlatformApp(options))
-            .ThrowsExactly<FileNotFoundException>();
+            .ThrowsExactly<InvalidOperationException>();
     }
 
     // ---------------------------------------------------------------------
@@ -135,7 +143,7 @@ public sealed class PlatformFactoryTests
     // ---------------------------------------------------------------------
 
     [Test]
-    public async Task CreatePlatformApp_AutoDetect_Windows_ReturnsWindowsPlatformApp()
+    public async Task CreatePlatformApp_AutoDetect_Windows_ThrowsWhenNotRegistered()
     {
         // 安排：清除所有环境变量，让自动检测生效
         using var s1 = SetEnvVar(ServerModeEnvVar, null);
@@ -143,10 +151,11 @@ public sealed class PlatformFactoryTests
         var options = new ApplicationOptions { Name = "TestAutoApp" };
 
         // 操作与断言：Level 3 RuntimeInformation 检测到 Windows 平台。
-        // 测试项目未引用 Wails.Net.Application.Windows 程序集，Assembly.Load 抛 FileNotFoundException。
+        // 由于测试项目未引用 Wails.Net.Application.Windows，[ModuleInitializer] 未注册 Windows 委托，
+        // PlatformFactory 抛出 InvalidOperationException（遵循 AGENTS.md §3.4 禁止反射）。
         // 这证明自动检测正确识别为 Windows（而非降级到 ServerPlatformApp）。
         await Assert.That(() => PlatformFactory.CreatePlatformApp(options))
-            .ThrowsExactly<FileNotFoundException>();
+            .ThrowsExactly<InvalidOperationException>();
     }
 
     // ---------------------------------------------------------------------

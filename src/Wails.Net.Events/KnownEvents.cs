@@ -149,6 +149,15 @@ public static class KnownEvents
     /// <summary>应用失活事件（失去前台活动状态）。</summary>
     public const string ApplicationInactive = "wails:application:inactive";
 
+    /// <summary>系统内存不足事件（对应 Wails v3 Common.LowMemory）。</summary>
+    public const string LowMemory = "wails:low:memory";
+
+    /// <summary>屏幕已锁定事件（对应 Wails v3 Common.ScreenLocked）。</summary>
+    public const string ScreenLocked = "wails:screen:locked";
+
+    /// <summary>屏幕已解锁事件（对应 Wails v3 Common.ScreenUnlocked）。</summary>
+    public const string ScreenUnlocked = "wails:screen:unlocked";
+
     /// <summary>检测到第二个实例启动事件（携带命令行参数）。</summary>
     public const string SecondInstanceLaunched = "wails:second-instance:launched";
 
@@ -224,6 +233,9 @@ public static class KnownEvents
         ApplicationEventType.WindowBeforeUnload => WindowBeforeUnload,
         ApplicationEventType.ApplicationActive => ApplicationActive,
         ApplicationEventType.ApplicationInactive => ApplicationInactive,
+        ApplicationEventType.LowMemory => LowMemory,
+        ApplicationEventType.ScreenLocked => ScreenLocked,
+        ApplicationEventType.ScreenUnlocked => ScreenUnlocked,
         _ => $"wails:custom:{(uint)type}"
     };
 

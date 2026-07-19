@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wails.Net Demo - Events</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>📡 事件系统</h1>
+            <p class="subtitle">Wails.Net Demo - 前后端事件双向通信</p>
+        </header>
+        <main class="content">
+            <section class="card">
+                <h2>接收后端事件</h2>
+                <p class="desc">订阅 demo:tick（每秒一次）与 demo:notification 事件</p>
+                <div class="stats">
+                    <div>Tick 计数: <strong id="tickCount">-</strong></div>
+                    <div>最近通知: <strong id="lastNotification">-</strong></div>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>发送事件到后端</h2>
+                <p class="desc">调用 EventService.SendNotification，后端 emit demo:notification 事件</p>
+                <div class="form-group">
+                    <input type="text" id="messageInput" placeholder="输入消息" value="Hello from frontend">
+                    <button id="sendBtn">发送通知</button>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>事件订阅控制</h2>
+                <p class="desc">演示订阅 / 取消订阅 / 一次性订阅</p>
+                <div class="form-group">
+                    <button id="subscribeBtn">订阅 demo:tick</button>
+                    <button id="unsubscribeBtn" class="danger">取消订阅</button>
+                    <button id="onceBtn">一次性订阅 demo:once</button>
+                    <button id="emitOnceBtn">触发 demo:once</button>
+                </div>
+                <div class="form-group">
+                    <button id="emitFrontendBtn">前端 emit frontend:event</button>
+                    <span class="hint">（后端订阅后将回发 demo:echo）</span>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>事件日志</h2>
+                <div id="eventLog" class="log"></div>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

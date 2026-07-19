@@ -40,7 +40,7 @@ public class DialogPlugin : IPlugin
         context.Permissions.DeclarePermission("dialog:allow-message", "允许显示消息对话框");
 
         // 消息对话框：信息提示
-        context.Commands.MapCommand("dialog.message",
+        context.Commands.MapCommandAsync("dialog.message",
             (Func<ICommandContext, string, string, Task<int>>)(async (ctx, title, message) =>
         {
             var dialog = GetDialogManager(ctx);
@@ -53,7 +53,7 @@ public class DialogPlugin : IPlugin
         }));
 
         // 消息对话框：警告
-        context.Commands.MapCommand("dialog.warning",
+        context.Commands.MapCommandAsync("dialog.warning",
             (Func<ICommandContext, string, string, Task<int>>)(async (ctx, title, message) =>
         {
             var dialog = GetDialogManager(ctx);
@@ -66,7 +66,7 @@ public class DialogPlugin : IPlugin
         }));
 
         // 消息对话框：错误
-        context.Commands.MapCommand("dialog.error",
+        context.Commands.MapCommandAsync("dialog.error",
             (Func<ICommandContext, string, string, Task<int>>)(async (ctx, title, message) =>
         {
             var dialog = GetDialogManager(ctx);
@@ -79,7 +79,7 @@ public class DialogPlugin : IPlugin
         }));
 
         // 消息对话框：询问
-        context.Commands.MapCommand("dialog.question",
+        context.Commands.MapCommandAsync("dialog.question",
             (Func<ICommandContext, string, string, Task<int>>)(async (ctx, title, message) =>
         {
             var dialog = GetDialogManager(ctx);
@@ -92,7 +92,7 @@ public class DialogPlugin : IPlugin
         }));
 
         // 打开文件对话框
-        context.Commands.MapCommand("dialog.openFile",
+        context.Commands.MapCommandAsync("dialog.openFile",
             (Func<ICommandContext, string?, string?, string[]?, Task<string?>>)(async (ctx, title, directory, filters) =>
         {
             var dialog = GetDialogManager(ctx);
@@ -112,7 +112,7 @@ public class DialogPlugin : IPlugin
         }));
 
         // 保存文件对话框
-        context.Commands.MapCommand("dialog.saveFile",
+        context.Commands.MapCommandAsync("dialog.saveFile",
             (Func<ICommandContext, string?, string?, string?, string[]?, Task<string?>>)(async (ctx, title, directory, filename, filters) =>
         {
             var dialog = GetDialogManager(ctx);
@@ -133,7 +133,7 @@ public class DialogPlugin : IPlugin
         }));
 
         // 打开多文件选择对话框
-        context.Commands.MapCommand("dialog.openMultipleFiles",
+        context.Commands.MapCommandAsync("dialog.openMultipleFiles",
             (Func<ICommandContext, string?, string?, string[]?, Task<string[]?>>)(async (ctx, title, directory, filters) =>
         {
             var dialog = GetDialogManager(ctx);

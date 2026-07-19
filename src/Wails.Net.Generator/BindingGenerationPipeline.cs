@@ -1,13 +1,18 @@
 using System.IO;
-using System.Reflection;
+using Wails.Net.Events;
 using Wails.Net.Generator.Models;
 
 namespace Wails.Net.Generator;
 
 /// <summary>
 /// 绑定代码生成管道，统一协调分析器、生成器和文件写入。
-/// 提供从程序集到 TypeScript 文件的一站式生成入口。
+/// 提供从源生成器元数据到 TypeScript 文件的一站式生成入口。
 /// </summary>
+/// <remarks>
+/// 此实现完全基于源代码生成器在编译期填充的元数据
+/// （<see cref="GeneratedBindingsMetadata"/> 和 <see cref="GeneratedEventsMetadata"/>），
+/// 不再使用 <see cref="System.Reflection.Assembly"/> 进行运行时分析。
+/// </remarks>
 public class BindingGenerationPipeline
 {
     /// <summary>
@@ -28,19 +33,14 @@ public class BindingGenerationPipeline
     /// <summary>
     /// 生成绑定代码（仅返回内容，不写入文件）。
     /// </summary>
-    /// <param name="assembly">要分析的主程序集。</param>
-    /// <param name="eventsAssembly">包含事件枚举的程序集（可为同一个）。</param>
     /// <param name="options">生成选项。</param>
     /// <returns>生成结果。</returns>
-    public BindingGenerationResult Generate(
-        Assembly assembly,
-        Assembly? eventsAssembly,
-        BindingGenerationOptions options)
+    public BindingGenerationResult Generate(BindingGenerationOptions options)
     {
         try
         {
-            // 分析绑定方法
-            var methods = _analyzer.AnalyzeAssembly(assembly);
+            // 分析绑定方法（从 GeneratedBindingsMetadata 读取）
+            var methods = _analyzer.AnalyzeMetadata();
             var classCount = methods.Select(m => (m.Namespace, m.ClassName)).Distinct().Count();
 
             var files = new Dictionary<string, string>();
@@ -66,23 +66,18 @@ public class BindingGenerationPipeline
                 files[options.IdMapFileName] = content;
             }
 
-            // 生成事件类型
-            var effectiveEventsAssembly = eventsAssembly ?? assembly;
+            // 生成事件类型（从 GeneratedEventsMetadata.Enums 读取）
             if (options.GenerateEvents)
             {
-                var content = _eventGenerator.GenerateFromAssembly(effectiveEventsAssembly);
+                var content = _eventGenerator.GenerateFromMetadata();
                 files[options.EventsFileName] = content;
             }
 
-            // 生成已知事件名称
+            // 生成已知事件名称（从 GeneratedEventsMetadata.KnownEvents 读取）
             if (options.GenerateKnownEvents)
             {
-                var knownEventsType = effectiveEventsAssembly.GetType("Wails.Net.Events.KnownEvents");
-                if (knownEventsType is not null)
-                {
-                    var content = _eventGenerator.GenerateKnownEvents(knownEventsType);
-                    files[options.KnownEventsFileName] = content;
-                }
+                var content = _eventGenerator.GenerateKnownEventsFromMetadata();
+                files[options.KnownEventsFileName] = content;
             }
 
             return BindingGenerationResult.SuccessResult(methods.Count, classCount, files);
@@ -96,16 +91,11 @@ public class BindingGenerationPipeline
     /// <summary>
     /// 生成绑定代码并写入文件系统。
     /// </summary>
-    /// <param name="assembly">要分析的主程序集。</param>
-    /// <param name="eventsAssembly">包含事件枚举的程序集。</param>
     /// <param name="options">生成选项。</param>
     /// <returns>生成结果。</returns>
-    public BindingGenerationResult GenerateToDisk(
-        Assembly assembly,
-        Assembly? eventsAssembly,
-        BindingGenerationOptions options)
+    public BindingGenerationResult GenerateToDisk(BindingGenerationOptions options)
     {
-        var result = Generate(assembly, eventsAssembly, options);
+        var result = Generate(options);
         if (!result.Success)
         {
             return result;
@@ -148,11 +138,9 @@ public class BindingGenerationPipeline
         try
         {
             var methods = new List<BoundMethodModel>();
-            var assemblies = new HashSet<Assembly>();
             foreach (var instance in instances)
             {
                 methods.AddRange(_analyzer.AnalyzeInstance(instance));
-                assemblies.Add(instance.GetType().Assembly);
             }
 
             var classCount = methods.Select(m => (m.Namespace, m.ClassName)).Distinct().Count();
@@ -173,31 +161,15 @@ public class BindingGenerationPipeline
                 files[options.IdMapFileName] = _typeScriptGenerator.GenerateIdMap(methods);
             }
 
-            // 生成事件类型和已知事件常量（从实例所在程序集中提取）
-            if (options.GenerateEvents || options.GenerateKnownEvents)
+            // 生成事件类型和已知事件常量（从源生成器元数据中读取）
+            if (options.GenerateEvents)
             {
-                foreach (var assembly in assemblies)
-                {
-                    if (options.GenerateEvents)
-                    {
-                        var eventContent = _eventGenerator.GenerateFromAssembly(assembly);
-                        // 使用程序集名作为文件名后缀避免冲突
-                        var fileName = assemblies.Count > 1
-                            ? $"{Path.GetFileNameWithoutExtension(assembly.Location)}-{options.EventsFileName}"
-                            : options.EventsFileName;
-                        files[fileName] = eventContent;
-                    }
+                files[options.EventsFileName] = _eventGenerator.GenerateFromMetadata();
+            }
 
-                    if (options.GenerateKnownEvents)
-                    {
-                        var knownEventsType = assembly.GetType("Wails.Net.Events.KnownEvents");
-                        if (knownEventsType is not null)
-                        {
-                            var content = _eventGenerator.GenerateKnownEvents(knownEventsType);
-                            files[options.KnownEventsFileName] = content;
-                        }
-                    }
-                }
+            if (options.GenerateKnownEvents)
+            {
+                files[options.KnownEventsFileName] = _eventGenerator.GenerateKnownEventsFromMetadata();
             }
 
             return BindingGenerationResult.SuccessResult(methods.Count, classCount, files);

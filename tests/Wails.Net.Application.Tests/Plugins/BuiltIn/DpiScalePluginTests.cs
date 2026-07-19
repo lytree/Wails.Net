@@ -63,25 +63,10 @@ public sealed class DpiScalePluginTests
 
     /// <summary>
     /// 通过命令注册表调用命令。
-    /// 反射调用抛出的 <see cref="TargetInvocationException"/> 会被解包为内部异常，
-    /// 使断言能直接验证业务异常类型。
+    /// 调用编译期构建的强类型调用器（遵循 AGENTS.md §3.4 禁令，零反射）。
     /// </summary>
     private static object? InvokeCommand(CommandRegistry registry, string name, params object?[] args)
-    {
-        var entry = registry.Find(name);
-        if (entry is null)
-        {
-            throw new InvalidOperationException($"命令未找到: {name}");
-        }
-        try
-        {
-            return entry.Method.Invoke(entry.Instance, args);
-        }
-        catch (TargetInvocationException ex) when (ex.InnerException is not null)
-        {
-            throw ex.InnerException;
-        }
-    }
+        => CommandTestHelper.Invoke(registry, name, args);
 
     // ---------------------------------------------------------------------
     // 基础测试

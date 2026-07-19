@@ -1,6 +1,6 @@
 # Wails.Net 插件开发指南
 
-本文档介绍如何开发和使用 Wails.Net 插件。Wails.Net 内置 **41 个插件**（37 桌面 + 4 移动端），覆盖系统、文件、网络、窗口、数据、更新、移动端等场景。
+本文档介绍如何开发和使用 Wails.Net 插件。Wails.Net 内置 **42 个插件**（37 桌面 + 5 移动端），覆盖系统、文件、网络、窗口、数据、更新、移动端等场景。
 
 ## 插件概念
 
@@ -172,7 +172,7 @@ context.Commands.MapCommand("myapp.work", (Func<ICommandContext, CancellationTok
 
 ## 内置插件列表
 
-Wails.Net 内置 41 个插件，按用途分类如下：
+Wails.Net 内置 42 个插件，按用途分类如下：
 
 ### 系统类插件
 
@@ -227,7 +227,7 @@ Wails.Net 内置 41 个插件，按用途分类如下：
 | 插件 | 命令前缀 | 功能 |
 |------|----------|------|
 | `ApplicationPlugin` | `application.*` | 应用级操作（quit/hide/show 等） |
-| `MenuPlugin` | `menu.*` | 应用菜单与上下文菜单 |
+| `MenuPlugin` | `menu.*` | 应用菜单、上下文菜单、MenuRole 角色菜单项（P2：`addRoleItem` / `addStandardEditMenu` / `addStandardWindowMenu` / `addStandardHelpMenu`） |
 | `TrayPlugin` | `tray.*` | 系统托盘 |
 | `ScreenPlugin` | `screen.*` | 屏幕查询（所有显示器） |
 | `LogPlugin` | `log.*` | 日志记录（P1-3：与 `ILogger` 双向桥接） |
@@ -259,8 +259,11 @@ Wails.Net 内置 41 个插件，按用途分类如下：
 | `NfcPlugin` | `nfc.*` | NFC 读写 — `read` / `write` / `cancel` |
 | `BarcodeScannerPlugin` | `barcode-scanner.*` | 条码/二维码扫描 — `scan` / `cancel` |
 | `HapticsPlugin` | `haptics.*` | 触觉反馈 — `vibrate` / `cancel` / `notification` |
+| `AndroidRuntimePlugin` | `device.*` / `toast.*` | Android 平台专属运行时 — `device.info`（设备信息） / `toast.show`（Toast 提示） |
 
-> 移动端插件位于 `Wails.Net.Application.Plugins.Mobile` 命名空间，仅在 `net10.0-android36.0` 目标下可用。Windows/Linux 上调用会返回 `PlatformNotSupportedException`。
+> 移动端插件位于 `Wails.Net.Application.Plugins.Mobile` 命名空间（`AndroidRuntimePlugin` 位于 `Wails.Net.Application.Android.Mobile`），仅在 `net10.0-android36.0` 目标下可用。Windows/Linux 上调用会返回 `PlatformNotSupportedException`。
+>
+> 平台后端实现位于 `Wails.Net.Application.Android.Mobile`：`AndroidBiometric` / `AndroidNfc` / `AndroidBarcodeScanner` / `AndroidHaptics` / `AndroidRuntimePlugin`，通过 `AndroidPlatformApp` 注入委托或读取 `Android.OS.Build` 等系统 API 完成实际调用。
 
 ## P1 新能力
 
@@ -337,6 +340,67 @@ app.Options.ShouldQuit   = () => true;  // 返回 false 可阻止退出
 ### 7. ContextMenu 行为对齐（P1-4）
 
 通过 `app.Options.EnableDefaultContextMenu` 控制默认右键菜单，与 Wails v3 行为对齐。
+
+## P2 新能力
+
+### 1. MenuRole 角色菜单项（P2-1）
+
+参考 Wails v3 `MenuRole` 常量与 Tauri v2 `PredefinedMenuItem` 工厂模式，新增 [MenuRole](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Menus/MenuRole.cs) 枚举（21 个值）和 [MenuRoleHelper](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Menus/MenuRoleHelper.cs) 跨平台共享逻辑：
+
+- **跨平台角色**：`Copy` / `Cut` / `Paste` / `SelectAll` / `Undo` / `Redo` / `Minimize` / `Maximize` / `Fullscreen` / `CloseWindow` / `Quit` / `About` / `Separator`
+- **macOS 专属角色**（其他平台静默 no-op）：`Hide` / `HideOthers` / `ShowAll` / `Services` / `BringAllToFront` / `Zoom` / `ToggleFullScreen`
+
+```csharp
+// 后端：构造标准编辑菜单
+var menu = new Menu("Edit");
+menu.AddStandardEditMenu();   // Undo/Redo/Sep/Cut/Copy/Paste/SelectAll
+
+// 前端：通过 MenuRole 常量与 menu.addRoleItem 添加
+await wails.menu.addRoleItem(parentId, wails.MenuRole.Copy);
+await wails.menu.addStandardEditMenu(parentId);
+await wails.menu.addStandardWindowMenu(parentId);
+await wails.menu.addStandardHelpMenu(parentId, { Name: "MyApp", Version: "1.0" });
+```
+
+平台实现：
+- **Windows** [Win32Menu.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Windows/Win32Menu.cs)：编辑命令通过 `WebView2.ExecuteScriptAsync("document.execCommand('copy')")` 作用于焦点元素；窗口命令委托 `IWebviewWindowImpl`；About 弹出 `DialogManager.ShowMessageDialog`；快捷键注册到 `KeyBindingManager`。
+- **Linux** [LinuxMenu.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Linux/LinuxMenu.cs)：编辑命令通过 WebKitGTK `EvaluateJavascriptAsync`；快捷键通过 `LinuxKeyBindingManager` 的 `ShortcutController`。
+- **Android**：无 `IMenuImpl` 实现，MenuRole 在 Android 上不可用。
+
+> 平台实现项目通过 `InternalsVisibleTo("Wails.Net.Application.Windows")` / `("Wails.Net.Application.Linux")` 访问 `MenuRoleHelper`（internal static class）。
+
+### 2. Android 平台事件系统（P2-2）
+
+[AndroidPlatformEvents](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/AndroidPlatformEvents.cs) 定义 12 个 Android 平台事件 ID（1267–1273, 1281–1285），并将其中 7 个映射到公共 `ApplicationEventType`：
+
+| Android 事件 | 值 | 公共事件 |
+|------|----|----|
+| `ActivityCreated` | 1267 | `Started` |
+| `ApplicationLowMemory` | 1273 | `LowMemory` |
+| `BatteryChanged` | 1281 | `BatteryChanged` |
+| `NetworkChanged` | 1282 | `NetworkChanged` |
+| `ThemeChanged` | 1283 | `ThemeChanged` |
+| `ScreenLocked` | 1284 | `ScreenLocked` |
+| `ScreenUnlocked` | 1285 | `ScreenUnlocked` |
+
+通过 `AndroidPlatformEvents.MapToCommonEvent(uint)` 将平台事件转换为公共事件，由 `AndroidPlatformApp.HandlePlatformEvent` 分发，前端可使用统一事件名跨平台订阅。
+
+### 3. Android 移动端插件平台实现（P2-3）
+
+5 个移动端插件的 Android 平台后端位于 [Wails.Net.Application.Android/Mobile](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/Mobile)：
+
+| 平台类 | 对应插件 | 底层 Android API |
+|------|------|------|
+| `AndroidBiometric` | `BiometricPlugin` | `BiometricManager`（API 29+）+ `BiometricPrompt`（API 28+） |
+| `AndroidNfc` | `NfcPlugin` | `NfcAdapter` + `Activity.OnNewIntent` |
+| `AndroidBarcodeScanner` | `BarcodeScannerPlugin` | `Intent.ActionGetContent` + 第三方扫描应用 |
+| `AndroidHaptics` | `HapticsPlugin` | `Vibrator`（API 26+ 用 `VibrationEffect`） |
+| `AndroidRuntimePlugin` | — | `Android.OS.Build` + `Toast.MakeText` |
+
+设计要点：
+- 通过委托注入解耦 Activity 生命周期：`AndroidPlatformApp` 在 Activity 可用时注入实际实现，单元测试环境使用默认 no-op 委托。
+- 非 Android 环境下所有方法降级为 no-op 或返回默认值，保证单元测试可在 Windows 上运行（`dotnet run --project tests/Wails.Net.Application.Android.Tests`）。
+- 平台兼容性使用 `OperatingSystem.IsAndroidVersionAtLeast(int)` 守卫，CA1416 分析器识别此模式不报警告。
 
 ## 使用内置插件
 

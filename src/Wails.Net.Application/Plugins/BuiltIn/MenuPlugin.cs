@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Wails.Net.Application.Commands;
 using Wails.Net.Application.Managers;
@@ -104,6 +105,53 @@ public class MenuPlugin : IPlugin
 
             ApplyMenuItemProperties(item, opts.Properties);
         }));
+
+        // === 角色菜单项（MenuRole，对应 Wails v3 / Tauri v2 PredefinedMenuItem）===
+        // menu.addRoleItem — 向指定父菜单追加一个角色菜单项，返回新菜单项 ID
+        commands.MapCommand("menu.addRoleItem", (Func<ICommandContext, MenuAddRoleItemOptions, string>)((ctx, opts) =>
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(opts.ParentId);
+            var manager = GetMenuManagerOrThrow(ctx);
+            var parent = FindMenuItemById(manager, opts.ParentId)
+                ?? throw new InvalidOperationException($"找不到 ID 为 '{opts.ParentId}' 的父菜单项");
+            var item = parent.AddRoleItem(opts.Role, opts.Label);
+            return item.ID.ToString(CultureInfo.InvariantCulture);
+        }));
+
+        // menu.addStandardEditMenu — 向指定父菜单追加标准编辑菜单项（Undo/Redo/Sep/Cut/Copy/Paste/SelectAll）
+        commands.MapCommand("menu.addStandardEditMenu", (Action<ICommandContext, MenuParentOptions>)((ctx, opts) =>
+        {
+            var parent = ResolveParentOrThrow(ctx, opts.ParentId);
+            parent.AddStandardEditMenu();
+        }));
+
+        // menu.addStandardWindowMenu — 向指定父菜单追加标准窗口菜单项（Minimize/Maximize/Sep/CloseWindow）
+        commands.MapCommand("menu.addStandardWindowMenu", (Action<ICommandContext, MenuParentOptions>)((ctx, opts) =>
+        {
+            var parent = ResolveParentOrThrow(ctx, opts.ParentId);
+            parent.AddStandardWindowMenu();
+        }));
+
+        // menu.addStandardHelpMenu — 向指定父菜单追加标准帮助菜单项（About）
+        commands.MapCommand("menu.addStandardHelpMenu", (Action<ICommandContext, MenuAddStandardHelpOptions>)((ctx, opts) =>
+        {
+            var parent = ResolveParentOrThrow(ctx, opts.ParentId);
+            parent.AddStandardHelpMenu(opts.Metadata, opts.Label);
+        }));
+    }
+
+    /// <summary>
+    /// 解析父菜单项。父菜单必须为应用菜单中的 MenuItem（可带子菜单）。
+    /// </summary>
+    /// <param name="ctx">命令上下文。</param>
+    /// <param name="parentId">父菜单项 ID（字符串形式的 <see cref="uint"/>）。</param>
+    /// <returns>父菜单实例。</returns>
+    private static Menu ResolveParentOrThrow(ICommandContext ctx, string parentId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(parentId);
+        var manager = GetMenuManagerOrThrow(ctx);
+        return FindMenuItemById(manager, parentId)
+            ?? throw new InvalidOperationException($"找不到 ID 为 '{parentId}' 的父菜单项");
     }
 
     /// <summary>
@@ -213,6 +261,11 @@ public class MenuPlugin : IPlugin
     /// <item><c>hidden</c> / <c>visible</c> — 设置可见性（部分平台支持）</item>
     /// <item><c>accelerator</c> — 设置快捷键</item>
     /// </list>
+    /// <para>
+    /// 值类型兼容性：前端经 JSON 通道传入的 <c>Dictionary&lt;string, object?&gt;</c>，
+    /// 其值会被 <see cref="JsonSerializer"/> 反序列化为 <see cref="JsonElement"/>。
+    /// 本方法同时处理原生 CLR 类型与 <see cref="JsonElement"/> 两种值形态。
+    /// </para>
     /// </summary>
     /// <param name="item">目标菜单项。</param>
     /// <param name="properties">属性字典。</param>
@@ -226,7 +279,7 @@ public class MenuPlugin : IPlugin
             {
                 case "label":
                 case "text":
-                    if (value is string label)
+                    if (TryGetString(value, out var label))
                     {
                         item.Label = label;
                         item.Impl?.SetLabel(label);
@@ -258,7 +311,7 @@ public class MenuPlugin : IPlugin
                     break;
 
                 case "accelerator":
-                    if (value is string accelerator)
+                    if (TryGetString(value, out var accelerator))
                     {
                         item.Accelerator = accelerator;
                         item.Impl?.SetAccelerator(accelerator);
@@ -282,8 +335,38 @@ public class MenuPlugin : IPlugin
     }
 
     /// <summary>
+    /// 尝试从字典值中提取字符串。
+    /// 兼容原生 <see cref="string"/> 与 <see cref="JsonElement"/>（前端 JSON 通道传入）两种形态。
+    /// </summary>
+    /// <param name="value">原始值。</param>
+    /// <param name="result">提取到的字符串；失败时为 null。</param>
+    /// <returns>是否成功提取到非 null 字符串。</returns>
+    private static bool TryGetString(object? value, out string result)
+    {
+        if (value is string s)
+        {
+            result = s;
+            return true;
+        }
+
+        if (value is JsonElement je && je.ValueKind == JsonValueKind.String)
+        {
+            var str = je.GetString();
+            if (str is not null)
+            {
+                result = str;
+                return true;
+            }
+        }
+
+        result = string.Empty;
+        return false;
+    }
+
+    /// <summary>
     /// 将字典中的任意值转换为布尔值。
     /// 支持 bool、string ("true"/"false")、数字（0=false，非零=true）。
+    /// 同时兼容 <see cref="JsonElement"/> 形态（前端 JSON 通道传入）。
     /// </summary>
     /// <param name="value">原始值。</param>
     /// <returns>转换后的布尔值；无法转换返回 null。</returns>
@@ -296,6 +379,25 @@ public class MenuPlugin : IPlugin
             int i => i != 0,
             long l => l != 0,
             double d => d != 0,
+            JsonElement je => ToBoolFromJsonElement(je),
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// 从 <see cref="JsonElement"/> 中提取布尔值。
+    /// 支持 True/False 字面量、字符串（"true"/"false"）、数字（0=false，非零=true）。
+    /// </summary>
+    /// <param name="je">JSON 元素。</param>
+    /// <returns>转换后的布尔值；无法转换返回 null。</returns>
+    private static bool? ToBoolFromJsonElement(JsonElement je)
+    {
+        return je.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.String when bool.TryParse(je.GetString(), out var b) => b,
+            JsonValueKind.Number => je.GetDouble() != 0,
             _ => null
         };
     }
@@ -350,4 +452,40 @@ public sealed class MenuPopupOptions
 
     /// <summary>透传到菜单项点击回调的额外数据，可为 null。</summary>
     public string? Data { get; set; }
+}
+
+/// <summary>menu.addRoleItem 命令参数。</summary>
+public sealed class MenuAddRoleItemOptions
+{
+    /// <summary>父菜单项 ID（字符串形式的 <see cref="uint"/>）。</summary>
+    public string ParentId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 要添加的角色。
+    /// 前端传字符串（如 "Copy"），由 System.Text.Json 反序列化为 <see cref="MenuRole"/> 枚举。
+    /// </summary>
+    public MenuRole Role { get; set; } = MenuRole.None;
+
+    /// <summary>标签文本，留空时由平台实现提供默认本地化文本。</summary>
+    public string? Label { get; set; }
+}
+
+/// <summary>menu.addStandardEditMenu / menu.addStandardWindowMenu 命令参数。</summary>
+public sealed class MenuParentOptions
+{
+    /// <summary>父菜单项 ID（字符串形式的 <see cref="uint"/>）。</summary>
+    public string ParentId { get; set; } = string.Empty;
+}
+
+/// <summary>menu.addStandardHelpMenu 命令参数。</summary>
+public sealed class MenuAddStandardHelpOptions
+{
+    /// <summary>父菜单项 ID（字符串形式的 <see cref="uint"/>）。</summary>
+    public string ParentId { get; set; } = string.Empty;
+
+    /// <summary>关于对话框元数据，可为 null。</summary>
+    public AboutMetadata? Metadata { get; set; }
+
+    /// <summary>标签文本，留空时使用默认文本。</summary>
+    public string? Label { get; set; }
 }

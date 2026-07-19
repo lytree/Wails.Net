@@ -39,7 +39,7 @@ public class UpdaterPlugin : IPlugin
 
         // 检查更新，返回包含版本和是否可用的 JSON 字符串。
         // 服务未注册或检查失败时返回 "{}"。
-        context.Commands.MapCommand("updater.check", (Func<ICommandContext, Task<string>>)(async ctx =>
+        context.Commands.MapCommandAsync("updater.check", (Func<ICommandContext, Task<string>>)(async ctx =>
         {
             var service = ctx.Services.GetService<UpdaterService>();
             if (service is null)
@@ -65,7 +65,7 @@ public class UpdaterPlugin : IPlugin
 
         // 下载更新包，返回下载文件的本地路径。
         // 服务未注册、无可用下载地址或下载失败时返回空字符串。
-        context.Commands.MapCommand("updater.download", (Func<ICommandContext, Task<string>>)(async ctx =>
+        context.Commands.MapCommandAsync("updater.download", (Func<ICommandContext, Task<string>>)(async ctx =>
         {
             var service = ctx.Services.GetService<UpdaterService>();
             if (service is null)
@@ -91,7 +91,7 @@ public class UpdaterPlugin : IPlugin
 
         // 安装指定路径的更新包。
         // 服务未注册或安装失败时静默忽略，避免中断命令调用链。
-        context.Commands.MapCommand("updater.install", (Func<ICommandContext, string, Task>)(async (ctx, archivePath) =>
+        context.Commands.MapCommandAsync("updater.install", (Func<ICommandContext, string, Task>)(async (ctx, archivePath) =>
         {
             var service = ctx.Services.GetService<UpdaterService>();
             if (service is null)
@@ -111,7 +111,7 @@ public class UpdaterPlugin : IPlugin
 
         // 检查并下载更新，返回包含版本、可用性和下载路径的 JSON 字符串。
         // 服务未注册或操作失败时返回 "{}"。
-        context.Commands.MapCommand("updater.checkAndDownload", (Func<ICommandContext, Task<string>>)(async ctx =>
+        context.Commands.MapCommandAsync("updater.checkAndDownload", (Func<ICommandContext, Task<string>>)(async ctx =>
         {
             var service = ctx.Services.GetService<UpdaterService>();
             if (service is null)
