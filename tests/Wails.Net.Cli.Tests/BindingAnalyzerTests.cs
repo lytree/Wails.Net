@@ -189,11 +189,10 @@ public sealed class BindingAnalyzerTests
     }
 
     [Test]
-    public async Task AnalyzeAssembly_ReturnsMethodsAcrossTypes()
+    public async Task AnalyzeMetadata_ReturnsMethodsAcrossTypes()
     {
         var analyzer = new BindingAnalyzer();
-        var assembly = typeof(BindingAnalyzerTests).Assembly;
-        var methods = analyzer.AnalyzeAssembly(assembly);
+        var methods = analyzer.AnalyzeMetadata();
 
         // 测试程序集中至少应包含本测试 fixture 引用的服务类型方法
         await Assert.That(methods.Count).IsGreaterThan(0);

@@ -325,9 +325,20 @@ public class MessageProcessor
             Dictionary<string, object?> result;
 
             // 优先按 ID 调用，其次按名称调用
+            // 按 ID 调用通过 GeneratedBindingsMetadata 查找 ID 对应的方法全名，
+            // 然后委托到按名称调用路径（源生成器生成的强类型调用器，零反射）。
             if (callPayload.Id is not null)
             {
-                result = await _bindings.Call(callPayload.Id.Value, args, callCts.Token);
+                var methodName = TryResolveMethodNameById(callPayload.Id.Value);
+                if (methodName is not null)
+                {
+                    result = await _bindings.Call(methodName, args, callCts.Token);
+                }
+                else
+                {
+                    return CreateErrorResponse(message.Id, $"未找到 ID 为 {callPayload.Id.Value} 的绑定方法",
+                        CallErrorKind.ReferenceError);
+                }
             }
             else if (!string.IsNullOrEmpty(callPayload.Name))
             {
@@ -368,6 +379,25 @@ public class MessageProcessor
             // 对应 Wails v3 messageprocessor_call.go 中的 defer delete(m.runningCalls, *callID)。
             _runningCalls.TryRemove(callId, out _);
         }
+    }
+
+    /// <summary>
+    /// 通过 FNV-1a 哈希 ID 查找对应的方法全名。
+    /// 在 <see cref="GeneratedBindingsMetadata.Methods"/> 中线性扫描，匹配 <see cref="BoundMethodInfo.Id"/>。
+    /// 数据由源生成器在编译期填充，运行时零反射（遵循 AGENTS.md §3.4）。
+    /// </summary>
+    /// <param name="id">FNV-1a 32 位哈希 ID。</param>
+    /// <returns>匹配的方法全名；未找到返回 null。</returns>
+    private static string? TryResolveMethodNameById(uint id)
+    {
+        foreach (var method in GeneratedBindingsMetadata.Methods)
+        {
+            if (method.Id == id)
+            {
+                return method.FullName;
+            }
+        }
+        return null;
     }
 
     /// <summary>
@@ -1063,7 +1093,8 @@ public class MessageProcessor
 
         object? result = queryPayload.Query switch
         {
-            "bindings" => _bindings.BoundMethods.Keys,
+            // 通过源生成器生成的元数据查询绑定方法名列表，零反射（遵循 AGENTS.md §3.4）。
+            "bindings" => _bindings.GetRegisteredMethodNames(),
             "events" => _events.ListenerCount(""), // 占位，实际可扩展
             _ => null
         };

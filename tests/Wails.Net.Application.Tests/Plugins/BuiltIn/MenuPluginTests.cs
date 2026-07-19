@@ -62,24 +62,10 @@ public sealed class MenuPluginTests
     }
 
     /// <summary>
-    /// 通过反射调用命令方法，解包 <see cref="TargetInvocationException"/>。
+    /// 调用编译期构建的强类型调用器（遵循 AGENTS.md §3.4 禁令，零反射）。
     /// </summary>
     private static object? InvokeCommand(CommandRegistry registry, string name, params object?[] args)
-    {
-        var entry = registry.Find(name);
-        if (entry is null)
-        {
-            throw new InvalidOperationException($"命令未找到: {name}");
-        }
-        try
-        {
-            return entry.Method.Invoke(entry.Instance, args);
-        }
-        catch (TargetInvocationException ex) when (ex.InnerException is not null)
-        {
-            throw ex.InnerException;
-        }
-    }
+        => CommandTestHelper.Invoke(registry, name, args);
 
     /// <summary>
     /// 创建新的 Application 实例（自动设置全局静态实例）并注入 MenuManager。
@@ -157,7 +143,10 @@ public sealed class MenuPluginTests
         InvokeCommand(context.Commands, "menu.setApplicationMenu", cmdCtx,
             new MenuApplicationMenuOptions { Menu = menu });
 
-        await Assert.That(menuManager.GetApplicationMenu()).IsSameReferenceAs(menu);
+        // JSON 往返会产生新实例，无法保持引用相等；按值校验 Label 与类型
+        var stored = menuManager.GetApplicationMenu();
+        await Assert.That(stored).IsNotNull();
+        await Assert.That(stored!.Label).IsEqualTo("AppMenu");
     }
 
     [Test]
@@ -188,7 +177,9 @@ public sealed class MenuPluginTests
             new MenuApplicationMenuOptions { Menu = menu });
         var result = InvokeCommand(context.Commands, "menu.getApplicationMenu", cmdCtx);
 
-        await Assert.That(result).IsSameReferenceAs(menu);
+        // JSON 往返会产生新实例，无法保持引用相等；按值校验 Label 与类型
+        await Assert.That(result).IsNotNull();
+        await Assert.That(((Menu)result!).Label).IsEqualTo("Cached");
     }
 
     // ---------------------------------------------------------------------
@@ -208,7 +199,10 @@ public sealed class MenuPluginTests
         InvokeCommand(context.Commands, "menu.setContextMenu", cmdCtx,
             new MenuContextMenuOptions { Id = "edit-menu", Menu = cm });
 
-        await Assert.That(menuManager.GetContextMenu("edit-menu")).IsSameReferenceAs(cm);
+        // JSON 往返会产生新实例，无法保持引用相等；验证类型正确保留为 ContextMenu
+        var stored = menuManager.GetContextMenu("edit-menu");
+        await Assert.That(stored).IsNotNull();
+        await Assert.That(stored).IsTypeOf<ContextMenu>();
     }
 
     [Test]
@@ -220,14 +214,18 @@ public sealed class MenuPluginTests
         var (_, menuManager) = CreateAppWithMenuManager();
         var cmdCtx = CreateCommandContext();
         var first = new ContextMenu();
-        var second = new ContextMenu();
+        var second = new ContextMenu { Label = "Second" };
 
         InvokeCommand(context.Commands, "menu.setContextMenu", cmdCtx,
             new MenuContextMenuOptions { Id = "id1", Menu = first });
         InvokeCommand(context.Commands, "menu.setContextMenu", cmdCtx,
             new MenuContextMenuOptions { Id = "id1", Menu = second });
 
-        await Assert.That(menuManager.GetContextMenu("id1")).IsSameReferenceAs(second);
+        // JSON 往返会产生新实例，无法保持引用相等；通过 Label 验证第二次调用覆盖了第一次
+        var stored = menuManager.GetContextMenu("id1");
+        await Assert.That(stored).IsNotNull();
+        await Assert.That(stored).IsTypeOf<ContextMenu>();
+        await Assert.That(stored!.Label).IsEqualTo("Second");
     }
 
     [Test]

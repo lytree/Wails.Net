@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Wails.Net.Application.Commands;
 using Wails.Net.Application.Managers;
@@ -260,6 +261,11 @@ public class MenuPlugin : IPlugin
     /// <item><c>hidden</c> / <c>visible</c> — 设置可见性（部分平台支持）</item>
     /// <item><c>accelerator</c> — 设置快捷键</item>
     /// </list>
+    /// <para>
+    /// 值类型兼容性：前端经 JSON 通道传入的 <c>Dictionary&lt;string, object?&gt;</c>，
+    /// 其值会被 <see cref="JsonSerializer"/> 反序列化为 <see cref="JsonElement"/>。
+    /// 本方法同时处理原生 CLR 类型与 <see cref="JsonElement"/> 两种值形态。
+    /// </para>
     /// </summary>
     /// <param name="item">目标菜单项。</param>
     /// <param name="properties">属性字典。</param>
@@ -273,7 +279,7 @@ public class MenuPlugin : IPlugin
             {
                 case "label":
                 case "text":
-                    if (value is string label)
+                    if (TryGetString(value, out var label))
                     {
                         item.Label = label;
                         item.Impl?.SetLabel(label);
@@ -305,7 +311,7 @@ public class MenuPlugin : IPlugin
                     break;
 
                 case "accelerator":
-                    if (value is string accelerator)
+                    if (TryGetString(value, out var accelerator))
                     {
                         item.Accelerator = accelerator;
                         item.Impl?.SetAccelerator(accelerator);
@@ -329,8 +335,38 @@ public class MenuPlugin : IPlugin
     }
 
     /// <summary>
+    /// 尝试从字典值中提取字符串。
+    /// 兼容原生 <see cref="string"/> 与 <see cref="JsonElement"/>（前端 JSON 通道传入）两种形态。
+    /// </summary>
+    /// <param name="value">原始值。</param>
+    /// <param name="result">提取到的字符串；失败时为 null。</param>
+    /// <returns>是否成功提取到非 null 字符串。</returns>
+    private static bool TryGetString(object? value, out string result)
+    {
+        if (value is string s)
+        {
+            result = s;
+            return true;
+        }
+
+        if (value is JsonElement je && je.ValueKind == JsonValueKind.String)
+        {
+            var str = je.GetString();
+            if (str is not null)
+            {
+                result = str;
+                return true;
+            }
+        }
+
+        result = string.Empty;
+        return false;
+    }
+
+    /// <summary>
     /// 将字典中的任意值转换为布尔值。
     /// 支持 bool、string ("true"/"false")、数字（0=false，非零=true）。
+    /// 同时兼容 <see cref="JsonElement"/> 形态（前端 JSON 通道传入）。
     /// </summary>
     /// <param name="value">原始值。</param>
     /// <returns>转换后的布尔值；无法转换返回 null。</returns>
@@ -343,6 +379,25 @@ public class MenuPlugin : IPlugin
             int i => i != 0,
             long l => l != 0,
             double d => d != 0,
+            JsonElement je => ToBoolFromJsonElement(je),
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// 从 <see cref="JsonElement"/> 中提取布尔值。
+    /// 支持 True/False 字面量、字符串（"true"/"false"）、数字（0=false，非零=true）。
+    /// </summary>
+    /// <param name="je">JSON 元素。</param>
+    /// <returns>转换后的布尔值；无法转换返回 null。</returns>
+    private static bool? ToBoolFromJsonElement(JsonElement je)
+    {
+        return je.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.String when bool.TryParse(je.GetString(), out var b) => b,
+            JsonValueKind.Number => je.GetDouble() != 0,
             _ => null
         };
     }

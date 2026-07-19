@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Reflection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -453,66 +452,6 @@ public sealed class PermissionManager
         if (origin.StartsWith("https://127.0.0.1", StringComparison.OrdinalIgnoreCase)) return true;
 
         return false;
-    }
-
-    /// <summary>
-    /// 校验命令方法是否有权限执行（全局）。
-    /// 等效于 <see cref="ValidateCommand(MethodInfo, string?)"/> 传入 <c>windowName=null</c>。
-    /// </summary>
-    /// <param name="method">要校验的方法信息。</param>
-    /// <returns>允许执行返回 true；权限不足返回 false。</returns>
-    public bool ValidateCommand(MethodInfo method) => ValidateCommand(method, windowName: null);
-
-    /// <summary>
-    /// 校验命令方法在指定窗口上下文中是否有权限执行。
-    /// 检查方法上的 <see cref="RequireCapabilityAttribute"/> 特性，
-    /// 所有标记的能力都必须已授权（全局或窗口级）才能执行。
-    /// </summary>
-    /// <param name="method">要校验的方法信息。</param>
-    /// <param name="windowName">当前调用来源窗口名；<c>null</c> 仅检查全局授权。</param>
-    /// <returns>允许执行返回 true；权限不足返回 false。</returns>
-    public bool ValidateCommand(MethodInfo method, string? windowName)
-    {
-        if (!_options.Enabled) return true;
-
-        var attrs = method.GetCustomAttributes<RequireCapabilityAttribute>();
-        foreach (var attr in attrs)
-        {
-            if (!IsGranted(attr.Capability, windowName))
-            {
-                _logger?.LogWarning("权限拒绝: 命令 {Method} 需要能力 {Capability}（窗口={Window}）",
-                    method.Name, attr.Capability, windowName ?? "未知");
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /// <summary>
-    /// 校验命令方法在指定窗口上下文和来源 URL 下是否有权限执行。
-    /// 同时检查 <see cref="RequireCapabilityAttribute"/> 标记的能力授权状态和
-    /// Capability.remote 远程 URL 限制。
-    /// </summary>
-    /// <param name="method">要校验的方法信息。</param>
-    /// <param name="windowName">当前调用来源窗口名；<c>null</c> 仅检查全局授权。</param>
-    /// <param name="origin">调用来源 URL；<c>null</c> 视为本地源。</param>
-    /// <returns>允许执行返回 true；权限不足或来源不允许返回 false。</returns>
-    public bool ValidateCommand(MethodInfo method, string? windowName, string? origin)
-    {
-        if (!_options.Enabled) return true;
-
-        var attrs = method.GetCustomAttributes<RequireCapabilityAttribute>();
-        foreach (var attr in attrs)
-        {
-            if (!IsGranted(attr.Capability, windowName, origin))
-            {
-                _logger?.LogWarning("权限拒绝: 命令 {Method} 需要能力 {Capability}（窗口={Window}，来源={Origin}）",
-                    method.Name, attr.Capability, windowName ?? "未知",
-                    string.IsNullOrEmpty(origin) ? "本地" : origin);
-                return false;
-            }
-        }
-        return true;
     }
 
     /// <summary>

@@ -1,13 +1,17 @@
 using System.CommandLine;
-using System.Reflection;
 using Wails.Net.Generator;
 
 namespace Wails.Net.Cli.Commands;
 
 /// <summary>
-/// generate 命令：从 C# 程序集生成 TypeScript 绑定文件。
+/// generate 命令：从源生成器元数据生成 TypeScript 绑定文件。
 /// 对应 Wails v3 Go 版本 cmd/wails3/generate.go。
 /// </summary>
+/// <remarks>
+/// 此实现使用 <see cref="GeneratedBindingsMetadata"/> 和 <see cref="Wails.Net.Events.GeneratedEventsMetadata"/>
+/// 中的编译期元数据，不再通过 <see cref="System.Reflection.Assembly.LoadFrom"/> 加载程序集进行运行时反射分析。
+/// 调用方需确保目标程序集已加载到当前进程（通过 <c>[ModuleInitializer]</c> 自动注册元数据）。
+/// </remarks>
 internal sealed class GenerateCommand : CliCommandBase
 {
     /// <summary>
@@ -16,29 +20,19 @@ internal sealed class GenerateCommand : CliCommandBase
     /// <returns>配置好的命令。</returns>
     public static Command Create()
     {
-        var assemblyOption = new Option<FileInfo?>("--assembly");
-        assemblyOption.Description = "要分析的 C# 程序集路径（.dll）";
-
         var outputOption = new Option<DirectoryInfo>("--output");
         outputOption.Description = "TypeScript 文件输出目录";
         outputOption.DefaultValueFactory = _ => new DirectoryInfo("bindings");
 
-        var eventsAssemblyOption = new Option<FileInfo?>("--events-assembly");
-        eventsAssemblyOption.Description = "包含事件枚举的程序集路径（默认与 --assembly 相同）";
-
-        var command = new Command("generate", "从 C# 程序集生成 TypeScript 绑定文件");
-        command.Options.Add(assemblyOption);
+        var command = new Command("generate", "从源生成器元数据生成 TypeScript 绑定文件");
         command.Options.Add(outputOption);
-        command.Options.Add(eventsAssemblyOption);
 
         command.Action = AsyncAction.Create(async (parseResult, _) =>
         {
-            var assembly = parseResult.GetValue(assemblyOption);
             var output = parseResult.GetValue(outputOption);
-            var eventsAssembly = parseResult.GetValue(eventsAssemblyOption);
 
             var cmd = new GenerateCommand();
-            return await cmd.ExecuteAsync(assembly, output!, eventsAssembly);
+            return await cmd.ExecuteAsync(output!);
         });
 
         return command;
@@ -47,27 +41,10 @@ internal sealed class GenerateCommand : CliCommandBase
     /// <summary>
     /// 执行 generate 命令。
     /// </summary>
-    /// <param name="assembly">要分析的主程序集。</param>
     /// <param name="outputDir">输出目录。</param>
-    /// <param name="eventsAssembly">事件枚举程序集（可空）。</param>
     /// <returns>退出码。</returns>
-    private async Task<int> ExecuteAsync(
-        FileInfo? assembly,
-        DirectoryInfo outputDir,
-        FileInfo? eventsAssembly)
+    private async Task<int> ExecuteAsync(DirectoryInfo outputDir)
     {
-        if (assembly is null || !assembly.Exists)
-        {
-            Error($"程序集文件不存在：{assembly?.FullName ?? "(未指定)"}");
-            return 1;
-        }
-
-        Info($"加载程序集：{assembly.FullName}");
-        var loaded = Assembly.LoadFrom(assembly.FullName);
-        var eventsLoaded = eventsAssembly is not null && eventsAssembly.Exists
-            ? Assembly.LoadFrom(eventsAssembly.FullName)
-            : loaded;
-
         var options = new BindingGenerationOptions
         {
             OutputDirectory = outputDir.FullName,
@@ -75,11 +52,12 @@ internal sealed class GenerateCommand : CliCommandBase
             GenerateCaller = true,
             GenerateIdMap = true,
             GenerateEvents = true,
+            GenerateKnownEvents = true,
         };
 
         Info($"输出目录：{outputDir.FullName}");
         var pipeline = new BindingGenerationPipeline();
-        var result = pipeline.GenerateToDisk(loaded, eventsLoaded, options);
+        var result = pipeline.GenerateToDisk(options);
 
         if (!result.Success)
         {
@@ -93,6 +71,6 @@ internal sealed class GenerateCommand : CliCommandBase
             Info($"  - {file}");
         }
 
-        return 0;
+        return await Task.FromResult(0);
     }
 }

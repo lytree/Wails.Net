@@ -9,6 +9,8 @@
     <IsPackable>true</IsPackable>
     <PackageId>Wails.Net.Application.Android</PackageId>
     <Description>Wails.Net Android 平台实现：.NET Android SDK + Android.Webkit.WebView。</Description>
+    <!-- 平台注册器使用 [ModuleInitializer] 实现自动注册（替代反射路径），CA2255 警告不适用 -->
+    <NoWarn>CA2255</NoWarn>
   </PropertyGroup>
 
   <!-- 标记整个程序集为 Android 平台特定，消除 CA1416 平台兼容性警告 -->

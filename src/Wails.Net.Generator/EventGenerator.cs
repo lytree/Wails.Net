@@ -1,20 +1,24 @@
-using System.Reflection;
 using System.Text;
+using Wails.Net.Events;
 
 namespace Wails.Net.Generator;
 
 /// <summary>
-/// 事件代码生成器，从 C# 事件枚举生成 TypeScript 事件常量。
+/// 事件代码生成器，从 <see cref="GeneratedEventsMetadata"/> 生成 TypeScript 事件常量。
 /// 对应 Wails v3 Go 版本 internal/generator/events.go。
 /// </summary>
+/// <remarks>
+/// 此实现完全基于源代码生成器在编译期填充的元数据，
+/// 不再使用 <see cref="System.Reflection"/> 进行运行时分析。
+/// 当目标程序集加载到进程时，其 <c>[ModuleInitializer]</c> 会自动注册元数据。
+/// </remarks>
 public class EventGenerator
 {
     /// <summary>
-    /// 从指定程序集中的事件枚举生成 TypeScript 事件常量文件。
+    /// 从 <see cref="GeneratedEventsMetadata.Enums"/> 生成 TypeScript 事件常量文件。
     /// </summary>
-    /// <param name="assembly">包含事件枚举的程序集。</param>
     /// <returns>TypeScript 事件常量文件内容。</returns>
-    public string GenerateFromAssembly(Assembly assembly)
+    public string GenerateFromMetadata()
     {
         var sb = new StringBuilder();
 
@@ -23,15 +27,14 @@ public class EventGenerator
         sb.AppendLine($"// 生成时间: {DateTime.UtcNow:O}");
         sb.AppendLine();
 
-        // 查找所有枚举类型
-        var enumTypes = assembly.GetExportedTypes()
-            .Where(t => t.IsEnum)
-            .OrderBy(t => t.FullName)
+        // 按全限定名排序，保证输出顺序稳定
+        var enums = GeneratedEventsMetadata.Enums
+            .OrderBy(e => e.FullName)
             .ToList();
 
-        foreach (var enumType in enumTypes)
+        foreach (var enumInfo in enums)
         {
-            GenerateEnum(sb, enumType);
+            GenerateEnum(sb, enumInfo);
             sb.AppendLine();
         }
 
@@ -39,23 +42,24 @@ public class EventGenerator
     }
 
     /// <summary>
-    /// 从指定枚举类型生成 TypeScript 枚举定义。
+    /// 从指定 <see cref="EventEnumInfo"/> 生成 TypeScript 枚举定义。
     /// </summary>
-    /// <param name="enumType">枚举类型。</param>
+    /// <param name="enumInfo">枚举元数据。</param>
     /// <returns>TypeScript 枚举定义文件内容。</returns>
-    public string GenerateFromEnum(Type enumType)
+    public string GenerateFromEnum(EventEnumInfo enumInfo)
     {
+        ArgumentNullException.ThrowIfNull(enumInfo);
+
         var sb = new StringBuilder();
-        GenerateEnum(sb, enumType);
+        GenerateEnum(sb, enumInfo);
         return sb.ToString();
     }
 
     /// <summary>
-    /// 从 KnownEvents 常量类生成事件名称常量。
+    /// 从 <see cref="GeneratedEventsMetadata.KnownEvents"/> 生成 KnownEvents 常量类对应的 TypeScript 文件。
     /// </summary>
-    /// <param name="knownEventsType">KnownEvents 类型。</param>
     /// <returns>TypeScript 事件名称常量文件内容。</returns>
-    public string GenerateKnownEvents(Type knownEventsType)
+    public string GenerateKnownEventsFromMetadata()
     {
         var sb = new StringBuilder();
 
@@ -64,22 +68,33 @@ public class EventGenerator
         sb.AppendLine($"// 生成时间: {DateTime.UtcNow:O}");
         sb.AppendLine();
 
-        sb.AppendLine($"export const {knownEventsType.Name} = {{");
+        // 按类名分组，每个 KnownEvents 类生成一个 const 对象
+        var groups = GeneratedEventsMetadata.KnownEvents
+            .GroupBy(f => f.ClassName)
+            .OrderBy(g => g.Key);
 
-        var fields = knownEventsType.GetFields(BindingFlags.Public | BindingFlags.Static)
-            .Where(f => f.IsLiteral && !f.IsInitOnly)
-            .OrderBy(f => f.Name);
-
-        foreach (var field in fields)
+        foreach (var group in groups)
         {
-            var value = field.GetValue(null)?.ToString() ?? string.Empty;
-            sb.AppendLine($"  {field.Name}: \"{value}\",");
+            GenerateKnownEventsClass(sb, group.Key, group.OrderBy(f => f.FieldName).ToList());
+            sb.AppendLine();
         }
 
-        sb.AppendLine("};");
-        sb.AppendLine();
-        sb.AppendLine($"export default {knownEventsType.Name};");
+        return sb.ToString();
+    }
 
+    /// <summary>
+    /// 从指定 <see cref="KnownEventFieldInfo"/> 列表生成 TypeScript 常量对象。
+    /// </summary>
+    /// <param name="className">常量类名。</param>
+    /// <param name="fields">字段列表。</param>
+    /// <returns>TypeScript 事件名称常量文件内容。</returns>
+    public string GenerateKnownEvents(string className, IReadOnlyList<KnownEventFieldInfo> fields)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(className);
+        ArgumentNullException.ThrowIfNull(fields);
+
+        var sb = new StringBuilder();
+        GenerateKnownEventsClass(sb, className, fields);
         return sb.ToString();
     }
 
@@ -87,23 +102,38 @@ public class EventGenerator
     /// 为单个枚举类型生成 TypeScript 枚举定义。
     /// </summary>
     /// <param name="sb">字符串构建器。</param>
-    /// <param name="enumType">枚举类型。</param>
-    private static void GenerateEnum(StringBuilder sb, Type enumType)
+    /// <param name="enumInfo">枚举元数据。</param>
+    private static void GenerateEnum(StringBuilder sb, EventEnumInfo enumInfo)
     {
-        var underlyingType = Enum.GetUnderlyingType(enumType);
+        sb.AppendLine($"export enum {enumInfo.Name} {{");
 
-        sb.AppendLine($"export enum {enumType.Name} {{");
-
-        var names = Enum.GetNames(enumType);
-        var values = Enum.GetValues(enumType);
-
-        for (var i = 0; i < names.Length; i++)
+        for (var i = 0; i < enumInfo.Members.Count; i++)
         {
-            var value = Convert.ChangeType(values.GetValue(i), underlyingType);
-            var comma = i < names.Length - 1 ? "," : string.Empty;
-            sb.AppendLine($"  {names[i]} = {value}{comma}");
+            var member = enumInfo.Members[i];
+            var comma = i < enumInfo.Members.Count - 1 ? "," : string.Empty;
+            sb.AppendLine($"  {member.Name} = {member.Value}{comma}");
         }
 
         sb.AppendLine("}");
+    }
+
+    /// <summary>
+    /// 为单个 KnownEvents 常量类生成 TypeScript const 对象。
+    /// </summary>
+    /// <param name="sb">字符串构建器。</param>
+    /// <param name="className">类名。</param>
+    /// <param name="fields">字段列表。</param>
+    private static void GenerateKnownEventsClass(StringBuilder sb, string className, IReadOnlyList<KnownEventFieldInfo> fields)
+    {
+        sb.AppendLine($"export const {className} = {{");
+
+        foreach (var field in fields)
+        {
+            sb.AppendLine($"  {field.FieldName}: \"{field.Value}\",");
+        }
+
+        sb.AppendLine("};");
+        sb.AppendLine();
+        sb.AppendLine($"export default {className};");
     }
 }

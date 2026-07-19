@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -345,18 +344,45 @@ public sealed class AndroidRuntimePluginTests
     }
 
     /// <summary>
-    /// 通过反射调用命令条目，解包 <see cref="TargetInvocationException"/>。
+    /// 调用编译期构建的强类型调用器（遵循 AGENTS.md §3.4 禁令，零反射）。
+    /// 自动从 args 中提取 <see cref="ICommandContext"/>（若存在），剩余参数包装为 JsonElement 后传给 Invoker。
     /// </summary>
     private static object? InvokeCommand(CommandRegistry.CommandEntry entry, params object?[] args)
     {
-        try
+        if (entry.Invoker is null)
         {
-            return entry.Method.Invoke(entry.Instance, args);
+            throw new InvalidOperationException($"命令 '{entry.Name}' 未注册调用器");
         }
-        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+
+        // 自动从 args 中提取 ICommandContext（若存在），剩余参数作为业务参数
+        ICommandContext? ctx = null;
+        var remainingArgs = new List<object?>();
+        foreach (var arg in args)
         {
-            throw ex.InnerException;
+            if (ctx is null && arg is ICommandContext c)
+            {
+                ctx = c;
+            }
+            else
+            {
+                remainingArgs.Add(arg);
+            }
         }
+
+        var parameters = ArgsToJsonElement(remainingArgs);
+        return entry.Invoker(entry.Instance, parameters, ctx).GetAwaiter().GetResult();
+    }
+
+    /// <summary>
+    /// 将参数列表序列化为 JsonElement。
+    /// 无参数时返回 default；单参数整体序列化；多参数序列化为 JSON 数组。
+    /// </summary>
+    private static JsonElement ArgsToJsonElement(IReadOnlyList<object?> args)
+    {
+        if (args is null || args.Count == 0) return default;
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        if (args.Count == 1) return JsonSerializer.SerializeToElement(args[0], options);
+        return JsonSerializer.SerializeToElement(args, options);
     }
 
     // ---------------------------------------------------------------------

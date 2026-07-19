@@ -1,4 +1,3 @@
-using System.Reflection;
 using TUnit.Assertions;
 using TUnit.Assertions.Extensions;
 using TUnit.Core;
@@ -11,6 +10,11 @@ namespace Wails.Net.Cli.Tests;
 /// 绑定代码生成管道单元测试。
 /// 验证统一生成入口、文件写入、选项开关和失败处理。
 /// </summary>
+/// <remarks>
+/// 此测试使用源生成器在测试程序集编译期填充的元数据
+/// （<see cref="GeneratedBindingsMetadata"/> 和 <see cref="Wails.Net.Events.GeneratedEventsMetadata"/>），
+/// 不再依赖运行时程序集加载和反射分析。
+/// </remarks>
 [NotInParallel]
 public sealed class BindingGenerationPipelineTests
 {
@@ -27,10 +31,7 @@ public sealed class BindingGenerationPipelineTests
             GenerateKnownEvents = false,
         };
 
-        var result = pipeline.Generate(
-            typeof(BindingGenerationPipelineTests).Assembly,
-            eventsAssembly: null,
-            options);
+        var result = pipeline.Generate(options);
 
         await Assert.That(result.Success).IsTrue();
         await Assert.That(result.GeneratedFiles).ContainsKey(options.DefinitionsFileName);
@@ -49,10 +50,7 @@ public sealed class BindingGenerationPipelineTests
             GenerateKnownEvents = false,
         };
 
-        var result = pipeline.Generate(
-            typeof(BindingGenerationPipelineTests).Assembly,
-            eventsAssembly: null,
-            options);
+        var result = pipeline.Generate(options);
 
         await Assert.That(result.Success).IsTrue();
         await Assert.That(result.GeneratedFiles).ContainsKey(options.CallerFileName);
@@ -72,10 +70,7 @@ public sealed class BindingGenerationPipelineTests
             GenerateKnownEvents = false,
         };
 
-        var result = pipeline.Generate(
-            typeof(BindingGenerationPipelineTests).Assembly,
-            eventsAssembly: null,
-            options);
+        var result = pipeline.Generate(options);
 
         await Assert.That(result.Success).IsTrue();
         await Assert.That(result.GeneratedFiles).ContainsKey(options.IdMapFileName);
@@ -94,10 +89,7 @@ public sealed class BindingGenerationPipelineTests
             GenerateKnownEvents = false,
         };
 
-        var result = pipeline.Generate(
-            typeof(BindingGenerationPipelineTests).Assembly,
-            eventsAssembly: null,
-            options);
+        var result = pipeline.Generate(options);
 
         await Assert.That(result.Success).IsTrue();
         await Assert.That(result.GeneratedFiles).ContainsKey(options.EventsFileName);
@@ -116,10 +108,7 @@ public sealed class BindingGenerationPipelineTests
             GenerateKnownEvents = false,
         };
 
-        var result = pipeline.Generate(
-            typeof(BindingGenerationPipelineTests).Assembly,
-            eventsAssembly: null,
-            options);
+        var result = pipeline.Generate(options);
 
         await Assert.That(result.Success).IsTrue();
         await Assert.That(result.MethodCount).IsGreaterThan(0);
@@ -143,10 +132,7 @@ public sealed class BindingGenerationPipelineTests
                 GenerateKnownEvents = false,
             };
 
-            var result = pipeline.GenerateToDisk(
-                typeof(BindingGenerationPipelineTests).Assembly,
-                eventsAssembly: null,
-                options);
+            var result = pipeline.GenerateToDisk(options);
 
             await Assert.That(result.Success).IsTrue();
             await Assert.That(Directory.Exists(tempDir)).IsTrue();
@@ -185,10 +171,7 @@ public sealed class BindingGenerationPipelineTests
                 GenerateKnownEvents = false,
             };
 
-            var result = pipeline.GenerateToDisk(
-                typeof(BindingGenerationPipelineTests).Assembly,
-                eventsAssembly: null,
-                options);
+            var result = pipeline.GenerateToDisk(options);
 
             await Assert.That(result.Success).IsTrue();
             await Assert.That(Directory.Exists(tempDir)).IsTrue();
@@ -249,7 +232,7 @@ public sealed class BindingGenerationPipelineTests
     [Test]
     public async Task Generate_FailureResult_PreservesErrorMessage()
     {
-        // 通过传入无效程序集触发异常路径
+        // 通过 GenerateFromInstances 传入 null 实例来触发 NullReferenceException
         var pipeline = new BindingGenerationPipeline();
         var options = new BindingGenerationOptions
         {
@@ -258,9 +241,6 @@ public sealed class BindingGenerationPipelineTests
             GenerateKnownEvents = false,
         };
 
-        // 使用一个会触发异常的场景：传入无法分析的类型
-        // 由于 Generate 内部 catch 了所有异常并返回 FailureResult，
-        // 我们通过 GenerateFromInstances 传入 null 实例来触发 NullReferenceException
         var result = pipeline.GenerateFromInstances(new object[] { null! }, options);
 
         await Assert.That(result.Success).IsFalse();

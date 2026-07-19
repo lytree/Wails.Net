@@ -1,8 +1,17 @@
+using System.Text.Json.Serialization;
+
 namespace Wails.Net.Application.Menus;
 
 /// <summary>
 /// 表示一个菜单，对应 Wails v3 中的 Menu。
+/// <para>
+/// 启用多态 JSON 序列化，确保派生类型（如 <see cref="ContextMenu"/>）在 JSON 往返后保留类型信息。
+/// 这是 <c>menu.setContextMenu</c> 等命令正确反序列化为 <see cref="ContextMenu"/> 而非基类 <see cref="Menu"/> 的前提。
+/// 默认配置下：未携带类型鉴别符时回退到基类 <see cref="Menu"/>（<see cref="JsonUnknownDerivedTypeHandling.FallBackToNearestAncestor"/>）。
+/// </para>
 /// </summary>
+[JsonPolymorphic(UnknownDerivedTypeHandling = JsonUnknownDerivedTypeHandling.FallBackToNearestAncestor)]
+[JsonDerivedType(typeof(ContextMenu), "contextMenu")]
 public class Menu
 {
     /// <summary>

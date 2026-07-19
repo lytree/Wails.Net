@@ -8,4 +8,11 @@
     <Description>Wails.Net 事件类型定义：ApplicationEventType、WindowEventType、CommonEvents、KnownEvents。</Description>
   </PropertyGroup>
 
+  <!-- 源代码生成器：扫描枚举和 KnownEvents 常量类生成元数据注册，替代反射 -->
+  <ItemGroup>
+    <ProjectReference Include="..\Wails.Net.SourceGenerators\Wails.Net.SourceGenerators.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
 </Project>

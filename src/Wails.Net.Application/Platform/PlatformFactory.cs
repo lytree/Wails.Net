@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using Wails.Net.Application.Clipboard;
@@ -15,6 +14,15 @@ namespace Wails.Net.Application.Platform;
 /// <para>
 /// 平台检测采用 6 级回退链，保证任何环境都能识别平台或降级到 Server 模式，
 /// 不再抛出 <see cref="PlatformNotSupportedException"/>。
+/// </para>
+/// <para>
+/// 实例化策略：
+/// <list type="bullet">
+/// <item>使用通过 <see cref="RegisterPlatformApp"/> 和 <see cref="RegisterClipboard"/>
+/// 手动注册的委托，运行时零反射，AOT 友好；</item>
+/// <item>若未注册委托，抛出 <see cref="InvalidOperationException"/>，提示平台项目通过
+/// <c>[ModuleInitializer]</c> 自动注册委托（遵循 AGENTS.md §3.4 禁止反射的约束）。</item>
+/// </list>
 /// </para>
 /// </summary>
 public static class PlatformFactory
@@ -60,10 +68,58 @@ public static class PlatformFactory
     };
 
     /// <summary>
+    /// 手动注册的平台应用创建委托（按平台名称索引）。
+    /// 由平台项目通过 [ModuleInitializer] 自动注册，避免运行时反射。
+    /// </summary>
+    private static readonly Dictionary<string, Func<ApplicationOptions, IPlatformApp>> _platformAppFactories = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 手动注册的剪贴板创建委托（按平台名称索引）。
+    /// 由平台项目通过 [ModuleInitializer] 自动注册，避免运行时反射。
+    /// </summary>
+    private static readonly Dictionary<string, Func<IClipboardImpl>> _clipboardFactories = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 注册平台应用创建委托。
+    /// 通常由平台项目（如 Wails.Net.Application.Windows）通过 <c>[ModuleInitializer]</c> 自动调用，
+    /// 避免运行时反射加载程序集。
+    /// </summary>
+    /// <param name="platformName">平台名称（windows/linux/android）。</param>
+    /// <param name="factory">创建 <see cref="IPlatformApp"/> 实例的委托。</param>
+    public static void RegisterPlatformApp(string platformName, Func<ApplicationOptions, IPlatformApp> factory)
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+        _platformAppFactories[platformName.ToLowerInvariant()] = factory;
+    }
+
+    /// <summary>
+    /// 注册剪贴板创建委托。
+    /// 通常由平台项目通过 <c>[ModuleInitializer]</c> 自动调用，避免运行时反射加载程序集。
+    /// </summary>
+    /// <param name="platformName">平台名称（windows/linux/android）。</param>
+    /// <param name="factory">创建 <see cref="IClipboardImpl"/> 实例的委托。</param>
+    public static void RegisterClipboard(string platformName, Func<IClipboardImpl> factory)
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+        _clipboardFactories[platformName.ToLowerInvariant()] = factory;
+    }
+
+    /// <summary>
+    /// 清除所有已注册的委托（仅用于测试）。
+    /// </summary>
+    internal static void ClearRegistrations()
+    {
+        _platformAppFactories.Clear();
+        _clipboardFactories.Clear();
+    }
+
+    /// <summary>
     /// 创建平台特定的应用实例。
     /// </summary>
     /// <param name="options">应用配置选项。</param>
     /// <returns>平台应用实例。若所有检测级别均未命中，降级到 <see cref="ServerPlatformApp"/>。</returns>
+    /// <exception cref="InvalidOperationException">当检测到平台但未通过 <see cref="RegisterPlatformApp"/>
+    /// 注册对应委托时抛出。平台项目应通过 <c>[ModuleInitializer]</c> 自动注册委托。</exception>
     public static IPlatformApp CreatePlatformApp(ApplicationOptions options)
     {
         // Level 1：Server 模式环境变量
@@ -82,11 +138,17 @@ public static class PlatformFactory
             return new ServerPlatformApp(options);
         }
 
-        return (IPlatformApp)CreatePlatformInstance(
-            platform,
-            assemblyName: $"Wails.Net.Application.{Capitalize(platform)}",
-            typeName: $"Wails.Net.Application.Platform.{Capitalize(platform)}PlatformApp",
-            args: [options]);
+        // 使用手动注册的委托（零反射路径，遵循 AGENTS.md §3.4）
+        if (_platformAppFactories.TryGetValue(platform, out var factory))
+        {
+            LogDebug($"[Manual] 使用手动注册的委托创建 {platform} 平台应用");
+            return factory(options);
+        }
+
+        // 未注册委托时抛出异常（遵循 AGENTS.md §3.4，禁止反射回退）
+        throw new InvalidOperationException(
+            $"平台 '{platform}' 未注册创建委托。请通过 PlatformFactory.RegisterPlatformApp(\"{platform}\", ...) 注册，" +
+            $"通常在 Wails.Net.Application.{Capitalize(platform)} 项目中通过 [ModuleInitializer] 自动调用。");
     }
 
     /// <summary>
@@ -115,6 +177,8 @@ public static class PlatformFactory
     /// 创建平台特定的剪贴板实现。
     /// </summary>
     /// <returns>剪贴板实现实例。若所有检测级别均未命中，降级到 <see cref="ServerClipboard"/>。</returns>
+    /// <exception cref="InvalidOperationException">当检测到平台但未通过 <see cref="RegisterClipboard"/>
+    /// 注册对应委托时抛出。平台项目应通过 <c>[ModuleInitializer]</c> 自动注册委托。</exception>
     public static IClipboardImpl CreateClipboard()
     {
         // Level 1：Server 模式
@@ -133,11 +197,17 @@ public static class PlatformFactory
             return new ServerClipboard();
         }
 
-        return (IClipboardImpl)CreatePlatformInstance(
-            platform,
-            assemblyName: $"Wails.Net.Application.{Capitalize(platform)}",
-            typeName: $"Wails.Net.Application.Clipboard.{Capitalize(platform)}Clipboard",
-            args: null);
+        // 使用手动注册的委托（零反射路径，遵循 AGENTS.md §3.4）
+        if (_clipboardFactories.TryGetValue(platform, out var factory))
+        {
+            LogDebug($"[Manual] 使用手动注册的委托创建 {platform} 剪贴板");
+            return factory();
+        }
+
+        // 未注册委托时抛出异常（遵循 AGENTS.md §3.4，禁止反射回退）
+        throw new InvalidOperationException(
+            $"平台 '{platform}' 未注册剪贴板创建委托。请通过 PlatformFactory.RegisterClipboard(\"{platform}\", ...) 注册，" +
+            $"通常在 Wails.Net.Application.{Capitalize(platform)} 项目中通过 [ModuleInitializer] 自动调用。");
     }
 
     /// <summary>
@@ -174,6 +244,7 @@ public static class PlatformFactory
         sb.AppendLine($"[Level 4] FriendlyName={AppDomain.CurrentDomain.FriendlyName}");
         sb.AppendLine($"[Level 5] ProcessName={GetSafeProcessName()}");
         sb.AppendLine($"[Level 6] Fallback=ServerPlatformApp");
+        sb.AppendLine($"[Manual] RegisteredPlatforms={string.Join(",", _platformAppFactories.Keys)}");
         return sb.ToString();
     }
 
@@ -269,27 +340,6 @@ public static class PlatformFactory
             LogDebug($"获取进程名称失败: {ex.Message}");
             return string.Empty;
         }
-    }
-
-    /// <summary>
-    /// 通过反射加载平台程序集并创建指定类型的实例。
-    /// </summary>
-    /// <param name="platform">平台名称（用于日志）。</param>
-    /// <param name="assemblyName">程序集名称。</param>
-    /// <param name="typeName">要实例化的类型全名。</param>
-    /// <param name="args">构造函数参数；为 null 时使用无参构造。</param>
-    /// <returns>平台实现实例。</returns>
-    /// <exception cref="PlatformNotSupportedException">当程序集或类型无法加载时抛出。</exception>
-    private static object CreatePlatformInstance(string platform, string assemblyName, string typeName, object[]? args)
-    {
-        LogDebug($"加载平台程序集: {assemblyName}");
-        var assembly = Assembly.Load(assemblyName);
-        var type = assembly.GetType(typeName)
-            ?? throw new PlatformNotSupportedException($"无法找到 {typeName} 类型");
-        LogDebug($"实例化平台类型: {typeName}");
-        return args is null
-            ? Activator.CreateInstance(type)!
-            : Activator.CreateInstance(type, args)!;
     }
 
     /// <summary>

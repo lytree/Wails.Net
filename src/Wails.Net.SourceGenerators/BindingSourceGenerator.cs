@@ -21,7 +21,31 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
     private sealed record MethodMarker(
         IMethodSymbol MethodSymbol,
         string AttributeName,
-        string? CustomName);
+        string? CustomName,
+        MethodMetadata Metadata);
+
+    /// <summary>
+    /// 方法的元数据信息（能力列表 + Scope 提取器描述），用于在生成代码时附加。
+    /// </summary>
+    private sealed record MethodMetadata(
+        IReadOnlyList<string> RequiredCapabilities,
+        IReadOnlyList<ScopeExtractorInfo> ScopeExtractors)
+    {
+        /// <summary>
+        /// 空元数据，用于无 [RequireCapability] 和 [ScopeParameter] 的方法。
+        /// </summary>
+        public static MethodMetadata Empty { get; } = new(
+            Array.Empty<string>(),
+            Array.Empty<ScopeExtractorInfo>());
+    }
+
+    /// <summary>
+    /// Scope 提取器的编译期描述，用于生成对应的提取器委托。
+    /// </summary>
+    private sealed record ScopeExtractorInfo(
+        string PermissionId,
+        string? JsonPropertyName,
+        string ParameterName);
 
     /// <summary>
     /// 初始化生成器，注册语法提供者。
@@ -38,7 +62,8 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
                 {
                     var methodSymbol = (IMethodSymbol)ctx.TargetSymbol;
                     var customName = ExtractNamedArgument(ctx.Attributes.FirstOrDefault(), "Name");
-                    return new MethodMarker(methodSymbol, "Binding", customName);
+                    var metadata = ExtractMetadata(methodSymbol);
+                    return new MethodMarker(methodSymbol, "Binding", customName, metadata);
                 })
             .Where(static m => m is not null)
             .Select(static (m, _) => m!);
@@ -53,7 +78,8 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
                     var methodSymbol = (IMethodSymbol)ctx.TargetSymbol;
                     // CommandAttribute 构造函数第一个参数为命令名
                     var customName = ExtractConstructorArgument(ctx.Attributes.FirstOrDefault(), 0);
-                    return new MethodMarker(methodSymbol, "Command", customName);
+                    var metadata = ExtractMetadata(methodSymbol);
+                    return new MethodMarker(methodSymbol, "Command", customName, metadata);
                 })
             .Where(static m => m is not null)
             .Select(static (m, _) => m!);
@@ -129,6 +155,72 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
     }
 
     /// <summary>
+    /// 从方法符号提取元数据：[RequireCapability] 能力列表 + [ScopeParameter] Scope 提取器。
+    /// 由源生成器在编译期完成，运行时不再需要反射读取特性。
+    /// </summary>
+    /// <param name="methodSymbol">方法符号。</param>
+    /// <returns>方法元数据，若方法无相关特性则返回 <see cref="MethodMetadata.Empty"/>。</returns>
+    private static MethodMetadata ExtractMetadata(IMethodSymbol methodSymbol)
+    {
+        var capabilities = new List<string>();
+        var scopeExtractors = new List<ScopeExtractorInfo>();
+
+        // 提取方法上的 [RequireCapability] 特性（AllowMultiple = true）
+        foreach (var attr in methodSymbol.GetAttributes())
+        {
+            var attrClass = attr.AttributeClass;
+            if (attrClass is null) continue;
+
+            var attrFullName = (attrClass.ContainingNamespace?.ToDisplayString() ?? "") + "." + attrClass.Name;
+            if (attrFullName == "Wails.Net.Application.Security.RequireCapabilityAttribute"
+                && attr.ConstructorArguments.Length > 0
+                && attr.ConstructorArguments[0].Value is string cap)
+            {
+                capabilities.Add(cap);
+            }
+        }
+
+        // 提取参数上的 [ScopeParameter] 特性
+        foreach (var param in methodSymbol.Parameters)
+        {
+            // 仅处理 string 类型参数（与运行时 ScopeParameterAttribute 一致）
+            if (param.Type.SpecialType != SpecialType.System_String) continue;
+
+            foreach (var attr in param.GetAttributes())
+            {
+                var attrClass = attr.AttributeClass;
+                if (attrClass is null) continue;
+
+                var attrFullName = (attrClass.ContainingNamespace?.ToDisplayString() ?? "") + "." + attrClass.Name;
+                if (attrFullName == "Wails.Net.Application.Security.ScopeParameterAttribute"
+                    && attr.ConstructorArguments.Length > 0
+                    && attr.ConstructorArguments[0].Value is string permissionId)
+                {
+                    // 提取可选的 JsonPropertyName 命名参数
+                    string? jsonPropertyName = null;
+                    foreach (var kv in attr.NamedArguments)
+                    {
+                        if (kv.Key == "JsonPropertyName" && kv.Value.Value is string s)
+                        {
+                            jsonPropertyName = s;
+                        }
+                    }
+
+                    var paramName = param.Name ?? "arg";
+                    scopeExtractors.Add(new ScopeExtractorInfo(permissionId, jsonPropertyName, paramName));
+                }
+            }
+        }
+
+        if (capabilities.Count == 0 && scopeExtractors.Count == 0)
+        {
+            return MethodMetadata.Empty;
+        }
+
+        return new MethodMetadata(capabilities, scopeExtractors);
+    }
+
+    /// <summary>
     /// 生成调用器类代码。
     /// </summary>
     private static string GenerateCode(List<MethodMarker> markers)
@@ -186,7 +278,8 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
             // 用于决定是否额外注册别名。
             methodInfos.Add(new MethodSymbolInfo(
                 methodSymbol, fullTypeName, typeName, methodName, namespaceName,
-                fullName, shortName, marker.CustomName, isCommand, invokerMethodName));
+                fullName, shortName, marker.CustomName, isCommand, invokerMethodName,
+                marker.Metadata));
         }
 
         if (methodInfos.Count == 0)
@@ -225,19 +318,13 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
                 ? $"{info.NamespaceName}.{info.TypeName}"
                 : info.TypeName;
 
-            // 全限定名注册
-            sb.AppendLine($"            GeneratedBindingRegistry.Register(");
-            sb.AppendLine($"                \"{EscapeString(info.FullName)}\",");
-            sb.AppendLine($"                {info.InvokerMethodName},");
-            sb.AppendLine($"                \"{EscapeString(typeFullNameStr)}\");");
+            // 全限定名注册（携带元数据）
+            AppendBindingRegistration(sb, info.FullName, info.InvokerMethodName, typeFullNameStr, info.Metadata);
 
             // 对于 [Binding] 特性的方法，同时注册短名称作为别名
             if (!info.IsCommand && info.ShortName != info.FullName)
             {
-                sb.AppendLine($"            GeneratedBindingRegistry.Register(");
-                sb.AppendLine($"                \"{EscapeString(info.ShortName)}\",");
-                sb.AppendLine($"                {info.InvokerMethodName},");
-                sb.AppendLine($"                \"{EscapeString(typeFullNameStr)}\");");
+                AppendBindingRegistration(sb, info.ShortName, info.InvokerMethodName, typeFullNameStr, info.Metadata);
             }
 
             // 对于 [Command] 特性的方法，命令名已与 fullName 相同（直接使用自定义名）。
@@ -245,10 +332,7 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
             // 同时注册 "ClassName.MethodName" 短名称作为别名。
             if (info.IsCommand && info.CustomName is not null && info.CustomName != info.ShortName)
             {
-                sb.AppendLine($"            GeneratedBindingRegistry.Register(");
-                sb.AppendLine($"                \"{EscapeString(info.ShortName)}\",");
-                sb.AppendLine($"                {info.InvokerMethodName},");
-                sb.AppendLine($"                \"{EscapeString(typeFullNameStr)}\");");
+                AppendBindingRegistration(sb, info.ShortName, info.InvokerMethodName, typeFullNameStr, info.Metadata);
             }
 
             // 对于 [Binding(Name = "custom.name")] 特性的方法，自定义名称与
@@ -258,10 +342,7 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
                 && info.CustomName != info.FullName
                 && info.CustomName != info.ShortName)
             {
-                sb.AppendLine($"            GeneratedBindingRegistry.Register(");
-                sb.AppendLine($"                \"{EscapeString(info.CustomName)}\",");
-                sb.AppendLine($"                {info.InvokerMethodName},");
-                sb.AppendLine($"                \"{EscapeString(typeFullNameStr)}\");");
+                AppendBindingRegistration(sb, info.CustomName, info.InvokerMethodName, typeFullNameStr, info.Metadata);
             }
 
             // 同步注册元数据（供 BindingAnalyzer / TypeScriptGenerator 使用，替代运行时反射分析）
@@ -274,6 +355,12 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
         foreach (var info in methodInfos)
         {
             GenerateInvokerMethod(sb, info);
+
+            // 若有 Scope 提取器，生成对应的提取器方法和委托数组字段
+            if (info.Metadata.ScopeExtractors.Count > 0)
+            {
+                GenerateScopeExtractorMethods(sb, info);
+            }
         }
 
         sb.AppendLine("    }");
@@ -580,6 +667,13 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
 
     /// <summary>
     /// 生成单个调用器方法。
+    /// 所有的调用器统一返回 <see cref="System.Threading.Tasks.Task{TResult}"/>（Result 类型为 <see cref="object"/>），
+    /// 调用方仅需 await 即可，无需运行时反射提取 <c>Task.Result</c>，遵循 AGENTS.md §3.4 禁令。
+    /// <para>
+    /// 同步方法（void 或返回值）：不使用 <c>async</c> 修饰，直接用 <see cref="System.Threading.Tasks.Task.FromResult{TResult}(TResult)"/> 包装，
+    /// 避免 CS1998 警告（async 方法缺少 await）。
+    /// 异步方法（Task / Task&lt;T&gt;）：使用 <c>async</c> 修饰并在内部 await。
+    /// </para>
     /// </summary>
     private static void GenerateInvokerMethod(StringBuilder sb, MethodSymbolInfo info)
     {
@@ -587,43 +681,59 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
         var returnType = methodSymbol.ReturnType;
         var isVoid = returnType.SpecialType == SpecialType.System_Void;
         var isTask = returnType.IsTaskReturnType();
+        var (isTaskWithResult, _) = TryGetTaskResultType(returnType);
+        var isAsync = isTask; // 仅异步方法使用 async 修饰
 
         sb.AppendLine();
         sb.AppendLine($"        /// <summary>");
         sb.AppendLine($"        /// 强类型调用器：{(info.IsCommand ? "命令" : "绑定")} {info.TypeName}.{info.MethodName}");
         sb.AppendLine($"        /// </summary>");
-        sb.AppendLine($"        public static object? {info.InvokerMethodName}(");
+        // async 仅对异步方法使用；同步方法返回 Task.FromResult 以避免 CS1998
+        var asyncModifier = isAsync ? "async " : "";
+        sb.AppendLine($"        public static {asyncModifier}System.Threading.Tasks.Task<object?> {info.InvokerMethodName}(");
         sb.AppendLine($"            object instance,");
         sb.AppendLine($"            JsonElement[] args,");
         sb.AppendLine($"            CancellationToken cancellationToken)");
         sb.AppendLine("        {");
+        sb.AppendLine($"            var svc = ({info.FullTypeName})instance;");
 
-        // 处理 void 实例方法（非异步）
-        if (isVoid && !isTask)
-        {
-            sb.AppendLine($"            var svc = ({info.FullTypeName})instance;");
-            GenerateArgumentsAndCall(sb, info, isVoid: true, isTask: false);
-        }
-        else if (isTask)
-        {
-            // 异步方法返回 Task 或 Task<T>
-            sb.AppendLine($"            var svc = ({info.FullTypeName})instance;");
-            GenerateArgumentsAndCall(sb, info, isVoid: false, isTask: true);
-        }
-        else
-        {
-            // 同步方法返回值类型
-            sb.AppendLine($"            var svc = ({info.FullTypeName})instance;");
-            GenerateArgumentsAndCall(sb, info, isVoid: false, isTask: false);
-        }
+        GenerateArgumentsAndCall(sb, info, isVoid, isTask, isTaskWithResult);
 
         sb.AppendLine("        }");
     }
 
     /// <summary>
+    /// 判断类型是否为 <c>Task&lt;T&gt;</c> 或 <c>ValueTask&lt;T&gt;</c>，并提取 T 的全限定类型字符串。
+    /// </summary>
+    /// <param name="returnType">方法的返回类型符号。</param>
+    /// <returns>
+    /// (<paramref name="isTaskWithResult"/>, <paramref name="taskResultType"/>) 二元组：
+    /// 若为 <c>Task&lt;T&gt;</c> 或 <c>ValueTask&lt;T&gt;</c>，则 <paramref name="isTaskWithResult"/> 为 true，
+    /// 且 <paramref name="taskResultType"/> 为 T 的全限定类型字符串；否则为 (false, null)。
+    /// </returns>
+    private static (bool isTaskWithResult, string? taskResultType) TryGetTaskResultType(ITypeSymbol returnType)
+    {
+        if (returnType is INamedTypeSymbol { IsGenericType: true } named)
+        {
+            var def = named.ConstructedFrom;
+            var defFullName = (def.ContainingNamespace?.ToDisplayString() ?? "") + "." + def.Name;
+            if (defFullName == "System.Threading.Tasks.Task" ||
+                defFullName == "System.Threading.Tasks.ValueTask")
+            {
+                // Task<T> 或 ValueTask<T>，提取 T 的全限定名
+                var t = named.TypeArguments[0];
+                return (true, t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
+            }
+        }
+        return (false, null);
+    }
+
+    /// <summary>
     /// 生成参数反序列化和方法调用代码。
     /// </summary>
-    private static void GenerateArgumentsAndCall(StringBuilder sb, MethodSymbolInfo info, bool isVoid, bool isTask)
+    private static void GenerateArgumentsAndCall(
+        StringBuilder sb, MethodSymbolInfo info,
+        bool isVoid, bool isTask, bool isTaskWithResult)
     {
         var methodSymbol = info.MethodSymbol;
         var parameters = methodSymbol.Parameters;
@@ -657,17 +767,28 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
 
         if (isVoid)
         {
+            // void 同步方法：调用后用 Task.FromResult 包装 null
             sb.AppendLine($"            {callExpr};");
-            sb.AppendLine("            return null;");
+            sb.AppendLine("            return System.Threading.Tasks.Task.FromResult<object?>(null);");
+        }
+        else if (isTask && isTaskWithResult)
+        {
+            // Task<T> / ValueTask<T>：直接 await 表达式，编译器在编译期已知 T 类型，
+            // return 时自动装箱为 object?（值类型）或直接返回（引用类型），无需运行时反射提取 Result。
+            sb.AppendLine($"            var result = await {callExpr}.ConfigureAwait(false);");
+            sb.AppendLine("            return result;");
         }
         else if (isTask)
         {
-            // 异步方法返回 Task 或 Task<T>，返回 Task 实例由调用方 await
-            sb.AppendLine($"            return {callExpr};");
+            // Task / ValueTask（无返回值）：await 后返回 null
+            sb.AppendLine($"            await {callExpr}.ConfigureAwait(false);");
+            sb.AppendLine("            return null;");
         }
         else
         {
-            sb.AppendLine($"            return {callExpr};");
+            // 同步方法返回值类型：用 Task.FromResult 包装返回值
+            sb.AppendLine($"            var result = {callExpr};");
+            sb.AppendLine("            return System.Threading.Tasks.Task.FromResult<object?>(result);");
         }
     }
 
@@ -684,7 +805,123 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
         string ShortName,
         string? CustomName,
         bool IsCommand,
-        string InvokerMethodName);
+        string InvokerMethodName,
+        MethodMetadata Metadata);
+
+    /// <summary>
+    /// 生成单个 GeneratedBindingRegistry.Register 调用，根据元数据决定使用哪个重载。
+    /// 若方法无 [RequireCapability] 和 [ScopeParameter] 特性，使用三参数重载（向后兼容）。
+    /// 若有任一特性，使用五参数重载，携带能力列表和 Scope 提取器列表。
+    /// </summary>
+    private static void AppendBindingRegistration(
+        StringBuilder sb,
+        string fullName,
+        string invokerMethodName,
+        string typeFullNameStr,
+        MethodMetadata metadata)
+    {
+        var hasCapabilities = metadata.RequiredCapabilities.Count > 0;
+        var hasScopeExtractors = metadata.ScopeExtractors.Count > 0;
+
+        if (!hasCapabilities && !hasScopeExtractors)
+        {
+            // 简单注册（无元数据）
+            sb.AppendLine($"            GeneratedBindingRegistry.Register(");
+            sb.AppendLine($"                \"{EscapeString(fullName)}\",");
+            sb.AppendLine($"                {invokerMethodName},");
+            sb.AppendLine($"                \"{EscapeString(typeFullNameStr)}\");");
+            return;
+        }
+
+        // 完整注册（携带元数据）
+        var scopeArrayName = hasScopeExtractors
+            ? $"{invokerMethodName}_ScopeExtractors"
+            : "null";
+
+        sb.AppendLine($"            GeneratedBindingRegistry.Register(");
+        sb.AppendLine($"                \"{EscapeString(fullName)}\",");
+        sb.AppendLine($"                {invokerMethodName},");
+        sb.AppendLine($"                \"{EscapeString(typeFullNameStr)}\",");
+        sb.Append($"                ");
+        if (hasCapabilities)
+        {
+            sb.Append($"new string[] {{ ");
+            for (var i = 0; i < metadata.RequiredCapabilities.Count; i++)
+            {
+                if (i > 0) sb.Append(", ");
+                sb.Append($"\"{EscapeString(metadata.RequiredCapabilities[i])}\"");
+            }
+            sb.Append(" }");
+        }
+        else
+        {
+            sb.Append("null");
+        }
+        sb.AppendLine(",");
+        sb.AppendLine($"                {scopeArrayName});");
+    }
+
+    /// <summary>
+    /// 为方法的每个 Scope 提取器生成委托数组和对应的提取器方法。
+    /// 提取器委托捕获参数的 JSON 字段值，与 (permissionId, value) 对返回。
+    /// </summary>
+    private static void GenerateScopeExtractorMethods(StringBuilder sb, MethodSymbolInfo info)
+    {
+        // 在调用器方法后生成 ScopeExtractor 委托数组字段
+        sb.AppendLine();
+        sb.AppendLine($"        private static readonly ScopeExtractor[] {info.InvokerMethodName}_ScopeExtractors = new ScopeExtractor[]");
+        sb.AppendLine("        {");
+        for (var i = 0; i < info.Metadata.ScopeExtractors.Count; i++)
+        {
+            var extractor = info.Metadata.ScopeExtractors[i];
+            var methodName = $"{info.InvokerMethodName}_ScopeExtractor_{i}";
+            sb.AppendLine($"            {methodName},");
+        }
+        sb.AppendLine("        };");
+
+        // 生成每个提取器方法
+        for (var i = 0; i < info.Metadata.ScopeExtractors.Count; i++)
+        {
+            var extractor = info.Metadata.ScopeExtractors[i];
+            var methodName = $"{info.InvokerMethodName}_ScopeExtractor_{i}";
+
+            // 默认 JSON 字段名：参数名的 camelCase 形式（与 CommandDispatcher.ToCamelCase 一致）
+            var propName = extractor.JsonPropertyName ?? ToCamelCase(extractor.ParameterName);
+
+            sb.AppendLine();
+            sb.AppendLine($"        /// <summary>");
+            sb.AppendLine($"        /// Scope 提取器：从 JSON 中读取 '{propName}' 字段，关联权限 '{extractor.PermissionId}'。");
+            sb.AppendLine($"        /// </summary>");
+            sb.AppendLine($"        private static (string PermissionId, string Value)? {methodName}(JsonElement parameters)");
+            sb.AppendLine("        {");
+            sb.AppendLine($"            if (parameters.ValueKind != JsonValueKind.Object)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                return null;");
+            sb.AppendLine("            }");
+            sb.AppendLine($"            if (!parameters.TryGetProperty(\"{EscapeString(propName)}\", out var prop))");
+            sb.AppendLine("            {");
+            sb.AppendLine("                return null;");
+            sb.AppendLine("            }");
+            sb.AppendLine($"            if (prop.ValueKind != JsonValueKind.String)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                return null;");
+            sb.AppendLine("            }");
+            sb.AppendLine($"            var value = prop.GetString();");
+            sb.AppendLine($"            if (string.IsNullOrEmpty(value))");
+            sb.AppendLine("            {");
+            sb.AppendLine("                return null;");
+            sb.AppendLine("            }");
+            sb.AppendLine($"            return (\"{EscapeString(extractor.PermissionId)}\", value);");
+            sb.AppendLine("        }");
+        }
+    }
+
+    /// <summary>
+    /// 将字符串首字母转为小写（camelCase）。
+    /// 与 CommandDispatcher.ToCamelCase 一致。
+    /// </summary>
+    private static string ToCamelCase(string s)
+        => string.IsNullOrEmpty(s) ? s : char.ToLowerInvariant(s[0]) + s[1..];
 
     /// <summary>
     /// MethodMarker 的去重比较器。

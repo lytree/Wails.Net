@@ -38,7 +38,7 @@ public class SqlPlugin : IPlugin
         context.Permissions.DeclarePermission("sql:allow-select", "允许执行 SQL 查询");
 
         // 执行非查询 SQL（INSERT/UPDATE/DELETE/DDL），返回受影响行数
-        context.Commands.MapCommand("sqlite.execute",
+        context.Commands.MapCommandAsync("sqlite.execute",
             (Func<ICommandContext, string, object[]?, Task<int>>)(async (ctx, sql, parameters) =>
         {
             var service = ctx.Services.GetService<SqliteService>();
@@ -58,7 +58,7 @@ public class SqlPlugin : IPlugin
         }));
 
         // 执行查询 SQL（SELECT），返回行列表
-        context.Commands.MapCommand("sqlite.query",
+        context.Commands.MapCommandAsync("sqlite.query",
             (Func<ICommandContext, string, object[]?, Task<string>>)(async (ctx, sql, parameters) =>
         {
             var service = ctx.Services.GetService<SqliteService>();
@@ -79,7 +79,7 @@ public class SqlPlugin : IPlugin
         }));
 
         // 执行标量查询，返回第一行第一列的值
-        context.Commands.MapCommand("sqlite.scalar",
+        context.Commands.MapCommandAsync("sqlite.scalar",
             (Func<ICommandContext, string, object[]?, Task<string>>)(async (ctx, sql, parameters) =>
         {
             var service = ctx.Services.GetService<SqliteService>();
@@ -100,7 +100,7 @@ public class SqlPlugin : IPlugin
         }));
 
         // 创建表
-        context.Commands.MapCommand("sqlite.createTable",
+        context.Commands.MapCommandAsync("sqlite.createTable",
             (Func<ICommandContext, string, string, Task<int>>)(async (ctx, tableName, columnsJson) =>
         {
             var service = ctx.Services.GetService<SqliteService>();
@@ -126,7 +126,7 @@ public class SqlPlugin : IPlugin
         }));
 
         // 删除表
-        context.Commands.MapCommand("sqlite.dropTable",
+        context.Commands.MapCommandAsync("sqlite.dropTable",
             (Func<ICommandContext, string, Task<int>>)(async (ctx, tableName) =>
         {
             var service = ctx.Services.GetService<SqliteService>();
@@ -146,7 +146,7 @@ public class SqlPlugin : IPlugin
         }));
 
         // 获取所有表名
-        context.Commands.MapCommand("sqlite.getTables",
+        context.Commands.MapCommandAsync("sqlite.getTables",
             (Func<ICommandContext, Task<string>>)(async ctx =>
         {
             var service = ctx.Services.GetService<SqliteService>();
@@ -167,7 +167,7 @@ public class SqlPlugin : IPlugin
         }));
 
         // 插入数据
-        context.Commands.MapCommand("sqlite.insert",
+        context.Commands.MapCommandAsync("sqlite.insert",
             (Func<ICommandContext, string, string, Task<int>>)(async (ctx, tableName, valuesJson) =>
         {
             var service = ctx.Services.GetService<SqliteService>();
@@ -193,7 +193,7 @@ public class SqlPlugin : IPlugin
         }));
 
         // 更新数据
-        context.Commands.MapCommand("sqlite.update",
+        context.Commands.MapCommandAsync("sqlite.update",
             (Func<ICommandContext, string, string, string, object[]?, Task<int>>)(async (ctx, tableName, valuesJson, whereClause, parameters) =>
         {
             var service = ctx.Services.GetService<SqliteService>();
@@ -219,7 +219,7 @@ public class SqlPlugin : IPlugin
         }));
 
         // 删除数据
-        context.Commands.MapCommand("sqlite.delete",
+        context.Commands.MapCommandAsync("sqlite.delete",
             (Func<ICommandContext, string, string, object[]?, Task<int>>)(async (ctx, tableName, whereClause, parameters) =>
         {
             var service = ctx.Services.GetService<SqliteService>();
@@ -239,7 +239,7 @@ public class SqlPlugin : IPlugin
         }));
 
         // 查询数据
-        context.Commands.MapCommand("sqlite.select",
+        context.Commands.MapCommandAsync("sqlite.select",
             (Func<ICommandContext, string, string?, string?, string?, int?, int?, object[]?, Task<string>>)(async (ctx, tableName, columnsJson, whereClause, orderBy, limit, offset, parameters) =>
         {
             var service = ctx.Services.GetService<SqliteService>();

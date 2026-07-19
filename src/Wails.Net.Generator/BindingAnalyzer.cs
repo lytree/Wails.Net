@@ -1,4 +1,3 @@
-using System.Reflection;
 using Wails.Net.Application.Bindings;
 using Wails.Net.Generator.Models;
 
@@ -16,16 +15,14 @@ namespace Wails.Net.Generator;
 public class BindingAnalyzer
 {
     /// <summary>
-    /// 分析指定程序集中所有可暴露给前端的绑定方法。
+    /// 分析从源生成器元数据中已注册的所有绑定方法。
     /// </summary>
-    /// <param name="assembly">要分析的程序集。程序集加载时其 <c>[ModuleInitializer]</c> 已注册元数据。</param>
     /// <returns>绑定方法模型列表。</returns>
     /// <remarks>
     /// 此方法返回 <see cref="GeneratedBindingsMetadata.Methods"/> 中已注册的所有方法。
-    /// 由于元数据由源生成器在编译期填充，运行时无法区分方法来自哪个程序集——
-    /// 实践中调用方一次只分析一个目标程序集，所有可访问的绑定方法均来自该程序集及其引用。
+    /// 由于元数据由源生成器在编译期填充，运行时无需 <see cref="System.Reflection.Assembly"/> 参数。
     /// </remarks>
-    public List<BoundMethodModel> AnalyzeAssembly(Assembly assembly)
+    public List<BoundMethodModel> AnalyzeMetadata()
     {
         return GeneratedBindingsMetadata.Methods.Select(ToModel).ToList();
     }
@@ -62,6 +59,8 @@ public class BindingAnalyzer
     /// <summary>
     /// 将 <see cref="BoundMethodInfo"/> 转换为 <see cref="BoundMethodModel"/>。
     /// </summary>
+    /// <param name="info">绑定方法元数据。</param>
+    /// <returns>绑定方法模型。</returns>
     private static BoundMethodModel ToModel(BoundMethodInfo info)
     {
         return new BoundMethodModel(

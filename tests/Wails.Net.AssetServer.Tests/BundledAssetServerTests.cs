@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text;
 using TUnit.Core;
 
@@ -6,92 +5,122 @@ namespace Wails.Net.AssetServer.Tests;
 
 /// <summary>
 /// BundledAssetServer 的单元测试（TUnit）。
-/// 覆盖嵌入资源读取、多程序集合并查找、AddAssembly 方法及路径规范化。
+/// 覆盖委托式资源读取、路径规范化及与 AssetServer 基类的组合行为。
 /// 对应 Wails v3 Go 版本 bundledassets 测试。
+/// <para>
+/// 遵循 AGENTS.md §3.4：不使用 System.Reflection.Assembly，资源由测试用字典 + 委托提供。
+/// </para>
 /// </summary>
 [NotInParallel]
 public sealed class BundledAssetServerTests
 {
     /// <summary>
-    /// 获取包含本测试程序集嵌入资源的程序集（用于测试）。
+    /// 默认测试根路径。
     /// </summary>
-    private static Assembly TestAssembly => typeof(BundledAssetServerTests).Assembly;
+    private const string DefaultRootPath = "Wails.Net.AssetServer.Tests";
+
+    /// <summary>
+    /// 创建测试用资源字典。
+    /// </summary>
+    private static Dictionary<string, byte[]> CreateTestResources() => new(StringComparer.Ordinal)
+    {
+        [$"{DefaultRootPath}.index.html"] = Encoding.UTF8.GetBytes("<html><body>Index</body></html>"),
+        [$"{DefaultRootPath}.styles.css"] = Encoding.UTF8.GetBytes("body { color: red; }"),
+        [$"{DefaultRootPath}.scripts.app.js"] = Encoding.UTF8.GetBytes("console.log('app');")
+    };
+
+    /// <summary>
+    /// 从字典创建资源读取委托。
+    /// </summary>
+    private static Func<string, byte[]?> CreateReader(Dictionary<string, byte[]> resources) =>
+        name => resources.TryGetValue(name, out var bytes) ? bytes : null;
+
+    /// <summary>
+    /// 使用默认资源字典创建 BundledAssetServer 实例。
+    /// </summary>
+    private static BundledAssetServer CreateServer(
+        Dictionary<string, byte[]>? resources = null,
+        string rootPath = DefaultRootPath)
+    {
+        resources ??= CreateTestResources();
+        return new BundledAssetServer(rootPath, CreateReader(resources), resources.Keys);
+    }
 
     // ========== 构造函数与属性测试 ==========
 
     [Test]
-    public async Task Constructor_SingleAssembly_SetsHandlerToBundled()
+    public async Task Constructor_ValidParameters_SetsHandlerToBundled()
     {
-        var server = new BundledAssetServer(TestAssembly);
+        var server = CreateServer();
         await Assert.That(server.Options.Handler).IsEqualTo("bundled");
     }
 
     [Test]
-    public async Task Constructor_SingleAssembly_RegistersAssembly()
+    public async Task Constructor_ValidParameters_SetsRootPath()
     {
-        var server = new BundledAssetServer(TestAssembly);
-        await Assert.That(server.Assemblies.Count).IsEqualTo(1);
-        await Assert.That(server.Assemblies[0]).IsEqualTo(TestAssembly);
+        var server = CreateServer();
+        await Assert.That(server.RootPath).IsEqualTo(DefaultRootPath);
     }
 
     [Test]
-    public async Task Constructor_MultipleAssemblies_RegistersAll()
+    public async Task Constructor_ValidParameters_RegistersResourceNames()
     {
-        var assemblies = new List<Assembly> { TestAssembly, typeof(object).Assembly };
-        var server = new BundledAssetServer(assemblies);
-        await Assert.That(server.Assemblies.Count).IsEqualTo(2);
+        var server = CreateServer();
+        await Assert.That(server.ResourceNames.Count).IsGreaterThan(0);
     }
 
     [Test]
-    public async Task Constructor_NullAssembly_ThrowsArgumentNullException()
+    public async Task Constructor_NullRootPath_ThrowsArgumentNullException()
     {
-        await Assert.That(() => new BundledAssetServer((Assembly)null!)).ThrowsExactly<ArgumentNullException>();
+        var resources = CreateTestResources();
+        await Assert.That(() => new BundledAssetServer(null!, CreateReader(resources), resources.Keys))
+            .ThrowsExactly<ArgumentNullException>();
     }
 
     [Test]
-    public async Task Constructor_NullAssemblies_ThrowsArgumentNullException()
+    public async Task Constructor_EmptyRootPath_ThrowsArgumentException()
     {
-        await Assert.That(() => new BundledAssetServer((IEnumerable<Assembly>)null!)).ThrowsExactly<ArgumentNullException>();
-    }
-
-    // ========== AddAssembly 测试 ==========
-
-    [Test]
-    public async Task AddAssembly_NewAssembly_AddsToList()
-    {
-        var server = new BundledAssetServer(TestAssembly);
-        server.AddAssembly(typeof(object).Assembly);
-
-        await Assert.That(server.Assemblies.Count).IsEqualTo(2);
+        var resources = CreateTestResources();
+        await Assert.That(() => new BundledAssetServer(string.Empty, CreateReader(resources), resources.Keys))
+            .ThrowsExactly<ArgumentException>();
     }
 
     [Test]
-    public async Task AddAssembly_DuplicateAssembly_DoesNotAddAgain()
+    public async Task Constructor_NullReader_ThrowsArgumentNullException()
     {
-        var server = new BundledAssetServer(TestAssembly);
-        server.AddAssembly(TestAssembly); // 重复添加
-
-        await Assert.That(server.Assemblies.Count).IsEqualTo(1);
+        await Assert.That(() => new BundledAssetServer(DefaultRootPath, null!))
+            .ThrowsExactly<ArgumentNullException>();
     }
 
     [Test]
-    public async Task AddAssembly_NullAssembly_ThrowsArgumentNullException()
+    public async Task Constructor_NullResourceNames_AllowsWildcardDisabled()
     {
-        var server = new BundledAssetServer(TestAssembly);
-        await Assert.That(() => server.AddAssembly(null!)).ThrowsExactly<ArgumentNullException>();
+        var resources = CreateTestResources();
+        var server = new BundledAssetServer(DefaultRootPath, CreateReader(resources), null);
+        await Assert.That(server.ResourceNames.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Constructor_WithSpaFallback_SetsOptions()
+    {
+        var server = CreateServer();
+        var spaServer = new BundledAssetServer(
+            DefaultRootPath,
+            CreateReader(CreateTestResources()),
+            CreateTestResources().Keys,
+            enableSpaFallback: true,
+            defaultDocument: "index.html");
+
+        await Assert.That(spaServer.Options.EnableSpaFallback).IsTrue();
+        await Assert.That(spaServer.Options.DefaultDocument).IsEqualTo("index.html");
     }
 
     // ========== ReadResource 测试 ==========
 
-    /// <summary>
-    /// 测试用的嵌入资源内容。
-    /// </summary>
-    private const string EmbeddedResourceContent = "embedded test resource content";
-
     [Test]
     public async Task ReadResource_EmptyPath_ReturnsNull()
     {
-        var server = new BundledAssetServer(TestAssembly);
+        var server = CreateServer();
         var result = server.ReadResource("");
 
         await Assert.That(result).IsNull();
@@ -100,7 +129,7 @@ public sealed class BundledAssetServerTests
     [Test]
     public async Task ReadResource_NullPath_ReturnsNull()
     {
-        var server = new BundledAssetServer(TestAssembly);
+        var server = CreateServer();
         var result = server.ReadResource(null!);
 
         await Assert.That(result).IsNull();
@@ -109,20 +138,30 @@ public sealed class BundledAssetServerTests
     [Test]
     public async Task ReadResource_MissingResource_ReturnsNull()
     {
-        var server = new BundledAssetServer(TestAssembly);
+        var server = CreateServer();
         var result = server.ReadResource("nonexistent.resource.txt");
 
         await Assert.That(result).IsNull();
     }
 
     [Test]
+    public async Task ReadResource_ExistingResource_ReturnsContent()
+    {
+        var server = CreateServer();
+        var result = server.ReadResource("index.html");
+
+        await Assert.That(result).IsNotNull();
+        await Assert.That(Encoding.UTF8.GetString(result!)).IsEqualTo("<html><body>Index</body></html>");
+    }
+
+    [Test]
     public async Task ReadResource_ResourceWithLeadingSlash_NormalizesAndReads()
     {
-        // 即使找不到资源，也应规范化路径不抛异常
-        var server = new BundledAssetServer(TestAssembly);
-        var result = server.ReadResource("/nonexistent.txt");
+        var server = CreateServer();
+        var result = server.ReadResource("/index.html");
 
-        await Assert.That(result).IsNull();
+        await Assert.That(result).IsNotNull();
+        await Assert.That(Encoding.UTF8.GetString(result!)).IsEqualTo("<html><body>Index</body></html>");
     }
 
     // ========== ServeAsync 测试 ==========
@@ -130,7 +169,7 @@ public sealed class BundledAssetServerTests
     [Test]
     public async Task ServeAsync_MissingEmbeddedResource_ReturnsEmptyArray()
     {
-        var server = new BundledAssetServer(TestAssembly);
+        var server = CreateServer();
         var result = await server.ServeAsync("/nonexistent.html");
 
         await Assert.That(result).IsEqualTo(Array.Empty<byte>());
@@ -139,8 +178,18 @@ public sealed class BundledAssetServerTests
     [Test]
     public async Task ServeAsync_EmptyPath_ThrowsArgumentException()
     {
-        var server = new BundledAssetServer(TestAssembly);
+        var server = CreateServer();
         await Assert.That(async () => await server.ServeAsync("")).ThrowsExactly<ArgumentException>();
+    }
+
+    [Test]
+    public async Task ServeAsync_ExistingResource_ReturnsContent()
+    {
+        var server = CreateServer();
+        var result = await server.ServeAsync("index.html");
+
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.Length).IsGreaterThan(0);
     }
 
     // ========== ReadResource 名称规范化测试 ==========
@@ -148,19 +197,21 @@ public sealed class BundledAssetServerTests
     [Test]
     public async Task ReadResource_PathWithBackslash_NormalizesToDot()
     {
-        // 路径中的 \ 应被替换为 .，且不抛异常
-        var server = new BundledAssetServer(TestAssembly);
-        var result = server.ReadResource("folder\\file.txt");
+        // 路径中的 \ 应被替换为 .，并能找到对应资源
+        var server = CreateServer();
+        var result = server.ReadResource("scripts\\app.js");
 
-        await Assert.That(result).IsNull();
+        await Assert.That(result).IsNotNull();
+        await Assert.That(Encoding.UTF8.GetString(result!)).IsEqualTo("console.log('app');");
     }
 
     [Test]
     public async Task ReadResource_PathWithForwardSlash_NormalizesToDot()
     {
-        var server = new BundledAssetServer(TestAssembly);
-        var result = server.ReadResource("folder/file.txt");
+        var server = CreateServer();
+        var result = server.ReadResource("scripts/app.js");
 
-        await Assert.That(result).IsNull();
+        await Assert.That(result).IsNotNull();
+        await Assert.That(Encoding.UTF8.GetString(result!)).IsEqualTo("console.log('app');");
     }
 }

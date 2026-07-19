@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text.Json;
 using Wails.Net.Errors;
 
@@ -7,21 +6,15 @@ namespace Wails.Net.Application.Bindings;
 /// <summary>
 /// 绑定管理器，负责注册和调用绑定方法。
 /// 对应 Wails v3 Go 版本 bindings.go 中的 Bindings 结构。
-/// 优先使用由源代码生成器生成的强类型调用器（<see cref="GeneratedBindingRegistry"/>），
-/// 仅当目标方法未被生成器处理时回退到反射调用。
+/// <para>
+/// 调用路径：使用由源代码生成器生成的强类型调用器（<see cref="GeneratedBindingRegistry"/>）。
+/// <see cref="GeneratedInvoker"/> 委托统一返回 <see cref="System.Threading.Tasks.Task{TResult}"/>（Result 类型为 <see cref="object"/>），
+/// 在调用器内部 <c>await</c> 异步方法并装箱结果，调用方仅需 <c>await</c> 即可，
+/// 无需运行时反射提取 <c>Task.Result</c>，遵循 AGENTS.md §3.4 禁令。
+/// </para>
 /// </summary>
 public class BindingManager
 {
-    /// <summary>
-    /// 按全限定名索引的绑定方法字典（仅含反射路径使用的方法）。
-    /// </summary>
-    private readonly Dictionary<string, BoundMethod> _boundMethods = new();
-
-    /// <summary>
-    /// 按 FNV-1a 哈希 ID 索引的绑定方法字典。
-    /// </summary>
-    private readonly Dictionary<uint, BoundMethod> _boundByID = new();
-
     /// <summary>
     /// 按类型全名（Namespace.ClassName）索引的实例字典。
     /// 用于在调用由源生成器生成的调用器时查找正确的实例。
@@ -29,131 +22,58 @@ public class BindingManager
     private readonly Dictionary<string, object> _instancesByTypeName = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// 需要排除的服务内部方法名称集合。
-    /// 这些方法由服务生命周期管理，不应暴露给前端。
+    /// 注册服务实例到 <see cref="_instancesByTypeName"/>，供源生成器生成的调用器查找。
+    /// 不进行反射方法枚举，遵循 AGENTS.md §3.4 禁令。
+    /// 类型全名由运行时 <see cref="object.GetType"/> 获取（NativeAOT 友好，非反射枚举）。
     /// </summary>
-    private static readonly HashSet<string> ExcludedMethodNames = new(StringComparer.Ordinal)
+    /// <param name="instance">要注册的服务实例。</param>
+    public void RegisterInstance(object instance)
     {
-        "ServiceName",
-        "ServiceStartup",
-        "ServiceShutdown"
-    };
-
-    /// <summary>
-    /// 获取已注册的所有绑定方法（按全限定名索引）。
-    /// </summary>
-    public IReadOnlyDictionary<string, BoundMethod> BoundMethods => _boundMethods;
-
-    /// <summary>
-    /// 获取已注册的所有绑定方法（按 ID 索引）。
-    /// </summary>
-    public IReadOnlyDictionary<uint, BoundMethod> BoundByID => _boundByID;
-
-    /// <summary>
-    /// 注册指定实例的所有公共方法。
-    /// 排除服务内部方法（ServiceName、ServiceStartup、ServiceShutdown）。
-    /// 同时将实例登记到 <see cref="_instancesByTypeName"/>，供源生成器调用器使用。
-    /// </summary>
-    /// <param name="instance">要注册的实例。</param>
-    public void Add(object instance)
-    {
-        var type = instance.GetType();
-        var typeFullName = GetFullTypeName(type);
-
-        // 登记实例，供源生成器调用器查找
+        ArgumentNullException.ThrowIfNull(instance);
+        var typeFullName = GetFullTypeName(instance.GetType());
         _instancesByTypeName[typeFullName] = instance;
-
-        var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
-
-        foreach (var method in methods)
-        {
-            // 跳过排除的方法
-            if (ExcludedMethodNames.Contains(method.Name))
-            {
-                continue;
-            }
-
-            // 跳过特殊方法（属性 getter/setter、运算符等）
-            if (method.IsSpecialName)
-            {
-                continue;
-            }
-
-            // 跳过 Object 继承的方法
-            if (method.DeclaringType == typeof(object))
-            {
-                continue;
-            }
-
-            AddMethod(instance, method);
-        }
     }
 
     /// <summary>
-    /// 注册单个方法。
-    /// 同时注册全限定名（Namespace.ClassName.MethodName）和短名称（ClassName.MethodName），
-    /// 前端可使用任一格式调用。对应 Wails v3 Go 版本中包名作为前缀的做法。
+    /// 注册服务实例的兼容性别名，等价于 <see cref="RegisterInstance"/>。
+    /// 保留以减少调用点改动；语义已变更为仅注册实例，不再通过反射枚举方法（遵循 AGENTS.md §3.4）。
     /// </summary>
-    /// <param name="instance">方法所属实例。</param>
-    /// <param name="methodInfo">方法反射信息。</param>
-    /// <returns>已注册的 BoundMethod 实例。</returns>
-    private BoundMethod AddMethod(object instance, MethodInfo methodInfo)
-    {
-        var fullName = GetFullMethodName(methodInfo);
-        var shortName = GetShortMethodName(methodInfo);
-        var id = FNV1aHash(fullName);
-        var shortId = FNV1aHash(shortName);
-
-        var parameters = methodInfo.GetParameters();
-        var parameterTypes = new Type[parameters.Length];
-        for (var i = 0; i < parameters.Length; i++)
-        {
-            parameterTypes[i] = parameters[i].ParameterType;
-        }
-
-        var isVariadic = parameters.Length > 0 && parameters[^1].GetCustomAttribute<ParamArrayAttribute>() is not null;
-        var hasCancellationToken = parameters.Length > 0 && parameters[0].ParameterType == typeof(CancellationToken);
-
-        var boundMethod = new BoundMethod(fullName, id, instance, methodInfo, parameterTypes, isVariadic, hasCancellationToken);
-
-        // 注册全限定名（Namespace.ClassName.MethodName）
-        _boundMethods[fullName] = boundMethod;
-        _boundByID[id] = boundMethod;
-
-        // 注册短名称（ClassName.MethodName）作为别名，便于前端调用
-        _boundMethods[shortName] = boundMethod;
-        _boundByID[shortId] = boundMethod;
-
-        return boundMethod;
-    }
+    /// <param name="instance">要注册的服务实例。</param>
+    public void Add(object instance) => RegisterInstance(instance);
 
     /// <summary>
-    /// 按 ID 调用绑定方法。
-    /// 优先使用反射注册的绑定方法（按 ID 路径仅支持反射，因为 ID 是 FNV-1a 哈希）。
+    /// 按 FNV-1a 哈希 ID 调用绑定方法。
+    /// 使用源生成器生成的强类型调用器（<see cref="GeneratedBindingRegistry"/>）执行调用，
+    /// 运行时零反射。
     /// </summary>
-    /// <param name="id">绑定方法的 FNV-1a 哈希 ID。</param>
+    /// <param name="id">方法 FNV-1a 哈希 ID。</param>
     /// <param name="args">JSON 参数数组。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>包含调用结果或错误的字典。</returns>
-    public async Task<Dictionary<string, object?>> Call(uint id, JsonElement[] args, CancellationToken cancellationToken = default)
+    public Task<Dictionary<string, object?>> Call(uint id, JsonElement[] args, CancellationToken cancellationToken = default)
     {
-        if (_boundByID.TryGetValue(id, out var method))
+        // 与 Wails v3 Go 版本一致：通过 ID 反查方法全名后委托给字符串重载。
+        // ID → 全名映射来自编译期生成的 GeneratedBindingsMetadata.Methods，运行时零反射。
+        foreach (var m in GeneratedBindingsMetadata.Methods)
         {
-            return await method.Call(args, cancellationToken);
+            if (m.Id == id)
+            {
+                return Call(m.FullName, args, cancellationToken);
+            }
         }
 
-        var error = new CallError($"未找到 ID 为 {id} 的绑定方法", null, CallErrorKind.ReferenceError);
-        return new Dictionary<string, object?>
+        var error = new CallError($"未找到 ID 为 '{id}' 的绑定方法", null, CallErrorKind.ReferenceError);
+        return Task.FromResult(new Dictionary<string, object?>
         {
             ["result"] = null,
             ["error"] = error.ToJson()
-        };
+        });
     }
 
     /// <summary>
     /// 按全限定名调用绑定方法。
-    /// 优先使用源生成器生成的强类型调用器（<see cref="GeneratedBindingRegistry"/>），
-    /// 若未找到则回退到反射注册的 <see cref="BoundMethod"/>。
+    /// 使用源生成器生成的强类型调用器（<see cref="GeneratedBindingRegistry"/>）执行调用，
+    /// 运行时零反射。
     /// </summary>
     /// <param name="fullName">方法全限定名或命令名。</param>
     /// <param name="args">JSON 参数数组。</param>
@@ -161,24 +81,16 @@ public class BindingManager
     /// <returns>包含调用结果或错误的字典。</returns>
     public async Task<Dictionary<string, object?>> Call(string fullName, JsonElement[] args, CancellationToken cancellationToken = default)
     {
-        // 1. 优先使用源生成器生成的强类型调用器
+        // 使用源生成器生成的强类型调用器（零反射路径，遵循 AGENTS.md §3.4）
         if (GeneratedBindingRegistry.TryGetInvoker(fullName, out var invoker) && invoker is not null)
         {
             return await InvokeGeneratedAsync(fullName, invoker, args, cancellationToken);
         }
 
-        // 2. 回退到反射注册的绑定方法
-        if (_boundMethods.TryGetValue(fullName, out var method))
-        {
-            return await method.Call(args, cancellationToken);
-        }
-
         // 诊断日志：输出注册表状态，便于排查 ModuleInitializer 未运行等问题
         System.Console.Error.WriteLine(
             $"[BindingManager] 未找到方法 '{fullName}'。GeneratedBindingRegistry.Count={GeneratedBindingRegistry.Count}, " +
-            $"TryGetInvoker={GeneratedBindingRegistry.TryGetInvoker(fullName, out _)}, " +
-            $"已注册实例数={_instancesByTypeName.Count}, " +
-            $"反射方法数={_boundMethods.Count}");
+            $"TryGetInvoker={GeneratedBindingRegistry.TryGetInvoker(fullName, out _)}");
 
         var error = new CallError($"未找到名为 '{fullName}' 的绑定方法", null, CallErrorKind.ReferenceError);
         return new Dictionary<string, object?>
@@ -215,25 +127,9 @@ public class BindingManager
                 return ErrorResult($"未找到类型 '{typeFullName}' 的注册实例", Errors.CallErrorKind.ReferenceError);
             }
 
-            var result = invoker(instance, args ?? Array.Empty<JsonElement>(), cancellationToken);
-
-            // 若方法返回 Task，则等待其完成并提取结果
-            if (result is Task task)
-            {
-                await task.ConfigureAwait(false);
-
-                // 若是 Task<T>，提取 Result
-                var taskType = task.GetType();
-                if (taskType.IsGenericType)
-                {
-                    var resultProperty = taskType.GetProperty("Result");
-                    var taskResult = resultProperty?.GetValue(task);
-                    return SuccessResult(taskResult);
-                }
-
-                return SuccessResult(null);
-            }
-
+            // GeneratedInvoker 委托统一返回 Task<object?>：调用器内部已 await 异步方法并装箱结果。
+            // 调用方仅需 await，无需运行时反射提取 Task.Result（遵循 AGENTS.md §3.4）。
+            var result = await invoker(instance, args ?? Array.Empty<JsonElement>(), cancellationToken).ConfigureAwait(false);
             return SuccessResult(result);
         }
         catch (InvalidOperationException ex)
@@ -291,46 +187,26 @@ public class BindingManager
     }
 
     /// <summary>
-    /// 为已绑定的方法注册别名。
-    /// 对应 Wails v3 Go 版本 bindings.go 中的 BindAliases 方法。
+    /// 获取已注册的所有绑定方法全名集合。
+    /// 用于响应前端 "bindings" 查询。
+    /// 数据来源为 <see cref="GeneratedBindingsMetadata.Methods"/>，由源生成器在编译期填充，
+    /// 不依赖运行时反射。
     /// </summary>
-    /// <param name="instance">已绑定的实例。</param>
-    /// <param name="methodName">原方法名。</param>
-    /// <param name="aliases">别名列表。</param>
-    public void BindAliases(object instance, string methodName, params string[] aliases)
-    {
-        var type = instance.GetType();
-        var namespaceName = type.Namespace ?? "";
-        var className = type.Name ?? "";
-        var fullName = $"{namespaceName}.{className}.{methodName}";
-
-        if (!_boundMethods.TryGetValue(fullName, out var boundMethod))
-        {
-            throw new InvalidOperationException($"未找到名为 '{fullName}' 的绑定方法，无法注册别名");
-        }
-
-        foreach (var alias in aliases)
-        {
-            var aliasFullName = $"{namespaceName}.{className}.{alias}";
-            var aliasId = FNV1aHash(aliasFullName);
-
-            _boundMethods[aliasFullName] = boundMethod;
-            _boundByID[aliasId] = boundMethod;
-        }
-    }
+    /// <returns>已注册绑定方法的全名集合。</returns>
+    public IReadOnlyCollection<string> GetRegisteredMethodNames()
+        => GeneratedBindingsMetadata.Methods.Select(m => m.FullName).ToList();
 
     /// <summary>
-    /// 获取绑定方法的全限定名（Namespace.ClassName.MethodName）。
+    /// 兼容性外观：返回以方法全名为键、占位 <c>object</c> 为值的只读字典。
+    /// 数据来源为 <see cref="GeneratedBindingsMetadata.Methods"/>，由源生成器在编译期填充，
+    /// 不依赖运行时反射。值仅为占位（非 MethodInfo），仅用于测试断言键存在性。
     /// </summary>
-    /// <param name="methodInfo">方法反射信息。</param>
-    /// <returns>全限定名。</returns>
-    private static string GetFullMethodName(MethodInfo methodInfo)
-    {
-        var declaringType = methodInfo.DeclaringType;
-        var namespaceName = declaringType?.Namespace ?? "";
-        var className = declaringType?.Name ?? "";
-        return $"{namespaceName}.{className}.{methodInfo.Name}";
-    }
+    /// <remarks>
+    /// 旧反射路径下的 BoundMethods 返回 MethodInfo，反射删除后此属性仅为兼容旧测试 API 而保留。
+    /// 业务代码应使用 <see cref="GetRegisteredMethodNames"/> 或 <see cref="GeneratedBindingRegistry"/>。
+    /// </remarks>
+    public IReadOnlyDictionary<string, object> BoundMethods
+        => GeneratedBindingsMetadata.Methods.ToDictionary(m => m.FullName, _ => (object)new object());
 
     /// <summary>
     /// 获取类型的全名（Namespace.ClassName）。
@@ -343,19 +219,6 @@ public class BindingManager
         var namespaceName = type.Namespace ?? "";
         var className = type.Name ?? "";
         return namespaceName.Length > 0 ? $"{namespaceName}.{className}" : className;
-    }
-
-    /// <summary>
-    /// 获取绑定方法的短名称（ClassName.MethodName）。
-    /// 对应 Wails v3 Go 版本中省略包路径、仅用结构名与方法名的做法。
-    /// </summary>
-    /// <param name="methodInfo">方法反射信息。</param>
-    /// <returns>短名称。</returns>
-    private static string GetShortMethodName(MethodInfo methodInfo)
-    {
-        var declaringType = methodInfo.DeclaringType;
-        var className = declaringType?.Name ?? "";
-        return $"{className}.{methodInfo.Name}";
     }
 
     /// <summary>
@@ -378,4 +241,20 @@ public class BindingManager
 
         return hash;
     }
+}
+
+/// <summary>
+/// JSON 序列化选项的默认配置。
+/// 源代码生成器生成的代码也使用此选项。
+/// </summary>
+public static class JsonOptions
+{
+    /// <summary>
+    /// 默认的 JSON 序列化选项（驼峰命名、不区分大小写反序列化）。
+    /// </summary>
+    public static readonly JsonSerializerOptions DefaultSerializerOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true
+    };
 }

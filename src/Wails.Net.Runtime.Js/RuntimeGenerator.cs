@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text;
 using System.Text.Json;
 
@@ -20,6 +19,11 @@ public static class RuntimeGenerator
     /// 传输层模板嵌入资源的文件名。
     /// </summary>
     private const string TransportTemplateFileName = "transport.template.js";
+
+    /// <summary>
+    /// 桌面运行时模板嵌入资源的文件名。
+    /// </summary>
+    private const string DesktopTemplateFileName = "desktop.template.js";
 
     /// <summary>
     /// 生成完整的运行时 JavaScript 代码。
@@ -818,31 +822,25 @@ public static class RuntimeGenerator
     }
 
     /// <summary>
-    /// 从程序集嵌入资源中加载指定模板并替换占位符。
+    /// 从编译期生成的模板常量加载指定模板并替换占位符。
     /// </summary>
-    /// <param name="templateFileName">模板文件名（用于在嵌入资源中按后缀匹配查找）。</param>
+    /// <param name="templateFileName">模板文件名（用于查找匹配的常量）。</param>
     /// <param name="options">运行时生成选项，用于占位符替换。</param>
     /// <returns>替换占位符后的模板内容。</returns>
-    /// <exception cref="InvalidOperationException">指定的嵌入资源未找到或无法读取。</exception>
+    /// <exception cref="InvalidOperationException">指定的模板未找到。</exception>
+    /// <remarks>
+    /// 遵循 AGENTS.md §3.4：不使用 <c>Assembly.GetManifestResourceStream</c> 反射调用。
+    /// 模板内容在编译期由 MSBuild GenerateJsTemplates 目标生成为 <see cref="JsTemplates"/> 静态常量。
+    /// </remarks>
     internal static string LoadTemplate(string templateFileName, RuntimeOptions options)
     {
-        var assembly = typeof(RuntimeGenerator).Assembly;
-        var resourceName = assembly.GetManifestResourceNames()
-            .FirstOrDefault(n => n.EndsWith(templateFileName, StringComparison.Ordinal));
-
-        if (resourceName is null)
+        var template = templateFileName switch
         {
-            throw new InvalidOperationException($"嵌入资源 '{templateFileName}' 未找到。");
-        }
-
-        using var stream = assembly.GetManifestResourceStream(resourceName);
-        if (stream is null)
-        {
-            throw new InvalidOperationException($"无法读取嵌入资源 '{resourceName}'。");
-        }
-
-        using var reader = new StreamReader(stream, Encoding.UTF8);
-        var template = reader.ReadToEnd();
+            TransportTemplateFileName => JsTemplates.Transport,
+            RuntimeTemplateFileName => JsTemplates.Runtime,
+            DesktopTemplateFileName => JsTemplates.Desktop,
+            _ => throw new InvalidOperationException($"模板 '{templateFileName}' 未找到。")
+        };
         return ReplacePlaceholders(template, options);
     }
 

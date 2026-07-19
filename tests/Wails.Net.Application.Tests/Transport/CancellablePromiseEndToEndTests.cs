@@ -21,8 +21,9 @@ public sealed class CancellablePromiseEndToEndTests
 {
     /// <summary>
     /// 测试用服务：模拟长操作与同步检查点，便于验证取消信号传递。
+    /// 必须为 public 以便源生成器生成调用器代码。
     /// </summary>
-    private sealed class CancellableLongRunner
+    public sealed class CancellableLongRunner
     {
         /// <summary>
         /// 收到取消信号的次数计数器（线程安全）。
@@ -40,6 +41,7 @@ public sealed class CancellablePromiseEndToEndTests
         /// <summary>
         /// 长操作：等待取消信号或超时。被取消时抛 OperationCanceledException。
         /// </summary>
+        [Binding]
         public async Task<string> LongRunning(CancellationToken cancellationToken)
         {
             try
@@ -58,11 +60,13 @@ public sealed class CancellablePromiseEndToEndTests
         /// <summary>
         /// 立即完成的方法。
         /// </summary>
+        [Binding]
         public string Quick() => "quick-result";
 
         /// <summary>
         /// 接收参数的方法，用于验证取消路径不影响后续调用的参数解析。
         /// </summary>
+        [Binding]
         public string Echo(string input) => input;
     }
 
@@ -91,8 +95,13 @@ public sealed class CancellablePromiseEndToEndTests
         return JsonSerializer.Serialize(msg, JsonOptions.DefaultSerializerOptions);
     }
 
-    private static string GetMethodName(BindingManager bindings, string suffix)
-        => bindings.BoundMethods.Keys.First(k => k.EndsWith($".{suffix}"));
+    /// <summary>
+    /// 通过类名与方法名精确查找绑定方法的全限定名。
+    /// 避免多类同名方法（如 CancellableLongRunner.Echo / EchoService.Echo）后缀匹配歧义。
+    /// </summary>
+    private static string GetMethodName(BindingManager bindings, string className, string methodName)
+        => GeneratedBindingsMetadata.Methods
+            .First(m => m.ClassName == className && m.MethodName == methodName).FullName;
 
     private static (IWebviewWindowImpl impl, List<string> posted) CreateNativeStub()
     {
@@ -117,7 +126,7 @@ public sealed class CancellablePromiseEndToEndTests
         CancellationToken testCancellationToken)
     {
         var (processor, bindings, service) = SetupWithService();
-        var methodName = GetMethodName(bindings, "LongRunning");
+        var methodName = GetMethodName(bindings, "CancellableLongRunner", "LongRunning");
 
         // 1. 前端发起调用
         var callId = "e2e-call-1";
@@ -170,7 +179,7 @@ public sealed class CancellablePromiseEndToEndTests
         var (impl, posted) = CreateNativeStub();
         transport.RegisterWindow(1u, impl);
 
-        var methodName = GetMethodName(bindings, "LongRunning");
+        var methodName = GetMethodName(bindings, "CancellableLongRunner", "LongRunning");
         var callId = "native-call-1";
 
         // 1. 模拟前端通过原生 postMessage 发起调用。
@@ -243,7 +252,7 @@ public sealed class CancellablePromiseEndToEndTests
     public async Task EndToEnd_AfterCancel_SubsequentCallSucceeds(CancellationToken testCancellationToken)
     {
         var (processor, bindings, service) = SetupWithService();
-        var methodName = GetMethodName(bindings, "LongRunning");
+        var methodName = GetMethodName(bindings, "CancellableLongRunner", "LongRunning");
 
         // 1. 发起并取消一次调用
         var callId1 = "chain-call-1";
@@ -259,7 +268,7 @@ public sealed class CancellablePromiseEndToEndTests
         await callTask;
 
         // 2. 立即发起另一次调用（应正常完成）
-        var quickMethodName = GetMethodName(bindings, "Quick");
+        var quickMethodName = GetMethodName(bindings, "CancellableLongRunner", "Quick");
         var callId2 = "chain-call-2";
         var msg2 = processor.ParseMessage(BuildCallJson(callId2, quickMethodName));
         var response = await processor.ProcessAsync(msg2!);
@@ -279,7 +288,7 @@ public sealed class CancellablePromiseEndToEndTests
         CancellationToken testCancellationToken)
     {
         var (processor, bindings, service) = SetupWithService();
-        var methodName = GetMethodName(bindings, "LongRunning");
+        var methodName = GetMethodName(bindings, "CancellableLongRunner", "LongRunning");
 
         var callId = "multi-cancel-call";
         var callTask = Task.Run(async () =>
@@ -313,7 +322,7 @@ public sealed class CancellablePromiseEndToEndTests
     public async Task EndToEnd_AppShutdown_CancelsAllRunningCalls(CancellationToken testCancellationToken)
     {
         var (processor, bindings, service) = SetupWithService();
-        var methodName = GetMethodName(bindings, "LongRunning");
+        var methodName = GetMethodName(bindings, "CancellableLongRunner", "LongRunning");
 
         // 同时发起两个调用
         var callId1 = "shutdown-call-1";
@@ -358,7 +367,7 @@ public sealed class CancellablePromiseEndToEndTests
     public async Task EndToEnd_CancelAlreadyCompletedCall_ReturnsSuccess()
     {
         var (processor, bindings, service) = SetupWithService();
-        var methodName = GetMethodName(bindings, "Quick");
+        var methodName = GetMethodName(bindings, "CancellableLongRunner", "Quick");
 
         var callId = "completed-call-1";
         var callMsg = processor.ParseMessage(BuildCallJson(callId, methodName))!;
@@ -429,7 +438,7 @@ public sealed class CancellablePromiseEndToEndTests
         var (impl, posted) = CreateNativeStub();
         transport.RegisterWindow(1u, impl);
 
-        var quickMethod = GetMethodName(bindings, "Quick");
+        var quickMethod = GetMethodName(bindings, "CancellableLongRunner", "Quick");
         var callId = "native-completed";
 
         // 1. 完成调用

@@ -214,7 +214,8 @@ public sealed class NativeIpcTransportTests
         var (impl, _, posted) = CreateStub();
         transport.RegisterWindow(1u, impl);
 
-        var methodName = bindings.BoundMethods.Keys.First(k => k.EndsWith(".Echo"));
+        var methodName = GeneratedBindingsMetadata.Methods
+            .First(m => m.ClassName == "EchoService" && m.MethodName == "Echo").FullName;
         var json = BuildCallMessageJson("call-1", methodName, "hi");
 
         await transport.HandleIncomingAsync(1u, json);
@@ -381,7 +382,8 @@ public sealed class NativeIpcTransportTests
         transport.RegisterWindow(7u, stub);
 
         // 模拟前端通过原生 postMessage 发送的消息
-        var methodName = bindings.BoundMethods.Keys.First(k => k.EndsWith(".Echo"));
+        var methodName = GeneratedBindingsMetadata.Methods
+            .First(m => m.ClassName == "EchoService" && m.MethodName == "Echo").FullName;
         var json = BuildCallMessageJson("via-handler", methodName, "from-frontend");
 
         // 通过注册的 handler 触发（与平台层调用路径一致）
@@ -407,9 +409,11 @@ public sealed class NativeIpcTransportTests
 
     /// <summary>
     /// 用于测试的回显服务，提供 Echo 方法。
+    /// 必须为 public 以便源生成器生成调用器代码。
     /// </summary>
-    private sealed class EchoService
+    public sealed class EchoService
     {
+        [Binding]
         public string Echo(string input) => input;
     }
 }

@@ -15,12 +15,18 @@ namespace Wails.Net.Application.Tests;
 public sealed class MessageProcessorTests
 {
     /// <summary>
-    /// 用于测试的服务类。
+    /// 用于测试的服务类。方法标记 [Binding] 特性，由源生成器生成强类型调用器。
+    /// 必须为 public 以便源生成器生成调用器代码。
     /// </summary>
-    private class TestService
+    public class TestService
     {
+        [Binding]
         public string GetName() => "Wails.Net";
+
+        [Binding]
         public int Add(int a, int b) => a + b;
+
+        [Binding]
         public string Greet(string name) => $"Hello, {name}!";
     }
 
@@ -49,11 +55,14 @@ public sealed class MessageProcessorTests
     }
 
     /// <summary>
-    /// 获取绑定方法的实际全名（从 BindingManager 中查询）。
+    /// 获取绑定方法的实际全名（从源生成器编译期生成的元数据中查询）。
+    /// 必须指定类名以避免不同测试类中同名方法（如 TestService.Add / GeneratedTestService.Add）的歧义。
     /// </summary>
-    private static string GetBoundMethodName(BindingManager bindings, string methodName)
+    private static string GetBoundMethodName(BindingManager bindings, string className, string methodName)
     {
-        return bindings.BoundMethods.Keys.First(k => k.EndsWith($".{methodName}"));
+        var name = GeneratedBindingsMetadata.Methods
+            .FirstOrDefault(m => m.MethodName == methodName && m.ClassName == className)?.FullName;
+        return name ?? throw new InvalidOperationException($"未找到方法: {className}.{methodName}");
     }
 
     [Test]
@@ -87,7 +96,7 @@ public sealed class MessageProcessorTests
         var events = new EventProcessor();
         var processor = new MessageProcessor(bindings, events);
 
-        var methodName = GetBoundMethodName(bindings, "GetName");
+        var methodName = GetBoundMethodName(bindings, "TestService", "GetName");
         var message = CreateMessage("1", "call",
             $$"""{"name":"{{methodName}}","args":[]}""");
 
@@ -108,7 +117,7 @@ public sealed class MessageProcessorTests
         var events = new EventProcessor();
         var processor = new MessageProcessor(bindings, events);
 
-        var methodName = GetBoundMethodName(bindings, "Greet");
+        var methodName = GetBoundMethodName(bindings, "TestService", "Greet");
         var id = BindingManager.FNV1aHash(methodName);
         var message = CreateMessage("2", "call",
             $$"""{"id":{{id}},"args":["World"]}""");
@@ -128,7 +137,7 @@ public sealed class MessageProcessorTests
         var events = new EventProcessor();
         var processor = new MessageProcessor(bindings, events);
 
-        var methodName = GetBoundMethodName(bindings, "Add");
+        var methodName = GetBoundMethodName(bindings, "TestService", "Add");
         var message = CreateMessage("3", "call",
             $$"""{"name":"{{methodName}}","args":[3,4]}""");
 
@@ -303,12 +312,14 @@ public sealed class MessageProcessorTests
 
     /// <summary>
     /// 测试用服务：包含接受 CancellationToken 的长操作方法。
+    /// 必须为 public 以便源生成器生成调用器代码。
     /// </summary>
-    private class CancellableService
+    public class CancellableService
     {
         /// <summary>
         /// 长操作方法，等待 CancellationToken 取消或超时。
         /// </summary>
+        [Binding]
         public async Task<string> LongOperation(CancellationToken cancellationToken)
         {
             await Task.Delay(5000, cancellationToken);
@@ -318,6 +329,7 @@ public sealed class MessageProcessorTests
         /// <summary>
         /// 立即完成的方法，用于测试取消已完成调用。
         /// </summary>
+        [Binding]
         public string QuickMethod() => "quick";
     }
 
@@ -334,7 +346,7 @@ public sealed class MessageProcessorTests
         var events = new EventProcessor();
         var processor = new MessageProcessor(bindings, events);
 
-        var methodName = GetBoundMethodName(bindings, "LongOperation");
+        var methodName = GetBoundMethodName(bindings, "CancellableService", "LongOperation");
         var callMessage = CreateMessage("call-1", "call",
             $$"""{"name":"{{methodName}}","args":[]}""");
 
@@ -431,7 +443,7 @@ public sealed class MessageProcessorTests
         var events = new EventProcessor();
         var processor = new MessageProcessor(bindings, events);
 
-        var methodName = GetBoundMethodName(bindings, "QuickMethod");
+        var methodName = GetBoundMethodName(bindings, "CancellableService", "QuickMethod");
         var callMessage = CreateMessage("call-2", "call",
             $$"""{"name":"{{methodName}}","args":[]}""");
 
@@ -462,7 +474,7 @@ public sealed class MessageProcessorTests
         var events = new EventProcessor();
         var processor = new MessageProcessor(bindings, events);
 
-        var methodName = GetBoundMethodName(bindings, "LongOperation");
+        var methodName = GetBoundMethodName(bindings, "CancellableService", "LongOperation");
         var callMessage = CreateMessage("call-3", "call",
             $$"""{"name":"{{methodName}}","args":[]}""");
 

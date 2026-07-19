@@ -1,4 +1,3 @@
-using System.Reflection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -184,32 +183,6 @@ public sealed class PluginManager
             {
                 // 单个插件关闭失败不应中断其他插件的关闭
                 _logger?.LogError(ex, "插件关闭失败: {Name}", _plugins[i].Name);
-            }
-        }
-    }
-
-    /// <summary>
-    /// 从程序集自动发现并加载插件（使用无参构造函数创建实例）。
-    /// </summary>
-    /// <param name="assembly">要扫描的程序集。</param>
-    public void DiscoverFromAssembly(Assembly assembly)
-    {
-        var pluginTypes = assembly.GetTypes()
-            .Where(t => typeof(IPlugin).IsAssignableFrom(t)
-                && !t.IsAbstract
-                && !t.IsInterface
-                && t.GetConstructor(Type.EmptyTypes) is not null);
-
-        foreach (var type in pluginTypes)
-        {
-            try
-            {
-                var plugin = (IPlugin)Activator.CreateInstance(type)!;
-                Register(plugin);
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError(ex, "插件发现失败: {Type}", type.Name);
             }
         }
     }
