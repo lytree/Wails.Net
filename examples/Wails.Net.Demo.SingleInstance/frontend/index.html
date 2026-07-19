@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wails.Net Demo - SingleInstance</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>🔒 单实例锁</h1>
+            <p class="subtitle">Wails.Net Demo - SingleInstance + OnSecondInstanceLaunch</p>
+        </header>
+        <main class="content">
+            <section class="card">
+                <h2>当前进程信息</h2>
+                <p class="desc">本实例的进程 ID、命令行参数等。通过 SingleInstanceLogService.GetCurrentProcessInfo 绑定方法查询。</p>
+                <div class="form-group">
+                    <button id="refreshProcessBtn">刷新进程信息</button>
+                </div>
+                <div id="processInfo" class="result">（点击按钮查询）</div>
+            </section>
+
+            <section class="card">
+                <h2>启动统计</h2>
+                <div class="form-group">
+                    <button id="refreshStatsBtn">刷新统计</button>
+                </div>
+                <div id="statsResult" class="result"></div>
+            </section>
+
+            <section class="card">
+                <h2>启动历史</h2>
+                <p class="desc">订阅 wails:second-instance:launched 事件，实时显示二次启动尝试。</p>
+                <div class="form-group">
+                    <button id="refreshHistoryBtn">刷新历史</button>
+                    <button id="clearHistoryBtn" class="danger">清空历史</button>
+                </div>
+                <table class="history-table">
+                    <thead>
+                        <tr><th>序号</th><th>类型</th><th>进程 ID</th><th>命令行参数</th><th>时间</th></tr>
+                    </thead>
+                    <tbody id="historyBody">
+                        <tr><td colspan="5" class="empty">（暂无记录）</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="card">
+                <h2>测试方法</h2>
+                <p class="desc">1. 在终端中再次运行 <code>dotnet run --project examples/Wails.Net.Demo.SingleInstance/...</code>，或直接运行已编译的可执行文件。</p>
+                <p class="desc">2. 第二个进程会立即退出，首个实例的窗口被聚焦，历史新增一条 <code>second</code> 记录。</p>
+                <p class="desc">3. 可附加命令行参数（如 <code>--foo bar</code>），参数会通过 OnSecondInstanceLaunch 回调传给首实例并显示在历史中。</p>
+            </section>
+
+            <section class="card">
+                <h2>说明</h2>
+                <p class="desc">配置：<code>SingleInstance=true</code> + <code>SingleInstanceUniqueID</code>（可选，默认回退到应用名）。</p>
+                <p class="desc">平台层通过 <code>IPlatformApp.AcquireSingleInstanceLock(uniqueId)</code> 获取锁，失败时调用 <code>NotifySingleInstance(args)</code> 通知首实例后退出。</p>
+                <p class="desc">首实例通过 <code>Application.OnSecondInstanceLaunch(Action&lt;string[]&gt;)</code> 注册回调，框架同时广播 <code>wails:second-instance:launched</code> 事件。</p>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

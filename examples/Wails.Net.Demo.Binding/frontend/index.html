@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wails.Net Demo - Binding</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>🚀 绑定系统基础</h1>
+            <p class="subtitle">Wails.Net Demo - 演示 [Binding] 特性标记的各类方法签名</p>
+        </header>
+        <main class="content">
+            <section class="card">
+                <h2>同步方法绑定</h2>
+                <div class="form-group">
+                    <input type="text" id="nameInput" placeholder="输入姓名" value="世界">
+                    <button id="greetBtn">打招呼</button>
+                </div>
+                <div id="greetResult" class="result"></div>
+            </section>
+
+            <section class="card">
+                <h2>异步方法绑定</h2>
+                <button id="timeBtn">获取当前时间</button>
+                <div id="timeResult" class="result"></div>
+            </section>
+
+            <section class="card">
+                <h2>重载方法（整数 + 整数）</h2>
+                <div class="form-group">
+                    <input type="number" id="intA" value="10">
+                    <span>+</span>
+                    <input type="number" id="intB" value="20">
+                    <button id="addIntBtn">计算</button>
+                </div>
+                <div id="addIntResult" class="result"></div>
+
+                <h3>重载方法（浮点数 + 浮点数）</h3>
+                <div class="form-group">
+                    <input type="number" id="doubleA" value="1.5" step="0.1">
+                    <span>+</span>
+                    <input type="number" id="doubleB" value="2.7" step="0.1">
+                    <button id="addDoubleBtn">计算</button>
+                </div>
+                <div id="addDoubleResult" class="result"></div>
+            </section>
+
+            <section class="card">
+                <h2>复杂对象返回</h2>
+                <div class="form-group">
+                    <input type="number" id="userId" value="1">
+                    <button id="getUserBtn">获取用户</button>
+                </div>
+                <div id="userResult" class="result"></div>
+            </section>
+
+            <section class="card">
+                <h2>集合返回</h2>
+                <button id="getItemsBtn">获取列表</button>
+                <div id="itemsResult" class="result"></div>
+            </section>
+
+            <section class="card">
+                <h2>异常处理</h2>
+                <button id="throwBtn" class="danger">抛出异常</button>
+                <div id="throwResult" class="result"></div>
+            </section>
+
+            <section class="card">
+                <h2>CancellationToken 异步</h2>
+                <button id="longTaskBtn">启动长任务（5 秒）</button>
+                <button id="cancelBtn" class="danger">取消</button>
+                <div id="longTaskResult" class="result"></div>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

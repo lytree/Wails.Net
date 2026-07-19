@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wails.Net Demo - Clipboard</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>📋 剪贴板</h1>
+            <p class="subtitle">Wails.Net Demo - ClipboardPlugin + 绑定方法</p>
+        </header>
+        <main class="content">
+            <section class="card">
+                <h2>复制文本</h2>
+                <div class="form-group">
+                    <input type="text" id="copyInput" placeholder="输入要复制的文本" value="Hello Wails.Net">
+                    <button id="copyBtn">复制到剪贴板</button>
+                </div>
+                <div id="copyResult" class="result"></div>
+            </section>
+
+            <section class="card">
+                <h2>粘贴文本</h2>
+                <button id="pasteBtn">从剪贴板读取</button>
+                <div id="pasteResult" class="result"></div>
+            </section>
+
+            <section class="card">
+                <h2>统计</h2>
+                <div class="stats">
+                    <div>累计复制次数: <strong id="copyCount">0</strong></div>
+                    <button id="resetBtn" class="danger">重置计数</button>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>最近 5 次复制记录</h2>
+                <ul id="historyList" class="history-list">
+                    <li class="empty">（暂无记录）</li>
+                </ul>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

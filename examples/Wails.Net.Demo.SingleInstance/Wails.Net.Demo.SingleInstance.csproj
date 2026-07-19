@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFrameworks>net10.0-windows10.0.19041.0;net10.0</TargetFrameworks>
+    <UseWPF>false</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RootNamespace>Wails.Net.Demo.SingleInstance</RootNamespace>
+    <AssemblyName>Wails.Net.Demo.SingleInstance</AssemblyName>
+  </PropertyGroup>
+
+  <!-- Windows TFM 专用属性 -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-windows10.0.19041.0'">
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <!-- Linux TFM 专用属性 -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <!-- 公共引用 -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Wails.Net.Application\Wails.Net.Application.csproj" />
+  </ItemGroup>
+
+  <!-- Windows TFM 条件引用 -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-windows10.0.19041.0'">
+    <ProjectReference Include="..\..\src\Wails.Net.Application.Windows\Wails.Net.Application.Windows.csproj" />
+  </ItemGroup>
+
+  <!-- Linux TFM 条件引用 -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <ProjectReference Include="..\..\src\Wails.Net.Application.Linux\Wails.Net.Application.Linux.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="frontend\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

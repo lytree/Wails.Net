@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wails.Net Demo - Updater</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>🔄 应用更新</h1>
+            <p class="subtitle">Wails.Net Demo - UpdaterService + 多 Provider 链</p>
+        </header>
+        <main class="content">
+            <section class="card">
+                <h2>当前状态</h2>
+                <div class="form-group">
+                    <label>当前版本:</label>
+                    <input type="text" id="currentVersionInput" value="1.0.0">
+                    <button id="setVersionBtn">设置版本</button>
+                </div>
+                <div class="form-group">
+                    <label>Provider 链:</label>
+                    <select id="providerPresetSelect">
+                        <option value="stable">stable（mock-stable：无更新）</option>
+                        <option value="beta">beta（mock-beta：1.1.0）</option>
+                        <option value="rc">rc（mock-rc：1.0.5）</option>
+                        <option value="chain">chain（stable→rc→beta 顺序）</option>
+                    </select>
+                    <button id="switchProviderBtn">切换</button>
+                </div>
+                <div class="form-group">
+                    <label>已注册:</label>
+                    <span id="providersList" class="providers-list">（点击「查询」刷新）</span>
+                    <button id="refreshProvidersBtn">查询</button>
+                </div>
+                <div id="statusResult" class="result"></div>
+            </section>
+
+            <section class="card">
+                <h2>检查更新</h2>
+                <p class="desc">调用 UpdaterService.CheckForUpdatesAsync，按 Provider 链顺序依次检查。</p>
+                <div class="form-group">
+                    <button id="checkBtn">检查更新</button>
+                </div>
+                <div id="checkResult" class="result"></div>
+            </section>
+
+            <section class="card">
+                <h2>下载更新（演示）</h2>
+                <p class="desc">输入更新包 URL，调用 UpdaterService.DownloadUpdateAsync。本 Demo 的 URL 不可达，仅演示调用流程。</p>
+                <div class="form-group">
+                    <label>URL:</label>
+                    <input type="text" id="downloadUrlInput" style="flex:1; min-width:300px;" value="https://example.com/wails-net-demo/beta/1.1.0.zip">
+                    <button id="downloadBtn">下载</button>
+                </div>
+                <div id="downloadResult" class="result"></div>
+            </section>
+
+            <section class="card">
+                <h2>操作历史</h2>
+                <p class="desc">订阅 wails:updater:* 事件实时刷新。</p>
+                <div class="form-group">
+                    <button id="refreshHistoryBtn">刷新历史</button>
+                    <button id="clearHistoryBtn" class="danger">清空历史</button>
+                </div>
+                <table class="history-table">
+                    <thead>
+                        <tr><th>序号</th><th>阶段</th><th>消息</th><th>时间</th></tr>
+                    </thead>
+                    <tbody id="historyBody">
+                        <tr><td colspan="4" class="empty">（暂无记录）</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="card">
+                <h2>说明</h2>
+                <p class="desc">多 Provider 模式：在 UpdaterService 中注册多个 IUpdateProvider，按注册顺序依次尝试，首个返回非 null 清单者胜出。</p>
+                <p class="desc">事件：wails:updater:update-available / no-update / download-started / download-progress / download-complete / install-started / install-complete。</p>
+                <p class="desc">实际应用中应使用 HttpUpdateProvider / GitHubUpdateProvider / GitLabUpdateProvider，并配置 UpdaterConfig.UpdateURL。</p>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

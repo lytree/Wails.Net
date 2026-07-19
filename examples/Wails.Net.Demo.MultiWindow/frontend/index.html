@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wails.Net Demo - MultiWindow</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>🪟 多窗口管理</h1>
+            <p class="subtitle">Wails.Net Demo - WindowPlugin + WindowsPlugin</p>
+        </header>
+        <main class="content">
+            <section class="card">
+                <h2>创建子窗口</h2>
+                <div class="form-row">
+                    <input type="text" id="winName" placeholder="窗口名称（唯一）">
+                    <input type="text" id="winTitle" placeholder="窗口标题">
+                    <button id="createBtn">创建子窗口</button>
+                </div>
+                <div id="createResult" class="result"></div>
+            </section>
+
+            <section class="card">
+                <h2>窗口列表</h2>
+                <div class="form-group">
+                    <button id="refreshBtn">刷新列表</button>
+                    <span class="hint">通过 WindowManagerService.GetAllWindows() 获取</span>
+                </div>
+                <table class="window-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th><th>名称</th><th>标题</th><th>尺寸</th><th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="windowBody">
+                        <tr><td colspan="5" class="empty">（暂无窗口）</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="card">
+                <h2>窗口事件日志</h2>
+                <p class="hint">通过 wails.events.on 订阅 wails:window:* 事件（由 windows.emit 命令触发）。</p>
+                <div id="eventLog" class="log"></div>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

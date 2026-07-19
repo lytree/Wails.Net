@@ -1,0 +1,32 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f5f5; color: #333; }
+.app { max-width: 900px; margin: 0 auto; padding: 24px; }
+.header { text-align: center; margin-bottom: 24px; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; }
+.subtitle { opacity: 0.9; margin-top: 4px; }
+.content { display: flex; flex-direction: column; gap: 16px; }
+.card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+.card h2 { margin-bottom: 12px; color: #2d3748; }
+
+button { padding: 8px 16px; margin: 4px 4px 4px 0; border: none; border-radius: 4px; background: #667eea; color: white; cursor: pointer; font-size: 14px; }
+button:hover { background: #5568d3; }
+
+.form-group { margin-bottom: 12px; }
+
+.screen-card { padding: 16px; border-radius: 6px; background: #f7fafc; border: 1px solid #e2e8f0; }
+.primary-card { border-left: 4px solid #667eea; }
+.screen-card .row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 4px; font-size: 14px; }
+.screen-card .row span { color: #718096; min-width: 100px; }
+.screen-card .row strong { color: #2d3748; }
+.screen-card .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; background: #667eea; color: white; margin-left: 8px; }
+.screen-card .badge.secondary { background: #38b2ac; }
+
+.screen-list { display: flex; flex-direction: column; gap: 8px; }
+.screen-list .screen-item { padding: 12px 16px; border-radius: 6px; background: #f7fafc; border: 1px solid #e2e8f0; font-size: 13px; }
+.screen-list .screen-item.primary-item { border-left: 4px solid #667eea; }
+.screen-list .screen-item .name { font-weight: 600; color: #2d3748; margin-bottom: 4px; }
+
+.empty { color: #a0aec0; font-style: italic; padding: 8px 0; }
+
+.log-list { margin-top: 8px; list-style: none; max-height: 280px; overflow-y: auto; background: #1a202c; border-radius: 6px; padding: 12px; }
+.log-list li { padding: 3px 0; color: #cbd5e0; font-family: monospace; font-size: 12px; }
+.log-list li.empty { color: #718096; text-align: center; font-style: italic; }

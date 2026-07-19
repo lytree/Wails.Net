@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wails.Net Demo - Store</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>🗃️ 键值存储</h1>
+            <p class="subtitle">Wails.Net Demo - StorePlugin 命令演示</p>
+        </header>
+        <main class="content">
+            <section class="card">
+                <h2>键值操作</h2>
+                <div class="form-group">
+                    <input type="text" id="keyInput" placeholder="键名">
+                    <input type="text" id="valueInput" placeholder="值">
+                </div>
+                <div class="form-group">
+                    <button id="setBtn">设置 (store.set)</button>
+                    <button id="getBtn">获取 (store.get)</button>
+                    <button id="deleteBtn" class="danger">删除 (store.delete)</button>
+                    <button id="listBtn">列出所有键 (store.keys)</button>
+                </div>
+                <div id="opResult" class="result"></div>
+            </section>
+
+            <section class="card">
+                <h2>操作日志</h2>
+                <div class="form-group">
+                    <span>累计操作次数: <strong id="opCount">0</strong></span>
+                    <button id="refreshLogBtn">刷新</button>
+                    <button id="clearLogBtn" class="danger">清空日志</button>
+                </div>
+                <ul id="logList" class="log-list">
+                    <li class="empty">（暂无操作）</li>
+                </ul>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

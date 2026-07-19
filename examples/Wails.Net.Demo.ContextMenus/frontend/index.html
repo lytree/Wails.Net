@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wails.Net Demo - ContextMenus</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>🖱️ 上下文菜单</h1>
+            <p class="subtitle">Wails.Net Demo - MenuPlugin + RegisterContextMenu</p>
+        </header>
+        <main class="content">
+            <section class="card">
+                <h2>右键区域演示</h2>
+                <p class="hint">在下方三个区域上点击鼠标右键，会弹出不同的上下文菜单。</p>
+
+                <div class="context-areas">
+                    <!-- 输入框区域：CSS 变量 --custom-contextmenu 引用后端注册的菜单 ID -->
+                    <div class="context-area input-area" style="--custom-contextmenu: input-context-menu;">
+                        <label>输入框区域</label>
+                        <input type="text" id="demoInput" placeholder="右键此处" value="Hello Wails.Net">
+                    </div>
+
+                    <!-- 按钮区域 -->
+                    <div class="context-area button-area" style="--custom-contextmenu: button-context-menu;">
+                        <label>按钮区域</label>
+                        <button id="demoButton">示例按钮</button>
+                    </div>
+
+                    <!-- 文本区域 -->
+                    <div class="context-area text-area" style="--custom-contextmenu: text-context-menu;">
+                        <label>文本区域</label>
+                        <p class="demo-text" id="demoText">这是一段示例文本。右键此区域可看到包含复选项的菜单。可选中、可复制。</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>最新点击事件</h2>
+                <div class="latest-row">
+                    <span>最近点击：</span>
+                    <strong id="latestClick">（暂无）</strong>
+                </div>
+                <div id="clickResult" class="result"></div>
+            </section>
+
+            <section class="card">
+                <h2>操作历史</h2>
+                <div class="form-group">
+                    <button id="refreshBtn">刷新历史</button>
+                    <button id="clearBtn" class="danger">清空历史</button>
+                </div>
+                <table class="history-table">
+                    <thead>
+                        <tr><th>#</th><th>目标区域</th><th>动作</th><th>时间</th></tr>
+                    </thead>
+                    <tbody id="historyBody">
+                        <tr><td colspan="4" class="empty">（暂无记录）</td></tr>
+                    </tbody>
+                </table>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
