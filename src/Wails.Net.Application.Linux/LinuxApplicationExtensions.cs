@@ -1,4 +1,5 @@
 using Wails.Net.Application.Browser;
+using Wails.Net.Application.Hosting;
 using Wails.Net.Application.Managers;
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.Platform;
@@ -11,6 +12,32 @@ namespace Wails.Net.Application;
 /// </summary>
 public static class LinuxApplicationExtensions
 {
+    /// <summary>
+    /// 为桌面应用构建器配置 Linux 平台实现。
+    /// </summary>
+    /// <remarks>
+    /// 调用此方法会强制加载 <c>Wails.Net.Application.Linux</c> 程序集，
+    /// 触发 <c>[ModuleInitializer]</c> 自动注册 Linux 平台委托到 <see cref="PlatformFactory"/>，
+    /// 然后委托给 <see cref="DesktopApplicationBuilder.UseAutoPlatform"/> 完成实际注册。
+    /// <para>
+    /// 必须使用此方法（或 <see cref="Application.UseLinux"/>）显式触发程序集加载，
+    /// 仅通过 <see cref="DesktopApplicationBuilder.UseAutoPlatform"/> 不会触发
+    /// <c>[ModuleInitializer]</c>，因为 .NET 程序集按需加载，
+    /// 若代码未直接引用本程序集中的类型，模块初始化器不会执行。
+    /// </para>
+    /// </remarks>
+    /// <param name="builder">桌面应用构建器。</param>
+    /// <returns>构建器实例，以支持链式调用。</returns>
+    public static DesktopApplicationBuilder UseLinux(this DesktopApplicationBuilder builder)
+    {
+        // 引用本程序集中的公共类型，强制 JIT 加载 Wails.Net.Application.Linux 程序集，
+        // 触发 LinuxPlatformRegistrar.Register() 的 [ModuleInitializer] 调用，
+        // 完成 PlatformFactory.RegisterPlatformApp("linux", ...) 注册。
+        _ = typeof(LinuxApplicationExtensions);
+
+        return builder.UseAutoPlatform();
+    }
+
     /// <summary>
     /// 为应用配置 Linux 平台实现。
     /// 创建 LinuxPlatformApp 并注册对话框、屏幕和系统托盘相关服务。

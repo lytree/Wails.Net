@@ -31,21 +31,26 @@ public class MyCustomPlugin : IPlugin
     public void Configure(IPluginContext context)
     {
         // 注册命令：counter.increment - 增加计数
-        context.Commands.MapCommand<ICommandContext, int>("counter.increment", ctx =>
+        // 注意：必须使用 MapCommand<int>(Func<ICommandContext, int>) 重载，
+        // 而非 MapCommand<ICommandContext, int>(Func<ICommandContext, int>)。
+        // 后者会匹配 MapCommand<T, TResult>(Func<T, TResult>) 重载，
+        // 将 ICommandContext 作为业务参数从 JSON 反序列化（接口无法实例化，arg 为 null），
+        // 导致 handler(null) 调用时抛 NRE。
+        context.Commands.MapCommand<int>("counter.increment", ctx =>
         {
             var counter = ctx.Services.GetRequiredService<CounterService>();
             return counter.Increment();
         });
 
         // 注册命令：counter.decrement - 减少计数
-        context.Commands.MapCommand<ICommandContext, int>("counter.decrement", ctx =>
+        context.Commands.MapCommand<int>("counter.decrement", ctx =>
         {
             var counter = ctx.Services.GetRequiredService<CounterService>();
             return counter.Decrement();
         });
 
         // 注册命令：counter.reset - 重置计数
-        context.Commands.MapCommand<ICommandContext, bool>("counter.reset", ctx =>
+        context.Commands.MapCommand<bool>("counter.reset", ctx =>
         {
             var counter = ctx.Services.GetRequiredService<CounterService>();
             counter.Reset();
@@ -53,7 +58,7 @@ public class MyCustomPlugin : IPlugin
         });
 
         // 注册命令：counter.getValue - 获取当前计数值
-        context.Commands.MapCommand<ICommandContext, int>("counter.getValue", ctx =>
+        context.Commands.MapCommand<int>("counter.getValue", ctx =>
         {
             var counter = ctx.Services.GetRequiredService<CounterService>();
             return counter.Value;

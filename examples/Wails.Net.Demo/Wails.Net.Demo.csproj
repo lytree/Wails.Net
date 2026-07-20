@@ -1,5 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFrameworks>net10.0-windows10.0.19041.0;net10.0</TargetFrameworks>
@@ -8,33 +8,18 @@
     <RootNamespace>Wails.Net.Demo</RootNamespace>
     <AssemblyName>Wails.Net.Demo</AssemblyName>
   </PropertyGroup>
-
   <!-- Windows TFM 专用属性 -->
   <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-windows10.0.19041.0'">
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
-
   <!-- Linux TFM 专用属性：WSL 调试器仅支持 Exe（控制台），WinExe 会报"项目不知道如何运行" -->
   <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
     <OutputType>Exe</OutputType>
   </PropertyGroup>
-
   <!-- 公共引用 -->
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\Wails.Net.Application\Wails.Net.Application.csproj" />
-  </ItemGroup>
-
   <!-- Windows TFM 条件引用 -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0-windows10.0.19041.0'">
-    <ProjectReference Include="..\..\src\Wails.Net.Application.Windows\Wails.Net.Application.Windows.csproj" />
-  </ItemGroup>
-
   <!-- Linux TFM 条件引用 -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
-    <ProjectReference Include="..\..\src\Wails.Net.Application.Linux\Wails.Net.Application.Linux.csproj" />
-  </ItemGroup>
-
   <ItemGroup>
     <None Update="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -43,5 +28,7 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
-
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Wails.Net.Sdk\Wails.Net.Sdk.csproj" />
+  </ItemGroup>
 </Project>

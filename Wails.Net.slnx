@@ -1,9 +1,29 @@
 <Solution>
   <Folder Name="/demo/">
-    <Project Path="examples/Wails.Net.Demo.React/Wails.Net.Demo.React.csproj" />
-    <Project Path="examples/Wails.Net.Demo.Vue/Wails.Net.Demo.Vue.csproj" />
     <Project Path="examples/Wails.Net.Demo/Wails.Net.Demo.csproj" />
     <Project Path="examples/Wails.Net.Demo.Android/Wails.Net.Demo.Android.csproj" />
+    <Project Path="examples/Wails.Net.Demo.Binding/Wails.Net.Demo.Binding.csproj" />
+    <Project Path="examples/Wails.Net.Demo.CancelAsync/Wails.Net.Demo.CancelAsync.csproj" />
+    <Project Path="examples/Wails.Net.Demo.Clipboard/Wails.Net.Demo.Clipboard.csproj" />
+    <Project Path="examples/Wails.Net.Demo.ContextMenus/Wails.Net.Demo.ContextMenus.csproj" />
+    <Project Path="examples/Wails.Net.Demo.Dialogs/Wails.Net.Demo.Dialogs.csproj" />
+    <Project Path="examples/Wails.Net.Demo.DragAndDrop/Wails.Net.Demo.DragAndDrop.csproj" />
+    <Project Path="examples/Wails.Net.Demo.Environment/Wails.Net.Demo.Environment.csproj" />
+    <Project Path="examples/Wails.Net.Demo.Events/Wails.Net.Demo.Events.csproj" />
+    <Project Path="examples/Wails.Net.Demo.Frameless/Wails.Net.Demo.Frameless.csproj" />
+    <Project Path="examples/Wails.Net.Demo.Keybindings/Wails.Net.Demo.Keybindings.csproj" />
+    <Project Path="examples/Wails.Net.Demo.Menu/Wails.Net.Demo.Menu.csproj" />
+    <Project Path="examples/Wails.Net.Demo.MultiWindow/Wails.Net.Demo.MultiWindow.csproj" />
+    <Project Path="examples/Wails.Net.Demo.Notifications/Wails.Net.Demo.Notifications.csproj" />
+    <Project Path="examples/Wails.Net.Demo.React/Wails.Net.Demo.React.csproj" />
+    <Project Path="examples/Wails.Net.Demo.Screen/Wails.Net.Demo.Screen.csproj" />
+    <Project Path="examples/Wails.Net.Demo.Server/Wails.Net.Demo.Server.csproj" />
+    <Project Path="examples/Wails.Net.Demo.Services/Wails.Net.Demo.Services.csproj" />
+    <Project Path="examples/Wails.Net.Demo.SingleInstance/Wails.Net.Demo.SingleInstance.csproj" />
+    <Project Path="examples/Wails.Net.Demo.Store/Wails.Net.Demo.Store.csproj" />
+    <Project Path="examples/Wails.Net.Demo.SystemTray/Wails.Net.Demo.SystemTray.csproj" />
+    <Project Path="examples/Wails.Net.Demo.Updater/Wails.Net.Demo.Updater.csproj" />
+    <Project Path="examples/Wails.Net.Demo.Vue/Wails.Net.Demo.Vue.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Wails.Net.Application/Wails.Net.Application.csproj" />

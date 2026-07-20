@@ -11,6 +11,11 @@ using Wails.Net.Demo;
 using Wails.Net.Demo.Plugins;
 using Wails.Net.Demo.Services;
 
+// 注意：必须显式调用 UseWindows()/UseLinux() 而非 UseAutoPlatform()，
+// 因为 [ModuleInitializer] 仅在程序集被加载时触发，
+// 而 .NET 程序集按需加载——只有显式引用平台程序集中的类型，
+// 才会触发 WindowsPlatformRegistrar / LinuxPlatformRegistrar 的模块初始化器完成委托注册。
+
 // 创建桌面应用构建器（使用 Generic Host 模式）
 var builder = DesktopApplicationBuilder.CreateBuilder(args);
 
@@ -82,7 +87,23 @@ builder.Logging.SetMinimumLevel(LogLevel.Information);
 
 // 使用平台工厂自动检测并注册平台实现
 // Windows 上注册 WindowsPlatformApp，Linux 上注册 LinuxPlatformApp
-builder.UseAutoPlatform();
+// 显式调用 UseWindows()/UseLinux() 以触发对应平台程序集的 [ModuleInitializer] 注册。
+#if WINDOWS10_0_19041_0
+builder.UseWindows();
+#else
+if (OperatingSystem.IsLinux())
+{
+    builder.UseLinux();
+}
+else
+{
+    // 非平台特定 TFM（如 net10.0）但运行时不是 Linux 时，回退到自动检测。
+    // 注意：此时若运行在 Windows 上且未显式引用 Wails.Net.Application.Windows，
+    // PlatformFactory 将因 [ModuleInitializer] 未触发而抛出 InvalidOperationException，
+    // 这是预期行为——用户应使用 net10.0-windows10.0.19041.0 TFM 来获取 Windows 支持。
+    builder.UseAutoPlatform();
+}
+#endif
 
 // 构建应用实例
 var desktopApp = builder.Build();

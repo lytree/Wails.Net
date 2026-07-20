@@ -7,25 +7,38 @@
     消费者只需引用此包，NuGet 会根据项目的 TFM 自动解析对应的平台 Bundle 包：
       - net10.0-windows10.0.19041.0  → Wails.Net.Bundle.Windows（WebView2 + CsWin32）
       - net10.0                       → Wails.Net.Bundle.Linux（GTK4 + WebKitGTK via GirCore）
+      - net10.0-android36.0           → Wails.Net.Bundle.Android（Android WebView）
 
-    Android 平台有独立的 Wails.Net.Bundle.Android 包（因 TFM 为 net10.0-android），
-    需在 Android 项目中单独引用。
-
-    使用方式：
+    使用方式（NuGet 发布后）：
       <PackageReference Include="Wails.Net.Sdk" Version="x.y.z" />
+
+    使用方式（仓库内本地开发，Demo 项目）：
+      <ProjectReference Include="..\..\src\Wails.Net.Sdk\Wails.Net.Sdk.csproj" />
 
     消费者项目设置 TargetFramework 即可自动选择平台：
       - Windows: <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
       - Linux:   <TargetFramework>net10.0</TargetFramework>
+      - Android: <TargetFramework>net10.0-android36.0</TargetFramework>
 
     也可通过 WailsNetPlatform 属性强制指定平台（覆盖 TFM 推断）：
       <PropertyGroup>
         <WailsNetPlatform>windows</WailsNetPlatform>
       </PropertyGroup>
+
+    注意：通过 ProjectReference 引用本 SDK 时，MSBuild 会自动传递所有
+    transitive 依赖（Application / Application.{Platform} / SourceGenerators 等），
+    Demo 项目无需再单独引用源生成器。
   -->
 
   <PropertyGroup>
+    <!--
+      默认仅启用 Windows/Linux TFM。
+      Android TFM 仅在消费者显式设置 <WailsNetEnableAndroid>true</WailsNetEnableAndroid> 时启用，
+      避免 Windows/Linux Demo 通过 ProjectReference 引用 SDK 时触发 Android workload 检查。
+    -->
     <TargetFrameworks>net10.0;net10.0-windows10.0.19041.0</TargetFrameworks>
+    <TargetFrameworks Condition="'$(WailsNetEnableAndroid)' == 'true'">$(TargetFrameworks);net10.0-android36.0</TargetFrameworks>
+    <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('android'))">24</SupportedOSPlatformVersion>
     <IsPackable>true</IsPackable>
     <PackageId>Wails.Net.Sdk</PackageId>
     <Description>Wails.Net 统一 SDK：根据 TargetFramework 自动引用对应平台实现包，一站式引用 Wails.Net 全部能力。</Description>
@@ -42,9 +55,21 @@
   </ItemGroup>
 
   <!-- Linux TFM（net10.0 无平台后缀）：引用 Linux 平台 Bundle 包 -->
-  <ItemGroup Condition="!$(TargetFramework.Contains('windows'))">
+  <ItemGroup Condition="!$(TargetFramework.Contains('windows')) AND !$(TargetFramework.Contains('android'))">
     <ProjectReference Include="..\Wails.Net.Bundle.Linux\Wails.Net.Bundle.Linux.csproj" />
   </ItemGroup>
+
+  <!-- Android TFM：引用 Android 平台 Bundle 包 -->
+  <ItemGroup Condition="$(TargetFramework.Contains('android'))">
+    <ProjectReference Include="..\Wails.Net.Bundle.Android\Wails.Net.Bundle.Android.csproj" />
+  </ItemGroup>
+
+  <!--
+    源代码生成器说明：
+    SG 不在 SDK 项目中直接引用，因为 Analyzer 类型的 ProjectReference 不会
+    通过 transitive 传递到消费者。Demo 项目通过 examples/Directory.Build.props
+    自动获得 SG 引用；NuGet 消费者通过 Bundle 包的 analyzer 文件夹获得。
+  -->
 
   <!-- 将 build/ 目录下的 props/targets 打包到 NuGet 包中，消费者会自动导入 -->
   <ItemGroup>

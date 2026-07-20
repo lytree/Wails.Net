@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Wails.Net.Application.Bindings;
 using Wails.Net.Application.Services;
 using Wails.Net.Application.Services.Updater;
 // 使用别名避免 Application 类型与 Wails.Net.Application 命名空间冲突（CS0118）
@@ -49,6 +50,7 @@ public class P1FeaturesService
     /// </summary>
     /// <param name="url">要打开的 URL。</param>
     /// <returns>操作结果消息。</returns>
+    [Binding]
     public string OpenExternalUrl(string url)
     {
         if (_application.BrowserManager is null)
@@ -74,6 +76,7 @@ public class P1FeaturesService
     /// <param name="level">日志级别（Information/Warning/Error）。</param>
     /// <param name="message">日志消息。</param>
     /// <returns>确认消息。</returns>
+    [Binding]
     public string LogFromBackend(string level, string message)
     {
         switch (level.ToLowerInvariant())
@@ -94,6 +97,7 @@ public class P1FeaturesService
     /// 演示事件订阅：返回当前应用是否正在运行，以及 ShouldQuit 回调状态（P1-7）。
     /// </summary>
     /// <returns>包含应用状态的 JSON 字符串。</returns>
+    [Binding]
     public string GetApplicationStatus()
     {
         var status = new
@@ -110,6 +114,7 @@ public class P1FeaturesService
     /// 触发应用退出流程（P1-7）。
     /// 注意：此方法会触发 Shutdown 流程，包括 PostShutdown 回调。
     /// </summary>
+    [Binding]
     public void TriggerShutdown()
     {
         _logger.LogInformation("前端请求触发 Shutdown");
@@ -121,6 +126,7 @@ public class P1FeaturesService
     /// 使用注册的 Provider 链检查更新，返回结果。
     /// </summary>
     /// <returns>更新检查结果的 JSON 字符串。</returns>
+    [Binding]
     public async Task<string> CheckForUpdatesAsync()
     {
         if (_updaterService is null)
@@ -151,6 +157,7 @@ public class P1FeaturesService
     /// 获取已注册的 Updater Provider 列表（P1-8）。
     /// </summary>
     /// <returns>Provider 名称数组的 JSON 字符串。</returns>
+    [Binding]
     public string GetRegisteredProviders()
     {
         if (_updaterService is null)

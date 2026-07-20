@@ -1,3 +1,5 @@
+using Wails.Net.Application.Bindings;
+
 namespace Wails.Net.Demo.Services;
 
 /// <summary>
@@ -30,6 +32,7 @@ public class TodoService
     /// 获取所有待办事项。
     /// </summary>
     /// <returns>待办事项列表。</returns>
+    [Binding]
     public List<TodoItem> GetAll()
     {
         return _todos.ToList();
@@ -40,6 +43,7 @@ public class TodoService
     /// </summary>
     /// <param name="title">标题。</param>
     /// <returns>新创建的待办事项。</returns>
+    [Binding]
     public TodoItem Add(string title)
     {
         if (string.IsNullOrWhiteSpace(title))
@@ -64,6 +68,7 @@ public class TodoService
     /// </summary>
     /// <param name="id">待办事项 ID。</param>
     /// <returns>更新后的待办事项；若未找到返回 null。</returns>
+    [Binding]
     public TodoItem? Toggle(int id)
     {
         var item = _todos.FirstOrDefault(t => t.Id == id);
@@ -81,6 +86,7 @@ public class TodoService
     /// </summary>
     /// <param name="id">待办事项 ID。</param>
     /// <returns>是否删除成功。</returns>
+    [Binding]
     public bool Delete(int id)
     {
         var item = _todos.FirstOrDefault(t => t.Id == id);
@@ -96,6 +102,7 @@ public class TodoService
     /// 清除所有已完成的待办事项。
     /// </summary>
     /// <returns>被清除的数量。</returns>
+    [Binding]
     public int ClearCompleted()
     {
         var count = _todos.Count(t => t.Completed);
@@ -107,6 +114,7 @@ public class TodoService
     /// 获取统计信息。
     /// </summary>
     /// <returns>包含总数、已完成数和未完成数的字典。</returns>
+    [Binding]
     public Dictionary<string, int> GetStats()
     {
         return new Dictionary<string, int>

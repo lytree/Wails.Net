@@ -1,0 +1,27 @@
+<Project>
+
+  <!--
+    examples/Directory.Build.props
+    仅作用于 examples/ 目录下的所有 Demo 项目。
+
+    必须显式 Import 父级 Directory.Build.props，否则会阻断父级属性继承
+    （TargetFramework、ImplicitUsings、TreatWarningsAsErrors 等）。
+  -->
+  <Import Project="$(MSBuildThisFileDirectory)..\Directory.Build.props" />
+
+  <!--
+    自动添加 Wails.Net.SourceGenerators 作为 Analyzer 引用。
+    因为源生成器通过 ProjectReference 的 transitive 传递不可靠
+    （Analyzer ItemGroup 默认不跨项目传递），Demo 项目需要显式引用 SG。
+
+    Demo 项目只需 <ProjectReference Include="..\..\src\Wails.Net.Sdk\..." />
+    即可获得全部平台实现，本文件负责补充源生成器引用。
+  -->
+
+  <ItemGroup Condition="'$(SkipWailsSourceGenerators)' != 'true'">
+    <ProjectReference Include="$(MSBuildThisFileDirectory)..\src\Wails.Net.SourceGenerators\Wails.Net.SourceGenerators.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>

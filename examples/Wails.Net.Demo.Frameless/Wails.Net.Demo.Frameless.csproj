@@ -1,5 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFrameworks>net10.0-windows10.0.19041.0;net10.0</TargetFrameworks>
@@ -8,23 +8,16 @@
     <RootNamespace>Wails.Net.Demo.Frameless</RootNamespace>
     <AssemblyName>Wails.Net.Demo.Frameless</AssemblyName>
   </PropertyGroup>
-
   <!-- Windows TFM 专用属性 -->
   <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-windows10.0.19041.0'">
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
-
   <!-- Linux TFM 专用属性 -->
   <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
     <OutputType>Exe</OutputType>
   </PropertyGroup>
-
   <!-- 通过 NuGet SDK 引用 Wails.Net（自动根据 TFM 选择 Windows/Linux 平台实现） -->
-  <ItemGroup>
-    <PackageReference Include="Wails.Net.Sdk" />
-  </ItemGroup>
-
   <ItemGroup>
     <None Update="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -33,5 +26,7 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
-
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Wails.Net.Sdk\Wails.Net.Sdk.csproj" />
+  </ItemGroup>
 </Project>

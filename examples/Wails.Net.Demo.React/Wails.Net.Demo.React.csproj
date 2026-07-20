@@ -1,5 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
@@ -12,7 +12,6 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <NoDefaultExcludes>true</NoDefaultExcludes>
   </PropertyGroup>
-
   <!-- ========== 前端自动构建配置 ========== -->
   <PropertyGroup>
     <!-- 前端项目根目录 -->
@@ -24,12 +23,6 @@
     <!-- 设为 true 强制重建前端（dotnet build -p:RebuildFrontend=true） -->
     <RebuildFrontend Condition="'$(RebuildFrontend)' == ''">false</RebuildFrontend>
   </PropertyGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\Wails.Net.Application\Wails.Net.Application.csproj" />
-    <ProjectReference Include="..\..\src\Wails.Net.Application.Windows\Wails.Net.Application.Windows.csproj" />
-  </ItemGroup>
-
   <ItemGroup>
     <None Update="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -39,7 +32,6 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
-
   <!--
     前端自动构建 Target。
     在 .NET 编译前自动执行 pnpm install（首次）和 pnpm build。
@@ -50,22 +42,14 @@
       dotnet build -p:SkipFrontendBuild=true — 跳过前端构建
       dotnet clean                         — 清理 .NET 产物 + 前端 dist
   -->
-  <Target Name="BuildFrontend"
-          BeforeTargets="BeforeBuild"
-          Condition="'$(SkipFrontendBuild)' != 'true' And (!Exists('$(FrontendDistDir)\index.html') Or '$(RebuildFrontend)' == 'true')">
+  <Target Name="BuildFrontend" BeforeTargets="BeforeBuild" Condition="'$(SkipFrontendBuild)' != 'true' And (!Exists('$(FrontendDistDir)\index.html') Or '$(RebuildFrontend)' == 'true')">
     <Message Importance="high" Text="========== 正在构建前端（React + TSX）==========" />
     <!-- pnpm install（仅当 node_modules 不存在时） -->
-    <Exec Command="pnpm install"
-          WorkingDirectory="$(FrontendDir)"
-          Condition="!Exists('$(FrontendDir)\node_modules')"
-          ConsoleToMSBuild="true" />
+    <Exec Command="pnpm install" WorkingDirectory="$(FrontendDir)" Condition="!Exists('$(FrontendDir)\node_modules')" ConsoleToMSBuild="true" />
     <!-- pnpm build -->
-    <Exec Command="pnpm build"
-          WorkingDirectory="$(FrontendDir)"
-          ConsoleToMSBuild="true" />
+    <Exec Command="pnpm build" WorkingDirectory="$(FrontendDir)" ConsoleToMSBuild="true" />
     <Message Importance="high" Text="========== 前端构建完成 ==========" />
   </Target>
-
   <!--
     开发模式：watch 前端变化并自动重建。
     用法：dotnet msbuild -t:WatchFrontend
@@ -74,15 +58,14 @@
   <Target Name="WatchFrontend">
     <Message Importance="high" Text="启动前端 watch 模式（vite build watch）..." />
     <Message Importance="high" Text="按 Ctrl+C 停止。另开终端运行: dotnet run (跳过构建)" />
-    <Exec Command="pnpm watch"
-          WorkingDirectory="$(FrontendDir)"
-          ConsoleToMSBuild="true" />
+    <Exec Command="pnpm watch" WorkingDirectory="$(FrontendDir)" ConsoleToMSBuild="true" />
   </Target>
-
   <!-- 清理前端构建产物（dotnet clean 时自动执行） -->
   <Target Name="CleanFrontend" AfterTargets="Clean">
     <Message Importance="normal" Text="清理前端构建产物: $(FrontendDistDir)" />
     <RemoveDir Directories="$(FrontendDistDir)" />
   </Target>
-
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Wails.Net.Sdk\Wails.Net.Sdk.csproj" />
+  </ItemGroup>
 </Project>

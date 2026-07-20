@@ -1,5 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <!-- Android Demo 项目，使用 .NET Android 工作负载 -->
     <TargetFramework>net10.0-android36.0</TargetFramework>
@@ -10,16 +10,14 @@
     <ApplicationId>wails.net.demo.android</ApplicationId>
     <ApplicationVersion>1</ApplicationVersion>
     <ApplicationDisplayVersion>1.0.0</ApplicationDisplayVersion>
+    <!-- 启用 SDK 的 Android TFM，引用 Wails.Net.Bundle.Android -->
+    <WailsNetEnableAndroid>true</WailsNetEnableAndroid>
   </PropertyGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\Wails.Net.Application\Wails.Net.Application.csproj" />
-    <ProjectReference Include="..\..\src\Wails.Net.Application.Android\Wails.Net.Application.Android.csproj" />
-  </ItemGroup>
-
   <!-- 将前端资源打包到 APK 的 assets 目录 -->
   <ItemGroup>
     <AndroidAsset Include="Assets\**\*" />
   </ItemGroup>
-
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Wails.Net.Sdk\Wails.Net.Sdk.csproj" />
+  </ItemGroup>
 </Project>

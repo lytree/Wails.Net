@@ -1,3 +1,5 @@
+using Wails.Net.Application.Bindings;
+
 namespace Wails.Net.Demo.Services;
 
 /// <summary>
@@ -11,6 +13,7 @@ public class GreetingService
     /// </summary>
     /// <param name="name">姓名。</param>
     /// <returns>问候字符串。</returns>
+    [Binding]
     public string Greet(string name)
     {
         return $"你好，{name}！欢迎使用 Wails.Net";
@@ -20,6 +23,7 @@ public class GreetingService
     /// 异步获取当前时间。
     /// </summary>
     /// <returns>格式化的时间字符串。</returns>
+    [Binding]
     public async Task<string> GetCurrentTimeAsync()
     {
         await Task.Delay(100); // 模拟异步操作
@@ -32,6 +36,7 @@ public class GreetingService
     /// <param name="a">第一个数字。</param>
     /// <param name="b">第二个数字。</param>
     /// <returns>和。</returns>
+    [Binding]
     public int Add(int a, int b)
     {
         return a + b;
@@ -41,6 +46,7 @@ public class GreetingService
     /// 获取服务器信息。
     /// </summary>
     /// <returns>包含应用和环境信息的字典。</returns>
+    [Binding]
     public Dictionary<string, string> GetServerInfo()
     {
         return new Dictionary<string, string>
