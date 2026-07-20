@@ -55,15 +55,16 @@ public interface IPlugin
 
 两套机制共享 `GeneratedBindingRegistry`（见 [ADR-0003](0003-source-generator-for-bindings.md)）和 `CommandRegistry`，前端调用入口统一为 `wails.Call(name, args)`。
 
-### 4. 30+ 内置插件
+### 4. 40+ 内置插件
 
-`src/Wails.Net.Application/Plugins/BuiltIn/` 目录下包含 36 个内置插件，覆盖：
+`src/Wails.Net.Application/Plugins/BuiltIn/` 目录下包含 37 个桌面内置插件，另在 `src/Wails.Net.Application/Plugins/Mobile/` 与 `src/Wails.Net.Application.Android/Mobile/` 下提供 5 个移动端插件（含 `AndroidRuntimePlugin`），合计 42 个内置插件，覆盖：
 
 - 窗口/屏幕：`WindowPlugin`、`ScreenPlugin`、`WindowStatePlugin`、`WindowsPlugin`
 - 文件/存储：`FileSystemPlugin`、`FsWatchPlugin`、`StorePlugin`、`SqlPlugin`、`StrongholdPlugin`、`UploadPlugin`
 - 网络/通信：`HttpPlugin`、`WebSocketPlugin`、`LocalhostPlugin`、`CookiePlugin`、`DeepLinkPlugin`
-- 系统/集成：`ClipboardPlugin`、`DialogPlugin`、`NotificationPlugin`、`ShellPlugin`、`OpenerPlugin`、`ProcessPlugin`、`GlobalShortcutPlugin`、`PowerManagementPlugin`、`AutostartPlugin`、`TrayPlugin`、`MenuPlugin`
+- 系统/集成：`ClipboardPlugin`、`DialogPlugin`、`NotificationPlugin`、`ShellPlugin`、`OpenerPlugin`、`ProcessPlugin`、`GlobalShortcutPlugin`、`PowerManagementPlugin`、`AutostartPlugin`、`TrayPlugin`、`MenuPlugin`（含 P2-1 MenuRole 角色菜单项）、`DpiScalePlugin`
 - 应用/信息：`ApplicationPlugin`、`AppInfoPlugin`、`OsInfoPlugin`、`PathPlugin`、`LogPlugin`、`LocalizationPlugin`、`UpdaterPlugin`、`PositionerPlugin`、`FileAssociationPlugin`、`PersistedScopePlugin`
+- 移动端（仅 Android）：`BiometricPlugin`、`NfcPlugin`、`BarcodeScannerPlugin`、`HapticsPlugin`、`AndroidRuntimePlugin`（P2-3 平台后端）
 
 每个插件通过 `[Command("plugin.action")]` 暴露能力，前端可按需调用。第三方插件遵循相同契约，可通过 `AddPlugin<T>()` 或 DI 注册。
 
@@ -72,7 +73,7 @@ public interface IPlugin
 **正面影响**：
 
 - **统一 API 风格**：所有系统原生能力以 `[Command]` 形式暴露，前端调用方式一致。
-- **可测试性**：插件是无 UI 的纯 C# 类，可在 `tests/Wails.Net.Application.Tests/` 下直接单元测试，无需启动 WebView。`BuiltInPluginsTests.cs` 与 `NewPluginsTests.cs` 已覆盖 36 个插件的核心路径。
+- **可测试性**：插件是无 UI 的纯 C# 类，可在 `tests/Wails.Net.Application.Tests/` 下直接单元测试，无需启动 WebView。`BuiltInPluginsTests.cs` 与 `NewPluginsTests.cs` 已覆盖 37 个桌面插件的核心路径，移动端插件由 `tests/Wails.Net.Application.Android.Tests/` 在 Windows 上以 no-op 委托方式验证。
 - **可裁剪性**：用户可仅注册需要的插件，避免引入不必要的依赖；Server 模式下可完全不注册 GUI 插件。
 - **DI 友好**：插件服务通过 `ConfigureServices` 注册，与 ASP.NET Core 心智模型一致，开发者学习成本低。
 - **扩展性**：第三方插件无需继承基类，仅需实现 `IPlugin` 三方法契约，降低耦合。

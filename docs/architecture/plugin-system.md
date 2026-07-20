@@ -8,7 +8,7 @@ Wails.Net 的插件框架借鉴 **Tauri v2 的"核心即插件"哲学**：系统
 
 1. **统一访问路径**：前端 API（如 `wails.window.setTitle`）和回退路径（`wails.call('window.setTitle', [{title:'...'}])`）走同一套 `CommandDispatcher`，无需双轨维护。
 2. **强类型 + DI 集成**：插件利用 `Microsoft.Extensions.DependencyInjection` 注册服务，命令参数通过 `System.Text.Json` 反序列化为强类型 Options 对象，避免运行时反射。
-3. **可裁剪可扩展**：内置 36 个插件按需通过 `UsePlugin<T>()` 启用，第三方插件遵循同一 `IPlugin` 契约即可热接入。
+3. **可裁剪可扩展**：内置 42 个插件（37 桌面 + 5 移动端）按需通过 `UsePlugin<T>()` 启用，第三方插件遵循同一 `IPlugin` 契约即可热接入。
 
 核心代码位于 `src/Wails.Net.Application/Plugins/`，内置插件位于 `BuiltIn/` 子目录。
 
@@ -172,7 +172,7 @@ context.Commands.MapCommand("fs.readTextFile", (Func<string, string>)(path => ..
 
 ## 5. 内置插件清单
 
-Wails.Net 在 `src/Wails.Net.Application/Plugins/BuiltIn/` 下提供 **36 个内置插件**，共注册 **271 个命令**。按功能分类如下：
+Wails.Net 在 `src/Wails.Net.Application/Plugins/BuiltIn/` 下提供 **37 个桌面内置插件**，另在 `src/Wails.Net.Application/Plugins/Mobile/` 与 `src/Wails.Net.Application.Android/Mobile/` 下提供 **5 个移动端插件**（含 `AndroidRuntimePlugin`），合计 **42 个内置插件**，共注册 **271 个命令**。按功能分类如下：
 
 ### 5.1 系统 / 应用类
 
@@ -302,7 +302,7 @@ if (_sandboxRoot is not null)
 
 | 维度 | Tauri v2 | Wails.Net |
 |------|---------|-----------|
-| 核心哲学 | 核心能力即插件（窗口/剪贴板/对话框/通知等都是插件） | 完全一致——内置 36 插件覆盖系统原生能力 |
+| 核心哲学 | 核心能力即插件（窗口/剪贴板/对话框/通知等都是插件） | 完全一致——内置 42 插件（37 桌面 + 5 移动端）覆盖系统原生能力 |
 | 命令注册 | `app.invoke_handler` + Rust 函数 | `CommandRegistry.MapCommand` + C# 委托 |
 | 命令路径 | `plugin://command` 路由 | `<plugin>.<action>` 命名约定 |
 | Options 模式 | Rust 结构体反序列化 | C# POCO + `System.Text.Json` 反序列化 |
@@ -437,4 +437,4 @@ const forecast = await wails.call('weather.fetchForecast', ['Shanghai']);
 - [MapCommandExtensions.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Commands/MapCommandExtensions.cs)
 - [BuiltIn 目录](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn)
 
-**最后更新**：2026-07-13
+**最后更新**：2026-07-20

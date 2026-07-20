@@ -70,7 +70,7 @@ Wails.Net 在 Webview 启动时注入两段 JavaScript 代码：
 
 ```javascript
 window._wails = {
-  platform: "windows",   // "windows" | "linux" | "server"
+  platform: "windows",   // "windows" | "linux" | "android" | "server"
   isDebug: true,          // 调试模式
   isServerMode: false     // 是否为无 GUI 的 Server 模式
 };

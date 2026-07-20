@@ -409,6 +409,111 @@ app.Options.ShouldQuit = () =>
 }
 ```
 
+## P2 新能力示例
+
+### 1. MenuRole 角色菜单项（P2-1）
+
+参考 Wails v3 `MenuRole` 与 Tauri v2 `PredefinedMenuItem`，新增 21 个角色枚举与 3 个标准菜单工厂方法，跨平台共享逻辑（macOS 专属角色在其他平台静默 no-op）：
+
+```csharp
+// 后端：构造标准 Edit 菜单（Undo/Redo/Separator/Cut/Copy/Paste/SelectAll）
+var editMenu = new Menu("Edit");
+editMenu.AddStandardEditMenu();
+
+// 也可构造标准 Window 菜单与 Help 菜单
+var windowMenu = new Menu("Window");
+windowMenu.AddStandardWindowMenu();
+
+var helpMenu = new Menu("Help");
+helpMenu.AddStandardHelpMenu(new AboutInfo { Name = "MyApp", Version = "1.0" });
+```
+
+```javascript
+// 前端：通过 MenuRole 常量调用 menu.addRoleItem
+await wails.menu.addRoleItem(parentMenuId, wails.MenuRole.Copy);
+await wails.menu.addStandardEditMenu(parentMenuId);
+await wails.menu.addStandardWindowMenu(parentMenuId);
+await wails.menu.addStandardHelpMenu(parentMenuId, { Name: 'MyApp', Version: '1.0' });
+```
+
+> 平台支持：Windows / Linux 完整支持；Android 无 `IMenuImpl` 实现，MenuRole 在 Android 上不可用。
+
+### 2. Android 平台事件系统（P2-2）
+
+12 个 Android 平台事件 ID（1267–1285）映射到 7 个公共 `ApplicationEventType`，前端可使用统一事件名跨平台订阅：
+
+```javascript
+// 跨平台订阅：在 Windows/Linux/Android 上均可用
+wails.events.on('application:low-memory', (data) => {
+    console.log('系统低内存，释放缓存');
+});
+
+wails.events.on('application:battery-changed', (data) => {
+    console.log('电量变化:', data.level, '%');
+});
+
+wails.events.on('application:network-changed', (data) => {
+    console.log('网络状态变化:', data.online ? '在线' : '离线');
+});
+
+wails.events.on('application:screen-locked', () => console.log('屏幕锁定'));
+wails.events.on('application:screen-unlocked', () => console.log('屏幕解锁'));
+```
+
+| Android 平台事件 | 值 | 公共事件名 |
+|------|----|----|
+| `ActivityCreated` | 1267 | `application:started` |
+| `ApplicationLowMemory` | 1273 | `application:low-memory` |
+| `BatteryChanged` | 1281 | `application:battery-changed` |
+| `NetworkChanged` | 1282 | `application:network-changed` |
+| `ThemeChanged` | 1283 | `application:theme-changed` |
+| `ScreenLocked` | 1284 | `application:screen-locked` |
+| `ScreenUnlocked` | 1285 | `application:screen-unlocked` |
+
+### 3. Android 移动端插件（P2-3）
+
+5 个移动端插件仅在 `net10.0-android36.0` 目标下可用，Windows/Linux 上调用会返回 `PlatformNotSupportedException`：
+
+```csharp
+// 在 Android 项目中注册移动端插件
+builder.UsePlugin<BiometricPlugin>();
+builder.UsePlugin<NfcPlugin>();
+builder.UsePlugin<BarcodeScannerPlugin>();
+builder.UsePlugin<HapticsPlugin>();
+builder.UsePlugin<AndroidRuntimePlugin>();  // Android 平台专属运行时
+```
+
+```javascript
+// 生物识别（指纹/面部）
+const available = await wails.call('biometric.checkAvailability', []);
+const result = await wails.call('biometric.authenticate', [{
+    title: '身份验证',
+    description: '请验证您的指纹'
+}]);
+
+// NFC 读写
+const data = await wails.call('nfc.read', [{ timeout: 10000 }]);
+await wails.call('nfc.write', [{ payload: new Uint8Array([...]) }]);
+
+// 条码/二维码扫描
+const barcode = await wails.call('barcode-scanner.scan', [{
+    formats: ['QR_CODE', 'EAN_13']
+}]);
+
+// 触觉反馈
+await wails.call('haptics.vibrate', [{ duration: 200 }]);
+await wails.call('haptics.notification', [{ type: 'success' }]);
+
+// Android 平台运行时
+const deviceInfo = await wails.call('device.info', []);
+// { brand, model, manufacturer, androidVersion, sdkInt, ... }
+
+await wails.call('toast.show', [{
+    message: 'Hello from Wails.Net!',
+    duration: 'short'  // 'short' | 'long'
+}]);
+```
+
 ## 下一步
 
 - [架构详解](architecture.md) - 了解框架的分层设计
