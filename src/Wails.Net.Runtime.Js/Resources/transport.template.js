@@ -330,6 +330,40 @@
   // 保存 HTTP 版本的 _wailsInvoke 作为回退路径
   var _wailsInvokeHttp = window._wailsInvoke;
 
+  // ====================================================================
+  // 注册原生 message 事件监听器，接收后端通过 PostNativeMessageAsync 推送的响应。
+  // 后端调用 CoreWebView2.PostWebMessageAsString(json) 时，前端会收到
+  // chrome.webview 的 'message' 事件，事件参数 e.data 即为后端推送的 JSON 字符串。
+  // 若未注册此监听器，__wailsNative.onMessage 永远不会被调用，
+  // 导致前端 wails.call() 的 Promise 永远 pending（"按钮无响应"现象）。
+  // ====================================================================
+  (function registerNativeMessageListener() {
+    try {
+      // Windows：WebView2 的 chrome.webview.addEventListener('message', ...)
+      if (typeof window.chrome !== "undefined" && window.chrome.webview
+          && typeof window.chrome.webview.addEventListener === "function") {
+        window.chrome.webview.addEventListener('message', function(e) {
+          var data = e && e.data;
+          if (typeof data === "string" && data && window.__wailsNative) {
+            window.__wailsNative.onMessage(data);
+          }
+        });
+        return;
+      }
+      // Linux：WebKitGTK 的 window message 事件
+      if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+        window.addEventListener('message', function(e) {
+          var data = e && e.data;
+          if (typeof data === "string" && data && window.__wailsNative) {
+            window.__wailsNative.onMessage(data);
+          }
+        });
+      }
+    } catch (e) {
+      // 监听器注册失败时回退 HTTP（_wailsInvokeHttp 已保留）
+    }
+  })();
+
   // 原生消息分发器：后端通过 PostNativeMessageAsync 推送的 JSON 字符串进入此函数。
   // 协议：
   //   - 若 data.type === "event"：解包 { name, data } 并触发本地事件回调
