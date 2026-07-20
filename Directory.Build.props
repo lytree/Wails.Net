@@ -44,6 +44,13 @@
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
 
+    <!--
+      NuGet 包统一输出到 artifacts/nupkg/ 目录。
+      nuget.config 已将此目录注册为本地包源 "Wails.Net.Local"，
+      Demo 通过 PackageReference 引用 Wails.Net.Sdk 时从此目录解析。
+    -->
+    <PackageOutputPath>$(MSBuildThisFileDirectory)artifacts/nupkg</PackageOutputPath>
+
     <!-- 源码映射（SourceLink），便于调试符号定位到源码 -->
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>

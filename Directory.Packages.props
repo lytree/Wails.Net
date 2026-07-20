@@ -3,6 +3,23 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentrallyManagedPackageVersionEnabled>true</CentrallyManagedPackageVersionEnabled>
   </PropertyGroup>
+  <!-- Wails.Net 自有包（版本与 Directory.Build.props 的 WailsNetVersion 保持一致） -->
+  <!-- Demo 项目通过 PackageReference 引用 Wails.Net.Sdk，由 CPM 解析版本 -->
+  <ItemGroup>
+    <PackageVersion Include="Wails.Net.Sdk" Version="0.1.0-alpha.1" />
+    <PackageVersion Include="Wails.Net.Bundle.Windows" Version="0.1.0-alpha.1" />
+    <PackageVersion Include="Wails.Net.Bundle.Linux" Version="0.1.0-alpha.1" />
+    <PackageVersion Include="Wails.Net.Bundle.Android" Version="0.1.0-alpha.1" />
+    <PackageVersion Include="Wails.Net.Application" Version="0.1.0-alpha.1" />
+    <PackageVersion Include="Wails.Net.Application.Windows" Version="0.1.0-alpha.1" />
+    <PackageVersion Include="Wails.Net.Application.Linux" Version="0.1.0-alpha.1" />
+    <PackageVersion Include="Wails.Net.Application.Android" Version="0.1.0-alpha.1" />
+    <PackageVersion Include="Wails.Net.AssetServer" Version="0.1.0-alpha.1" />
+    <PackageVersion Include="Wails.Net.Runtime.Js" Version="0.1.0-alpha.1" />
+    <PackageVersion Include="Wails.Net.Errors" Version="0.1.0-alpha.1" />
+    <PackageVersion Include="Wails.Net.Events" Version="0.1.0-alpha.1" />
+    <PackageVersion Include="Wails.Net.SourceGenerators" Version="0.1.0-alpha.1" />
+  </ItemGroup>
   <!-- 核心包（平台无关） -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
