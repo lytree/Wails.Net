@@ -1,21 +1,22 @@
 {
   "profiles": {
     "Wails.Net.Demo (Windows)": {
-      "commandName": "Project"
+      "commandName": "Project",
+      "jsWebView2Debugging": true
     },
     "Wails.Net.Demo (WSL2)": {
-      "commandName": "WSL",
-      "distributionName": "kali-linux",
-      "executablePath": "dotnet",
-      "commandLineArgs": "{OutDir}Wails.Net.Demo.dll",
-      "workingDirectory": "{OutDir}",
+      "commandName": "Project",
       "environmentVariables": {
         "WAILS_DEBUG": "true",
         "DOTNET_ROLL_FORWARD": "Major",
         "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json",
         "LIBGL_ALWAYS_SOFTWARE": "1",
-        "GALLIUM_DRIVER": "llvmpipe"
-      }
+        "GALLIUM_DRIVER": "llvmpipe",
+        "WEBKIT_DISABLE_HW_ACCELERATION": "1"
+      },
+      "remoteDebuggedTarget": "WSL2",
+      "distributionName": "kali-linux",
+      "jsWebView2Debugging": false
     }
   }
 }
