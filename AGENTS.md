@@ -175,20 +175,82 @@ public int Next() => Interlocked.Increment(ref _nextId);
 
 - 使用 `Wails.Net.Errors.CallError` 报告绑定调用错误
 - 区分 `CallErrorKind`：`ReferenceError`、`TypeError`、`RuntimeError`
-- 反射调用需解包 `TargetInvocationException`
+- **源生成器路径下直接捕获具体异常类型**，不再需要解包 `TargetInvocationException`（§3.4 已禁止反射调用方法）
 
 ```csharp
-catch (TargetInvocationException ex) when (ex.InnerException is not null)
+catch (InvalidOperationException ex)
 {
-    var inner = ex.InnerException;
-    return ErrorResult(inner.Message,
-        inner is ArgumentException ? CallErrorKind.TypeError : CallErrorKind.RuntimeError);
+    return ErrorResult(ex.Message, Errors.CallErrorKind.RuntimeError);
+}
+catch (ArgumentException ex)
+{
+    return ErrorResult(ex.Message, Errors.CallErrorKind.TypeError);
+}
+catch (JsonException ex)
+{
+    return ErrorResult($"参数反序列化失败: {ex.Message}", Errors.CallErrorKind.TypeError);
+}
+catch (OperationCanceledException)
+{
+    // 取消异常直接重抛，由 MessageProcessor 统一处理为 "调用已被取消"
+    throw;
 }
 ```
 
-### 3.4  前后端交互
+### 3.4  前后端交互（禁用反射协议）
 
-- 禁止使用反射获取对应方法。C# 使用源代码生成器，以Command的形式调用实现
+#### 3.4.1 总则
+
+**生产代码（`src/`）严禁使用运行时反射发现或调用方法**。后端方法必须通过源代码生成器（`Wails.Net.SourceGenerators`）在编译期生成强类型调用器，以 Command 的形式实现前后端绑定。
+
+#### 3.4.2 严禁的反射用法（生产代码）
+
+下列 API 在 `src/` 目录下禁止使用（除非明确属于 §3.4.4 允许例外）：
+
+| 禁止 API | 禁止用途 | 替代方案 |
+|----------|---------|----------|
+| `Type.GetMethod` / `GetMethods` / `GetProperty` / `GetField` / `GetConstructor` | 运行时发现成员 | 源生成器编译期分析 `[Binding]` 特性 |
+| `MethodInfo.Invoke` / `ConstructorInfo.Invoke` | 运行时调用方法/构造 | `GeneratedBindingRegistry.TryGetInvoker` 委托 |
+| `Activator.CreateInstance` / `CreateInstanceFrom` | 运行时实例化类型 | DI 容器 / `[ModuleInitializer]` 静态注册 |
+| `Delegate.CreateDelegate` | 运行时创建委托 | 源生成器生成强类型委托 |
+| `MakeGenericMethod` / `MakeGenericType` | 运行时泛型具现 | 源生成器为每个具现类型生成专用代码 |
+| `Assembly.GetTypes` / `GetExportedTypes` | 运行时类型扫描 | `[ModuleInitializer]` 显式注册 |
+| `AppDomain.AssemblyResolve` 事件 | 全局程序集解析 | 显式 `Assembly.Load` 或项目引用 |
+
+#### 3.4.3 允许的例外（白名单）
+
+以下反射用法经过评审后允许保留，**新增代码须再次评审**：
+
+1. **程序集加载触发模块初始化器**（`PlatformFactory.TryLoadPlatformAssembly`）：
+   - `Assembly.Load("Wails.Net.Application.{Platform}")` 仅触发目标程序集的 `[ModuleInitializer]` 完成委托注册
+   - 不通过反射发现或调用方法，实际调用仍走源生成器生成的强类型委托
+   - 解决 `UseAutoPlatform()` 路径下平台程序集按需加载导致 `[ModuleInitializer]` 未触发的根因问题
+
+2. **类型名取字符串**（`BindingManager`）：
+   - `instance.GetType().Namespace` / `.Name` 仅取类型名字符串作为字典 key，不构成反射调用方法
+   - 注释已标注 "NativeAOT 友好，非反射枚举"
+
+3. **源生成器编译期 Roslyn 分析**（`Wails.Net.SourceGenerators/`）：
+   - 编译期通过 Roslyn 符号 API 分析 `[Binding]` 特性并生成代码，不是运行时反射
+
+#### 3.4.4 测试代码例外（`tests/`）
+
+测试代码允许使用反射进行白盒测试（访问 internal/private 成员构造测试场景），但应优先通过以下手段避免反射：
+
+- **`InternalsVisibleTo`** —— 暴露 internal 成员给测试程序集直接调用
+- **`internal` 测试辅助属性/方法** —— 在被测类型上添加 internal setter 供测试使用
+- **接口注入** —— 通过 DI 注入 mock 实现，避免访问私有状态
+
+无法避免时，反射代码须有清晰注释说明用途（如 `// 白盒测试：通过反射设置 _isRunning 模拟已运行状态`），且不得用于验证生产代码中的绑定调用路径。
+
+#### 3.4.5 违规自动检测
+
+CI 构建通过 `TreatWarningsAsErrors=true` 阻止 AOT 不兼容的反射警告。代码审查时关注：
+
+- [ ] `src/` 目录是否新增 `using System.Reflection;`（除非属于 §3.4.3 白名单）
+- [ ] 是否使用 `MethodInfo.Invoke` / `Activator.CreateInstance` 进行方法调用
+- [ ] 是否使用 `Type.GetMethod` / `Assembly.GetTypes` 进行动态发现
+- [ ] 测试反射代码是否可通过 `InternalsVisibleTo` 改进
 
 ---
 
@@ -401,6 +463,12 @@ const uint prime = 16777619u;
 - [ ] 测试覆盖完整性
 - [ ] 文档注释完整性
 - [ ] 编码规范遵循
+- [ ] **反射合规**（详见 §3.4）：
+  - `src/` 是否新增 `using System.Reflection;`（除非属 §3.4.3 白名单）
+  - 是否使用 `MethodInfo.Invoke` / `Activator.CreateInstance` 调用方法
+  - 是否使用 `Type.GetMethod` / `Assembly.GetTypes` 动态发现
+  - 是否使用 `TargetInvocationException` 解包（已禁用，应捕获具体异常）
+  - 测试反射代码是否可通过 `InternalsVisibleTo` 改进
 
 ### 7.4 禁止行为
 
@@ -411,6 +479,7 @@ const uint prime = 16777619u;
 - ❌ 使用 MSTest/xUnit/NUnit
 - ❌ 跳过测试直接进入下一阶段
 - ❌ 创建未请求的文档文件
+- ❌ **生产代码（`src/`）使用反射发现或调用方法**（详见 §3.4）：禁止 `MethodInfo.Invoke`、`Activator.CreateInstance`、`Type.GetMethod`、`Assembly.GetTypes` 等运行时反射 API（`Assembly.Load` 仅触发 `[ModuleInitializer]` 属白名单例外）
 
 ### 7.5 脚本任务规则
 
@@ -446,4 +515,4 @@ dotnet fsi script.fsx
 
 ---
 
-**最后更新**：2026-07-15（Tauri v2 打包/分发/签名对齐：Linux .deb/.rpm 打包 + Windows Authenticode 自动签名 + CI dist-linux 迁移到 Linux runner + Capability 自动加载 + 文档一致性修正）
+**最后更新**：2026-07-21（§3.4 禁用反射协议规范扩展：明确禁止反射 API 白名单 + 允许例外 + 测试例外 + 违规检测；§3.3 移除反射时代 `TargetInvocationException` 解包示例；§7.3/§7.4 同步加入反射审查项与禁止行为；PlatformFactory 添加 `TryLoadPlatformAssembly` 通过 `Assembly.Load` 触发 `[ModuleInitializer]` 根因修复）

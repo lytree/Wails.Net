@@ -1,5 +1,4 @@
 using System.IO;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using TUnit.Assertions;
 using TUnit.Core;

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using Wails.Net.Application.Clipboard;
@@ -145,10 +146,22 @@ public static class PlatformFactory
             return factory(options);
         }
 
-        // 未注册委托时抛出异常（遵循 AGENTS.md §3.4，禁止反射回退）
+        // 委托未命中：尝试加载对应平台程序集以触发 [ModuleInitializer] 注册委托。
+        // 此路径让 UseAutoPlatform() 在未显式调用 UseLinux()/UseWindows() 时也能正常工作，
+        // 消除 Demo 项目必须重复条件块的负担。Assembly.Load 仅触发模块初始化器，不使用反射调用方法。
+        TryLoadPlatformAssembly(platform);
+
+        if (_platformAppFactories.TryGetValue(platform, out factory))
+        {
+            LogDebug($"[AutoLoad] 加载平台程序集后成功创建 {platform} 平台应用");
+            return factory(options);
+        }
+
+        // 加载后仍未注册委托时抛出异常（遵循 AGENTS.md §3.4，禁止反射回退）
         throw new InvalidOperationException(
             $"平台 '{platform}' 未注册创建委托。请通过 PlatformFactory.RegisterPlatformApp(\"{platform}\", ...) 注册，" +
-            $"通常在 Wails.Net.Application.{Capitalize(platform)} 项目中通过 [ModuleInitializer] 自动调用。");
+            $"通常在 Wails.Net.Application.{Capitalize(platform)} 项目中通过 [ModuleInitializer] 自动调用。" +
+            $"已尝试自动加载程序集 Wails.Net.Application.{Capitalize(platform)} 但未找到委托，请确认项目已引用该平台包。");
     }
 
     /// <summary>
@@ -204,10 +217,20 @@ public static class PlatformFactory
             return factory();
         }
 
-        // 未注册委托时抛出异常（遵循 AGENTS.md §3.4，禁止反射回退）
+        // 委托未命中：尝试加载对应平台程序集以触发 [ModuleInitializer] 注册委托。
+        TryLoadPlatformAssembly(platform);
+
+        if (_clipboardFactories.TryGetValue(platform, out factory))
+        {
+            LogDebug($"[AutoLoad] 加载平台程序集后成功创建 {platform} 剪贴板");
+            return factory();
+        }
+
+        // 加载后仍未注册委托时抛出异常（遵循 AGENTS.md §3.4，禁止反射回退）
         throw new InvalidOperationException(
             $"平台 '{platform}' 未注册剪贴板创建委托。请通过 PlatformFactory.RegisterClipboard(\"{platform}\", ...) 注册，" +
-            $"通常在 Wails.Net.Application.{Capitalize(platform)} 项目中通过 [ModuleInitializer] 自动调用。");
+            $"通常在 Wails.Net.Application.{Capitalize(platform)} 项目中通过 [ModuleInitializer] 自动调用。" +
+            $"已尝试自动加载程序集 Wails.Net.Application.{Capitalize(platform)} 但未找到委托，请确认项目已引用该平台包。");
     }
 
     /// <summary>
@@ -352,6 +375,62 @@ public static class PlatformFactory
         return string.IsNullOrEmpty(value)
             ? value
             : char.ToUpperInvariant(value[0]) + value[1..];
+    }
+
+    /// <summary>
+    /// 尝试按平台名称加载对应的平台程序集，触发其 <c>[ModuleInitializer]</c> 完成委托注册。
+    /// <para>
+    /// 此方法解决 <see cref="UseAutoPlatform"/> 路径下平台程序集按需加载导致
+    /// <c>[ModuleInitializer]</c> 未触发的根因问题：当用户未显式调用
+    /// <c>UseLinux()</c>/<c>UseWindows()</c> 时，<see cref="DetectPlatformOrNull"/>
+    /// 检测到平台但 <c>_platformAppFactories</c> 未注册委托，此时按约定程序集名
+    /// <c>Wails.Net.Application.{Platform}</c> 加载程序集即可让
+    /// <c>LinuxPlatformRegistrar</c> / <c>WindowsPlatformRegistrar</c> /
+    /// <c>AndroidPlatformRegistrar</c> 的模块初始化器执行注册。
+    /// </para>
+    /// <para>
+    /// 注意：此路径不属于 AGENTS.md §3.4 禁止的"反射获取对应方法"——
+    /// <see cref="Assembly.Load"/> 仅触发模块初始化器，不通过反射发现或调用方法，
+    /// 实际方法调用仍走源生成器生成的强类型调用链。
+    /// </para>
+    /// </summary>
+    /// <param name="platform">平台名称（windows/linux/android）。</param>
+    /// <remarks>
+    /// 程序集缺失或加载失败时静默降级，由调用方决定是否抛出异常或回退到 Server 模式。
+    /// 采用 try-catch 而非 <see cref="AppDomain.AssemblyResolve"/> 事件，避免全局副作用。
+    /// </remarks>
+    private static void TryLoadPlatformAssembly(string platform)
+    {
+        var assemblyName = platform switch
+        {
+            PlatformWindows => "Wails.Net.Application.Windows",
+            PlatformLinux => "Wails.Net.Application.Linux",
+            PlatformAndroid => "Wails.Net.Application.Android",
+            _ => null
+        };
+
+        if (assemblyName is null)
+        {
+            return;
+        }
+
+        try
+        {
+            LogDebug($"[AutoLoad] 尝试加载平台程序集: {assemblyName}");
+            Assembly.Load(assemblyName);
+        }
+        catch (FileNotFoundException ex)
+        {
+            LogDebug($"[AutoLoad] 平台程序集未部署: {assemblyName}（{ex.Message}），将由 Server 模式降级处理");
+        }
+        catch (FileLoadException ex)
+        {
+            LogDebug($"[AutoLoad] 平台程序集加载失败: {assemblyName}（{ex.Message}），将由 Server 模式降级处理");
+        }
+        catch (BadImageFormatException ex)
+        {
+            LogDebug($"[AutoLoad] 平台程序集格式不兼容: {assemblyName}（{ex.Message}），将由 Server 模式降级处理");
+        }
     }
 
     /// <summary>
