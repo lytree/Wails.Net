@@ -611,6 +611,17 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     /// 分发 WindowClosing 事件，并在最后一个窗口关闭时退出应用。
     /// 对应 Win32 平台 <see cref="Win32WebviewWindow"/> 中的 WM_CLOSE/WM_DESTROY 处理：
     /// WM_CLOSE 分发 WindowClosing 事件；WM_DESTROY 在所有窗口关闭时调用 PostQuitMessage(0)。
+    /// <para>
+    /// 退出确认流程（与 <see cref="ApplicationOptions.ShowExitConfirmationDialog"/> 配合）：
+    /// 1. 若是最后一个窗口且 <see cref="ApplicationOptions.ShowExitConfirmationDialog"/> 为 true，
+    ///    先弹出 GTK AlertDialog 询问用户是否退出
+    /// 2. 用户选择"取消"则返回 true 阻止窗口关闭，应用继续运行
+    /// 3. 用户选择"确定"则调用 <see cref="Application.Quit"/> 触发 Shutdown 退出应用
+    /// </para>
+    /// <para>
+    /// 注意：AlertDialog.ChooseAsync 在 GTK 主线程上运行模态对话框，
+    /// 会阻塞 close-request 信号处理直到用户响应，这是 GTK 推荐的同步确认模式。
+    /// </para>
     /// </summary>
     /// <param name="sender">触发事件的 GTK 窗口。</param>
     /// <param name="args">事件参数。</param>
@@ -630,6 +641,26 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         // 对应 Win32 平台 WmDestroy 中的 shouldQuit 检查与 PostQuitMessage(0) 调用。
         if (!app.Options.DisableQuitOnLastWindowClosed && app.Windows.Count <= 1)
         {
+            // 最后一个窗口关闭时，检查是否需要弹出退出确认对话框。
+            if (app.Options.ShowExitConfirmationDialog)
+            {
+                // 弹出 GTK 原生确认对话框（模态，阻塞当前信号处理直到用户响应）。
+                // ChooseAsync 在 GTK 主线程运行，返回按钮索引（0=第一个按钮，1=第二个按钮）。
+                var dialog = AlertDialog.NewWithProperties([]);
+                dialog.SetMessage(app.Options.ExitDialogTitle);
+                dialog.SetDetail(app.Options.ExitDialogMessage);
+                dialog.SetButtons(["取消", "确定退出"]);
+
+                // ConfigureAwait(true) 保持 GTK 同步上下文，确保对话框在 UI 线程运行。
+                var result = dialog.ChooseAsync(null!).ConfigureAwait(true).GetAwaiter().GetResult();
+
+                // 用户选择"取消"（索引 0）：阻止窗口关闭，应用继续运行。
+                if (result == 0)
+                {
+                    return true;
+                }
+            }
+
             // 最后一个窗口关闭时，通过 Application.Quit() 触发 Shutdown，
             // 最终调用 LinuxPlatformApp.Destroy() 中的 _mainLoop?.Quit() 退出 GTK 主循环。
             app.Quit();
@@ -1097,6 +1128,12 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         _window?.Destroy();
         _window = null;
         _webView = null;
+
+        // 分发 WindowClosed 事件，通知应用层窗口已销毁。
+        // 对应 Win32 平台 WmDestroy 中的 DispatchWindowEvent(WindowClosed) 调用，
+        // 以及 Wails v3 Go 版本中的 emit(WindowClosed)。
+        // WindowManager 通过此事件从 _windows 字典中移除窗口。
+        WailsApplication.Get()?.DispatchWindowEvent(_id, (uint)WindowEventType.WindowClosed);
     }
 
     /// <inheritdoc />

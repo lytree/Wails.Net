@@ -99,6 +99,12 @@ var app = desktopApp.Application;
 app.Options.EnableDefaultContextMenu = true;  // P1-4：ContextMenu 行为对齐
 app.Options.DragAndDrop = true;
 
+// 启用退出确认对话框：用户点击窗口关闭按钮时弹出 GTK 原生确认框。
+// 仅在最后一个窗口关闭时触发，用户选择"取消"则阻止退出。
+app.Options.ShowExitConfirmationDialog = true;
+app.Options.ExitDialogTitle = "确认退出 Wails.Net Demo";
+app.Options.ExitDialogMessage = "确定要退出应用吗？未保存的数据将丢失。";
+
 // P1-7：Event Hooks 补齐（PostShutdown / ShouldQuit）
 // 注意：这两个回调定义在 ApplicationOptions 上，不是 DesktopHostOptions。
 app.Options.PostShutdown = () =>

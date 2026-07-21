@@ -60,6 +60,33 @@ public class ApplicationOptions
     public bool DisableQuitOnLastWindowClosed { get; set; } = false;
 
     /// <summary>
+    /// 最后一个窗口关闭时是否弹出退出确认对话框。
+    /// <para>
+    /// 为 true 时，平台在最后一个窗口收到关闭请求后会先弹出原生确认对话框
+    /// （如 GTK AlertDialog / Win32 MessageBox），用户确认后才退出应用；
+    /// 用户取消则阻止窗口关闭，应用继续运行。
+    /// </para>
+    /// <para>
+    /// 默认为 false：直接退出，不弹确认框。
+    /// 与 <see cref="ShouldQuit"/> 的区别：ShouldQuit 是同步回调，适用于"有未保存数据"等
+    /// 编程化判断；本选项触发原生 UI 对话框，适用于"用户确认退出"场景。
+    /// </para>
+    /// </summary>
+    public bool ShowExitConfirmationDialog { get; set; } = false;
+
+    /// <summary>
+    /// 退出确认对话框的标题，仅在 <see cref="ShowExitConfirmationDialog"/> 为 true 时使用。
+    /// 默认为 "确认退出"。
+    /// </summary>
+    public string ExitDialogTitle { get; set; } = "确认退出";
+
+    /// <summary>
+    /// 退出确认对话框的消息内容，仅在 <see cref="ShowExitConfirmationDialog"/> 为 true 时使用。
+    /// 默认为 "确定要退出应用吗？"。
+    /// </summary>
+    public string ExitDialogMessage { get; set; } = "确定要退出应用吗？";
+
+    /// <summary>
     /// 应用启动时执行的回调，可为 null。
     /// </summary>
     public Action? OnStartup { get; set; }
