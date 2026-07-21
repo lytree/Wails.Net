@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Wails.Net.Application.Clipboard;
@@ -378,7 +379,7 @@ public static class PlatformFactory
     }
 
     /// <summary>
-    /// 尝试按平台名称加载对应的平台程序集，触发其 <c>[ModuleInitializer]</c> 完成委托注册。
+    /// 尝试按平台名称加载对应的平台程序集，并显式触发其 <c>[ModuleInitializer]</c> 完成委托注册。
     /// <para>
     /// 此方法解决 <see cref="UseAutoPlatform"/> 路径下平台程序集按需加载导致
     /// <c>[ModuleInitializer]</c> 未触发的根因问题：当用户未显式调用
@@ -389,8 +390,16 @@ public static class PlatformFactory
     /// <c>AndroidPlatformRegistrar</c> 的模块初始化器执行注册。
     /// </para>
     /// <para>
+    /// <b>关键实现细节</b>：.NET 运行时对 <c>[ModuleInitializer]</c> 采用 lazy 策略，
+    /// 仅 <see cref="Assembly.Load"/> 不保证立即触发模块初始化器执行。
+    /// 必须显式调用 <see cref="RuntimeHelpers.RunModuleConstructor"/>
+    /// 强制运行模块初始化器（若尚未运行），否则 <c>_platformAppFactories</c>
+    /// 仍可能未注册，导致 <see cref="InvalidOperationException"/>。
+    /// </para>
+    /// <para>
     /// 注意：此路径不属于 AGENTS.md §3.4 禁止的"反射获取对应方法"——
-    /// <see cref="Assembly.Load"/> 仅触发模块初始化器，不通过反射发现或调用方法，
+    /// <see cref="Assembly.Load"/> 与 <see cref="RuntimeHelpers.RunModuleConstructor"/>
+    /// 仅触发编译器生成的模块初始化器，不通过反射发现或调用方法，
     /// 实际方法调用仍走源生成器生成的强类型调用链。
     /// </para>
     /// </summary>
@@ -417,7 +426,17 @@ public static class PlatformFactory
         try
         {
             LogDebug($"[AutoLoad] 尝试加载平台程序集: {assemblyName}");
-            Assembly.Load(assemblyName);
+            var assembly = Assembly.Load(assemblyName);
+
+            // .NET 的 [ModuleInitializer] 是 lazy 的：仅 Assembly.Load 不保证立即触发。
+            // 显式调用 RuntimeHelpers.RunModuleConstructor 强制运行模块初始化器，
+            // 确保平台注册器（LinuxPlatformRegistrar 等）完成委托注册。
+            // 若模块初始化器已运行过，此调用为 no-op，安全无副作用。
+            foreach (var module in assembly.GetModules())
+            {
+                LogDebug($"[AutoLoad] 触发模块初始化器: {module.Name}");
+                RuntimeHelpers.RunModuleConstructor(module.ModuleHandle);
+            }
         }
         catch (FileNotFoundException ex)
         {

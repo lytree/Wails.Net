@@ -85,25 +85,11 @@ builder.UsePlugin<MyCustomPlugin>();          // 自定义计数器插件
 // 配置日志级别
 builder.Logging.SetMinimumLevel(LogLevel.Information);
 
-// 使用平台工厂自动检测并注册平台实现
-// Windows 上注册 WindowsPlatformApp，Linux 上注册 LinuxPlatformApp
-// 显式调用 UseWindows()/UseLinux() 以触发对应平台程序集的 [ModuleInitializer] 注册。
-#if WINDOWS10_0_19041_0
-builder.UseWindows();
-#else
-if (OperatingSystem.IsLinux())
-{
-    builder.UseLinux();
-}
-else
-{
-    // 非平台特定 TFM（如 net10.0）但运行时不是 Linux 时，回退到自动检测。
-    // 注意：此时若运行在 Windows 上且未显式引用 Wails.Net.Application.Windows，
-    // PlatformFactory 将因 [ModuleInitializer] 未触发而抛出 InvalidOperationException，
-    // 这是预期行为——用户应使用 net10.0-windows10.0.19041.0 TFM 来获取 Windows 支持。
-    builder.UseAutoPlatform();
-}
-#endif
+// 使用平台工厂自动检测并注册平台实现。
+// Windows 上注册 WindowsPlatformApp，Linux 上注册 LinuxPlatformApp。
+// PlatformFactory.TryLoadPlatformAssembly 会通过 Assembly.Load + RuntimeHelpers.RunModuleConstructor
+// 显式触发对应平台程序集的 [ModuleInitializer] 注册委托，无需显式调用 UseWindows()/UseLinux()。
+builder.UseAutoPlatform();
 
 // 构建应用实例
 var desktopApp = builder.Build();

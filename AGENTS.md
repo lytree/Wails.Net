@@ -222,7 +222,9 @@ catch (OperationCanceledException)
 以下反射用法经过评审后允许保留，**新增代码须再次评审**：
 
 1. **程序集加载触发模块初始化器**（`PlatformFactory.TryLoadPlatformAssembly`）：
-   - `Assembly.Load("Wails.Net.Application.{Platform}")` 仅触发目标程序集的 `[ModuleInitializer]` 完成委托注册
+   - `Assembly.Load("Wails.Net.Application.{Platform}")` 加载目标平台程序集
+   - `RuntimeHelpers.RunModuleConstructor` 显式触发 `[ModuleInitializer]` 完成委托注册
+   - **必须显式调用 `RuntimeHelpers.RunModuleConstructor`**：.NET 运行时对 `[ModuleInitializer]` 采用 lazy 策略，仅 `Assembly.Load` 不保证立即触发模块初始化器执行
    - 不通过反射发现或调用方法，实际调用仍走源生成器生成的强类型委托
    - 解决 `UseAutoPlatform()` 路径下平台程序集按需加载导致 `[ModuleInitializer]` 未触发的根因问题
 
@@ -331,6 +333,22 @@ dotnet run --project tests/Wails.Net.Application.Tests/Wails.Net.Application.Tes
   # 单元测试（Mock Android API，无需设备）
   dotnet run --project tests/Wails.Net.Application.Android.Tests/Wails.Net.Application.Android.Tests.csproj
   ```
+- **Android E2E 测试（设备端）**：通过 F# 脚本驱动 adb + Demo APK 完成端到端验证，需 Android 设备/模拟器
+  ```bash
+  # 启动 Android 模拟器后，运行 E2E 测试（自动构建 + 安装 + 启动 + 验证）
+  dotnet fsi tests/Wails.Net.Android.E2E/run-android-e2e.fsx -- --verbose
+
+  # 跳过构建/安装（已手动部署 APK）
+  dotnet fsi tests/Wails.Net.Android.E2E/run-android-e2e.fsx -- --no-build --no-install
+
+  # 指定 APK 路径
+  dotnet fsi tests/Wails.Net.Android.E2E/run-android-e2e.fsx -- --apk-path path/to/app.apk
+  ```
+  E2E 测试脚本（`tests/Wails.Net.Android.E2E/run-android-e2e.fsx`）验证：
+  1. Demo APK 构建/安装成功
+  2. MainActivity 启动并触发 `Android.ActivityCreated` 等平台事件
+  3. WebView 加载本地资源（uiautomator dump 验证页面元素）
+  4. IPC 绑定调用（点击按钮验证 `GreetingService.Greet` 返回结果）
 - **CLI 测试**：跨平台，验证生成器、脚手架、构建器逻辑
   ```bash
   dotnet run --project tests/Wails.Net.Cli.Tests/Wails.Net.Cli.Tests.csproj
@@ -515,4 +533,4 @@ dotnet fsi script.fsx
 
 ---
 
-**最后更新**：2026-07-21（§3.4 禁用反射协议规范扩展：明确禁止反射 API 白名单 + 允许例外 + 测试例外 + 违规检测；§3.3 移除反射时代 `TargetInvocationException` 解包示例；§7.3/§7.4 同步加入反射审查项与禁止行为；PlatformFactory 添加 `TryLoadPlatformAssembly` 通过 `Assembly.Load` 触发 `[ModuleInitializer]` 根因修复）
+**最后更新**：2026-07-21（§3.4 禁用反射协议规范扩展 + §3.3 移除反射时代异常解包示例 + §4.4 添加 Android E2E 测试说明 + PlatformFactory 通过 `Assembly.Load` + `RuntimeHelpers.RunModuleConstructor` 显式触发 `[ModuleInitializer]` 根因修复 + 新增 `tests/Wails.Net.Android.E2E/run-android-e2e.fsx` 设备端 E2E 测试 + CI 添加 `test-android-e2e` job）

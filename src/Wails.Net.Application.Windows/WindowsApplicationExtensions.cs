@@ -21,10 +21,11 @@ public static class WindowsApplicationExtensions
     /// 触发 <c>[ModuleInitializer]</c> 自动注册 Windows 平台委托到 <see cref="PlatformFactory"/>，
     /// 然后委托给 <see cref="DesktopApplicationBuilder.UseAutoPlatform"/> 完成实际注册。
     /// <para>
-    /// 必须使用此方法（或 <see cref="Application.UseWindows"/>）显式触发程序集加载，
-    /// 仅通过 <see cref="DesktopApplicationBuilder.UseAutoPlatform"/> 不会触发
-    /// <c>[ModuleInitializer]</c>，因为 .NET 程序集按需加载，
-    /// 若代码未直接引用本程序集中的类型，模块初始化器不会执行。
+    /// <b>注意</b>：自 <c>PlatformFactory.TryLoadPlatformAssembly</c> 引入后，
+    /// <see cref="DesktopApplicationBuilder.UseAutoPlatform"/> 会通过
+    /// <see cref="System.Runtime.CompilerServices.RuntimeHelpers.RunModuleConstructor"/>
+    /// 显式触发模块初始化器，<b>不再需要</b>显式调用本方法来注册 Windows 平台。
+    /// 本方法保留是为了向后兼容，以及允许在多个平台 TFM 同时编译时显式指定 Windows 平台。
     /// </para>
     /// </remarks>
     /// <param name="builder">桌面应用构建器。</param>
