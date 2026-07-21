@@ -87,11 +87,11 @@ public class BindingManager
             return await InvokeGeneratedAsync(fullName, invoker, args, cancellationToken);
         }
 
-        // 诊断日志：输出注册表状态，便于排查 ModuleInitializer 未运行等问题
-        System.Console.Error.WriteLine(
-            $"[BindingManager] 未找到方法 '{fullName}'。GeneratedBindingRegistry.Count={GeneratedBindingRegistry.Count}, " +
-            $"TryGetInvoker={GeneratedBindingRegistry.TryGetInvoker(fullName, out _)}");
-
+        // 未找到绑定方法时返回 ReferenceError。
+        // 注意：许多合法命令（dialog.* / window.* / application.* / notification.* 等）
+        // 通过 CommandDispatcher 插件路径调用，会先在此返回"未找到"再由 MessageProcessor 回退。
+        // 因此不应在此输出诊断日志——会污染 stderr 并误导用户。
+        // 若需排查 ModuleInitializer 未运行等问题，请使用 dotnet trace 或显式日志。
         var error = new CallError($"未找到名为 '{fullName}' 的绑定方法", null, CallErrorKind.ReferenceError);
         return new Dictionary<string, object?>
         {
