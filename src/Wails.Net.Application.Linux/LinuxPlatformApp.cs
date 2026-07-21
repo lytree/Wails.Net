@@ -52,11 +52,9 @@ public sealed class LinuxPlatformApp : IPlatformApp
     private static int _gtkInitialized;
 
     /// <summary>
-    /// GTK Application 实例。
-    /// 使用 GtkApplication 替代裸 MainLoop，以获得与原生 GTK4 应用一致的初始化流程
-    /// （D-Bus 注册、会话集成、activate 信号等），解决 WSLg 下 WebKitGTK 白屏问题。
+    /// GTK 主循环实例，Run() 时创建，Destroy() 时退出。
     /// </summary>
-    private Gtk.Application? _gtkApp;
+    private MainLoop? _mainLoop;
 
     /// <summary>
     /// 已创建的 Webview 窗口字典，按窗口 ID 索引。
@@ -289,33 +287,9 @@ public sealed class LinuxPlatformApp : IPlatformApp
         _systemEventWatcher = new LinuxSystemEventWatcher();
         _systemEventWatcher.Start();
 
-        // 使用 GtkApplication 替代裸 MainLoop。
-        // GtkApplication 提供与原生 GTK4 应用一致的初始化流程：
-        //   - 注册到会话总线（D-Bus）
-        //   - 处理 startup/activate 信号
-        //   - 自动调用 gtk_init()
-        // 实测在 WSLg 环境下，使用裸 MainLoop 会导致 WebKitGTK 白屏
-        // （窗口创建成功但 WebView 内容未绘制），
-        // 改用 GtkApplication 后可正常渲染（与最小化 C 测试程序行为一致）。
-        _gtkApp = Gtk.Application.New("io.wails.Net.Application", Gio.ApplicationFlags.FlagsNone);
-        _gtkApp.OnActivate += (_, _) =>
-        {
-            // 重新显示所有已创建的窗口，触发 WebView 在主循环上下文中绘制。
-            // 窗口已在 OnAfterStart 回调中创建，但 Present() 在主循环启动前调用
-            // 会导致 WSLg 下 WebKitGTK 白屏。在 activate 信号中重新 Present，
-            // 确保 WebView 渲染管线在主循环运行时初始化。
-            foreach (var window in _windows.Values)
-            {
-                window.Show();
-            }
-        };
-        // LinuxWebviewWindow 使用普通 GtkWindow（非 GtkApplicationWindow），
-        // GtkApplication 不会自动追踪其生命周期，导致 Run() 在 activate 后立即返回。
-        // 调用 Hold() 手动增加引用计数，保持 GtkApplication 运行，
-        // 对应 Destroy() 中的 Release()。
-        _gtkApp.Hold();
-        // 传递命令行参数给 GApplication（某些 GApplication 实现需要真实参数才能正确触发 activate）。
-        return _gtkApp.Run(Environment.GetCommandLineArgs());
+        _mainLoop = MainLoop.New(GLib.Functions.MainContextDefault(), false);
+        _mainLoop.Run();
+        return 0;
     }
 
     /// <summary>
@@ -514,10 +488,7 @@ public sealed class LinuxPlatformApp : IPlatformApp
         _systemEventWatcher?.Dispose();
         _systemEventWatcher = null;
 
-        // 优先通过 GtkApplication.Quit() 退出主循环（若使用 GtkApplication 模式）。
-        // Release() 对应 Run() 中的 Hold()，减少引用计数后 GtkApplication 才会退出。
-        _gtkApp?.Release();
-        _gtkApp?.Quit();
+        _mainLoop?.Quit();
         _singleInstanceSocket?.Dispose();
         _singleInstanceSocket = null;
         if (_singleInstanceSocketPath is not null && System.IO.File.Exists(_singleInstanceSocketPath))

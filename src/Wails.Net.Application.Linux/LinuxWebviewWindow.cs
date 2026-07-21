@@ -327,26 +327,12 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         _mainBox.Append(_webView);
         _window?.SetChild(_mainBox);
 
-        // GTK4 中显式设置控件可见（默认 true，但某些情况下需要显式）
-        _webView.SetVisible(true);
-        _mainBox.SetVisible(true);
-
         // 配置 WebView 设置。
         var settings = _webView.GetSettings();
         if (settings is not null)
         {
             settings.SetEnableJavascript(true);
             settings.SetEnableDeveloperExtras(true);
-            // 在 WSLg/无 GPU 加速环境下禁用 WebKit 硬件加速，
-            // 强制 CPU 软件渲染，绕过 EGL/DMA-BUF/GLX 兼容性导致的白屏问题。
-            try
-            {
-                settings.SetHardwareAccelerationPolicy(HardwareAccelerationPolicy.Never);
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[Wails.Net] 设置 HardwareAccelerationPolicy 失败: {ex.Message}");
-            }
         }
 
         // 注入 Wails 运行时 JS（必须在导航之前！）
@@ -420,11 +406,6 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
 
         _wailsSchemeRegistered = true;
         var context = _webView.GetContext();
-        if (context is null)
-        {
-            return;
-        }
-
         context.RegisterUriScheme("wails", OnWailsSchemeRequest);
     }
 
@@ -544,8 +525,7 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
                 content = assetServer.ServeAsync("index.html", _options.Name).GetAwaiter().GetResult();
                 if (content is not null && content.Length > 0)
                 {
-                    var fallbackMime = assetServer.GetMimeType("index.html");
-                    FinishResponse(request, content, fallbackMime, 200, "OK");
+                    FinishResponse(request, content, "text/html", 200, "OK");
                     return;
                 }
             }
