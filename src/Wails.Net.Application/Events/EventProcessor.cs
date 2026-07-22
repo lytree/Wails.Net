@@ -1,11 +1,20 @@
 using System.Collections.Concurrent;
 using Wails.Net.Application.Transport;
+using Wails.Net.Events;
 
 namespace Wails.Net.Application.Events;
 
 /// <summary>
 /// 事件处理器，管理事件订阅、发布和取消。
-/// 对应 Wails v3 Go 版本 events.go 中的 EventProcessor。
+/// 对应 Wails v3 Go 版本 events.go 中的 EventProcessor 和 event_manager.go 中的 EventManager。
+/// <para>
+/// 同时承载两类事件：
+/// <list type="bullet">
+/// <item>自定义事件（CustomEvent）：用户代码通过 <see cref="Emit"/> 发布，前端通过 wails.Events.On 订阅。</item>
+/// <item>应用事件（ApplicationEvent）：平台触发（窗口焦点/系统主题/电池网络等），通过
+/// <see cref="OnApplicationEvent"/> 订阅、<see cref="EmitApplicationEvent"/> 分发。</item>
+/// </list>
+/// </para>
 /// </summary>
 public class EventProcessor
 {
@@ -28,6 +37,19 @@ public class EventProcessor
     /// </para>
     /// </summary>
     private readonly List<IWailsEventListener> _wailsEventListeners = new();
+
+    /// <summary>
+    /// 应用事件监听器：事件 ID → 监听器回调列表。
+    /// 对应 Wails v3 Go 版本 application.go 中的 <c>applicationEventListeners map[uint][]*EventListener</c>。
+    /// </summary>
+    private readonly ConcurrentDictionary<uint, List<Action<ApplicationEvent>>> _applicationEventListeners = new();
+
+    /// <summary>
+    /// 应用事件钩子：事件 ID → 钩子回调列表。
+    /// 对应 Wails v3 Go 版本 application.go 中的 <c>applicationEventHooks map[uint][]*eventHook</c>。
+    /// 钩子在监听器执行前调用，可通过 <see cref="ApplicationEvent.Cancel"/> 取消事件。
+    /// </summary>
+    private readonly ConcurrentDictionary<uint, List<Action<ApplicationEvent>>> _applicationEventHooks = new();
 
     /// <summary>
     /// 保护 <see cref="_wailsEventListeners"/> 的锁。
@@ -286,6 +308,185 @@ public class EventProcessor
     public void Clear()
     {
         _listeners.Clear();
+    }
+
+    /// <summary>
+    /// 清除所有自定义事件订阅。
+    /// 对应 Wails v3 Go 版本 event_manager.go 中的 <c>EventManager.Reset</c>，
+    /// 内部调用 <c>EventProcessor.OffAll</c>。
+    /// <para>
+    /// 此方法是 <see cref="Clear"/> 的语义别名，仅为对齐 Wails v3 公共 API 命名而提供。
+    /// 应用事件监听器（<see cref="OnApplicationEvent"/>）不受影响。
+    /// </para>
+    /// </summary>
+    public void Reset()
+    {
+        _listeners.Clear();
+    }
+
+    /// <summary>
+    /// 订阅应用程序级别事件，返回取消订阅的回调。
+    /// 对应 Wails v3 Go 版本 event_manager.go 中的 <c>EventManager.OnApplicationEvent</c>。
+    /// <para>
+    /// 与自定义事件的 <see cref="On"/> 不同，应用事件由平台触发（窗口焦点/系统主题/电池网络等），
+    /// 监听器在调用前会先执行同事件的钩子（<see cref="RegisterApplicationEventHook"/>），
+    /// 钩子可通过 <see cref="ApplicationEvent.Cancel"/> 取消事件以阻止后续监听器执行。
+    /// </para>
+    /// </summary>
+    /// <param name="eventType">应用事件类型。</param>
+    /// <param name="callback">事件回调。</param>
+    /// <returns>取消订阅回调，调用后移除该监听器。</returns>
+    public Action OnApplicationEvent(ApplicationEventType eventType, Action<ApplicationEvent> callback)
+    {
+        ArgumentNullException.ThrowIfNull(callback);
+        var id = (uint)eventType;
+
+        var list = _applicationEventListeners.GetOrAdd(id, _ => new List<Action<ApplicationEvent>>());
+        lock (list)
+        {
+            list.Add(callback);
+        }
+
+        return () =>
+        {
+            lock (list)
+            {
+                list.Remove(callback);
+            }
+        };
+    }
+
+    /// <summary>
+    /// 注册应用程序级别事件钩子，返回取消注册的回调。
+    /// 对应 Wails v3 Go 版本 event_manager.go 中的 <c>EventManager.RegisterApplicationEventHook</c>。
+    /// <para>
+    /// 钩子在监听器执行前按注册顺序调用，可通过 <see cref="ApplicationEvent.Cancel"/> 取消事件
+    /// 以阻止后续钩子和监听器执行。
+    /// </para>
+    /// </summary>
+    /// <param name="eventType">应用事件类型。</param>
+    /// <param name="callback">钩子回调。</param>
+    /// <returns>取消注册回调，调用后移除该钩子。</returns>
+    public Action RegisterApplicationEventHook(ApplicationEventType eventType, Action<ApplicationEvent> callback)
+    {
+        ArgumentNullException.ThrowIfNull(callback);
+        var id = (uint)eventType;
+
+        var list = _applicationEventHooks.GetOrAdd(id, _ => new List<Action<ApplicationEvent>>());
+        lock (list)
+        {
+            list.Add(callback);
+        }
+
+        return () =>
+        {
+            lock (list)
+            {
+                list.Remove(callback);
+            }
+        };
+    }
+
+    /// <summary>
+    /// 分发应用程序级别事件到所有订阅者和钩子。
+    /// 对应 Wails v3 Go 版本 event_manager.go 中的 <c>handleApplicationEvent</c>。
+    /// <para>
+    /// 执行顺序：先按注册顺序调用所有钩子，任一钩子取消事件则立即停止；
+    /// 否则继续按注册顺序调用所有监听器。单个监听器抛出的异常被吞下，不影响其他监听器。
+    /// </para>
+    /// </summary>
+    /// <param name="eventType">应用事件类型。</param>
+    /// <param name="data">事件数据，可为 null。</param>
+    /// <param name="windowId">触发事件的窗口 ID，可为 null。</param>
+    /// <returns>事件是否被钩子取消。</returns>
+    public bool EmitApplicationEvent(ApplicationEventType eventType, object? data = null, uint? windowId = null)
+    {
+        var evt = new ApplicationEvent((uint)eventType, data, windowId);
+
+        // 先执行钩子；任一钩子取消事件则停止。
+        if (_applicationEventHooks.TryGetValue(evt.Id, out var hooks))
+        {
+            List<Action<ApplicationEvent>> hooksSnapshot;
+            lock (hooks)
+            {
+                hooksSnapshot = new List<Action<ApplicationEvent>>(hooks);
+            }
+
+            foreach (var hook in hooksSnapshot)
+            {
+                try
+                {
+                    hook(evt);
+                }
+                catch
+                {
+                    // 单个钩子异常不影响其他钩子，对应 Wails v3 handleApplicationEvent 的 handlePanic 容错。
+                }
+
+                if (evt.IsCancelled)
+                {
+                    return true;
+                }
+            }
+        }
+
+        // 再执行监听器。
+        if (_applicationEventListeners.TryGetValue(evt.Id, out var listeners))
+        {
+            List<Action<ApplicationEvent>> listenersSnapshot;
+            lock (listeners)
+            {
+                listenersSnapshot = new List<Action<ApplicationEvent>>(listeners);
+            }
+
+            foreach (var listener in listenersSnapshot)
+            {
+                if (evt.IsCancelled)
+                {
+                    break;
+                }
+
+                try
+                {
+                    listener(evt);
+                }
+                catch
+                {
+                    // 单个监听器异常不影响其他监听器，对应 Wails v3 handleApplicationEvent 的 handlePanic 容错。
+                }
+            }
+        }
+
+        return evt.IsCancelled;
+    }
+
+    /// <summary>
+    /// 获取指定应用事件类型的订阅者数量。
+    /// </summary>
+    /// <param name="eventType">应用事件类型。</param>
+    /// <returns>订阅者数量。</returns>
+    public int ApplicationEventListenerCount(ApplicationEventType eventType)
+    {
+        return _applicationEventListeners.TryGetValue((uint)eventType, out var list) ? list.Count : 0;
+    }
+
+    /// <summary>
+    /// 获取指定应用事件类型的钩子数量。
+    /// </summary>
+    /// <param name="eventType">应用事件类型。</param>
+    /// <returns>钩子数量。</returns>
+    public int ApplicationEventHookCount(ApplicationEventType eventType)
+    {
+        return _applicationEventHooks.TryGetValue((uint)eventType, out var list) ? list.Count : 0;
+    }
+
+    /// <summary>
+    /// 清除所有应用事件订阅和钩子。
+    /// </summary>
+    public void ClearApplicationEvents()
+    {
+        _applicationEventListeners.Clear();
+        _applicationEventHooks.Clear();
     }
 
     /// <summary>

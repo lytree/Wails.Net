@@ -1280,12 +1280,28 @@ public class Application
     /// <summary>
     /// 处理平台级事件，将事件 ID 转换为事件名并通过事件处理器分发。
     /// 对应 Wails v3 Go 版本 application.go 中的 handlePlatformEvent 方法。
+    /// <para>
+    /// 同时走两条分发路径：
+    /// <list type="bullet">
+    /// <item>自定义事件路径（<see cref="EventProcessor.Emit"/>）：按事件名广播到前端传输层和本地订阅者。</item>
+    /// <item>应用事件路径（<see cref="EventProcessor.EmitApplicationEvent"/>）：触发
+    /// <see cref="EventProcessor.OnApplicationEvent"/> 监听器和
+    /// <see cref="EventProcessor.RegisterApplicationEventHook"/> 钩子。
+    /// 仅当 <paramref name="eventId"/> 属于 <see cref="ApplicationEventType"/> 时触发。</item>
+    /// </list>
+    /// </para>
     /// </summary>
     /// <param name="eventId">平台事件 ID。</param>
     public void HandlePlatformEvent(uint eventId)
     {
         var eventName = KnownEvents.GetEventName(eventId);
         _events.Emit(eventName, null, null);
+
+        // 同时触发应用事件路径，对齐 Wails v3 EventManager.handleApplicationEvent。
+        if (Enum.IsDefined(typeof(ApplicationEventType), eventId))
+        {
+            _events.EmitApplicationEvent((ApplicationEventType)eventId, null, null);
+        }
     }
 
     /// <summary>
@@ -1297,6 +1313,12 @@ public class Application
     {
         var eventName = KnownEvents.GetEventName(eventId);
         _events.Emit(eventName, data, null);
+
+        // 同时触发应用事件路径，对齐 Wails v3 EventManager.handleApplicationEvent。
+        if (Enum.IsDefined(typeof(ApplicationEventType), eventId))
+        {
+            _events.EmitApplicationEvent((ApplicationEventType)eventId, data, null);
+        }
     }
 
     /// <summary>
