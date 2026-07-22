@@ -662,6 +662,11 @@ public class Application
     }
 
     /// <summary>
+    /// 获取环境信息管理器的简短别名，对应 Wails v3 Go 版本 <c>app.Env</c>。
+    /// </summary>
+    public IEnvironmentManager? Env => _environmentManager;
+
+    /// <summary>
     /// 获取或设置日志记录器。
     /// 对应 AGENTS.md §1.1.1 技术选型要求：日志统一使用 <c>Microsoft.Extensions.Logging.ILogger&lt;T&gt;</c> 抽象。
     /// 对应 Wails v3 Go 版本 application.go 中的 logger 字段。

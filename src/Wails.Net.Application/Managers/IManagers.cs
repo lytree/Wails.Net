@@ -1,4 +1,5 @@
 using Wails.Net.Application.Dialogs;
+using Wails.Net.Application.SystemEnvironment;
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Screens;
@@ -441,6 +442,7 @@ public interface IAutostartManager
 
 /// <summary>
 /// 环境信息管理器接口。
+/// 对应 Wails v3 Go 版本 environment_manager.go 中的 EnvironmentManager。
 /// </summary>
 public interface IEnvironmentManager
 {
@@ -467,4 +469,56 @@ public interface IEnvironmentManager
     /// </summary>
     /// <returns>数据目录路径。</returns>
     string GetDataDir();
+
+    /// <summary>
+    /// 返回完整的运行环境信息。
+    /// 对应 Wails v3 Go 版本 <c>EnvironmentManager.Info</c> 方法。
+    /// 默认实现基于 <see cref="GetOS"/>/<see cref="GetArch"/> 构建 EnvironmentInfo，
+    /// 平台实现可重写以提供 OSInfo 和 PlatformInfo。
+    /// </summary>
+    /// <returns>环境信息实例。</returns>
+    EnvironmentInfo Info()
+    {
+        return new EnvironmentInfo
+        {
+            OS = GetOS(),
+            Arch = GetArch(),
+        };
+    }
+
+    /// <summary>
+    /// 判断系统是否处于深色模式。
+    /// 对应 Wails v3 Go 版本 <c>EnvironmentManager.IsDarkMode</c> 方法。
+    /// 默认实现返回 false，平台实现应重写以查询系统主题。
+    /// </summary>
+    /// <returns>深色模式返回 true，否则 false。</returns>
+    bool IsDarkMode() => false;
+
+    /// <summary>
+    /// 获取系统强调色（如按钮高亮色）。
+    /// 对应 Wails v3 Go 版本 <c>EnvironmentManager.GetAccentColor</c> 方法。
+    /// 默认实现返回蓝色 RGB 字符串 "rgb(0,122,255)"，平台实现应重写以查询系统主题色。
+    /// </summary>
+    /// <returns>RGB 颜色字符串，格式 "rgb(r,g,b)"。</returns>
+    string GetAccentColor() => "rgb(0,122,255)";
+
+    /// <summary>
+    /// 在文件管理器中打开指定路径。
+    /// 对应 Wails v3 Go 版本 <c>EnvironmentManager.OpenFileManager</c> 方法。
+    /// 默认实现为空操作，平台实现应重写以调用原生文件管理器。
+    /// </summary>
+    /// <param name="path">要打开的路径。</param>
+    /// <param name="selectFile">是否在文件管理器中选中指定文件（而非仅打开目录）。</param>
+    void OpenFileManager(string path, bool selectFile)
+    {
+        // 默认空实现
+    }
+
+    /// <summary>
+    /// 判断窗口管理器是否启用"焦点跟随鼠标"行为（Linux 特有）。
+    /// 对应 Wails v3 Go 版本 <c>EnvironmentManager.HasFocusFollowsMouse</c> 方法。
+    /// 默认实现返回 false，Linux 平台实现可重写以查询窗口管理器配置。
+    /// </summary>
+    /// <returns>启用焦点跟随鼠标返回 true，否则 false。</returns>
+    bool HasFocusFollowsMouse() => false;
 }
