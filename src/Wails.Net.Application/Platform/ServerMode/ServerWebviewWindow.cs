@@ -9,6 +9,23 @@ namespace Wails.Net.Application.Platform.ServerMode;
 /// </summary>
 public class ServerWebviewWindow : IWebviewWindowImpl
 {
+    /// <summary>
+    /// 窗口 ID。
+    /// </summary>
+    private readonly uint _id;
+
+    /// <summary>
+    /// 构造 ServerWebviewWindow 实例。
+    /// </summary>
+    /// <param name="id">窗口 ID。</param>
+    public ServerWebviewWindow(uint id = 0)
+    {
+        _id = id;
+    }
+
+    /// <inheritdoc />
+    public uint Id => _id;
+
     /// <inheritdoc />
     public void SetTitle(string title)
     {

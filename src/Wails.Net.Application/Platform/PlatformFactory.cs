@@ -179,7 +179,7 @@ public static class PlatformFactory
     {
         if (IsServerMode())
         {
-            return new ServerWebviewWindow();
+            return new ServerWebviewWindow(id);
         }
 
         throw new PlatformNotSupportedException(

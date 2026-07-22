@@ -116,6 +116,9 @@ public sealed class AndroidWebviewWindow : IWebviewWindowImpl
     /// </summary>
     private float _zoomLevel;
 
+    /// <inheritdoc />
+    public uint Id => _id;
+
     /// <summary>
     /// 构造 AndroidWebviewWindow 实例。
     /// </summary>
