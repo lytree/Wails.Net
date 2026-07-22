@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Wails.Net.Application.Options;
+using Wails.Net.Application.Screens;
 using Wails.Net.Application.Windows;
 using Wails.Net.Events;
 using Windows.Win32;
@@ -11,6 +12,7 @@ using Windows.Win32.Graphics.Dwm;
 using Windows.Win32.Graphics.Gdi;
 using Windows.Win32.UI.WindowsAndMessaging;
 using Menu = Wails.Net.Application.Menus.Menu;
+using Screen = Wails.Net.Application.Screens.Screen;
 
 namespace Wails.Net.Application.Platform;
 
@@ -3113,6 +3115,285 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         catch
         {
             // 静默处理
+        }
+    }
+
+    /// <summary>
+    /// DWMWA_EXTENDED_FRAME_BOUNDS 常量（9），用于 DwmGetWindowAttribute 获取窗口扩展帧边界。
+    /// </summary>
+    private const uint DwmwaExtendedFrameBounds = 9;
+
+    /// <summary>
+    /// 获取窗口的 DPI 缩放比例（96 DPI 基准）。
+    /// </summary>
+    /// <returns>DPI 缩放比例，获取失败返回 1.0。</returns>
+    private float GetWindowScaleFactor()
+    {
+        if (_hwnd.IsNull)
+        {
+            return 1.0f;
+        }
+
+        try
+        {
+            var dpi = PInvoke.GetDpiForWindow(_hwnd);
+            return dpi > 0 ? dpi / 96.0f : 1.0f;
+        }
+        catch
+        {
+            return 1.0f;
+        }
+    }
+
+    /// <inheritdoc />
+    public Rect GetBounds()
+    {
+        if (_hwnd.IsNull)
+        {
+            return new Rect(0, 0, 0, 0);
+        }
+
+        // DIP 边界 = 物理像素边界 / 缩放比例
+        var physical = GetPhysicalBounds();
+        var scale = GetWindowScaleFactor();
+        if (scale <= 0 || Math.Abs(scale - 1.0f) < 0.001f)
+        {
+            return physical;
+        }
+
+        return new Rect(
+            (int)(physical.X / scale),
+            (int)(physical.Y / scale),
+            (int)(physical.Width / scale),
+            (int)(physical.Height / scale));
+    }
+
+    /// <inheritdoc />
+    public void SetBounds(Rect bounds)
+    {
+        // DIP → 物理像素
+        var scale = GetWindowScaleFactor();
+        var physical = scale <= 0 || Math.Abs(scale - 1.0f) < 0.001f
+            ? bounds
+            : new Rect(
+                (int)(bounds.X * scale),
+                (int)(bounds.Y * scale),
+                (int)(bounds.Width * scale),
+                (int)(bounds.Height * scale));
+        SetPhysicalBounds(physical);
+    }
+
+    /// <inheritdoc />
+    public Rect GetPhysicalBounds()
+    {
+        if (_hwnd.IsNull)
+        {
+            return new Rect(0, 0, 0, 0);
+        }
+
+        PInvoke.GetWindowRect(_hwnd, out var rect);
+        return new Rect(rect.left, rect.top, rect.Width, rect.Height);
+    }
+
+    /// <inheritdoc />
+    public void SetPhysicalBounds(Rect bounds)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        PInvoke.SetWindowPos(_hwnd, default, bounds.X, bounds.Y,
+            bounds.Width, bounds.Height,
+            SET_WINDOW_POS_FLAGS.SWP_NOZORDER | SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE);
+        UpdateBounds();
+    }
+
+    /// <inheritdoc />
+    public (int X, int Y) GetRelativePosition()
+    {
+        if (_hwnd.IsNull)
+        {
+            return (0, 0);
+        }
+
+        // 相对于所在屏幕工作区的位置
+        var screen = GetScreen();
+        if (screen is null)
+        {
+            return GetPosition();
+        }
+
+        var (absX, absY) = GetPosition();
+        return (absX - screen.WorkAreaX, absY - screen.WorkAreaY);
+    }
+
+    /// <inheritdoc />
+    public void SetRelativePosition(int x, int y)
+    {
+        // 相对工作区坐标 → 绝对坐标
+        var screen = GetScreen();
+        if (screen is null)
+        {
+            SetPosition(x, y);
+            return;
+        }
+
+        SetPosition(x + screen.WorkAreaX, y + screen.WorkAreaY);
+    }
+
+    /// <inheritdoc />
+    public LRTB GetBorderSizes()
+    {
+        if (_hwnd.IsNull)
+        {
+            return new LRTB(0, 0, 0, 0);
+        }
+
+        try
+        {
+            // 使用 DwmGetWindowAttribute 获取扩展帧边界（Windows 10+ 的不可见边框）
+            var frame = new RECT();
+            unsafe
+            {
+                PInvoke.DwmGetWindowAttribute(
+                    _hwnd,
+                    DWMWINDOWATTRIBUTE.DWMWA_EXTENDED_FRAME_BOUNDS,
+                    &frame,
+                    (uint)sizeof(RECT));
+            }
+
+            PInvoke.GetWindowRect(_hwnd, out var windowRect);
+            return new LRTB(
+                left: frame.left - windowRect.left,
+                right: windowRect.right - frame.right,
+                top: frame.top - windowRect.top,
+                bottom: windowRect.bottom - frame.bottom);
+        }
+        catch
+        {
+            return new LRTB(0, 0, 0, 0);
+        }
+    }
+
+    /// <inheritdoc />
+    public Screen? GetScreen()
+    {
+        if (_hwnd.IsNull)
+        {
+            return null;
+        }
+
+        try
+        {
+            var hmon = PInvoke.MonitorFromWindow(_hwnd, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST);
+            var monitorInfo = new MONITORINFO { cbSize = (uint)Marshal.SizeOf<MONITORINFO>() };
+            if (!PInvoke.GetMonitorInfo(hmon, ref monitorInfo))
+            {
+                return null;
+            }
+
+            var rc = monitorInfo.rcMonitor;
+            var work = monitorInfo.rcWork;
+            var scale = GetWindowScaleFactor();
+
+            return new Screen(
+                name: $"Monitor {hmon}",
+                x: rc.left,
+                y: rc.top,
+                width: rc.right - rc.left,
+                height: rc.bottom - rc.top,
+                workAreaX: work.left,
+                workAreaY: work.top,
+                workAreaWidth: work.right - work.left,
+                workAreaHeight: work.bottom - work.top,
+                scaleFactor: scale,
+                isPrimary: (monitorInfo.dwFlags & 1u) != 0);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <inheritdoc />
+    public int GetWidth()
+    {
+        if (_hwnd.IsNull)
+        {
+            return 0;
+        }
+
+        PInvoke.GetWindowRect(_hwnd, out var rect);
+        var scale = GetWindowScaleFactor();
+        return scale <= 0 || Math.Abs(scale - 1.0f) < 0.001f
+            ? rect.Width
+            : (int)(rect.Width / scale);
+    }
+
+    /// <inheritdoc />
+    public int GetHeight()
+    {
+        if (_hwnd.IsNull)
+        {
+            return 0;
+        }
+
+        PInvoke.GetWindowRect(_hwnd, out var rect);
+        var scale = GetWindowScaleFactor();
+        return scale <= 0 || Math.Abs(scale - 1.0f) < 0.001f
+            ? rect.Height
+            : (int)(rect.Height / scale);
+    }
+
+    /// <inheritdoc />
+    public bool IsResizable()
+    {
+        if (_hwnd.IsNull)
+        {
+            return false;
+        }
+
+        var style = GetWindowStyle();
+        return (style & WINDOW_STYLE.WS_THICKFRAME) != 0;
+    }
+
+    /// <inheritdoc />
+    public bool IsIgnoreMouseEvents()
+    {
+        if (_hwnd.IsNull)
+        {
+            return false;
+        }
+
+        try
+        {
+            var exStyle = (uint)PInvoke.GetWindowLong(_hwnd, (WINDOW_LONG_PTR_INDEX)GwlExStyle);
+            return (exStyle & WsExTransparent) != 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <inheritdoc />
+    public bool IsAlwaysOnTop()
+    {
+        if (_hwnd.IsNull)
+        {
+            return false;
+        }
+
+        try
+        {
+            var exStyle = (uint)PInvoke.GetWindowLong(_hwnd, (WINDOW_LONG_PTR_INDEX)GwlExStyle);
+            // WS_EX_TOPMOST = 0x00000008
+            return (exStyle & 0x00000008u) != 0;
+        }
+        catch
+        {
+            return false;
         }
     }
 

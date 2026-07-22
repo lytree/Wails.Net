@@ -1,5 +1,6 @@
 using Wails.Net.Application.Logging;
 using Wails.Net.Application.Menus;
+using Wails.Net.Application.Screens;
 
 namespace Wails.Net.Application.Windows;
 
@@ -34,6 +35,15 @@ public enum TitleBarStyle
 /// </summary>
 public interface IWebviewWindowImpl
 {
+    /// <summary>
+    /// 获取窗口 ID。
+    /// <para>
+    /// 此属性属于接口契约的一部分，所有平台实现必须提供。
+    /// 用于 WindowManager、EventManager 等管理器按 ID 索引窗口实例。
+    /// </para>
+    /// </summary>
+    uint Id { get; }
+
     /// <summary>
     /// 设置窗口标题。
     /// </summary>
@@ -813,6 +823,178 @@ public interface IWebviewWindowImpl
         // 使用 JSON.stringify 转义字符串，避免引号注入问题。
         ExecJS($"window.__wailsNative && window.__wailsNative.onMessage({System.Text.Json.JsonSerializer.Serialize(message)});");
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// 获取窗口当前 DIP 边界矩形（位置 + 大小）。
+    /// 对应 Wails v3 Go 版本 <c>window.bounds()</c> 契约。
+    /// 默认实现基于 <see cref="GetPosition"/> 和 <see cref="GetSize"/> 组合。
+    /// </summary>
+    /// <returns>DIP 边界矩形。</returns>
+    Rect GetBounds()
+    {
+        // 默认实现：组合 GetPosition 和 GetSize。
+        var (x, y) = GetPosition();
+        var (w, h) = GetSize();
+        return new Rect(x, y, w, h);
+    }
+
+    /// <summary>
+    /// 设置窗口 DIP 边界矩形（位置 + 大小）。
+    /// 对应 Wails v3 Go 版本 <c>window.setBounds(bounds)</c> 契约。
+    /// 默认实现委托到 <see cref="SetPosition"/> 和 <see cref="SetSize"/>。
+    /// </summary>
+    /// <param name="bounds">目标 DIP 边界矩形。</param>
+    void SetBounds(Rect bounds)
+    {
+        // 默认实现：分别设置位置和大小。
+        SetPosition(bounds.X, bounds.Y);
+        SetSize(bounds.Width, bounds.Height);
+    }
+
+    /// <summary>
+    /// 获取窗口物理像素边界矩形。
+    /// 对应 Wails v3 Go 版本 <c>window.physicalBounds()</c> 契约。
+    /// 默认实现返回 DIP 边界（不支持 DPI 转换的平台）。
+    /// </summary>
+    /// <returns>物理像素边界矩形。</returns>
+    Rect GetPhysicalBounds()
+    {
+        // 默认实现：DIP 与物理像素一致。
+        return GetBounds();
+    }
+
+    /// <summary>
+    /// 设置窗口物理像素边界矩形。
+    /// 对应 Wails v3 Go 版本 <c>window.setPhysicalBounds(bounds)</c> 契约。
+    /// 默认实现委托到 <see cref="SetBounds"/>。
+    /// </summary>
+    /// <param name="bounds">目标物理像素边界矩形。</param>
+    void SetPhysicalBounds(Rect bounds)
+    {
+        // 默认实现：委托到 DIP 版本。
+        SetBounds(bounds);
+    }
+
+    /// <summary>
+    /// 获取窗口相对于所在屏幕工作区的位置。
+    /// 对应 Wails v3 Go 版本 <c>window.relativePosition()</c> 契约。
+    /// 默认实现返回绝对位置（不支持相对位置的平台）。
+    /// </summary>
+    /// <returns>相对工作区的坐标。</returns>
+    (int X, int Y) GetRelativePosition()
+    {
+        // 默认实现：返回绝对位置。
+        return GetPosition();
+    }
+
+    /// <summary>
+    /// 设置窗口相对于所在屏幕工作区的位置。
+    /// 对应 Wails v3 Go 版本 <c>window.setRelativePosition(x, y)</c> 契约。
+    /// 默认实现委托到 <see cref="SetPosition"/>。
+    /// </summary>
+    /// <param name="x">相对工作区的 X 坐标。</param>
+    /// <param name="y">相对工作区的 Y 坐标。</param>
+    void SetRelativePosition(int x, int y)
+    {
+        // 默认实现：作为绝对位置设置。
+        SetPosition(x, y);
+    }
+
+    /// <summary>
+    /// 获取窗口边框尺寸（用于无客户区计算）。
+    /// 对应 Wails v3 Go 版本 <c>window.getBorderSizes()</c> 契约。
+    /// 默认实现返回全零（无边框的平台）。
+    /// </summary>
+    /// <returns>边框尺寸结构。</returns>
+    LRTB GetBorderSizes()
+    {
+        // 默认实现：无边框。
+        return new LRTB(0, 0, 0, 0);
+    }
+
+    /// <summary>
+    /// 获取窗口所在的屏幕。
+    /// 对应 Wails v3 Go 版本 <c>window.getScreen()</c> 契约。
+    /// 默认实现返回 null（不支持的平台）。
+    /// </summary>
+    /// <returns>窗口所在屏幕，不支持时返回 null。</returns>
+    Screen? GetScreen()
+    {
+        // 默认实现：不支持。
+        return null;
+    }
+
+    /// <summary>
+    /// 获取窗口宽度。
+    /// 对应 Wails v3 Go 版本 <c>window.width()</c> 契约。
+    /// 默认实现基于 <see cref="GetSize"/>。
+    /// </summary>
+    /// <returns>窗口宽度（DIP）。</returns>
+    int GetWidth()
+    {
+        // 默认实现：从 GetSize 提取。
+        return GetSize().Width;
+    }
+
+    /// <summary>
+    /// 获取窗口高度。
+    /// 对应 Wails v3 Go 版本 <c>window.height()</c> 契约。
+    /// 默认实现基于 <see cref="GetSize"/>。
+    /// </summary>
+    /// <returns>窗口高度（DIP）。</returns>
+    int GetHeight()
+    {
+        // 默认实现：从 GetSize 提取。
+        return GetSize().Height;
+    }
+
+    /// <summary>
+    /// 查询窗口是否可调整大小。
+    /// 对应 Wails v3 Go 版本 <c>window.resizable()</c> 契约。
+    /// 默认实现返回 true（多数平台默认可调整）。
+    /// </summary>
+    /// <returns>如果可调整返回 true，否则 false。</returns>
+    bool IsResizable()
+    {
+        // 默认实现：可调整。
+        return true;
+    }
+
+    /// <summary>
+    /// 查询窗口是否处于正常状态（非最大化、非最小化、非全屏）。
+    /// 对应 Wails v3 Go 版本 <c>window.isNormal()</c> 契约。
+    /// 默认实现基于 <see cref="IsMaximised"/>、<see cref="IsMinimised"/>、<see cref="IsFullscreen"/>。
+    /// </summary>
+    /// <returns>如果处于正常状态返回 true，否则 false。</returns>
+    bool IsNormal()
+    {
+        // 默认实现：非最大化、非最小化、非全屏。
+        return !IsMaximised() && !IsMinimised() && !IsFullscreen();
+    }
+
+    /// <summary>
+    /// 查询窗口是否忽略鼠标事件（点击穿透）。
+    /// 对应 Wails v3 Go 版本 <c>window.isIgnoreMouseEvents()</c> 契约。
+    /// 默认实现返回 false（多数平台默认不穿透）。
+    /// </summary>
+    /// <returns>如果忽略鼠标事件返回 true，否则 false。</returns>
+    bool IsIgnoreMouseEvents()
+    {
+        // 默认实现：不穿透。
+        return false;
+    }
+
+    /// <summary>
+    /// 查询窗口是否总置顶。
+    /// 对应 Wails v3 Go 版本 <c>window.isAlwaysOnTop()</c> 契约。
+    /// 默认实现返回 false（多数平台默认不置顶）。
+    /// </summary>
+    /// <returns>如果总置顶返回 true，否则 false。</returns>
+    bool IsAlwaysOnTop()
+    {
+        // 默认实现：不置顶。
+        return false;
     }
 }
 

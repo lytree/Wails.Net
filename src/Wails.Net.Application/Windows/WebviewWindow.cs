@@ -1,5 +1,6 @@
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
+using Wails.Net.Application.Screens;
 using Wails.Net.Events;
 
 namespace Wails.Net.Application.Windows;
@@ -287,6 +288,91 @@ public class WebviewWindow
     /// </summary>
     /// <returns>包含 X 和 Y 坐标的元组。</returns>
     public (int X, int Y) GetPosition() => ImplRequired.GetPosition();
+
+    /// <summary>
+    /// 获取窗口当前 DIP 边界矩形（位置 + 大小）。
+    /// </summary>
+    /// <returns>DIP 边界矩形。</returns>
+    public Rect GetBounds() => ImplRequired.GetBounds();
+
+    /// <summary>
+    /// 设置窗口 DIP 边界矩形（位置 + 大小）。
+    /// </summary>
+    /// <param name="bounds">目标 DIP 边界矩形。</param>
+    public void SetBounds(Rect bounds) => ImplRequired.SetBounds(bounds);
+
+    /// <summary>
+    /// 获取窗口物理像素边界矩形。
+    /// </summary>
+    /// <returns>物理像素边界矩形。</returns>
+    public Rect GetPhysicalBounds() => ImplRequired.GetPhysicalBounds();
+
+    /// <summary>
+    /// 设置窗口物理像素边界矩形。
+    /// </summary>
+    /// <param name="bounds">目标物理像素边界矩形。</param>
+    public void SetPhysicalBounds(Rect bounds) => ImplRequired.SetPhysicalBounds(bounds);
+
+    /// <summary>
+    /// 获取窗口相对于所在屏幕工作区的位置。
+    /// </summary>
+    /// <returns>相对工作区的坐标。</returns>
+    public (int X, int Y) GetRelativePosition() => ImplRequired.GetRelativePosition();
+
+    /// <summary>
+    /// 设置窗口相对于所在屏幕工作区的位置。
+    /// </summary>
+    /// <param name="x">相对工作区的 X 坐标。</param>
+    /// <param name="y">相对工作区的 Y 坐标。</param>
+    public void SetRelativePosition(int x, int y) => ImplRequired.SetRelativePosition(x, y);
+
+    /// <summary>
+    /// 获取窗口边框尺寸。
+    /// </summary>
+    /// <returns>边框尺寸结构。</returns>
+    public LRTB GetBorderSizes() => ImplRequired.GetBorderSizes();
+
+    /// <summary>
+    /// 获取窗口所在的屏幕。
+    /// </summary>
+    /// <returns>窗口所在屏幕，不支持时返回 null。</returns>
+    public Screen? GetScreen() => ImplRequired.GetScreen();
+
+    /// <summary>
+    /// 获取窗口宽度。
+    /// </summary>
+    /// <returns>窗口宽度（DIP）。</returns>
+    public int GetWidth() => ImplRequired.GetWidth();
+
+    /// <summary>
+    /// 获取窗口高度。
+    /// </summary>
+    /// <returns>窗口高度（DIP）。</returns>
+    public int GetHeight() => ImplRequired.GetHeight();
+
+    /// <summary>
+    /// 查询窗口是否可调整大小。
+    /// </summary>
+    /// <returns>如果可调整返回 true，否则 false。</returns>
+    public bool IsResizable() => ImplRequired.IsResizable();
+
+    /// <summary>
+    /// 查询窗口是否处于正常状态。
+    /// </summary>
+    /// <returns>如果处于正常状态返回 true，否则 false。</returns>
+    public bool IsNormal() => ImplRequired.IsNormal();
+
+    /// <summary>
+    /// 查询窗口是否忽略鼠标事件（点击穿透）。
+    /// </summary>
+    /// <returns>如果忽略鼠标事件返回 true，否则 false。</returns>
+    public bool IsIgnoreMouseEvents() => ImplRequired.IsIgnoreMouseEvents();
+
+    /// <summary>
+    /// 查询窗口是否总置顶。
+    /// </summary>
+    /// <returns>如果总置顶返回 true，否则 false。</returns>
+    public bool IsAlwaysOnTop() => ImplRequired.IsAlwaysOnTop();
 
     /// <summary>
     /// 获取缩放比例。

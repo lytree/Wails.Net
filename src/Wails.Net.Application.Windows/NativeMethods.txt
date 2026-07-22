@@ -131,6 +131,7 @@ SetProcessDPIAware
 GetDpiForWindow
 GetDpiForSystem
 DwmSetWindowAttribute
+DwmGetWindowAttribute
 SetWindowDisplayAffinity
 PostMessageW
 ShellExecuteW
