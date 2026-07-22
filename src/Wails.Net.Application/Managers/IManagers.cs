@@ -231,6 +231,70 @@ public interface IScreenManager
     /// </summary>
     /// <returns>屏幕数组。</returns>
     Screen[] GetAllScreens();
+
+    /// <summary>
+    /// 将 DIP 坐标点转换为物理像素坐标点。
+    /// 对应 Wails v3 Go 版本 <c>ScreenManager.DipToPhysicalPoint</c>。
+    /// </summary>
+    /// <param name="dipPoint">DIP 坐标点。</param>
+    /// <returns>物理像素坐标点；无屏幕时返回原值。</returns>
+    Point DipToPhysicalPoint(Point dipPoint);
+
+    /// <summary>
+    /// 将物理像素坐标点转换为 DIP 坐标点。
+    /// 对应 Wails v3 Go 版本 <c>ScreenManager.PhysicalToDipPoint</c>。
+    /// </summary>
+    /// <param name="physicalPoint">物理像素坐标点。</param>
+    /// <returns>DIP 坐标点；无屏幕时返回原值。</returns>
+    Point PhysicalToDipPoint(Point physicalPoint);
+
+    /// <summary>
+    /// 将 DIP 矩形转换为物理像素矩形。
+    /// 对应 Wails v3 Go 版本 <c>ScreenManager.DipToPhysicalRect</c>。
+    /// </summary>
+    /// <param name="dipRect">DIP 矩形。</param>
+    /// <returns>物理像素矩形；无屏幕时返回原值。</returns>
+    Rect DipToPhysicalRect(Rect dipRect);
+
+    /// <summary>
+    /// 将物理像素矩形转换为 DIP 矩形。
+    /// 对应 Wails v3 Go 版本 <c>ScreenManager.PhysicalToDipRect</c>。
+    /// </summary>
+    /// <param name="physicalRect">物理像素矩形。</param>
+    /// <returns>DIP 矩形；无屏幕时返回原值。</returns>
+    Rect PhysicalToDipRect(Rect physicalRect);
+
+    /// <summary>
+    /// 找到距离指定 DIP 点最近的屏幕（点在屏幕内则返回该屏幕，否则返回主屏幕）。
+    /// 对应 Wails v3 Go 版本 <c>ScreenManager.ScreenNearestDipPoint</c>。
+    /// </summary>
+    /// <param name="dipPoint">DIP 坐标点。</param>
+    /// <returns>最近的屏幕实例；无屏幕时返回 null。</returns>
+    Screen? ScreenNearestDipPoint(Point dipPoint);
+
+    /// <summary>
+    /// 找到距离指定物理像素点最近的屏幕。
+    /// 对应 Wails v3 Go 版本 <c>ScreenManager.ScreenNearestPhysicalPoint</c>。
+    /// </summary>
+    /// <param name="physicalPoint">物理像素坐标点。</param>
+    /// <returns>最近的屏幕实例；无屏幕时返回 null。</returns>
+    Screen? ScreenNearestPhysicalPoint(Point physicalPoint);
+
+    /// <summary>
+    /// 找到距离指定 DIP 矩形最近的屏幕。
+    /// 对应 Wails v3 Go 版本 <c>ScreenManager.ScreenNearestDipRect</c>。
+    /// </summary>
+    /// <param name="dipRect">DIP 矩形。</param>
+    /// <returns>最近的屏幕实例；无屏幕时返回 null。</returns>
+    Screen? ScreenNearestDipRect(Rect dipRect);
+
+    /// <summary>
+    /// 找到距离指定物理像素矩形最近的屏幕。
+    /// 对应 Wails v3 Go 版本 <c>ScreenManager.ScreenNearestPhysicalRect</c>。
+    /// </summary>
+    /// <param name="physicalRect">物理像素矩形。</param>
+    /// <returns>最近的屏幕实例；无屏幕时返回 null。</returns>
+    Screen? ScreenNearestPhysicalRect(Rect physicalRect);
 }
 
 /// <summary>
