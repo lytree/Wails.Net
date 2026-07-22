@@ -324,4 +324,200 @@ public class Screen
     {
         return $"{Id} ({Name}): {Width}x{Height} @ ({X},{Y}) Scale={ScaleFactor} Rotation={Rotation} Primary={IsPrimary}";
     }
+
+    // ─── Chromium 风格多屏幕布局算法辅助方法 ───
+    // 对应 Wails v3 Go 版本 screenmanager.go 中 Screen 的布局相关方法。
+
+    /// <summary>
+    /// 获取屏幕 DIP 右边缘坐标（X + Width）。
+    /// 对应 Wails v3 Go 版本 <c>Screen.right()</c>。
+    /// </summary>
+    public int Right => X + Width;
+
+    /// <summary>
+    /// 获取屏幕 DIP 底边缘坐标（Y + Height）。
+    /// 对应 Wails v3 Go 版本 <c>Screen.bottom()</c>。
+    /// </summary>
+    public int Bottom => Y + Height;
+
+    /// <summary>
+    /// 判断此屏幕是否与另一个屏幕相交。
+    /// 对应 Wails v3 Go 版本 <c>Screen.intersects()</c>。
+    /// </summary>
+    /// <param name="other">另一个屏幕。</param>
+    /// <returns>相交返回 true。</returns>
+    public bool Intersects(Screen other)
+    {
+        var maxLeft = Math.Max(X, other.X);
+        var maxTop = Math.Max(Y, other.Y);
+        var minRight = Math.Min(Right, other.Right);
+        var minBottom = Math.Min(Bottom, other.Bottom);
+        return minRight > maxLeft && minBottom > maxTop;
+    }
+
+    /// <summary>
+    /// 将屏幕移动到新坐标，保持工作区相对偏移不变。
+    /// 对应 Wails v3 Go 版本 <c>Screen.move()</c>。
+    /// </summary>
+    /// <param name="newX">新 X 坐标（DIP）。</param>
+    /// <param name="newY">新 Y 坐标（DIP）。</param>
+    public void Move(int newX, int newY)
+    {
+        var workAreaOffsetX = WorkAreaX - X;
+        var workAreaOffsetY = WorkAreaY - Y;
+
+        X = newX;
+        Y = newY;
+        WorkAreaX = newX + workAreaOffsetX;
+        WorkAreaY = newY + workAreaOffsetY;
+    }
+
+    /// <summary>
+    /// 应用 DPI 缩放，从物理像素计算 DIP 坐标和尺寸。
+    /// 对应 Wails v3 Go 版本 <c>Screen.applyDPIScaling()</c>。
+    /// <para>
+    /// 缩放因子为 1 时直接返回。否则根据 <see cref="ScaleFactor"/> 将物理像素
+    /// 转换为 DIP 逻辑像素，更新 Bounds/WorkArea 的宽高。
+    /// </para>
+    /// </summary>
+    public void ApplyDPIScaling()
+    {
+        if (ScaleFactor == 1f)
+        {
+            return;
+        }
+
+        var workAreaOffsetX = WorkAreaX - X;
+        var workAreaOffsetY = WorkAreaY - Y;
+
+        WorkAreaX = X + Scale(workAreaOffsetX, toDip: true);
+        WorkAreaY = Y + Scale(workAreaOffsetY, toDip: true);
+
+        Width = Scale(PhysicalWidth, toDip: true);
+        Height = Scale(PhysicalHeight, toDip: true);
+        WorkAreaWidth = Scale(PhysicalWorkAreaWidth, toDip: true);
+        WorkAreaHeight = Scale(PhysicalWorkAreaHeight, toDip: true);
+    }
+
+    /// <summary>
+    /// 将绝对 DIP 点转换为相对于此屏幕的 DIP 点。
+    /// 对应 Wails v3 Go 版本 <c>Screen.absoluteToRelativeDipPoint()</c>。
+    /// </summary>
+    /// <param name="dipPoint">绝对 DIP 点。</param>
+    /// <returns>相对于此屏幕原点的 DIP 点。</returns>
+    public Point AbsoluteToRelativeDipPoint(Point dipPoint) =>
+        new(dipPoint.X - X, dipPoint.Y - Y);
+
+    /// <summary>
+    /// 将相对于此屏幕的 DIP 点转换为绝对 DIP 点。
+    /// 对应 Wails v3 Go 版本 <c>Screen.relativeToAbsoluteDipPoint()</c>。
+    /// </summary>
+    /// <param name="dipPoint">相对 DIP 点。</param>
+    /// <returns>绝对 DIP 点。</returns>
+    public Point RelativeToAbsoluteDipPoint(Point dipPoint) =>
+        new(dipPoint.X + X, dipPoint.Y + Y);
+
+    /// <summary>
+    /// 将绝对物理点转换为相对于此屏幕的物理点。
+    /// 对应 Wails v3 Go 版本 <c>Screen.absoluteToRelativePhysicalPoint()</c>。
+    /// </summary>
+    /// <param name="physicalPoint">绝对物理点。</param>
+    /// <returns>相对于此屏幕原点的物理点。</returns>
+    public Point AbsoluteToRelativePhysicalPoint(Point physicalPoint) =>
+        new(physicalPoint.X - PhysicalX, physicalPoint.Y - PhysicalY);
+
+    /// <summary>
+    /// 将相对于此屏幕的物理点转换为绝对物理点。
+    /// 对应 Wails v3 Go 版本 <c>Screen.relativeToAbsolutePhysicalPoint()</c>。
+    /// </summary>
+    /// <param name="physicalPoint">相对物理点。</param>
+    /// <returns>绝对物理点。</returns>
+    public Point RelativeToAbsolutePhysicalPoint(Point physicalPoint) =>
+        new(physicalPoint.X + PhysicalX, physicalPoint.Y + PhysicalY);
+
+    /// <summary>
+    /// 将 DIP 坐标点转换为物理像素坐标点（含边缘对齐修正）。
+    /// 对应 Wails v3 Go 版本 <c>Screen.dipToPhysicalPoint(dipPoint, isCorner)</c>。
+    /// <para>
+    /// 边缘对齐修正：当点位于屏幕边缘时，直接映射到物理边缘以消除舍入误差。
+    /// <c>isCorner</c> 为 true 时使用 0 偏移（精确角点），为 false 时使用 1 偏移（内侧边缘）。
+    /// </para>
+    /// </summary>
+    /// <param name="dipPoint">DIP 坐标点。</param>
+    /// <param name="isCorner">是否为矩形角点。</param>
+    /// <returns>物理像素坐标点。</returns>
+    public Point DipToPhysicalPoint(Point dipPoint, bool isCorner)
+    {
+        var relativePoint = AbsoluteToRelativeDipPoint(dipPoint);
+        var scaledX = Scale(relativePoint.X, toDip: false);
+        var scaledY = Scale(relativePoint.Y, toDip: false);
+
+        var edgeOffset = isCorner ? 0 : 1;
+        if (relativePoint.X == Width - edgeOffset)
+        {
+            scaledX = PhysicalWidth - edgeOffset;
+        }
+
+        if (relativePoint.Y == Height - edgeOffset)
+        {
+            scaledY = PhysicalHeight - edgeOffset;
+        }
+
+        return RelativeToAbsolutePhysicalPoint(new Point(scaledX, scaledY));
+    }
+
+    /// <summary>
+    /// 将物理像素坐标点转换为 DIP 坐标点（含边缘对齐修正）。
+    /// 对应 Wails v3 Go 版本 <c>Screen.physicalToDipPoint(physicalPoint, isCorner)</c>。
+    /// </summary>
+    /// <param name="physicalPoint">物理像素坐标点。</param>
+    /// <param name="isCorner">是否为矩形角点。</param>
+    /// <returns>DIP 坐标点。</returns>
+    public Point PhysicalToDipPoint(Point physicalPoint, bool isCorner)
+    {
+        var relativePoint = AbsoluteToRelativePhysicalPoint(physicalPoint);
+        var scaledX = Scale(relativePoint.X, toDip: true);
+        var scaledY = Scale(relativePoint.Y, toDip: true);
+
+        var edgeOffset = isCorner ? 0 : 1;
+        if (relativePoint.X == PhysicalWidth - edgeOffset)
+        {
+            scaledX = Width - edgeOffset;
+        }
+
+        if (relativePoint.Y == PhysicalHeight - edgeOffset)
+        {
+            scaledY = Height - edgeOffset;
+        }
+
+        return RelativeToAbsoluteDipPoint(new Point(scaledX, scaledY));
+    }
+
+    /// <summary>
+    /// 将 DIP 矩形转换为物理像素矩形（含边缘对齐修正）。
+    /// 对应 Wails v3 Go 版本 <c>Screen.dipToPhysicalRect()</c>。
+    /// 原点使用 isCorner=false，对角点使用 isCorner=true。
+    /// </summary>
+    /// <param name="dipRect">DIP 矩形。</param>
+    /// <returns>物理像素矩形。</returns>
+    public Rect DipToPhysicalRectWithEdgeAlignment(Rect dipRect)
+    {
+        var origin = DipToPhysicalPoint(dipRect.Origin(), isCorner: false);
+        var corner = DipToPhysicalPoint(dipRect.Corner(), isCorner: true);
+        return new Rect(origin.X, origin.Y, corner.X - origin.X, corner.Y - origin.Y);
+    }
+
+    /// <summary>
+    /// 将物理像素矩形转换为 DIP 矩形（含边缘对齐修正）。
+    /// 对应 Wails v3 Go 版本 <c>Screen.physicalToDipRect()</c>。
+    /// 原点使用 isCorner=false，对角点使用 isCorner=true。
+    /// </summary>
+    /// <param name="physicalRect">物理像素矩形。</param>
+    /// <returns>DIP 矩形。</returns>
+    public Rect PhysicalToDipRectWithEdgeAlignment(Rect physicalRect)
+    {
+        var origin = PhysicalToDipPoint(physicalRect.Origin(), isCorner: false);
+        var corner = PhysicalToDipPoint(physicalRect.Corner(), isCorner: true);
+        return new Rect(origin.X, origin.Y, corner.X - origin.X, corner.Y - origin.Y);
+    }
 }

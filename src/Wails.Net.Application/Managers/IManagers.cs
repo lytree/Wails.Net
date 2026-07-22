@@ -304,6 +304,28 @@ public interface IScreenManager
     /// <param name="physicalRect">物理像素矩形。</param>
     /// <returns>最近的屏幕实例；无屏幕时返回 null。</returns>
     Screen? ScreenNearestPhysicalRect(Rect physicalRect);
+
+    /// <summary>
+    /// 在虚拟空间布局屏幕并计算 DIP 坐标，缓存结果用于后续坐标转换。
+    /// 对应 Wails v3 Go 版本 <c>ScreenManager.LayoutScreens</c>。
+    /// <para>
+    /// 算法受 Chromium 项目启发（screen_win.cc），流程：
+    /// <list type="number">
+    /// <item>查找主屏幕作为屏幕树根。</item>
+    /// <item>BFS 遍历相邻屏幕构建屏幕树（通过边缘接触判定父子关系）。</item>
+    /// <item>对每个非主屏幕计算相对于父屏幕的 <see cref="ScreenPlacement"/>（含 DPI 缩放）。</item>
+    /// <item>对主屏幕和所有子屏幕应用 DPI 缩放和放置。</item>
+    /// <item>检测并修复屏幕之间的相交（沿最小偏移轴推开）。</item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// 该方法用于覆盖平台提供的屏幕列表（例如自定义测试场景或外部屏幕配置），
+    /// 通常平台实现已提供正确的 DIP 坐标，无需调用此方法。
+    /// </para>
+    /// </summary>
+    /// <param name="screens">屏幕数组，必须包含且仅包含一个 <see cref="Screen.IsPrimary"/> 为 true 的屏幕。</param>
+    /// <exception cref="ArgumentException">screens 为 null/空，或未找到主屏幕，或存在多个主屏幕。</exception>
+    void LayoutScreens(Screen[] screens);
 }
 
 /// <summary>
