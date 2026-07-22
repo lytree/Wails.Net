@@ -1,3 +1,5 @@
+using Wails.Net.Application.Menus.Context;
+
 namespace Wails.Net.Application.Menus;
 
 /// <summary>
@@ -12,8 +14,22 @@ public class MenuItem : Menu
 
     /// <summary>
     /// 点击回调。当 <see cref="Role"/> 不为 <see cref="MenuRole.None"/> 时由平台实现自动设置。
+    /// <para>
+    /// 此回调不接收参数。若需访问菜单点击上下文（被点击的菜单项、复选框状态、上下文菜单数据），
+    /// 请使用 <see cref="CallbackWithContext"/>。
+    /// </para>
     /// </summary>
     public Action? Callback { get; set; }
+
+    /// <summary>
+    /// 带上下文的点击回调。
+    /// 对应 Wails v3 Go 版本 menuitem.go 中接收 <c>Context</c> 参数的回调签名。
+    /// <para>
+    /// 当此回调不为 null 时，平台实现优先调用此回调（而非 <see cref="Callback"/>），
+    /// 并传入包含被点击菜单项、复选框状态和上下文菜单数据的 <see cref="MenuContext"/>。
+    /// </para>
+    /// </summary>
+    public Action<MenuContext>? CallbackWithContext { get; set; }
 
     /// <summary>
     /// 菜单项 ID（自动生成，只读）。
@@ -31,6 +47,39 @@ public class MenuItem : Menu
     /// 对应 Tauri v2 AboutMetadata。
     /// </summary>
     public AboutMetadata? AboutMetadata { get; set; }
+
+    /// <summary>
+    /// 上下文菜单数据，由 <see cref="Menu.SetContextMenuData"/> 传播设置。
+    /// 对应 Wails v3 Go 版本 <c>MenuItem.contextMenuData</c> 字段。
+    /// <para>
+    /// 当菜单项通过上下文菜单弹出并被点击时，此数据会填充到 <see cref="Context.MenuContext.ContextMenuData"/>，
+    /// 供 <see cref="CallbackWithContext"/> 回调读取。
+    /// </para>
+    /// </summary>
+    internal ContextMenuData? ContextMenuData { get; set; }
+
+    /// <summary>
+    /// 设置上下文菜单数据并递归传播到子菜单项。
+    /// 对应 Wails v3 Go 版本 <c>MenuItem.setContextData</c> 方法。
+    /// <para>
+    /// 使用 <see cref="new"/> 关键字隐藏基类 <see cref="Menu.SetContextMenuData"/> 方法：
+    /// <see cref="MenuItem"/> 需要在设置 <see cref="ContextMenuData"/> 字段的同时递归传播到子菜单项，
+    /// 而 <see cref="Menu"/> 版本仅遍历 <see cref="Menu.Items"/> 调用各菜单项的此方法。
+    /// </para>
+    /// </summary>
+    /// <param name="data">上下文菜单数据，可为 null。</param>
+    internal new void SetContextMenuData(ContextMenuData? data)
+    {
+        ContextMenuData = data;
+        // 若此菜单项为子菜单，递归传播到子菜单的所有菜单项。
+        if (IsSubMenu)
+        {
+            foreach (var child in Items)
+            {
+                child.SetContextMenuData(data);
+            }
+        }
+    }
 
     /// <summary>
     /// 默认构造函数，自动生成 ID。

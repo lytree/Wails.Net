@@ -2463,6 +2463,8 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         }
 
         // 构造临时弹出式 Win32Menu，使用后立即销毁避免 GDI 句柄泄漏。
+        // 先将 ContextMenuData 传播到所有菜单项，使点击回调能通过 MenuContext 读取前端附加数据。
+        menu.SetContextMenuData(data);
         var win32Menu = new Win32Menu(menu, isPopup: true);
         win32Menu.Build();
         try

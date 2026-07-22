@@ -4,6 +4,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using Wails.Net.Application.Dialogs;
 using Wails.Net.Application.Menus;
+using Wails.Net.Application.Menus.Context;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.UI.WindowsAndMessaging;
@@ -533,6 +534,11 @@ public sealed class Win32Menu : IMenuImpl
     /// <summary>
     /// 尝试分发 WM_COMMAND 命令。根据命令 ID 查找 MenuItem 并触发其回调。
     /// 由窗口过程在收到 WM_COMMAND 时调用。
+    /// <para>
+    /// 对应 Wails v3 Go 版本 <c>MenuItem.handleClick</c>：构建 <see cref="MenuContext"/>，
+    /// 对复选框菜单项切换选中状态，优先调用 <see cref="MenuItem.CallbackWithContext"/>，
+    /// 为 null 时回退到 <see cref="MenuItem.Callback"/>。
+    /// </para>
     /// </summary>
     /// <param name="commandId">命令 ID（WM_COMMAND wParam 低字）。</param>
     /// <returns>若找到并触发了回调返回 true，否则 false。</returns>
@@ -542,7 +548,27 @@ public sealed class Win32Menu : IMenuImpl
         {
             try
             {
-                item.Callback?.Invoke();
+                // 构建菜单点击上下文，对应 Wails v3 Go 版本 handleClick 中的 newContext()。
+                var context = new MenuContext()
+                    .WithClickedMenuItem(item)
+                    .WithContextMenuData(item.ContextMenuData);
+
+                // 复选框菜单项：切换选中状态并填充 IsChecked。
+                if (item.IsCheckbox)
+                {
+                    item.Checked = !item.Checked;
+                    context.WithChecked(item.Checked);
+                }
+
+                // 优先调用带上下文的回调，否则回退到无参回调。
+                if (item.CallbackWithContext is not null)
+                {
+                    item.CallbackWithContext(context);
+                }
+                else
+                {
+                    item.Callback?.Invoke();
+                }
             }
             catch
             {

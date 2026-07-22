@@ -263,4 +263,21 @@ public class Menu
             Impl?.UpdateMenuItem(item);
         }
     }
+
+    /// <summary>
+    /// 递归设置所有菜单项的上下文菜单数据。
+    /// 对应 Wails v3 Go 版本通过遍历所有 <c>MenuItem</c> 并调用 <c>setContextData</c> 的传播逻辑。
+    /// <para>
+    /// 在弹出上下文菜单前调用，使每个菜单项的点击回调能通过 <see cref="Context.MenuContext"/>
+    /// 读取到触发上下文菜单的前端附加数据。
+    /// </para>
+    /// </summary>
+    /// <param name="data">上下文菜单数据，可为 null。</param>
+    internal void SetContextMenuData(ContextMenuData? data)
+    {
+        foreach (var item in Items)
+        {
+            item.SetContextMenuData(data);
+        }
+    }
 }

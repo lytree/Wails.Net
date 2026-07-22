@@ -1,6 +1,7 @@
 using Gtk;
 using Wails.Net.Application.Dialogs;
 using Wails.Net.Application.Menus;
+using Wails.Net.Application.Menus.Context;
 using Menu = Wails.Net.Application.Menus.Menu;
 using WailsApplication = Wails.Net.Application.Application;
 
@@ -412,16 +413,50 @@ public sealed class LinuxMenu : IMenuImpl, IDisposable
 
                 action.SetEnabled(!item.IsDisabled);
 
-                // 连接 OnActivate 事件到回调，优先从 _callbacks 查找，其次用 item.Callback。
-                if (_callbacks.TryGetValue(item.ID, out var callback) && callback is not null)
+                // 连接 OnActivate 事件到回调。
+                // 优先使用带上下文的回调（CallbackWithContext），否则回退到存储回调或无参回调。
+                // 对应 Wails v3 Go 版本 handleClick 中的上下文构建逻辑。
+                var capturedItem = item;
+                var hasContextCallback = item.CallbackWithContext is not null;
+                var storedCallback = _callbacks.TryGetValue(item.ID, out var cb) ? cb : null;
+                var directCallback = item.Callback;
+
+                if (hasContextCallback || storedCallback is not null || directCallback is not null)
                 {
-                    var cb = callback;
-                    action.OnActivate += (_, _) => cb();
-                }
-                else if (item.Callback is not null)
-                {
-                    var cb = item.Callback;
-                    action.OnActivate += (_, _) => cb();
+                    action.OnActivate += (_, _) =>
+                    {
+                        try
+                        {
+                            if (hasContextCallback)
+                            {
+                                // 构建菜单点击上下文。
+                                var context = new MenuContext()
+                                    .WithClickedMenuItem(capturedItem)
+                                    .WithContextMenuData(capturedItem.ContextMenuData);
+
+                                // 复选框菜单项：切换选中状态并填充 IsChecked。
+                                if (capturedItem.IsCheckbox)
+                                {
+                                    capturedItem.Checked = !capturedItem.Checked;
+                                    context.WithChecked(capturedItem.Checked);
+                                }
+
+                                capturedItem.CallbackWithContext!(context);
+                            }
+                            else if (storedCallback is not null)
+                            {
+                                storedCallback();
+                            }
+                            else if (directCallback is not null)
+                            {
+                                directCallback();
+                            }
+                        }
+                        catch
+                        {
+                            // 回调异常不应中断菜单处理
+                        }
+                    };
                 }
 
                 actionGroup.AddAction(action);
