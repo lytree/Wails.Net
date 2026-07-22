@@ -925,7 +925,10 @@ public sealed class WindowsPlatformApp : IPlatformApp
         // 使用 GetDpiForSystem 计算缩放比例，失败时回退 1.0。
         var scaleFactor = GetSystemScaleFactor();
 
+        // Windows 使用 DeviceName 作为屏幕唯一标识符，对应 Wails v3 Screen.ID。
+        // WinForms Screen 未直接暴露旋转角度，此处保持 0。
         return new Screen(
+            id: screen.DeviceName,
             name: screen.DeviceName,
             x: bounds.X,
             y: bounds.Y,
@@ -936,7 +939,8 @@ public sealed class WindowsPlatformApp : IPlatformApp
             workAreaWidth: workArea.Width,
             workAreaHeight: workArea.Height,
             scaleFactor: scaleFactor,
-            isPrimary: isPrimary);
+            isPrimary: isPrimary,
+            rotation: 0);
     }
 
     /// <summary>

@@ -7,6 +7,16 @@ namespace Wails.Net.Application.Screens;
 public class Screen
 {
     /// <summary>
+    /// 屏幕唯一标识符。
+    /// 对应 Wails v3 Go 版本 <c>Screen.ID</c>。
+    /// <para>
+    /// 由平台填充：Windows 使用 <c>DeviceName</c>，Linux 使用 GdkMonitor 的连接名，
+    /// Android 使用 DisplayId 字符串。用于 ScreenManager 多屏幕布局算法的去重和映射。
+    /// </para>
+    /// </summary>
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>
     /// 屏幕名称。
     /// </summary>
     public string Name { get; set; } = string.Empty;
@@ -104,6 +114,16 @@ public class Screen
     public bool IsPrimary { get; set; }
 
     /// <summary>
+    /// 屏幕旋转角度（度数）。
+    /// 对应 Wails v3 Go 版本 <c>Screen.Rotation</c>。
+    /// <para>
+    /// 常见值：0（正常）、90（顺时针 90°）、180（倒置）、270（逆时针 90°）。
+    /// 由平台填充，未提供旋转信息的平台返回 0。
+    /// </para>
+    /// </summary>
+    public float Rotation { get; set; }
+
+    /// <summary>
     /// 缩略图数据，可为 null。
     /// </summary>
     public byte[]? Thumbnail { get; set; }
@@ -133,7 +153,35 @@ public class Screen
     public Screen(string name, int x, int y, int width, int height,
         int workAreaX, int workAreaY, int workAreaWidth, int workAreaHeight,
         float scaleFactor, bool isPrimary, byte[]? thumbnail = null)
+        : this(id: name, name, x, y, width, height,
+            workAreaX, workAreaY, workAreaWidth, workAreaHeight,
+            scaleFactor, isPrimary, rotation: 0, thumbnail)
     {
+    }
+
+    /// <summary>
+    /// 使用所有属性（含 ID 和旋转角度）构造屏幕实例。
+    /// 对应 Wails v3 Go 版本 <c>Screen</c> 结构的完整字段。
+    /// </summary>
+    /// <param name="id">屏幕唯一标识符。</param>
+    /// <param name="name">屏幕名称。</param>
+    /// <param name="x">屏幕 X 坐标（DIP）。</param>
+    /// <param name="y">屏幕 Y 坐标（DIP）。</param>
+    /// <param name="width">屏幕宽度（DIP）。</param>
+    /// <param name="height">屏幕高度（DIP）。</param>
+    /// <param name="workAreaX">工作区 X 坐标（DIP）。</param>
+    /// <param name="workAreaY">工作区 Y 坐标（DIP）。</param>
+    /// <param name="workAreaWidth">工作区宽度（DIP）。</param>
+    /// <param name="workAreaHeight">工作区高度（DIP）。</param>
+    /// <param name="scaleFactor">缩放比例。</param>
+    /// <param name="isPrimary">是否为主屏幕。</param>
+    /// <param name="rotation">屏幕旋转角度（度数），默认 0。</param>
+    /// <param name="thumbnail">缩略图数据，可为 null。</param>
+    public Screen(string id, string name, int x, int y, int width, int height,
+        int workAreaX, int workAreaY, int workAreaWidth, int workAreaHeight,
+        float scaleFactor, bool isPrimary, float rotation = 0, byte[]? thumbnail = null)
+    {
+        Id = id;
         Name = name;
         X = x;
         Y = y;
@@ -145,6 +193,7 @@ public class Screen
         WorkAreaHeight = workAreaHeight;
         ScaleFactor = scaleFactor;
         IsPrimary = isPrimary;
+        Rotation = rotation;
         Thumbnail = thumbnail;
     }
 
@@ -273,6 +322,6 @@ public class Screen
     /// <returns>屏幕信息字符串。</returns>
     public override string ToString()
     {
-        return $"{Name}: {Width}x{Height} @ ({X},{Y}) Scale={ScaleFactor} Primary={IsPrimary}";
+        return $"{Id} ({Name}): {Width}x{Height} @ ({X},{Y}) Scale={ScaleFactor} Rotation={Rotation} Primary={IsPrimary}";
     }
 }
