@@ -170,3 +170,6 @@ EnumChildWindows
 AddClipboardFormatListener
 RemoveClipboardFormatListener
 CoCreateInstance
+FlashWindowEx
+FLASHWINFO
+FLASHWINFO_FLAGS

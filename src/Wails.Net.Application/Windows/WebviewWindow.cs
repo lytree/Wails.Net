@@ -233,9 +233,68 @@ public class WebviewWindow
 
     /// <summary>
     /// 设置是否无边框。
+    /// 对应 Wails v3 Go 版本 <c>window.setFrameless(b)</c>，同步更新 <see cref="Options"/>.Frameless 以支持 <see cref="ToggleFrameless"/> 状态跟踪。
     /// </summary>
     /// <param name="frameless">是否无边框。</param>
-    public void SetFrameless(bool frameless) => ImplRequired.SetFrameless(frameless);
+    public void SetFrameless(bool frameless)
+    {
+        Options.Frameless = frameless;
+        ImplRequired.SetFrameless(frameless);
+    }
+
+    /// <summary>
+    /// 在全屏和正常状态之间切换。
+    /// 对应 Wails v3 Go 版本 <c>window.toggleFullscreen()</c>。
+    /// </summary>
+    public void ToggleFullscreen()
+    {
+        if (ImplRequired.IsFullscreen())
+        {
+            ImplRequired.UnFullscreen();
+        }
+        else
+        {
+            ImplRequired.Fullscreen();
+        }
+    }
+
+    /// <summary>
+    /// 在最大化和正常状态之间切换。
+    /// 对应 Wails v3 Go 版本 <c>window.toggleMaximise()</c>。
+    /// </summary>
+    public void ToggleMaximise()
+    {
+        if (ImplRequired.IsMaximised())
+        {
+            ImplRequired.UnMaximise();
+        }
+        else
+        {
+            ImplRequired.Maximise();
+        }
+    }
+
+    /// <summary>
+    /// 在无边框和有边框之间切换。
+    /// 对应 Wails v3 Go 版本 <c>window.toggleFrameless()</c>，基于 <see cref="Options"/>.Frameless 当前值反转。
+    /// </summary>
+    public void ToggleFrameless()
+    {
+        SetFrameless(!Options.Frameless);
+    }
+
+    /// <summary>
+    /// 强制重新加载页面，绕过缓存。
+    /// 对应 Wails v3 Go 版本 <c>window.forceReload()</c>。
+    /// </summary>
+    public void ForceReload() => ImplRequired.ForceReload();
+
+    /// <summary>
+    /// 闪烁窗口任务栏按钮以引起用户注意。
+    /// 对应 Wails v3 Go 版本 <c>window.flash(enabled)</c>（Windows 平台特有功能）。
+    /// </summary>
+    /// <param name="enabled">true 开始闪烁，false 停止闪烁。</param>
+    public void Flash(bool enabled) => ImplRequired.Flash(enabled);
 
     /// <summary>
     /// 打开开发者工具。

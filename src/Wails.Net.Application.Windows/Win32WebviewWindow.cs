@@ -2175,6 +2175,33 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// 通过 FlashWindowEx 实现：启用时持续闪烁直到窗口获得焦点，禁用时立即停止。
+    /// 对应 Wails v3 Go 版本 <c>window.flash(enabled)</c>（Windows 平台特有）。
+    /// </remarks>
+    public void Flash(bool enabled)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        var flags = enabled
+            ? FLASHWINFO_FLAGS.FLASHW_ALL | FLASHWINFO_FLAGS.FLASHW_TIMERNOFG
+            : FLASHWINFO_FLAGS.FLASHW_STOP;
+
+        var info = new FLASHWINFO
+        {
+            cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<FLASHWINFO>(),
+            hwnd = _hwnd,
+            dwFlags = flags,
+            uCount = 0,
+            dwTimeout = 0,
+        };
+        PInvoke.FlashWindowEx(info);
+    }
+
+    /// <inheritdoc />
     public void SetURL(string url)
     {
         LoadURL(url);

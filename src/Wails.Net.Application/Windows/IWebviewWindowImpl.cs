@@ -294,6 +294,28 @@ public interface IWebviewWindowImpl
     void Reload();
 
     /// <summary>
+    /// 强制重新加载页面，绕过缓存。
+    /// 对应 Wails v3 Go 版本 <c>window.forceReload()</c> 契约。
+    /// 默认实现委托到 <see cref="Reload"/>（不支持绕过缓存的平台使用普通重载）。
+    /// </summary>
+    void ForceReload()
+    {
+        // 默认实现：等同于普通重载。
+        Reload();
+    }
+
+    /// <summary>
+    /// 闪烁窗口任务栏按钮以引起用户注意。
+    /// 对应 Wails v3 Go 版本 <c>window.flash(enabled)</c> 契约（Windows 平台特有功能）。
+    /// 默认实现为空操作，Windows 平台实现通过 FlashWindowEx 提供实际功能。
+    /// </summary>
+    /// <param name="enabled">true 开始闪烁，false 停止闪烁。</param>
+    void Flash(bool enabled)
+    {
+        // 默认空实现，平台实现可重写。
+    }
+
+    /// <summary>
     /// 设置 URL。
     /// </summary>
     /// <param name="url">目标 URL。</param>
