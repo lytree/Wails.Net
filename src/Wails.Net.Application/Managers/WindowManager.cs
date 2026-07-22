@@ -58,6 +58,19 @@ public class WindowManager : IWindowManager
     public event Action<WebviewWindow>? WindowCreated;
 
     /// <summary>
+    /// 注册窗口创建回调，在新窗口创建后触发。
+    /// 对应 Wails v3 Go 版本 <c>WindowManager.OnCreate</c>。
+    /// 内部委托给 <see cref="WindowCreated"/> 事件，返回的取消订阅函数可用于移除回调。
+    /// </summary>
+    /// <param name="callback">窗口创建回调，参数为新创建的窗口实例。</param>
+    /// <returns>取消订阅函数，调用后移除该回调。</returns>
+    public Action OnCreate(Action<WebviewWindow> callback)
+    {
+        WindowCreated += callback;
+        return () => WindowCreated -= callback;
+    }
+
+    /// <summary>
     /// 创建新窗口，并注册窗口关闭事件监听器以自动清理窗口列表。
     /// </summary>
     /// <param name="options">窗口选项。</param>

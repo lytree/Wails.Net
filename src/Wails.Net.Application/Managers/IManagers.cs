@@ -40,6 +40,14 @@ public interface IWindowManager
     uint CreateWebviewWindow(WebviewWindowOptions options);
 
     /// <summary>
+    /// 注册窗口创建回调，在新窗口创建后触发。
+    /// 对应 Wails v3 Go 版本 <c>WindowManager.OnCreate</c>。
+    /// </summary>
+    /// <param name="callback">窗口创建回调，参数为新创建的窗口实例。</param>
+    /// <returns>取消订阅函数，调用后移除该回调。</returns>
+    Action OnCreate(Action<WebviewWindow> callback);
+
+    /// <summary>
     /// 销毁窗口。
     /// </summary>
     /// <param name="id">窗口 ID。</param>

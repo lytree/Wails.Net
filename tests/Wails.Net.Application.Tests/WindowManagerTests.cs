@@ -278,6 +278,116 @@ public sealed class WindowManagerTests
         // 断言
         await Assert.That(manager.AllWindows).Count().IsEqualTo(1);
     }
+
+    [Test]
+    public async Task OnCreate_RegistersCallback_InvokedOnWindowCreation()
+    {
+        // 安排
+        var manager = new WindowManager(null);
+        var createdWindows = new List<WebviewWindow>();
+        manager.OnCreate(w => createdWindows.Add(w));
+
+        // 操作
+        var id = manager.CreateWebviewWindow(new WebviewWindowOptions { Name = "OnCreateWin" });
+
+        // 断言
+        await Assert.That(createdWindows.Count).IsEqualTo(1);
+        await Assert.That(createdWindows[0].ID).IsEqualTo(id);
+        await Assert.That(createdWindows[0].Name).IsEqualTo("OnCreateWin");
+    }
+
+    [Test]
+    public async Task OnCreate_ReturnsUnsubscribeAction_StopsReceivingCallbacks()
+    {
+        // 安排
+        var manager = new WindowManager(null);
+        var callCount = 0;
+        var unsubscribe = manager.OnCreate(_ => callCount++);
+
+        // 操作 - 先创建一个窗口（应触发回调）
+        manager.CreateWebviewWindow(new WebviewWindowOptions { Name = "W1" });
+
+        // 取消订阅
+        unsubscribe();
+
+        // 再创建一个窗口（不应触发回调）
+        manager.CreateWebviewWindow(new WebviewWindowOptions { Name = "W2" });
+
+        // 断言
+        await Assert.That(callCount).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task OnCreate_MultipleCallbacks_AllInvoked()
+    {
+        // 安排
+        var manager = new WindowManager(null);
+        var callCount1 = 0;
+        var callCount2 = 0;
+        manager.OnCreate(_ => callCount1++);
+        manager.OnCreate(_ => callCount2++);
+
+        // 操作
+        manager.CreateWebviewWindow(new WebviewWindowOptions { Name = "W1" });
+
+        // 断言 - 两个回调都被触发
+        await Assert.That(callCount1).IsEqualTo(1);
+        await Assert.That(callCount2).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task OnCreate_CallbackReceivesCreatedWindow()
+    {
+        // 安排
+        var manager = new WindowManager(null);
+        WebviewWindow? receivedWindow = null;
+        manager.OnCreate(w => receivedWindow = w);
+
+        // 操作
+        var id = manager.CreateWebviewWindow(new WebviewWindowOptions { Name = "ReceivedWin" });
+
+        // 断言 - 回调参数是创建的窗口实例
+        await Assert.That(receivedWindow).IsNotNull();
+        await Assert.That(receivedWindow!.ID).IsEqualTo(id);
+        await Assert.That(receivedWindow.Name).IsEqualTo("ReceivedWin");
+    }
+
+    [Test]
+    public async Task OnCreate_DoesNotInvokeForExistingWindows()
+    {
+        // 安排 - 先创建窗口
+        var manager = new WindowManager(null);
+        manager.CreateWebviewWindow(new WebviewWindowOptions { Name = "Existing" });
+
+        // 操作 - 注册回调后再创建新窗口
+        var callCount = 0;
+        manager.OnCreate(_ => callCount++);
+        manager.CreateWebviewWindow(new WebviewWindowOptions { Name = "New" });
+
+        // 断言 - 只对新窗口触发，对已存在窗口不触发
+        await Assert.That(callCount).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task OnCreate_UnsubscribeOneCallback_OthersStillWork()
+    {
+        // 安排
+        var manager = new WindowManager(null);
+        var callCount1 = 0;
+        var callCount2 = 0;
+        var unsubscribe1 = manager.OnCreate(_ => callCount1++);
+        manager.OnCreate(_ => callCount2++);
+
+        // 取消订阅第一个回调
+        unsubscribe1();
+
+        // 操作
+        manager.CreateWebviewWindow(new WebviewWindowOptions { Name = "W1" });
+
+        // 断言 - 只有第二个回调被触发
+        await Assert.That(callCount1).IsEqualTo(0);
+        await Assert.That(callCount2).IsEqualTo(1);
+    }
 }
 
 /// <summary>
