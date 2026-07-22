@@ -262,4 +262,20 @@ public class ApplicationOptions
     /// 获取或设置允许的外部 URL 白名单。
     /// </summary>
     public Wails.Net.Application.Security.UrlWhitelist? AllowedUrls { get; set; }
+
+    /// <summary>
+    /// 获取或设置 Windows 平台特定应用级选项。
+    /// 对应 Wails v3 Go 版本 <c>Options.Windows</c> 字段。
+    /// 为 null 时使用系统默认 WebView2 Runtime 和用户数据目录。
+    /// 仅在 Windows 平台生效，其他平台忽略。
+    /// </summary>
+    public WindowsOptions? Windows { get; set; }
+
+    /// <summary>
+    /// 获取或设置 Linux 平台特定应用级选项。
+    /// 对应 Wails v3 Go 版本 <c>Options.Linux</c> 字段。
+    /// 为 null 时使用系统默认 WebKitGTK 设置。
+    /// 仅在 Linux 平台生效，其他平台忽略。
+    /// </summary>
+    public LinuxOptions? Linux { get; set; }
 }

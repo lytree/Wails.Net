@@ -40,6 +40,12 @@ public sealed class LinuxPlatformApp : IPlatformApp
     private readonly string _name;
 
     /// <summary>
+    /// Linux 平台特定选项，全局生效于所有窗口共享的 WebKitGTK 环境。
+    /// 在构造时从 <see cref="ApplicationOptions.Linux"/> 读取，传入 <see cref="LinuxWebviewWindow"/>。
+    /// </summary>
+    private readonly LinuxOptions? _linuxOptions;
+
+    /// <summary>
     /// 主线程 ID，用于 IsOnMainThread 判断。
     /// 在 <see cref="Run"/> 方法启动时设置，因为 UI 线程可能不是构造时的线程。
     /// </summary>
@@ -100,6 +106,7 @@ public sealed class LinuxPlatformApp : IPlatformApp
     public LinuxPlatformApp(ApplicationOptions options)
     {
         _name = options.Name;
+        _linuxOptions = options.Linux;
     }
 
     /// <inheritdoc />
@@ -667,7 +674,8 @@ public sealed class LinuxPlatformApp : IPlatformApp
             return;
         }
 
-        var window = new LinuxWebviewWindow(id, options);
+        // 将应用级 LinuxOptions 传入窗口，用于配置 WebKitGTK 环境（用户数据目录、附加参数等）。
+        var window = new LinuxWebviewWindow(id, options, _linuxOptions);
         _windows[id] = window;
 
         // 若已设置应用菜单，将其应用到新窗口（注入 GMenu 模型与 ActionGroup）。

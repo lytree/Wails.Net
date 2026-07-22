@@ -206,6 +206,13 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     private readonly WebviewWindowOptions _options;
 
     /// <summary>
+    /// Windows 平台特定应用级选项，用于配置 WebView2 运行时环境。
+    /// 对应 Wails v3 Go 版本 <c>Options.Windows</c>，全局生效于所有窗口共享的浏览器环境。
+    /// 为 null 时使用系统默认 WebView2 Runtime 和用户数据目录。
+    /// </summary>
+    private readonly WindowsOptions? _windowsOptions;
+
+    /// <summary>
     /// Win32 窗口句柄。
     /// </summary>
     private HWND _hwnd;
@@ -317,10 +324,12 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     /// </summary>
     /// <param name="id">窗口 ID。</param>
     /// <param name="options">窗口选项。</param>
-    public Win32WebviewWindow(uint id, WebviewWindowOptions options)
+    /// <param name="windowsOptions">Windows 平台特定应用级选项，可为 null。用于配置 WebView2 运行时环境。</param>
+    public Win32WebviewWindow(uint id, WebviewWindowOptions options, WindowsOptions? windowsOptions = null)
     {
         _id = id;
         _options = options;
+        _windowsOptions = windowsOptions;
 
         EnsureWindowClassRegistered();
         CreateNativeWindow();
@@ -516,13 +525,22 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
 
     /// <summary>
     /// 异步初始化 WebView2 控制器和 Webview 实例。
+    /// 使用 <see cref="_windowsOptions"/> 配置 WebView2 运行时环境：
+    /// <list type="bullet">
+    /// <item><c>WebviewBrowserPath</c> → browserExecutableFolder（固定版本 WebView2 Runtime）</item>
+    /// <item><c>WebviewUserDataPath</c> → userDataFolder（Cookie、缓存、LocalStorage）</item>
+    /// <item><c>AdditionalBrowserArgs</c> → AdditionalBrowserArguments（附加 Chromium 启动参数）</item>
+    /// <item><c>EnabledFeatures</c> → 拼装为 <c>--enable-features=</c> 参数</item>
+    /// <item><c>DisabledFeatures</c> → 拼装为 <c>--disable-features=</c> 参数</item>
+    /// </list>
+    /// 为 null 或所有字段为空时退化为 <see cref="CoreWebView2Environment.CreateAsync"/> 默认调用。
     /// </summary>
     private async Task InitializeWebViewAsync()
     {
         try
         {
             var hwndPtr = (IntPtr)_hwnd;
-            var environment = await CoreWebView2Environment.CreateAsync().ConfigureAwait(true);
+            var environment = await CreateEnvironmentAsync().ConfigureAwait(true);
             var controller = await environment.CreateCoreWebView2ControllerAsync(hwndPtr).ConfigureAwait(true);
             _controller = controller;
             _webview = controller.CoreWebView2;
@@ -616,6 +634,90 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         {
             _initTcs.TrySetException(ex);
         }
+    }
+
+    /// <summary>
+    /// 创建 WebView2 运行时环境。
+    /// 根据 <see cref="_windowsOptions"/> 配置 browserExecutableFolder、userDataFolder 和环境选项。
+    /// 所有字段均为空时退化为无参 <see cref="CoreWebView2Environment.CreateAsync"/> 调用。
+    /// </summary>
+    /// <returns>已配置的 WebView2 环境。</returns>
+    private Task<CoreWebView2Environment> CreateEnvironmentAsync()
+    {
+        // 无平台选项时使用默认环境。
+        if (_windowsOptions is null)
+        {
+            return CoreWebView2Environment.CreateAsync();
+        }
+
+        var (browserExecutableFolder, userDataFolder, additionalArgs) = BuildEnvironmentParameters(_windowsOptions);
+
+        // 所有字段均为空时退化为默认调用，避免传入空 CoreWebView2EnvironmentOptions 触发不必要的运行时配置。
+        if (browserExecutableFolder is null
+            && userDataFolder is null
+            && additionalArgs.Count == 0)
+        {
+            return CoreWebView2Environment.CreateAsync();
+        }
+
+        var environmentOptions = additionalArgs.Count > 0
+            ? new CoreWebView2EnvironmentOptions
+            {
+                AdditionalBrowserArguments = string.Join(" ", additionalArgs),
+            }
+            : null;
+
+        return CoreWebView2Environment.CreateAsync(browserExecutableFolder, userDataFolder, environmentOptions);
+    }
+
+    /// <summary>
+    /// 根据 <see cref="WindowsOptions"/> 构建 WebView2 环境参数三元组。
+    /// 将平台选项转换为 <see cref="CoreWebView2Environment.CreateAsync"/> 所需的 browserExecutableFolder、
+    /// userDataFolder 和附加命令行参数列表。
+    /// 纯函数，无副作用，便于单元测试覆盖参数拼装逻辑。
+    /// </summary>
+    /// <param name="options">Windows 平台特定选项，不可为 null。</param>
+    /// <returns>
+    /// 三元组：
+    /// <list type="bullet">
+    /// <item><c>browserExecutableFolder</c>：WebView2 可执行文件目录，为 null 表示使用系统安装版本。</item>
+    /// <item><c>userDataFolder</c>：用户数据目录，为 null 表示使用默认路径。</item>
+    /// <item><c>additionalArgs</c>：附加 Chromium 启动参数列表（已规范化为带 -- 前缀），空列表表示无附加参数。</item>
+    /// </list>
+    /// </returns>
+    internal static (string? browserExecutableFolder, string? userDataFolder, List<string> additionalArgs)
+        BuildEnvironmentParameters(WindowsOptions options)
+    {
+        var browserExecutableFolder = string.IsNullOrEmpty(options.WebviewBrowserPath)
+            ? null
+            : options.WebviewBrowserPath;
+        var userDataFolder = string.IsNullOrEmpty(options.WebviewUserDataPath)
+            ? null
+            : options.WebviewUserDataPath;
+
+        // 拼装环境选项：AdditionalBrowserArgs 直接拼接（应已含 -- 前缀），
+        // EnabledFeatures/DisabledFeatures 转换为 --enable-features=/--disable-features= 参数。
+        var additionalArgs = new List<string>();
+        if (options.AdditionalBrowserArgs is { Count: > 0 } rawArgs)
+        {
+            // 兼容用户是否带 -- 前缀：统一规范化为带 -- 前缀。
+            foreach (var arg in rawArgs)
+            {
+                additionalArgs.Add(arg.StartsWith("--", StringComparison.Ordinal) ? arg : "--" + arg);
+            }
+        }
+
+        if (options.EnabledFeatures is { Count: > 0 } enabledFeatures)
+        {
+            additionalArgs.Add("--enable-features=" + string.Join(",", enabledFeatures));
+        }
+
+        if (options.DisabledFeatures is { Count: > 0 } disabledFeatures)
+        {
+            additionalArgs.Add("--disable-features=" + string.Join(",", disabledFeatures));
+        }
+
+        return (browserExecutableFolder, userDataFolder, additionalArgs);
     }
 
     /// <summary>

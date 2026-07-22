@@ -114,6 +114,12 @@ public sealed class WindowsPlatformApp : IPlatformApp
     private readonly string _version;
 
     /// <summary>
+    /// Windows 平台特定选项，全局生效于所有窗口共享的 WebView2 环境。
+    /// 在构造时从 <see cref="ApplicationOptions.Windows"/> 读取，传入 <see cref="Win32WebviewWindow"/>。
+    /// </summary>
+    private readonly WindowsOptions? _windowsOptions;
+
+    /// <summary>
     /// 已创建的窗口字典，按窗口 ID 索引。用于 Hide/Show 遍历及主窗口查找。
     /// </summary>
     private readonly Dictionary<uint, Win32WebviewWindow> _windows = new();
@@ -158,6 +164,7 @@ public sealed class WindowsPlatformApp : IPlatformApp
         _name = options.Name;
         _description = options.Description;
         _version = options.Version;
+        _windowsOptions = options.Windows;
         s_current = this;
 
         // 设置进程 DPI 感知，必须在创建任何窗口之前完成。
@@ -453,7 +460,8 @@ public sealed class WindowsPlatformApp : IPlatformApp
     public void CreateWebviewWindow(uint id, WebviewWindowOptions options)
     {
         // 创建 Win32WebviewWindow 实例并加入窗口字典。
-        var window = new Win32WebviewWindow(id, options);
+        // 将应用级 WindowsOptions 传入窗口，用于配置 WebView2 环境（用户数据目录、浏览器路径等）。
+        var window = new Win32WebviewWindow(id, options, _windowsOptions);
         _windows[id] = window;
 
         // 应用暗色模式。

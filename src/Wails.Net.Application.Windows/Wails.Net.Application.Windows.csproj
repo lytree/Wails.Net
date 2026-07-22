@@ -27,4 +27,9 @@
     <ProjectReference Include="..\Wails.Net.Application\Wails.Net.Application.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- 暴露 internal 成员给测试程序集，便于白盒测试 BuildEnvironmentParameters 等内部方法 -->
+    <InternalsVisibleTo Include="Wails.Net.Application.Windows.Tests" />
+  </ItemGroup>
+
 </Project>

@@ -71,6 +71,13 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     private readonly WebviewWindowOptions _options;
 
     /// <summary>
+    /// Linux 平台特定应用级选项，用于配置 WebKitGTK 运行时环境。
+    /// 对应 Wails v3 Go 版本 <c>Options.Linux</c>，全局生效于所有窗口共享的浏览器环境。
+    /// 为 null 时使用系统默认 WebKitGTK 配置。
+    /// </summary>
+    private readonly LinuxOptions? _linuxOptions;
+
+    /// <summary>
     /// GTK 原生窗口实例。
     /// </summary>
     private Window? _window;
@@ -218,10 +225,12 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     /// </summary>
     /// <param name="id">窗口 ID。</param>
     /// <param name="options">窗口选项。</param>
-    public LinuxWebviewWindow(uint id, WebviewWindowOptions options)
+    /// <param name="linuxOptions">Linux 平台特定应用级选项，可为 null。用于配置 WebKitGTK 运行时环境。</param>
+    public LinuxWebviewWindow(uint id, WebviewWindowOptions options, LinuxOptions? linuxOptions = null)
     {
         _id = id;
         _options = options;
+        _linuxOptions = linuxOptions;
         _minWidth = options.MinWidth;
         _minHeight = options.MinHeight;
         _maxWidth = options.MaxWidth;
