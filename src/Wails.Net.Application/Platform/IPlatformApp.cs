@@ -16,6 +16,15 @@ public interface IPlatformApp
     string Name { get; }
 
     /// <summary>
+    /// 获取平台原生能力描述。
+    /// 对应 Wails v3 Go 版本 <c>App.Capabilities()</c> 方法，返回
+    /// <see cref="PlatformCapabilities"/> 结构描述当前平台支持的原生特性。
+    /// 默认实现返回 <see cref="PlatformCapabilities.Default"/>，
+    /// 由支持的平台覆盖（Windows / Linux / Android）。
+    /// </summary>
+    PlatformCapabilities Capabilities => PlatformCapabilities.Default;
+
+    /// <summary>
     /// 启动平台应用主循环，阻塞直到主循环退出。
     /// </summary>
     /// <returns>进程退出码。</returns>

@@ -54,6 +54,21 @@ public sealed class LinuxSystemTray : ISystemTrayImpl, IDisposable
     /// <inheritdoc />
     public event Action? OnTrayClick;
 
+    /// <inheritdoc />
+    public event Action? OnTrayRightClick;
+
+    /// <inheritdoc />
+    public event Action? OnTrayDoubleClick;
+
+    /// <inheritdoc />
+    public event Action? OnTrayRightDoubleClick;
+
+    /// <inheritdoc />
+    public event Action? OnTrayMouseEnter;
+
+    /// <inheritdoc />
+    public event Action? OnTrayMouseLeave;
+
     /// <summary>
     /// 模拟托盘的隐藏窗口实例（D-Bus 不可用时回退使用）。
     /// </summary>
@@ -68,6 +83,11 @@ public sealed class LinuxSystemTray : ISystemTrayImpl, IDisposable
     /// 点击手势事件控制器，用于处理鼠标点击事件。
     /// </summary>
     private GestureClick? _clickGesture;
+
+    /// <summary>
+    /// 鼠标移动事件控制器，用于检测鼠标进入/离开托盘区域。
+    /// </summary>
+    private EventControllerMotion? _motionController;
 
     /// <summary>
     /// 托盘标签。
@@ -139,6 +159,12 @@ public sealed class LinuxSystemTray : ISystemTrayImpl, IDisposable
         _clickGesture.OnPressed += OnTrayPressed;
         _trayWindow.AddController(_clickGesture);
 
+        // 创建鼠标移动控制器，检测鼠标进入/离开托盘区域。
+        _motionController = EventControllerMotion.New();
+        _motionController.OnEnter += (_, _) => OnTrayMouseEnter?.Invoke();
+        _motionController.OnLeave += (_, _) => OnTrayMouseLeave?.Invoke();
+        _trayWindow.AddController(_motionController);
+
         // 尝试通过 D-Bus 注册 StatusNotifierItem。
         // 对应 Go 版 system_tray_linux.go 中的 D-Bus 注册逻辑。
         TryRegisterStatusNotifierItem();
@@ -189,11 +215,12 @@ public sealed class LinuxSystemTray : ISystemTrayImpl, IDisposable
 
     /// <summary>
     /// 处理托盘图标的鼠标按下事件。
-    /// 左键点击时呈现窗口（模拟托盘点击回调），右键点击时弹出上下文菜单。
+    /// 左键单击触发 OnTrayClick，左键双击触发 OnTrayDoubleClick；
+    /// 右键单击触发 OnTrayRightClick 并弹出上下文菜单，右键双击触发 OnTrayRightDoubleClick。
     /// </summary>
     /// <param name="sender">事件发送者（GestureClick 实例）。</param>
-    /// <param name="args">按下事件参数，包含点击次数和坐标。</param>
-    private void OnTrayPressed(GestureClick sender, GObject.SignalArgs args)
+    /// <param name="args">按下事件参数，包含点击次数（n_press）和坐标。</param>
+    private void OnTrayPressed(GestureClick sender, GestureClick.PressedSignalArgs args)
     {
         if (_trayWindow is null)
         {
@@ -201,16 +228,35 @@ public sealed class LinuxSystemTray : ISystemTrayImpl, IDisposable
         }
 
         var button = sender.GetCurrentButton();
+        var isDoubleClick = args.NPress >= 2;
+
         if (button == RightButton)
         {
-            // 右键点击：弹出上下文菜单。
-            PopupMenu(0, 0);
+            if (isDoubleClick)
+            {
+                // 右键双击：触发 OnTrayRightDoubleClick 事件。
+                OnTrayRightDoubleClick?.Invoke();
+            }
+            else
+            {
+                // 右键单击：触发 OnTrayRightClick 事件并弹出上下文菜单。
+                OnTrayRightClick?.Invoke();
+                PopupMenu(0, 0);
+            }
         }
         else if (button == LeftButton)
         {
-            // 左键点击：呈现窗口，并触发 OnTrayClick 事件。
-            _trayWindow.Present();
-            OnTrayClick?.Invoke();
+            if (isDoubleClick)
+            {
+                // 左键双击：触发 OnTrayDoubleClick 事件。
+                OnTrayDoubleClick?.Invoke();
+            }
+            else
+            {
+                // 左键单击：呈现窗口，并触发 OnTrayClick 事件。
+                _trayWindow.Present();
+                OnTrayClick?.Invoke();
+            }
         }
     }
 

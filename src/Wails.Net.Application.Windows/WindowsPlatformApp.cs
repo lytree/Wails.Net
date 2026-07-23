@@ -175,6 +175,18 @@ public sealed class WindowsPlatformApp : IPlatformApp
     public string Name => _name;
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Windows 通过 OLE Drag-Drop 提供原生拖放支持；WebView2 内核为 Edge Chromium，
+    /// 版本号通过 <c>CoreWebView2Environment.Options</c> 或注册表获取。
+    /// </remarks>
+    public PlatformCapabilities Capabilities { get; } = new()
+    {
+        HasNativeDrag = true,
+        GtkVersion = 0,
+        WebKitVersion = string.Empty, // WebView2 非 WebKit，留空
+    };
+
+    /// <inheritdoc />
     public bool IsOnMainThread()
     {
         return Environment.CurrentManagedThreadId == _mainThreadId;

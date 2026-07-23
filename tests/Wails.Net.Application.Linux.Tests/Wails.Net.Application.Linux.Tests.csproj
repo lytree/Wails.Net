@@ -26,6 +26,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Wails.Net.Application.Linux\Wails.Net.Application.Linux.csproj" />
+    <ProjectReference Include="..\Wails.Net.Application.GuiContract.Tests\Wails.Net.Application.GuiContract.Tests.csproj" />
   </ItemGroup>
 
 </Project>

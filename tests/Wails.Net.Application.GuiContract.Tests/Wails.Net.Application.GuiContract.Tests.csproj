@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <!-- 共享契约库，不作为独立测试项目运行，由各平台测试项目引用并执行 -->
+    <IsTestProject>false</IsTestProject>
+    <EnableMSTestRunner>false</EnableMSTestRunner>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TUnit" />
+    <PackageReference Include="TUnit.Assertions" />
+    <PackageReference Include="TUnit.Engine" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Wails.Net.Application\Wails.Net.Application.csproj" />
+  </ItemGroup>
+
+</Project>

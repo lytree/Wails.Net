@@ -1217,6 +1217,24 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     private static extern void DragFinish(IntPtr hDrop);
 
     /// <summary>
+    /// DragQueryPoint 的手动 P/Invoke 声明。
+    /// 对应 Win32 shell32.dll 中的 DragQueryPoint 函数，获取 WM_DROPFILES 拖放位置（客户端区坐标）。
+    /// </summary>
+    /// <param name="hDrop">HDROP 句柄。</param>
+    /// <param name="lppt">接收坐标的 POINT 结构指针。</param>
+    /// <returns>若拖放发生在窗口客户端区返回非零，否则返回零。</returns>
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Point
+    {
+        public int X;
+        public int Y;
+    }
+
+    [DllImport("shell32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DragQueryPoint(IntPtr hDrop, ref Point lppt);
+
+    /// <summary>
     /// 解析 WM_DROPFILES 消息中的拖放文件列表。
     /// 对应 Wails v3 Go 版本中的 parseDropFiles 方法。
     /// 使用 Win32 DragQueryFileW 和 DragFinish API 获取文件路径数组。
@@ -1252,6 +1270,59 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         DragFinish(hDropPtr);
 
         return files;
+    }
+
+    /// <summary>
+    /// 异步查询拖放目标 HTML 元素详情并触发 <see cref="KnownEvents.WindowFileDropTarget"/> 事件。
+    /// 对应 Wails v3 Go 版本中通过 ExecJS 调用 <c>elementFromPoint</c> 提取 DropTargetDetails 的逻辑。
+    /// </summary>
+    /// <param name="x">拖放位置 X 坐标（客户端区坐标，DPI 物理像素）。</param>
+    /// <param name="y">拖放位置 Y 坐标（客户端区坐标，DPI 物理像素）。</param>
+    private async void QueryDropTargetAndEmit(int x, int y)
+    {
+        try
+        {
+            if (_webview is null)
+            {
+                return;
+            }
+
+            // 注入脚本通过 document.elementFromPoint 查询目标元素信息。
+            var js = DragRegionHelper.GetDropTargetDetailsScript(x, y);
+            var result = await _webview.ExecuteScriptAsync(js);
+            if (string.IsNullOrEmpty(result))
+            {
+                return;
+            }
+
+            // ExecuteScriptAsync 返回值是 JSON 字符串字面量（带引号），需先解码外层引号。
+            // 注入脚本返回的是 JSON.stringify 的结果，WebView2 会再包裹一层 JSON 字符串。
+            string json;
+            try
+            {
+                json = System.Text.Json.JsonSerializer.Deserialize<string>(result) ?? string.Empty;
+            }
+            catch
+            {
+                json = result;
+            }
+
+            if (string.IsNullOrEmpty(json))
+            {
+                return;
+            }
+
+            var details = System.Text.Json.JsonSerializer.Deserialize<DropTargetDetails>(json);
+            if (details is not null)
+            {
+                Application.Get()?.Events.Emit(
+                    KnownEvents.WindowFileDropTarget, details, _id);
+            }
+        }
+        catch
+        {
+            // 查询目标元素失败不应中断文件拖放主流程
+        }
     }
 
     /// <summary>
@@ -1526,7 +1597,19 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                 // 对应 Wails v3 Go 版本中的 emit(WindowFileDropped, files) 调用。
                 if (instance is not null)
                 {
-                    var files = instance.ParseDropFiles((nint)wParam.Value);
+                    var hDrop = (IntPtr)wParam.Value;
+                    var files = instance.ParseDropFiles(hDrop);
+
+                    // P1-4：通过 DragQueryPoint 获取拖放坐标，异步查询目标 HTML 元素，
+                    // 同时触发 WindowFileDropTarget 事件携带 DropTargetDetails。
+                    // 对应 Wails v3 Go 版本 DropTargetDetails 结构与
+                    // emit(WindowFileDropTarget, dropTargetDetails) 调用。
+                    var pt = new Point();
+                    if (DragQueryPoint(hDrop, ref pt))
+                    {
+                        instance.QueryDropTargetAndEmit(pt.X, pt.Y);
+                    }
+
                     Application.Get()?.Events.Emit(
                         KnownEvents.WindowFileDropped, files, instance._id);
                 }

@@ -2,8 +2,8 @@
 
 > 本文档对比 **Wails.Net**（当前项目，Wails v3 的 .NET 10 移植实现）、**Tauri 2**（Rust 桌面/移动框架）和 **Wails 3 v3.0.0-alpha.102**（Go 原版）三者的功能实现项与差异项。
 >
-> - **更新日期**：2026-07-20（基于实际仓库代码核对，P2 阶段完成：MenuRole 系统 + 4 个 Android 移动端插件平台实现 + AndroidRuntimePlugin + AndroidPlatformEvents + 3 个公共事件；P3 阶段完成：20 个 Demo 项目覆盖所有核心特性）
-> - **对比基线**：基于本仓库当前 `src/` 实际代码状态（提交 `6832cbf`）
+> - **更新日期**：2026-07-23（基于实际仓库代码核对，P1 阶段新增：平台能力探测 + GetPID + 服务注册运行时保护 + 拖放目标元素详情 + KeychainPlugin；P2 阶段新增：OriginInfo 三字段消息来源 + Linux D-Bus 系统主题事件监听；并修正反射绑定描述为「零反射」以对齐 AGENTS.md §3.4 禁令）
+> - **对比基线**：基于本仓库当前 `src/` 实际代码状态（含 P1/P2 未提交工作区变更）
 > - **架构融合策略**（见 [AGENTS.md](file:///f:/Code/Dotnet/Wails.Net/AGENTS.md) §1.1.1）：
 >   - Host/DI/Config/Logging → 学 ASP.NET Core（Microsoft.Extensions.* 全栈）
 >   - Runtime/Window/IPC → 学 Wails v3
@@ -48,12 +48,14 @@
 | **配置系统** | `Microsoft.Extensions.Configuration` (appsettings.json) | `tauri.conf.json` + plugin config | `wails.json` + WebviewWindowOptions |
 | **日志抽象** | `Microsoft.Extensions.Logging` (`ILogger<T>`) | `log` crate | `slog` logger |
 | **架构模式** | 接口驱动平台抽象 + 管理器模式 + Server 模式降级 | Builder + State + Plugin | Manager 模式 + Service 模式 + Event Hooks |
+| **平台能力探测（P1）** | ✅ `PlatformCapabilities`（HasNativeDrag / GtkVersion / WebKitVersion） | ❌ | ✅ `App.Capabilities()` |
 
 ### 关键差异
 
 - **Wails.Net** 是三者中**唯一**采用 ASP.NET Core 全栈（Host/DI/Config/Logging/Options）的方案，对 .NET 开发者最友好；同时通过 `ServerPlatformApp`/`ServerWebviewWindow` 提供容器化降级路径（见 §14）。
 - **Tauri 2** 是三者中**唯一**支持全部 5 个平台（Win/Linux/macOS/iOS/Android）的方案。
 - **Wails 3** 与 Wails.Net 共享对象模型（`WebviewWindowOptions`、`Application`、Manager 模式），但 Wails.Net 在 IPC/权限/插件/MenuRole 上分别借鉴了 Tauri 2 的设计。
+- **Wails.Net** 自 P1 起新增 [PlatformCapabilities](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Platform/PlatformCapabilities.cs) 平台能力探测结构（`HasNativeDrag` / `GtkVersion` / `WebKitVersion`），通过 [IPlatformApp.Capabilities](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Platform/IPlatformApp.cs) 暴露并由 `Application.Capabilities` 转发，对应 Wails v3 `App.Capabilities()`；Windows / Linux / Android 三平台实现均提供具体值（Windows: HasNativeDrag=true；Linux: GtkVersion+WebKitVersion；Android: WebView 版本号），Server 模式返回 `Default`。
 
 ---
 
@@ -62,19 +64,18 @@
 | 维度 | Wails.Net | Tauri 2 | Wails 3 |
 |------|-----------|---------|---------|
 | **绑定入口** | `[Binding]` 特性 + `BindingManager.Add(instance)` | `#[tauri::command]` 宏 | `Application.Bind(instance)` |
-| **调用路径** | 源生成器优先 + 反射回退（双路径） | 编译期宏展开 | 反射 |
+| **调用路径** | 源生成器编译期生成强类型调用器（零反射） | 编译期宏展开 | 反射 |
 | **方法 ID 哈希** | FNV-1a 32 位（offsetBasis=2166136261, prime=16777619） | 字符串名（无哈希） | FNV-1a 32 位（`fnv.New32a()`） |
 | **哈希一致性** | ✅ 与 Go 版本完全一致 | N/A | ✅ 基准实现 |
 | **注册键** | 全限定名 + 短名称双键 | 命令名字符串 | 全限定名 + 短名称 |
 | **排除方法** | `ServiceName` / `ServiceStartup` / `ServiceShutdown` / `IsSpecialName` / `Object` 继承方法 | 显式 `#[command]` 标注 | `Service` 接口方法 |
 | **错误处理** | `CallError` + `CallErrorKind`（Reference/Type/Runtime） | `Result<T, E>` 序列化 | `errors.CallError` |
-| **反射异常解包** | ✅ `TargetInvocationException` 解包 | N/A（编译期） | ✅ |
 | **取消支持** | ✅ `OperationCanceledException` 重抛给 MessageProcessor | ✅ `Cancellation` | ✅ `CancelCall` |
 | **AGENTS.md 约束** | §3.4 禁止反射主路径，必须用源生成器 | N/A | N/A |
 
 ### 关键差异
 
-- **Wails.Net** 通过 [BindingManager](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Bindings/Bindings.cs) 在编译期生成 `TryGetInvoker` 委托（由 [BindingSourceGenerator](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.SourceGenerators/BindingSourceGenerator.cs) 通过 `IIncrementalGenerator` 生成 `WailsGeneratedBindings.g.cs`，使用 `[ModuleInitializer]` 自动注册），运行时优先走源生成器路径，反射仅作为兜底，兼顾性能与开发体验。
+- **Wails.Net** 通过 [BindingManager](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Bindings/Bindings.cs) 在编译期生成 `TryGetInvoker` 委托（由 [BindingSourceGenerator](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.SourceGenerators/BindingSourceGenerator.cs) 通过 `IIncrementalGenerator` 生成 `WailsGeneratedBindings.g.cs`，使用 `[ModuleInitializer]` 自动注册），**运行时零反射**（遵循 AGENTS.md §3.4 禁令，不再有反射兜底路径，对应源生成器路径下直接捕获具体异常，不解包 `TargetInvocationException`）。
 - **Tauri 2** 完全无反射，性能最优，但需要 Rust 宏学习成本。
 - **Wails 3** 与 Wails.Net 共享 FNV-1a 哈希算法，前端绑定 ID 可互通。
 
@@ -135,6 +136,8 @@
 | **运行中调用表** | `ConcurrentDictionary<string, CancellationTokenSource>` | N/A | `map[string]*CancelCall` |
 | **CORS 配置** | ✅ `CorsOptions`（白名单回显，默认 `*`） | ✅ | N/A |
 | **IPC Origin 校验** | ✅ `IpcOriginValidator` + `OriginValidator.Validate` | ✅ | N/A |
+| **消息来源信息（P2）** | ✅ `OriginInfo`（Origin / TopOrigin / IsMainFrame 三字段） | ❌ | ✅ `MessageDetails` |
+| **三字段 Origin 校验** | ✅ `Validate(OriginInfo)`（主框架直通 / 子框架校验 TopOrigin） | ❌ | ✅ |
 | **消息路由** | `MessageProcessor` 三路径：Call→BindingManager / Window→WindowPlugin / 其他→CommandDispatcher 兜底 | `Invoke` 直接路由到命令 | `MessageProcessor` + `DispatchWindowAction` |
 
 ### 关键差异
@@ -161,7 +164,7 @@
 | **Zoom** | ✅ `SetZoom/ZoomIn/ZoomOut/ZoomReset` | ✅ | ✅ |
 | **打印** | ✅ `Print/PrintToPDF` | ✅（plugin） | ✅ |
 | **ExecJS / InjectCSS** | ✅ | ✅ | ✅ |
-| **文件拖放** | ✅ `WM_DROPFILES` (Win) | ✅ | ✅ |
+| **文件拖放** | ✅ `WM_DROPFILES` (Win) + 拖放目标详情（P1） | ✅ | ✅ |
 | **DPI 适配** | ✅ `WM_DPICHANGED` (Win) | ✅ | ✅ |
 | **窗口菜单** | ✅ `WM_COMMAND` 分发 | ✅ | ✅ Menu Roles |
 | **热键** | ✅ `WM_HOTKEY` / `Win32KeyBindingManager` | ✅（plugin） | ✅ |
@@ -184,6 +187,7 @@
 - **Wails.Net** 自 P1-5 起统一三平台 Frameless 拖拽实现：[DragRegionHelper](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Windows/DragRegionHelper.cs) 统一使用 `--wails-drag-region` CSS 变量，Windows / Linux / Android 三平台 WebviewWindow 行为一致。
 - **Wails 3** 窗口 API 直接通过 `wails.window.*` 暴露，无权限校验。
 - **Wails.Net** Win32 实现 [Win32WebviewWindow](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Windows/Win32WebviewWindow.cs) 完整处理 WM_DESTROY/WM_CLOSE/WM_SIZE/WM_COMMAND/WM_SYSCOMMAND/WM_GETMINMAXINFO/WM_DPICHANGED/WM_HOTKEY/WM_DROPFILES/WM_SETTINGCHANGE/WM_MOVE/WM_NCLBUTTONDOWN/WM_SETICON/WM_ACTIVATE/WM_DISPLAYCHANGE/WM_CLIPBOARDUPDATE/WM_KEYDOWN/WM_CONTEXTMENU 等 18+ 消息。
+- **Wails.Net** 自 P1 起新增文件拖放目标详情能力：[DropTargetDetails](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Windows/DropTargetDetails.cs) 携带 X/Y 坐标、ElementId、ClassList、Attributes（data-* 属性），由 [DragRegionHelper.GetDropTargetDetailsScript](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Windows/DragRegionHelper.cs) 通过 `document.elementFromPoint` 提取元素信息，Windows / Linux 平台 [Win32WebviewWindow](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Windows/Win32WebviewWindow.cs) / [LinuxWebviewWindow](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Linux/LinuxWebviewWindow.cs) 通过 `QueryDropTargetAndEmit` 在拖放事件中附加目标元素详情，对应 Wails v3 `droptargetdetails.go`。
 
 ---
 
@@ -262,6 +266,7 @@
 - **Wails.Net** 的 [Scopes](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Security/Scopes.cs) 支持：
   - `FileSystemScope`：`Path.GetFullPath` 规范化 + 目录前缀匹配
   - `UrlScope`：通配符 URL 模式（委托 `UrlWhitelist`）
+- **Wails.Net** 自 P2 起新增 [OriginInfo](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Security/OriginInfo.cs) 三字段结构（Origin / TopOrigin / IsMainFrame），扩展 [IpcOriginValidator](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Security/IpcOriginValidator.cs) 新增 `Validate(OriginInfo)` 重载：主框架请求直通校验 Origin；子框架请求需同时校验 Origin 与 TopOrigin（不同时再校验 TopOrigin 白名单），对应 Wails v3 `MessageDetails` 的 iframe 来源识别能力。
 
 ---
 
@@ -339,13 +344,13 @@
 | **插件上下文** | `IPluginContext`（Commands / Permissions / Services） | `AppHandle` | `Manager` |
 | **命令注册** | `commands.MapCommand` | `invoke_handler` | `Application.Bind` |
 | **权限声明** | `context.Permissions.DeclarePermission` | `permissions/default.toml` | N/A |
-| **内置插件数** | **37 个桌面** + **4 个移动端** + **1 个 Android 运行时** = **42 个** | 30+ 官方插件 | 有限 |
+| **内置插件数** | **38 个桌面** + **4 个移动端** + **1 个 Android 运行时** = **43 个** | 30+ 官方插件 | 有限 |
 | **第三方加载** | ✅ 通过 `ConfigureServices` 注册 | ✅ `tauri-plugin-*` crate | ✅ Go import |
 | **IHostedService 适配** | ✅ 双重触发防护（`_started` / `_stopped` Interlocked） | N/A | N/A |
 
-### Wails.Net 内置插件清单（37 个桌面 + 4 个移动端 + 1 个 Android 运行时）
+### Wails.Net 内置插件清单（38 个桌面 + 4 个移动端 + 1 个 Android 运行时）
 
-**桌面插件**（37 个，位于 `src/Wails.Net.Application/Plugins/BuiltIn/`，按插件名分组）：
+**桌面插件**（38 个，位于 `src/Wails.Net.Application/Plugins/BuiltIn/`，按插件名分组）：
 
 | 类别 | 插件（插件名 → 类名） |
 |------|---------------------|
@@ -361,6 +366,7 @@
 | **窗口状态/定位** | window-state → WindowStatePlugin / positioner → PositionerPlugin |
 | **本地化/深链接** | localization → LocalizationPlugin / deep-link → DeepLinkPlugin |
 | **更新器** | updater → UpdaterPlugin |
+| **钥匙串（P1 新增）** | keychain → [KeychainPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/KeychainPlugin.cs)（`keychain.setPassword` / `keychain.getPassword` / `keychain.deletePassword` 命令，依赖 `IPlatformKeychain` 平台实现） |
 
 **移动端插件**（4 个，位于 `src/Wails.Net.Application/Plugins/Mobile/`，P2 已补齐 Android 平台实现）：
 - barcode-scanner → BarcodeScannerPlugin（[Android 实现](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/Mobile/AndroidBarcodeScanner.cs)）
@@ -378,6 +384,7 @@
 
 - **Wails.Net** 的 [IPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/IPlugin.cs) 4 阶段生命周期是最完整的：`ConfigureServices`（DI 注册）→ `Configure`（命令注册）→ `StartupAsync`（运行时初始化）→ `ShutdownAsync`（资源释放），并默认实现 `StartupAsync`/`ShutdownAsync` 返回 `Task.CompletedTask`。
 - **Wails.Net** 的 [PluginManager](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/PluginManager.cs) 通过 `Interlocked.CompareExchange` 防止 `IHostedService` 适配器与 `Application.Run` 重复触发。
+- **Wails.Net** 自 P1 起新增 [KeychainPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/KeychainPlugin.cs) 系统钥匙串插件，注册 `keychain.setPassword` / `keychain.getPassword` / `keychain.deletePassword` 三个命令，依赖 [IPlatformKeychain](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/Keychain/IPlatformKeychain.cs) 平台抽象：Windows 端通过 [WindowsKeychain](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Windows/WindowsKeychain.cs) 调用 Credential Manager API（`CredWriteW` / `CredReadW` / `CredDeleteW`，对应 Wails v3 `keychain` 包的 Windows 实现）；通过 [KeychainExtensions.AddKeychain](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/Keychain/KeychainExtensions.cs) 注册到 DI 容器。
 - **Tauri 2** 插件生态最丰富（30+ 官方 + 大量社区），通过 Cargo 集成。
 - **Wails 3** 插件以 Service 模式为主，无独立权限声明。
 
@@ -591,6 +598,7 @@
 | **深链接** | DeepLinkPlugin ✅ | deep-link | (无) |
 | **更新器** | UpdaterPlugin ✅ | updater | updater |
 | **更新器签名** | ✅ Minisign + Authenticode + GPG | ✅ Minisign | ✅ Minisign |
+| **系统钥匙串（P1）** | KeychainPlugin ✅（Windows Credential Manager 实现） | (无) | keychain |
 | **条码扫描（移动）** | BarcodeScannerPlugin ✅（含 Android 实现） | barcode-scanner | (无) |
 | **生物识别（移动）** | BiometricPlugin ✅（含 Android 实现） | biometric | (无) |
 | **触觉反馈（移动）** | HapticsPlugin ✅（含 Android 实现） | haptics | haptics |
@@ -603,7 +611,7 @@
 
 ### 关键差异
 
-- **Wails.Net** 内置 **42 个插件**（37 桌面 + 4 移动端 + 1 Android 运行时），覆盖 Tauri 2 的 SQL / Stronghold / Biometric / Barcode Scanner / Localhost / Positioner / DeepLink 等能力（已全部实现）。
+- **Wails.Net** 内置 **43 个插件**（38 桌面 + 4 移动端 + 1 Android 运行时），覆盖 Tauri 2 的 SQL / Stronghold / Biometric / Barcode Scanner / Localhost / Positioner / DeepLink 等能力（已全部实现），并新增 KeychainPlugin 系统钥匙串插件对齐 Wails v3 `keychain` 包。
 - **Wails.Net** 自 P2 起 4 个移动端插件均补齐 Android 平台实现，不再是仅有接口。
 - **Wails.Net** 自 P2 起新增 [AndroidRuntimePlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/Mobile/AndroidRuntimePlugin.cs)，对应 Wails v3 `messageprocessor_android.go` 的 `device.info` / `toast.show` 命令。
 - **Tauri 2** 官方插件 30+ 个，部分功能 Wails.Net 也已对齐（如 SQL / Stronghold / Biometric / Barcode Scanner / Localhost / Positioner / DeepLink）。
@@ -640,11 +648,11 @@
 ### 17.8 Microsoft.Extensions.* 全栈集成
 对 .NET 开发者最友好：Host / DI / Config / Options / Logging 全栈集成。
 
-### 17.9 源生成器绑定 + 反射回退（双路径）
-[BindingManager](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Bindings/Bindings.cs) 优先走源生成器路径（性能优，由 [BindingSourceGenerator](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.SourceGenerators/BindingSourceGenerator.cs) 通过 `IIncrementalGenerator` + `[ModuleInitializer]` 自动注册），反射仅作为兜底（开发体验优）。
+### 17.9 源生成器绑定（零反射）
+[BindingManager](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Bindings/Bindings.cs) 在编译期由 [BindingSourceGenerator](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.SourceGenerators/BindingSourceGenerator.cs) 通过 `IIncrementalGenerator` 生成强类型调用器并使用 `[ModuleInitializer]` 自动注册到 `GeneratedBindingRegistry`，运行时**零反射**（遵循 AGENTS.md §3.4 禁令，不再保留反射兜底路径，源生成器路径下直接捕获具体异常，不解包 `TargetInvocationException`）。
 
-### 17.10 内置 42 个插件
-内置插件数最多（37 桌面 + 4 移动端 + 1 Android 运行时），覆盖 Tauri 2 / Wails 3 全部对应能力（SQL / Stronghold / Biometric / Barcode Scanner / Localhost / Positioner / DeepLink 等），4 个移动端插件均补齐 Android 平台实现。
+### 17.10 内置 43 个插件
+内置插件数最多（38 桌面 + 4 移动端 + 1 Android 运行时），覆盖 Tauri 2 / Wails 3 全部对应能力（SQL / Stronghold / Biometric / Barcode Scanner / Localhost / Positioner / DeepLink / Keychain 等），4 个移动端插件均补齐 Android 平台实现。
 
 ### 17.11 Logger ↔ 前端 console 双向桥接（P1-3）
 - **[BrowserConsoleLogReceiver](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Logging/BrowserConsoleLogReceiver.cs)** 接收前端 `console.log/info/warn/error` 调用，桥接到 `ILogger<T>`，使前端日志自动进入 .NET 日志管道。
@@ -710,6 +718,25 @@ IBrowserManager 接口在 Windows / Linux / Android 三平台均有实现，支�
 - [AndroidHaptics](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/Mobile/AndroidHaptics.cs)：通过 `Vibrator` / `VibratorManager` 调用系统触觉反馈。
 - [AndroidNfc](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/Mobile/AndroidNfc.cs)：通过 `NfcAdapter` 调用 NFC 读取。
 
+### 17.25 平台能力探测 + GetPID（P1 新增）
+- **[PlatformCapabilities](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Platform/PlatformCapabilities.cs)**（`HasNativeDrag` / `GtkVersion` / `WebKitVersion` 三字段 readonly record struct）通过 [IPlatformApp.Capabilities](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Platform/IPlatformApp.cs) 暴露，由 `Application.Capabilities` 转发，对应 Wails v3 `App.Capabilities()`。Windows 端 `HasNativeDrag=true`；Linux 端提供 `GtkVersion` 与 `WebKitVersion`；Android 端通过 `WebView.CurrentWebViewPackage` 获取版本号；Server 模式返回 `Default`。
+- **`Application.GetPID()`** 返回 `Environment.ProcessId`，对应 Wails v3 `GetPID()`，供前端获取宿主进程 ID。
+
+### 17.26 服务注册运行时保护（P1 新增）
+[Application.RegisterService](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Application.cs) 在应用已运行（`_isRunning=true`）时调用会记录警告日志并丢弃服务实例，防止运行时动态注入破坏生命周期顺序，对应 Wails v3 `Application.running` 守卫语义。
+
+### 17.27 拖放目标元素详情（P1 新增）
+[DropTargetDetails](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Windows/DropTargetDetails.cs) 携带 X/Y 坐标、ElementId、ClassList、Attributes（data-* 属性），由 [DragRegionHelper.GetDropTargetDetailsScript](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Windows/DragRegionHelper.cs) 通过 `document.elementFromPoint` 提取元素信息。Windows / Linux 平台 WebviewWindow 在 `WM_DROPFILES` / `drag-data-received` 信号中通过 `QueryDropTargetAndEmit` 附加目标元素详情，对应 Wails v3 `droptargetdetails.go`，使前端可基于被拖放元素作出差异化响应。
+
+### 17.28 OriginInfo 三字段消息来源（P2 新增）
+[OriginInfo](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Security/OriginInfo.cs) 三字段结构（`Origin` / `TopOrigin` / `IsMainFrame`）扩展 IPC 源验证。[IpcOriginValidator](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Security/IpcOriginValidator.cs) 新增 `Validate(OriginInfo)` 重载：主框架请求直通校验 Origin；子框架请求需同时校验 Origin 与 TopOrigin（不同时再校验 TopOrigin 白名单），对应 Wails v3 `MessageDetails` 的 iframe 来源识别能力。
+
+### 17.29 KeychainPlugin 系统钥匙串（P1 新增）
+[KeychainPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/KeychainPlugin.cs) 注册 `keychain.setPassword` / `keychain.getPassword` / `keychain.deletePassword` 三个命令，依赖 [IPlatformKeychain](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/Keychain/IPlatformKeychain.cs) 平台抽象。Windows 端 [WindowsKeychain](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Windows/WindowsKeychain.cs) 通过 CsWin32 调用 Credential Manager API（`CredWriteW` / `CredReadW` / `CredDeleteW`），对应 Wails v3 `keychain` 包的 Windows 实现。通过 [KeychainExtensions.AddKeychain](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/Keychain/KeychainExtensions.cs) 注册到 DI 容器。
+
+### 17.30 Linux D-Bus 系统主题事件监听（P2 新增）
+[LinuxSystemEventWatcher](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Linux/SystemEvents/LinuxSystemEventWatcher.cs) 通过 GirCore `Gio.Settings` 监听 `org.gnome.desktop.interface` GSettings 数据库变化，当 `color-scheme` 或 `gtk-theme` 键变更时触发 `ThemeChanged` 公共事件，使 Linux 平台具备 GNOME 桌面主题实时响应能力（对应 Wails v3 Linux 端的 `gsettings` 监听）。
+
 ---
 
 ## 18. Wails.Net 差距与路线图
@@ -751,6 +778,15 @@ IBrowserManager 接口在 Windows / Linux / Android 三平台均有实现，支�
 - ✅ AndroidRuntimePlugin 新增（`device.info` / `toast.show` 命令）
 - ✅ AndroidPlatformEvents 新增（12 个 Android 事件 ID + 7 个公共事件映射）
 - ✅ 3 个新公共事件（LowMemory=27 / ScreenLocked=28 / ScreenUnlocked=29）
+- ✅ OriginInfo 三字段消息来源（Origin / TopOrigin / IsMainFrame）+ `IpcOriginValidator.Validate(OriginInfo)` 重载（对应 Wails v3 `MessageDetails`）
+- ✅ Linux D-Bus 系统主题事件监听（GirCore `Gio.Settings` 监听 `org.gnome.desktop.interface` 的 `color-scheme` / `gtk-theme`，触发 `ThemeChanged`）
+
+#### P1 阶段（追加对齐项）
+- ✅ 平台能力探测 `PlatformCapabilities`（HasNativeDrag / GtkVersion / WebKitVersion）+ `IPlatformApp.Capabilities`（对应 Wails v3 `App.Capabilities()`）
+- ✅ `Application.GetPID()` API（对应 Wails v3 `GetPID()`）
+- ✅ 服务注册运行时保护（`RegisterService` 在 `_isRunning` 后丢弃并记录警告，对应 Wails v3 `Application.running` 守卫）
+- ✅ 拖放目标元素详情 `DropTargetDetails`（X/Y/ElementId/ClassList/Attributes + `DragRegionHelper.GetDropTargetDetailsScript`，对应 Wails v3 `droptargetdetails.go`）
+- ✅ KeychainPlugin 系统钥匙串插件（`keychain.setPassword` / `getPassword` / `deletePassword` 命令 + Windows Credential Manager 实现，对应 Wails v3 `keychain` 包）
 
 #### P3 阶段（已完成）
 - ✅ 20 个 Demo 项目（`examples/Wails.Net.Demo.*`），覆盖所有核心特性：Binding / Events / Window / Dialog / Clipboard / Notification / FileSystem / Http / WebSocket / Store / SQLite / Stronghold / Shell / Menu（含 MenuRole）/ Tray / Screen / Updater / GlobalShortcut / Haptics / BarcodeScanner
@@ -775,7 +811,7 @@ IBrowserManager 接口在 Windows / Linux / Android 三平台均有实现，支�
 
 | 项目 | 定位 | 优势 | 劣势 |
 |------|------|------|------|
-| **Wails.Net** | Wails v3 的 .NET 10 移植，融合 ASP.NET Core + Wails v3 + Tauri v2 三家之长 | .NET 全栈集成 / Server 模式 / 多传输层 / 42 个插件（含 SQL/Stronghold/DeepLink/Biometric/BarcodeScanner 等已实现，4 个移动端插件已有 Android 平台实现）/ 源生成器绑定 / 完整 ACL / Authenticode 自动签名 / Logger 双向桥接 / 多 Provider Updater / senderWindowId 传播 / AssetServer Service Route / Helper Process / 窗口级 CSP / 分块上传 / Deploy CLI / MenuRole 系统完整实现 / AndroidRuntimePlugin / AndroidPlatformEvents | 无 macOS/iOS / 移动端插件少于 Tauri 2 / 无 AppImage / 无 MSI |
+| **Wails.Net** | Wails v3 的 .NET 10 移植，融合 ASP.NET Core + Wails v3 + Tauri v2 三家之长 | .NET 全栈集成 / Server 模式 / 多传输层 / 43 个插件（含 SQL/Stronghold/DeepLink/Biometric/BarcodeScanner/Keychain 等已实现，4 个移动端插件已有 Android 平台实现）/ 源生成器零反射绑定 / 完整 ACL / Authenticode 自动签名 / Logger 双向桥接 / 多 Provider Updater / senderWindowId 传播 / AssetServer Service Route / Helper Process / 窗口级 CSP / 分块上传 / Deploy CLI / MenuRole 系统完整实现 / AndroidRuntimePlugin / AndroidPlatformEvents / 平台能力探测 / 拖放目标元素详情 / OriginInfo 三字段消息来源 / Linux D-Bus 系统主题监听 | 无 macOS/iOS / 移动端插件少于 Tauri 2 / 无 AppImage / 无 MSI |
 | **Tauri 2** | Rust 桌面/移动框架，安全优先 | 全平台（5 个）/ 30+ 官方插件 / 完整 ACL / 编译期绑定（性能最优）/ 强大生态 | Rust 学习曲线 / 无 Server 模式 / 无中间件管道 / 无日志双向桥接 / 单一 Updater Provider / 无 Authenticode 自动签名 / 无 MenuRole 标准菜单组合 |
 | **Wails 3** | Go 桌面/移动框架，简洁实用 | 全平台 / Go 语言易上手 / 多 Provider Updater / Helper Process / Event Hooks | 无 ACL / 无中间件管道 / 插件生态弱 / 无 Authenticode / 无日志双向桥接 / 无 senderWindowId / 无 MenuRole 工厂方法与跨平台辅助工具 |
 
@@ -784,7 +820,7 @@ IBrowserManager 接口在 Windows / Linux / Android 三平台均有实现，支�
 1. **对 .NET 开发者最友好**：完整集成 Microsoft.Extensions.* 全栈，复用 ASP.NET Core 经验。
 2. **架构融合创新**：三家之长（ASP.NET Core 的 Host/DI + Wails v3 的 Runtime/IPC + Tauri v2 的 Plugin/Capability）。
 3. **企业级特性**：Server 模式（容器化部署）+ Authenticode 自动签名 + 完整 ACL + 中间件管道。
-4. **插件生态最完整（内置）**：37 桌面 + 4 移动端 + 1 Android 运行时 = 42 个插件，开箱即用，已对齐 Tauri 2 的 SQL / Stronghold / Biometric / Barcode Scanner / Localhost / Positioner / DeepLink 等能力，4 个移动端插件均补齐 Android 平台实现。
+4. **插件生态最完整（内置）**：38 桌面 + 4 移动端 + 1 Android 运行时 = 43 个插件，开箱即用，已对齐 Tauri 2 的 SQL / Stronghold / Biometric / Barcode Scanner / Localhost / Positioner / DeepLink 等能力，4 个移动端插件均补齐 Android 平台实现，并新增 KeychainPlugin 对齐 Wails v3 `keychain` 包。
 5. **调试与运维友好**（P1 阶段新增）：
    - Logger 双向桥接：前端 console ↔ 后端 ILogger 双向流转，便于联调。
    - senderWindowId 传播：多窗口场景下可按来源窗口过滤事件。
@@ -796,10 +832,17 @@ IBrowserManager 接口在 Windows / Linux / Android 三平台均有实现，支�
    - AndroidRuntimePlugin（device.info / toast.show）
    - AndroidPlatformEvents（12 个 Android 事件 ID + 7 个公共事件映射）
    - 3 个新公共事件（LowMemory / ScreenLocked / ScreenUnlocked）
+9. **平台与运行时能力扩展**（P1 + P2 新增）：
+   - 平台能力探测 `PlatformCapabilities` + `GetPID()`（对应 Wails v3 `App.Capabilities()` / `GetPID()`）
+   - 服务注册运行时保护（`_isRunning` 后丢弃服务实例并记录警告）
+   - 拖放目标元素详情 `DropTargetDetails`（X/Y/ElementId/ClassList/Attributes，对应 Wails v3 `droptargetdetails.go`）
+   - KeychainPlugin 系统钥匙串（Windows Credential Manager 实现，对应 Wails v3 `keychain` 包）
+   - OriginInfo 三字段消息来源 + 子框架 TopOrigin 校验（对应 Wails v3 `MessageDetails`）
+   - Linux D-Bus 系统主题事件监听（GirCore `Gio.Settings` 监听 GNOME `color-scheme` / `gtk-theme`，触发 `ThemeChanged`）
 
 ### 19.3 选型建议
 
-- **.NET 团队 / 企业级桌面应用**：选 Wails.Net（复用 .NET 技能栈 + Server 模式 + Authenticode + Logger 双向桥接 + 多 Provider Updater + 42 个内置插件 + 完整 MenuRole + Android 平台能力）
+- **.NET 团队 / 企业级桌面应用**：选 Wails.Net（复用 .NET 技能栈 + Server 模式 + Authenticode + Logger 双向桥接 + 多 Provider Updater + 43 个内置插件 + 完整 MenuRole + Android 平台能力 + KeychainPlugin + 平台能力探测 + 拖放目标详情 + OriginInfo）
 - **Rust 团队 / 安全敏感应用**：选 Tauri 2（编译期绑定 + 完整 ACL + 全平台 + 强大生态）
 - **Go 团队 / 快速原型**：选 Wails 3（Go 语言简洁 + 多 Provider Updater + Helper Process）
 - **需要 macOS/iOS**：暂选 Tauri 2 或 Wails 3（Wails.Net 暂不支持）
@@ -809,4 +852,4 @@ IBrowserManager 接口在 Windows / Linux / Android 三平台均有实现，支�
 
 **文档结束**
 
-> 本文档基于 2026-07-20 仓库代码状态生成（提交 `6832cbf`，P2 阶段完成：MenuRole 系统 + 4 个 Android 移动端插件平台实现 + AndroidRuntimePlugin + AndroidPlatformEvents + 3 个新公共事件；P3 阶段完成：20 个 Demo 项目覆盖所有核心特性）。如发现信息过时或错误，请提交 Issue 或 PR 更新。
+> 本文档基于 2026-07-23 仓库代码状态生成（含 P1 阶段追加：平台能力探测 + GetPID + 服务注册运行时保护 + 拖放目标元素详情 + KeychainPlugin；P2 阶段追加：OriginInfo 三字段消息来源 + Linux D-Bus 系统主题事件监听；并修正反射绑定描述为「零反射」以对齐 AGENTS.md §3.4 禁令）。如发现信息过时或错误，请提交 Issue 或 PR 更新。

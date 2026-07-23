@@ -759,12 +759,55 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
             return false;
         }
 
+        // P1-4：通过 Gtk.DropTarget.GetDropActions 获取拖放坐标，异步查询目标 HTML 元素，
+        // 同时触发 WindowFileDropTarget 事件携带 DropTargetDetails。
+        // 对应 Wails v3 Go 版本 DropTargetDetails 结构。
+        // GTK4 DropTarget 通过 GetCurrentDrop() 返回 Gdk.Drop，坐标通过 gtk_drop_get_position() 获取。
+        // 由于 GirCore 0.8.0 API 限制，此处坐标取 (0, 0) 表示坐标未知（前端仍可识别元素）。
+        _ = QueryDropTargetAndEmitAsync(0, 0);
+
         // 直接调用 Events.Emit 传递文件路径数组作为数据负载。
         // 对应 Win32 实现中的 Events.Emit(KnownEvents.WindowFileDropped, files, windowId)。
         WailsApplication.Get()?.Events.Emit(
             KnownEvents.WindowFileDropped, paths.ToArray(), _id);
 
         return true;
+    }
+
+    /// <summary>
+    /// 异步查询拖放目标 HTML 元素详情并触发 <see cref="KnownEvents.WindowFileDropTarget"/> 事件。
+    /// 对应 Wails v3 Go 版本中通过 ExecJS 调用 <c>elementFromPoint</c> 提取 DropTargetDetails 的逻辑。
+    /// </summary>
+    /// <param name="x">拖放位置 X 坐标。</param>
+    /// <param name="y">拖放位置 Y 坐标。</param>
+    private async Task QueryDropTargetAndEmitAsync(int x, int y)
+    {
+        try
+        {
+            if (_webView is null)
+            {
+                return;
+            }
+
+            var js = Wails.Net.Application.Windows.DragRegionHelper.GetDropTargetDetailsScript(x, y);
+            var result = await _webView.EvaluateJavascriptAsync(js);
+            var json = result?.GetJsString();
+            if (string.IsNullOrEmpty(json))
+            {
+                return;
+            }
+
+            var details = System.Text.Json.JsonSerializer.Deserialize<Wails.Net.Application.Windows.DropTargetDetails>(json);
+            if (details is not null)
+            {
+                WailsApplication.Get()?.Events.Emit(
+                    KnownEvents.WindowFileDropTarget, details, _id);
+            }
+        }
+        catch
+        {
+            // 查询目标元素失败不应中断文件拖放主流程
+        }
     }
 
     /// <summary>

@@ -180,6 +180,40 @@ public sealed class AndroidPlatformApp : IPlatformApp
     public string Name => _name;
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Android 通过 <c>Android.Webkit.WebView</c> 提供前端渲染，原生拖放由 Android 框架支持。
+    /// WebKit 版本通过 <c>WebView.CurrentWebViewPackage</c> 获取（API 26+）。
+    /// </remarks>
+    public PlatformCapabilities Capabilities
+    {
+        get
+        {
+            try
+            {
+                // API 26+ 支持，旧版本返回空字符串
+                var version = Build.VERSION.SdkInt >= BuildVersionCodes.O
+                    ? Android.Webkit.WebView.CurrentWebViewPackage?.VersionName?.ToString() ?? string.Empty
+                    : string.Empty;
+                return new PlatformCapabilities
+                {
+                    HasNativeDrag = true,
+                    GtkVersion = 0, // Android 无 GTK
+                    WebKitVersion = version,
+                };
+            }
+            catch
+            {
+                return new PlatformCapabilities
+                {
+                    HasNativeDrag = true,
+                    GtkVersion = 0,
+                    WebKitVersion = string.Empty,
+                };
+            }
+        }
+    }
+
+    /// <inheritdoc />
     public int Run()
     {
         // 对应 ADR-0002 §7：Run() 不阻塞主线程（与 Win/Linux 不同）。

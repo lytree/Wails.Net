@@ -27,6 +27,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Wails.Net.Application.Android\Wails.Net.Application.Android.csproj" />
+    <ProjectReference Include="..\Wails.Net.Application.GuiContract.Tests\Wails.Net.Application.GuiContract.Tests.csproj" />
   </ItemGroup>
 
 </Project>

@@ -113,6 +113,47 @@ public sealed class LinuxPlatformApp : IPlatformApp
     public string Name => _name;
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Linux 通过 GTK4（GirCore 0.8.0）+ WebKitGTK 提供原生支持：
+    /// <list type="bullet">
+    /// <item><see cref="PlatformCapabilities.HasNativeDrag"/>：<c>true</c>，GTK4 原生支持拖放。</item>
+    /// <item><see cref="PlatformCapabilities.GtkVersion"/>：通过 <c>Gtk.MajorVersion</c> 获取（通常为 4）。</item>
+    /// <item><see cref="PlatformCapabilities.WebKitVersion"/>：通过 <c>WebKit.MajorVersion</c>/<c>MinorVersion</c> 拼接。</item>
+    /// </list>
+    /// 在非 Linux 平台调用时返回 <see cref="PlatformCapabilities.Default"/>。
+    /// </remarks>
+    public PlatformCapabilities Capabilities
+    {
+        get
+        {
+            if (!OperatingSystem.IsLinux())
+            {
+                return PlatformCapabilities.Default;
+            }
+
+            try
+            {
+                return new PlatformCapabilities
+                {
+                    HasNativeDrag = true,
+                    GtkVersion = Gtk.MajorVersion,
+                    WebKitVersion = $"{WebKit.MajorVersion}.{WebKit.MinorVersion}.{WebKit.MicroVersion}",
+                };
+            }
+            catch
+            {
+                // GirCore 调用失败时回退到默认值（如 GTK 未初始化）
+                return new PlatformCapabilities
+                {
+                    HasNativeDrag = true,
+                    GtkVersion = 4,
+                    WebKitVersion = string.Empty,
+                };
+            }
+        }
+    }
+
+    /// <inheritdoc />
     public bool IsOnMainThread()
     {
         return Environment.CurrentManagedThreadId == _mainThreadId;

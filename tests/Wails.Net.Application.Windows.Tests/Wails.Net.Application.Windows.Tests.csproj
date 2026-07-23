@@ -9,6 +9,8 @@
     <UseWindowsForms>true</UseWindowsForms>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <OutputType>Exe</OutputType>
+    <!-- 临时启用以检查 TUnit 源生成器输出 -->
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,6 +21,18 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Wails.Net.Application.Windows\Wails.Net.Application.Windows.csproj" />
+    <!--
+      注意：不通过 ProjectReference 引用 GuiContract.Tests 项目。
+      TUnit 源生成器只能发现当前项目源代码中的 [Test] 方法，
+      无法跨程序集发现基类（即使加 [InheritsTests]）的测试方法。
+      因此通过 Compile Include 以链接方式将契约测试基类源文件直接编译到本项目中。
+    -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 以链接方式将共享契约测试基类的源文件编译到本项目，使 TUnit 源生成器能够发现基类的 [Test] 方法。 -->
+    <Compile Include="..\Wails.Net.Application.GuiContract.Tests\IWebviewWindowFixture.cs" Link="GuiContract\IWebviewWindowFixture.cs" />
+    <Compile Include="..\Wails.Net.Application.GuiContract.Tests\WebviewWindowContractTests.cs" Link="GuiContract\WebviewWindowContractTests.cs" />
   </ItemGroup>
 
 </Project>

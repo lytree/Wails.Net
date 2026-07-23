@@ -141,4 +141,43 @@ public static class DragRegionHelper
             })();
         """;
     }
+
+    /// <summary>
+    /// 获取在指定坐标查询拖放目标元素详情的 JavaScript 代码。
+    /// 对应 Wails v3 Go 版本 <c>DropTargetDetails</c> 结构的填充逻辑：
+    /// 通过 <c>document.elementFromPoint(x, y)</c> 定位目标元素，提取 id / class / data-* 属性。
+    /// </summary>
+    /// <param name="x">拖放位置 X 坐标（客户端区坐标）。</param>
+    /// <param name="y">拖放位置 Y 坐标（客户端区坐标）。</param>
+    /// <returns>返回 JSON 字符串的 JavaScript 表达式，结构对应 <see cref="DropTargetDetails"/>。</returns>
+    /// <remarks>
+    /// 调用方应通过 <c>ExecJS</c> 异步执行此脚本并解析返回的 JSON 字符串为 <see cref="DropTargetDetails"/>。
+    /// 若元素未标记 <c>data-file-drop-target</c> 属性，<see cref="DropTargetDetails.Attributes"/> 仍会包含所有
+    /// <c>data-*</c> 属性（业务侧可自行判断是否处理）。
+    /// </remarks>
+    public static string GetDropTargetDetailsScript(int x, int y)
+    {
+        return $$"""
+            (function() {
+                var el = document.elementFromPoint({{x}}, {{y}});
+                if (!el) return JSON.stringify({ x: {{x}}, y: {{y}}, elementId: '', classList: [], attributes: {} });
+                var classList = [];
+                if (el.classList) {
+                    for (var i = 0; i < el.classList.length; i++) classList.push(el.classList[i]);
+                }
+                var attrs = {};
+                for (var i = 0; i < el.attributes.length; i++) {
+                    var a = el.attributes[i];
+                    if (a.name.indexOf('data-') === 0) attrs[a.name.substring(5)] = a.value;
+                }
+                return JSON.stringify({
+                    x: {{x}},
+                    y: {{y}},
+                    elementId: el.id || '',
+                    classList: classList,
+                    attributes: attrs
+                });
+            })();
+        """;
+    }
 }

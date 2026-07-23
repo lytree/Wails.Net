@@ -696,6 +696,21 @@ public class Application
     public CancellationToken ApplicationCancellationToken => _cts.Token;
 
     /// <summary>
+    /// 获取当前平台的原生能力描述。
+    /// 对应 Wails v3 Go 版本 <c>App.Capabilities()</c> 方法。
+    /// 委托给 <see cref="IPlatformApp.Capabilities"/>；若平台应用未设置则返回
+    /// <see cref="PlatformCapabilities.Default"/>。
+    /// </summary>
+    public PlatformCapabilities Capabilities => _platformApp?.Capabilities ?? PlatformCapabilities.Default;
+
+    /// <summary>
+    /// 获取当前进程 ID。
+    /// 对应 Wails v3 Go 版本 <c>App.GetPID()</c> 方法。
+    /// </summary>
+    /// <returns>当前进程的操作系统 PID。</returns>
+    public int GetPID() => Environment.ProcessId;
+
+    /// <summary>
     /// 获取全局应用实例。
     /// </summary>
     /// <returns>全局应用实例，若未创建则返回 null。</returns>
@@ -737,9 +752,26 @@ public class Application
     /// </summary>
     /// <param name="service">要注册的服务实例。</param>
     /// <param name="options">服务选项；为 null 时使用 <see cref="ServiceOptions.Default"/>。</param>
+    /// <remarks>
+    /// 对应 Wails v3 Go 版本 <c>application.go</c> 中 RegisterService 在 Run 之后报错并丢弃的逻辑。
+    /// 本方法采用更友好的策略：若在 <see cref="Run"/> 之后调用，记录警告并丢弃（不抛异常），
+    /// 以兼容运行时动态注册场景但提醒开发者服务不会触发 <see cref="IServiceStartup"/>。
+    /// </remarks>
     public virtual void RegisterService(object service, ServiceOptions? options)
     {
         ArgumentNullException.ThrowIfNull(service);
+
+        if (_isRunning)
+        {
+            // 对应 Wails v3 Go 版本 RegisterService 在 Run 之后的行为：
+            // 服务在 Run 之后注册不会触发 ServiceStartup，将导致服务未初始化。
+            // 此处记录警告并丢弃，避免破坏运行时动态注册场景的兼容性。
+            _logger?.LogWarning(
+                "在应用运行后注册服务被丢弃：类型={ServiceType}。服务不会触发 IServiceStartup，请改为在 Run 之前注册。",
+                service.GetType().FullName);
+            return;
+        }
+
         var opts = options ?? ServiceOptions.Default;
 
         _serviceRegistry.Register(service, opts);
