@@ -3,8 +3,8 @@
 > 基于 .NET 10 的 [Wails v3](https://github.com/wailsapp/wails/tree/v3.0.0-alpha.102) 移植实现，专注于 Windows、Linux 和 Android 平台。
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20Android-lightgrey.svg)](#平台支持)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20Android%20%7C%20macOS(skeleton)-lightgrey.svg)](#平台支持)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
 ## 项目简介
 
@@ -20,8 +20,8 @@ Wails.Net 是一个使用 .NET 10 和 Web 前端技术构建跨平台桌面应�
 - **Server 模式**：支持无 GUI 的容器化部署（`ServerPlatformApp` + `ServerBrowserManager` + 事件 API）
 - **完整 CLI 工具**：项目脚手架、构建、TS 绑定生成、打包分发
 - **TypeScript 绑定生成器**：自动生成前端类型定义
-- **插件系统**：内置 42 个插件（37 桌面 + 5 移动端，含 `AndroidRuntimePlugin`），借鉴 Tauri v2 权限模型与 Capability 自动加载
-- **移动端扩展插件**：haptics（震动）、barcode-scanner（条码扫描）、nfc（NFC 读写）、biometric（生物识别）、android-runtime（设备信息/Toast）
+- **插件系统**：内置 47 个插件（39 桌面 + 7 移动端 + 1 Android 专属 `AndroidRuntimePlugin`），借鉴 Tauri v2 权限模型与 Capability 自动加载
+- **移动端扩展插件**：haptics（震动）、barcode-scanner（条码扫描）、nfc（NFC 读写）、biometric（生物识别）、camera（相机）、geolocation（定位）、permissions（权限）、android-runtime（设备信息/Toast）
 - **Channel API**：前后端双向流式通信（`IChannel` + `ChannelManager`）
 - **CancellablePromise + 原生 IPC**：前端可取消后端长任务，三平台原生 IPC 通道（Windows WebView2 `PostWebMessage`/Linux WebKit `WebView:userMessageReceived`/Android `WebMessageListener`），`EventIPCTransport` 作为 HTTP 失败回退
 - **多 Provider Updater**：`UpdaterService` 支持注册多个 `IUpdateProvider`（Http/GitHub/GitLab/自定义），首个成功胜出，自动 `ProviderName` 注入、错误事件 payload、`AutoDownload` 触发
@@ -45,13 +45,14 @@ Wails.Net 是一个使用 .NET 10 和 Web 前端技术构建跨平台桌面应�
 - .NET 10 SDK
 - Windows：WebView2 Runtime（Windows 10/11 已预装）
 - Linux：GTK4、WebKitGTK 6.0、libadwaita
+- Android（可选）：`dotnet workload install android`（TFM `net10.0-android36.0`，最低 API Level 24）
 
 ### 安装
 
 ```bash
 # 克隆仓库
-git clone https://github.com/wailsapp/wails.net.git
-cd wails.net
+git clone https://github.com/lytree/Wails.Net.git
+cd Wails.Net
 
 # 构建解决方案
 dotnet build
@@ -66,6 +67,8 @@ dotnet run --project tests/Wails.Net.Application.Tests/Wails.Net.Application.Tes
 
 ### 方式一：平台聚合包（推荐）
 
+> 更简洁的方式是使用统一 SDK 包 `Wails.Net.Sdk`（multi-target，自动按运行平台选择对应 Bundle）。若需精确控制平台依赖，再使用下列聚合包。
+
 在你的项目 `.csproj` 中添加一行 `PackageReference`：
 
 ```xml
@@ -74,6 +77,9 @@ dotnet run --project tests/Wails.Net.Application.Tests/Wails.Net.Application.Tes
 
 <!-- Linux 平台 -->
 <PackageReference Include="Wails.Net.Bundle.Linux" />
+
+<!-- Android 平台 -->
+<PackageReference Include="Wails.Net.Bundle.Android" />
 ```
 
 聚合包是 meta-package，本身不输出程序集，会通过传递依赖引入对应平台所需的全部 Wails.Net 包（Application、平台实现、AssetServer、Runtime.Js、Errors、Events、SourceGenerators）。
@@ -110,6 +116,9 @@ wails-net new MyApp --template vue-ts
 
 # 构建项目
 wails-net build --project path/to/MyApp.csproj
+
+# 查看全部可用命令
+wails-net --help
 ```
 
 详细的 NuGet 包清单与 SDK 使用方式见 [发布指南](docs/development/release-guide.md)。
@@ -177,7 +186,7 @@ public class GreetingService
 |------|---------|------|
 | Windows | WebView2 | 已实现（窗口/对话框/剪贴板/系统托盘/快捷键/自启动） |
 | Linux | WebKitGTK 6.0 (GirCore) | 已实现（窗口/对话框/剪贴板/系统托盘/快捷键） |
-| macOS | — | 暂不支持 |
+| macOS | WKWebView（规划中） | 骨架实现（G7）：已注册平台工厂，运行时降级到 ServerPlatformApp，GUI 能力待集成 |
 | Android | Android.Webkit.WebView | 已实现（窗口/剪贴板/AssetServer/MainActivity） |
 | iOS | — | 暂不支持 |
 
@@ -190,6 +199,7 @@ Wails.Net/
 │   ├── Wails.Net.Application.Windows/  # Windows 平台实现（WebView2 + CsWin32）
 │   ├── Wails.Net.Application.Linux/    # Linux 平台实现（GirCore 0.8.0）
 │   ├── Wails.Net.Application.Android/  # Android 平台实现（.NET Android + WebView）
+│   ├── Wails.Net.Application.MacOS/    # macOS 平台骨架（G7，降级到 ServerPlatformApp）
 │   ├── Wails.Net.AssetServer/          # 资源服务器（含 Security/Nonce/Isolation）
 │   ├── Wails.Net.Runtime.Js/           # JS 运行时生成器
 │   ├── Wails.Net.SourceGenerators/     # 源代码生成器（AOT 友好）
@@ -203,7 +213,7 @@ Wails.Net/
 │   ├── Wails.Net.Cli/                  # CLI 工具（dotnet tool）
 │   └── Wails.Net.Templates/            # dotnet new 项目模板包
 ├── build/                              # Cake Frosting 构建项目（三平台自包含打包）
-├── tests/                              # 单元测试（6 个测试项目）
+├── tests/                              # 测试（6 个可执行测试项目 + 1 个共享契约库 + 1 个 Android E2E 脚本）
 ├── examples/                           # 示例项目
 └── docs/                               # 文档
 ```
@@ -253,6 +263,12 @@ dotnet run --project tests/Wails.Net.Application.Linux.Tests/Wails.Net.Applicati
 
 # 运行 CLI 工具测试
 dotnet run --project tests/Wails.Net.Cli.Tests/Wails.Net.Cli.Tests.csproj
+
+# 运行 AssetServer 测试
+dotnet run --project tests/Wails.Net.AssetServer.Tests/Wails.Net.AssetServer.Tests.csproj
+
+# 运行 Android 平台测试（需 android 工作负载）
+dotnet run --project tests/Wails.Net.Application.Android.Tests/Wails.Net.Application.Android.Tests.csproj
 ```
 
 > **提示**：Linux 测试需在 Linux 或 WSL 环境中运行。在 Windows 上可通过 `wsl -d kali-linux -- bash -c "cd /mnt/f/Code/Dotnet/Wails.Net && dotnet run --project tests/Wails.Net.Application.Linux.Tests"` 运行。
@@ -288,7 +304,7 @@ dotnet run --project build/Wails.Net.Build -- --target=Dist --dry-run --skip-fro
 5. ✅ **Windows 平台实现** — WebView2 骨架、注册表主题检测、剪贴板、自启动、环境信息
 6. ✅ **Linux 平台实现** — GirCore 0.8.0/GTK4 骨架、环境变量主题检测、剪贴板存根、XDG 自启动、环境信息
 7. ✅ **CLI 工具与生成器** — 脚手架、TS 绑定生成、环境诊断、项目构建
-8. ✅ **Android 平台实现与三平台自包含构建** — `android` 工作负载、`net10.0-android24.0` TFM、Single-Activity + Fragment、WebMessageListener IPC、Cake Frosting 构建
+8. ✅ **Android 平台实现与三平台自包含构建** — `android` 工作负载、`net10.0-android36.0` TFM（最低运行 API Level 24）、Single-Activity + Fragment、WebMessageListener IPC、Cake Frosting 构建
 
 ### 功能对齐阶段（P0/P1/P2）
 

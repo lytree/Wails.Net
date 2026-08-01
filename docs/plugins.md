@@ -1,6 +1,6 @@
 # Wails.Net 插件开发指南
 
-本文档介绍如何开发和使用 Wails.Net 插件。Wails.Net 内置 **42 个插件**（37 桌面 + 5 移动端），覆盖系统、文件、网络、窗口、数据、更新、移动端等场景。
+本文档介绍如何开发和使用 Wails.Net 插件。Wails.Net 内置 **47 个插件**（39 桌面 + 7 移动端 + 1 Android 专属 `AndroidRuntimePlugin`），覆盖系统、文件、网络、窗口、数据、更新、移动端等场景。
 
 ## 插件概念
 
@@ -172,7 +172,7 @@ context.Commands.MapCommand("myapp.work", (Func<ICommandContext, CancellationTok
 
 ## 内置插件列表
 
-Wails.Net 内置 42 个插件，按用途分类如下：
+Wails.Net 内置 47 个插件（39 桌面 + 7 移动端 + 1 Android 专属），按用途分类如下：
 
 ### 系统类插件
 
@@ -259,6 +259,9 @@ Wails.Net 内置 42 个插件，按用途分类如下：
 | `NfcPlugin` | `nfc.*` | NFC 读写 — `read` / `write` / `cancel` |
 | `BarcodeScannerPlugin` | `barcode-scanner.*` | 条码/二维码扫描 — `scan` / `cancel` |
 | `HapticsPlugin` | `haptics.*` | 触觉反馈 — `vibrate` / `cancel` / `notification` |
+| `CameraPlugin` | `camera.*` | 相机 — `checkAvailability` / `capture` / `cancel` |
+| `GeolocationPlugin` | `geolocation.*` | 定位 — `checkAvailability` / `getCurrentPosition` / `watchPosition` / `clearWatch` |
+| `PermissionsPlugin` | `permissions.*` | 权限 — `check` / `request` |
 | `AndroidRuntimePlugin` | `device.*` / `toast.*` | Android 平台专属运行时 — `device.info`（设备信息） / `toast.show`（Toast 提示） |
 
 > 移动端插件位于 `Wails.Net.Application.Plugins.Mobile` 命名空间（`AndroidRuntimePlugin` 位于 `Wails.Net.Application.Android.Mobile`），仅在 `net10.0-android36.0` 目标下可用。Windows/Linux 上调用会返回 `PlatformNotSupportedException`。
@@ -387,7 +390,7 @@ await wails.menu.addStandardHelpMenu(parentId, { Name: "MyApp", Version: "1.0" }
 
 ### 3. Android 移动端插件平台实现（P2-3）
 
-5 个移动端插件的 Android 平台后端位于 [Wails.Net.Application.Android/Mobile](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/Mobile)：
+7 个移动端插件（及 Android 专属 `AndroidRuntimePlugin`）的 Android 平台后端位于 [Wails.Net.Application.Android/Mobile](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/Mobile)：
 
 | 平台类 | 对应插件 | 底层 Android API |
 |------|------|------|
@@ -395,6 +398,9 @@ await wails.menu.addStandardHelpMenu(parentId, { Name: "MyApp", Version: "1.0" }
 | `AndroidNfc` | `NfcPlugin` | `NfcAdapter` + `Activity.OnNewIntent` |
 | `AndroidBarcodeScanner` | `BarcodeScannerPlugin` | `Intent.ActionGetContent` + 第三方扫描应用 |
 | `AndroidHaptics` | `HapticsPlugin` | `Vibrator`（API 26+ 用 `VibrationEffect`） |
+| `AndroidCamera` | `CameraPlugin` | `MediaStore.ACTION_IMAGE_CAPTURE` 启动系统相机应用 |
+| `AndroidGeolocation` | `GeolocationPlugin` | `LocationManager`（GPS / 网络定位） |
+| `AndroidPermissions` | `PermissionsPlugin` | `Context.CheckSelfPermission` / `Activity.RequestPermissions` |
 | `AndroidRuntimePlugin` | — | `Android.OS.Build` + `Toast.MakeText` |
 
 设计要点：
