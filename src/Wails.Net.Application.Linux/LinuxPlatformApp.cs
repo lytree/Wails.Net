@@ -117,8 +117,8 @@ public sealed class LinuxPlatformApp : IPlatformApp
     /// Linux 通过 GTK4（GirCore 0.8.0）+ WebKitGTK 提供原生支持：
     /// <list type="bullet">
     /// <item><see cref="PlatformCapabilities.HasNativeDrag"/>：<c>true</c>，GTK4 原生支持拖放。</item>
-    /// <item><see cref="PlatformCapabilities.GtkVersion"/>：通过 <c>Gtk.MajorVersion</c> 获取（通常为 4）。</item>
-    /// <item><see cref="PlatformCapabilities.WebKitVersion"/>：通过 <c>WebKit.MajorVersion</c>/<c>MinorVersion</c> 拼接。</item>
+    /// <item><see cref="PlatformCapabilities.GtkVersion"/>：通过 <c>Gtk.Functions.GetMajorVersion()</c> 获取（通常为 4）。</item>
+    /// <item><see cref="PlatformCapabilities.WebKitVersion"/>：通过 <c>WebKit.Functions.GetMajorVersion()</c>/<c>GetMinorVersion()</c>/<c>GetMicroVersion()</c> 拼接。</item>
     /// </list>
     /// 在非 Linux 平台调用时返回 <see cref="PlatformCapabilities.Default"/>。
     /// </remarks>
@@ -136,8 +136,8 @@ public sealed class LinuxPlatformApp : IPlatformApp
                 return new PlatformCapabilities
                 {
                     HasNativeDrag = true,
-                    GtkVersion = Gtk.MajorVersion,
-                    WebKitVersion = $"{WebKit.MajorVersion}.{WebKit.MinorVersion}.{WebKit.MicroVersion}",
+                    GtkVersion = (int)Gtk.Functions.GetMajorVersion(),
+                    WebKitVersion = $"{(int)WebKit.Functions.GetMajorVersion()}.{(int)WebKit.Functions.GetMinorVersion()}.{(int)WebKit.Functions.GetMicroVersion()}",
                 };
             }
             catch

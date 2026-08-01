@@ -3,6 +3,7 @@ using Android.App;
 using Android.Content;
 using Android.Content.Res;
 using Android.OS;
+using Android.Webkit;
 using Wails.Net.Application.Android;
 using Wails.Net.Application.Android.Mobile;
 using Wails.Net.Application.Dialogs;
@@ -117,6 +118,18 @@ public sealed class AndroidPlatformApp : IPlatformApp
     /// 对应 Tauri v2 <c>@tauri-apps/plugin-geolocation</c> 的 Android 后端。
     /// </summary>
     public AndroidGeolocation? MobileGeolocation { get; set; }
+
+    /// <summary>
+    /// Android 相机实现，由 <c>UseAndroid</c> 扩展方法注入。
+    /// 对应 Tauri v2 <c>@tauri-apps/plugin-camera</c> 的 Android 后端。
+    /// </summary>
+    public AndroidCamera? MobileCamera { get; set; }
+
+    /// <summary>
+    /// Android 运行时权限实现，由 <c>UseAndroid</c> 扩展方法注入。
+    /// 对应 Tauri v2 <c>@tauri-apps/plugin-permissions</c> 的 Android 后端。
+    /// </summary>
+    public AndroidPermissions? MobilePermissions { get; set; }
 
     /// <summary>
     /// 构造 AndroidPlatformApp 实例。

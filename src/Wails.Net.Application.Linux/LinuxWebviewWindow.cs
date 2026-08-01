@@ -791,7 +791,7 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
 
             var js = Wails.Net.Application.Windows.DragRegionHelper.GetDropTargetDetailsScript(x, y);
             var result = await _webView.EvaluateJavascriptAsync(js);
-            var json = result?.GetJsString();
+            var json = result?.ToString();
             if (string.IsNullOrEmpty(json))
             {
                 return;
