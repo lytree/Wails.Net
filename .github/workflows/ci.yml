@@ -377,9 +377,16 @@ jobs:
             ${{ runner.os }}-nuget-
 
       # 打包解决方案含 net10.0-android TFM 项目，dotnet pack 在评估阶段需 android 工作负载，
-      # 否则同样报 NETSDK1004。pack 通过 --no-build 复用 build 产物，但仍会按需自动还原。
+      # 否则同样报 NETSDK1004。
+      # 关键点（已实测验证）：dotnet pack --no-build 不会执行隐式还原，而 build 作业上传的
+      # 构建产物只包含 bin/（不含 obj/），因此本作业必须显式还原以生成 obj/project.assets.json，
+      # 否则所有项目都会报 NETSDK1004: Assets file '.../obj/project.assets.json' not found。
+      # 注意：dotnet run --no-build 仍会还原（test 作业正常），但 dotnet pack --no-build 不会。
       - name: 安装 Android 工作负载
         run: dotnet workload install android
+
+      - name: 还原 NuGet 包（生成 obj/project.assets.json；pack --no-build 不会自动还原）
+        run: dotnet restore ${{ env.SOLUTION }}
 
       - name: 下载构建产物
         uses: actions/download-artifact@v8
@@ -391,9 +398,10 @@ jobs:
         run: New-Item -ItemType Directory -Force -Path ${{ env.PACKAGE_OUTPUT }}
 
       # 打包所有 src/ 下的可发布项目（slnx 包含 Bundle.Windows / Bundle.Linux / Sdk）
+      # --no-restore：依赖上方显式还原，避免重复还原并明确依赖关系
       - name: 打包解决方案
         shell: pwsh
-        run: dotnet pack ${{ env.SOLUTION }} -c Release --no-build -o ${{ env.PACKAGE_OUTPUT }} -p:SkipFrontendBuild=true -p:WailsNetVersion=${{ env.WAILS_NET_VERSION }}
+        run: dotnet pack ${{ env.SOLUTION }} -c Release --no-build --no-restore -o ${{ env.PACKAGE_OUTPUT }} -p:SkipFrontendBuild=true -p:WailsNetVersion=${{ env.WAILS_NET_VERSION }}
 
       # 单独打包 Templates 项目
       # Templates 不在 slnx 中（dotnet pack 会因 NU5017 误报退出码 1，但 nupkg 实际正确生成）
