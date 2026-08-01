@@ -30,6 +30,7 @@
     <Project Path="src/Wails.Net.Application.Windows/Wails.Net.Application.Windows.csproj" />
     <Project Path="src/Wails.Net.Application.Linux/Wails.Net.Application.Linux.csproj" />
     <Project Path="src/Wails.Net.Application.Android/Wails.Net.Application.Android.csproj" />
+    <Project Path="src/Wails.Net.Application.MacOS/Wails.Net.Application.MacOS.csproj" />
     <Project Path="src/Wails.Net.Errors/Wails.Net.Errors.csproj" />
     <Project Path="src/Wails.Net.Events/Wails.Net.Events.csproj" />
     <Project Path="src/Wails.Net.Generator/Wails.Net.Generator.csproj" />

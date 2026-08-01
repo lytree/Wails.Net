@@ -127,6 +127,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
+      # 解决方案包含 net10.0-android36.0 TFM 项目（Wails.Net.Application.Android / Wails.Net.Demo.Android），
+      # 还原/构建前必须安装 android 工作负载，否则 dotnet restore 在评估阶段即失败，
+      # 导致整个解决方案的 project.assets.json 均未生成，后续 dotnet build --no-restore 报 NETSDK1004。
+      - name: 安装 Android 工作负载
+        run: dotnet workload install android
+
       - name: 还原 NuGet 包（含 Cake SDK）
         run: dotnet restore ${{ env.SOLUTION }}
 
@@ -243,9 +249,11 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y libgtk-4-1 libwebkitgtk-6.0-4 || sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
 
-      # 在 Linux 上重新构建 Linux 平台项目（之前的构建在 Windows 上完成）
-      - name: 还原 NuGet 包
-        run: dotnet restore ${{ env.SOLUTION }}
+      # 仅还原 Linux 测试项目及其依赖（不还原整个解决方案）。
+      # 解决方案 Wails.Net.slnx 含 net10.0-android36.0 TFM 的 Android 工程，本 Linux runner
+      # 未安装 android 工作负载，还原/评估会报 NETSDK1147。Linux 测试仅依赖非 Android 工程。
+      - name: 还原 NuGet 包（仅 Linux 测试项目）
+        run: dotnet restore tests/Wails.Net.Application.Linux.Tests/Wails.Net.Application.Linux.Tests.csproj
 
       - name: 构建 Linux 测试项目
         run: dotnet build tests/Wails.Net.Application.Linux.Tests/Wails.Net.Application.Linux.Tests.csproj -c Release
@@ -368,6 +376,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
+      # 打包解决方案含 net10.0-android TFM 项目，dotnet pack 在评估阶段需 android 工作负载，
+      # 否则同样报 NETSDK1004。pack 通过 --no-build 复用 build 产物，但仍会按需自动还原。
+      - name: 安装 Android 工作负载
+        run: dotnet workload install android
+
       - name: 下载构建产物
         uses: actions/download-artifact@v8
         with:
@@ -463,6 +476,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
+      # Dist 流程的 PackTask 会对整个解决方案打包（含 net10.0-android TFM 工程），
+      # 需 android 工作负载才能评估/打包 Android 工程，否则 NETSDK1147。
+      - name: 安装 Android 工作负载
+        run: dotnet workload install android
+
       - name: 创建构建输出目录
         shell: pwsh
         run: New-Item -ItemType Directory -Force -Path ${{ env.DIST_OUTPUT }}
@@ -506,6 +524,11 @@ jobs:
           key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props') }}
           restore-keys: |
             ${{ runner.os }}-nuget-
+
+      # Dist 流程的 PackTask 会对整个解决方案打包（含 net10.0-android TFM 工程），
+      # 需 android 工作负载才能评估/打包 Android 工程，否则 NETSDK1147。
+      - name: 安装 Android 工作负载
+        run: dotnet workload install android
 
       - name: 安装 Linux 构建依赖
         run: |

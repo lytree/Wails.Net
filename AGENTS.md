@@ -9,7 +9,7 @@
 
 - **项目**：Wails.Net — Wails v3 (Go) 的 .NET 10 移植实现
 - **参考版本**：`wails v3.0.0-*`
-- **目标平台**：Windows、Linux、Android（macOS/iOS 暂不实现）
+- **目标平台**：Windows、Linux、Android（macOS 已提供骨架实现 `Wails.Net.Application.MacOS`，iOS 暂不实现）
 - **实施计划**：详见 `.trae/documents/wails-net-dotnet10-implementation-plan.md`
 
 ### 1.1 技术选型（已确定，不可更改）
@@ -254,6 +254,28 @@ CI 构建通过 `TreatWarningsAsErrors=true` 阻止 AOT 不兼容的反射警告
 - [ ] 是否使用 `Type.GetMethod` / `Assembly.GetTypes` 进行动态发现
 - [ ] 测试反射代码是否可通过 `InternalsVisibleTo` 改进
 
+#### 3.4.6 插件命令的 CancellationToken 约定
+
+**重要**：插件通过 `MapCommand` 注册的命令方法**禁止将 `CancellationToken` 作为泛型业务参数声明**。
+
+`CancellationToken` 是运行时概念，前端无法通过 JSON 提供有意义的值，且 `CancellationToken.WaitHandle.Handle` 为 `IntPtr`，无法被 `System.Text.Json` 序列化。
+
+**正确模式**（参考 `UpdaterPlugin` / `CameraPlugin` / `PermissionsPlugin`）：从 `ICommandContext.CancellationToken` 获取。
+
+```csharp
+// ❌ 错误：CancellationToken 作为业务参数，导致 JSON 序列化失败
+commands.MapCommand("camera.capture",
+    (Func<ICommandContext, CancellationToken, Task<CameraCaptureResult>>)((ctx, ct) =>
+        CaptureAsync(ctx, ct)));
+
+// ✅ 正确：从 ctx.CancellationToken 获取，不暴露给前端 JSON 协议
+commands.MapCommand("camera.capture",
+    (Func<ICommandContext, Task<CameraCaptureResult>>)(ctx =>
+        CaptureAsync(ctx, ctx.CancellationToken)));
+```
+
+测试代码（`tests/`）通过 `CommandTestHelper.Invoke` 调用命令时，`CancellationToken` 参数会被自动跳过序列化（与 `ICommandContext` 同等处理）。
+
 ---
 
 ## 4. 测试规范
@@ -439,6 +461,8 @@ Wails.Net.Application.Platform # 平台抽象
 Wails.Net.Application.Windows  # Windows 实现
 Wails.Net.Application.Linux    # Linux 实现
 Wails.Net.Application.Android  # Android 实现
+Wails.Net.Application.MacOS    # macOS 骨架实现（G7：当前降级到 ServerMode，后续集成 WKWebView）
+Wails.Net.Application.Plugins  # 插件框架（BuiltIn 内置 + Mobile 移动端）
 Wails.Net.Errors               # 错误类型
 Wails.Net.Events               # 事件类型定义
 ```
@@ -481,6 +505,7 @@ const uint prime = 16777619u;
 - [ ] 测试覆盖完整性
 - [ ] 文档注释完整性
 - [ ] 编码规范遵循
+- [ ] **插件 CancellationToken 约定**（详见 §3.4.6）：`MapCommand` 委托签名是否将 `CancellationToken` 作为业务参数（应改用 `ctx.CancellationToken`）
 - [ ] **反射合规**（详见 §3.4）：
   - `src/` 是否新增 `using System.Reflection;`（除非属 §3.4.3 白名单）
   - 是否使用 `MethodInfo.Invoke` / `Activator.CreateInstance` 调用方法
@@ -533,4 +558,4 @@ dotnet fsi script.fsx
 
 ---
 
-**最后更新**：2026-07-21（§3.4 禁用反射协议规范扩展 + §3.3 移除反射时代异常解包示例 + §4.4 添加 Android E2E 测试说明 + PlatformFactory 通过 `Assembly.Load` + `RuntimeHelpers.RunModuleConstructor` 显式触发 `[ModuleInitializer]` 根因修复 + 新增 `tests/Wails.Net.Android.E2E/run-android-e2e.fsx` 设备端 E2E 测试 + CI 添加 `test-android-e2e` job）
+**最后更新**：2026-08-01（新增 §3.4.6 插件命令 CancellationToken 约定 + macOS 骨架实现 `Wails.Net.Application.MacOS` + 运行时 CLI 插件 `CliPlugin` + 移动端 Camera/Permissions 插件 + CLI `build --all-platforms` 一键全平台构建 + Cake `DistAll` 目标 + §6.2 命名空间结构补全 macOS/Plugins）

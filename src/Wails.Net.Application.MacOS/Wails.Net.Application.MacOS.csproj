@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      使用 net10.0（非 net10.0-macos）使项目可在任意宿主平台编译。
+      实际的 macOS API 调用（WKWebView / NSWindow / AppKit）将在后续阶段通过
+      条件编译 (OperatingSystem.IsMacOS) + 包引用 Microsoft.macOS.AppKit 实现。
+      当前为骨架实现，运行时降级到 ServerPlatformApp 行为。
+    -->
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>true</IsPackable>
+    <PackageId>Wails.Net.Application.MacOS</PackageId>
+    <Description>Wails.Net macOS 平台实现骨架（G7）：当前为占位实现，后续将集成 WKWebView。</Description>
+    <!-- 平台注册器使用 [ModuleInitializer] 实现自动注册（替代反射路径），CA2255 警告不适用 -->
+    <NoWarn>CA2255</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Wails.Net.Application\Wails.Net.Application.csproj" />
+  </ItemGroup>
+
+</Project>

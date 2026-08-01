@@ -116,7 +116,7 @@ public sealed class GeolocationPluginTests
         // 操作
         var result = await (Task<GeolocationPosition?>)InvokeCommand(
             context.Commands, "geolocation.getCurrentPosition", cmdCtx,
-            new GeolocationOptions(), CancellationToken.None)!;
+            new GeolocationOptions())!;
 
         // 断言：默认 NullGeolocationImpl.GetCurrentPositionAsync 返回 null
         await Assert.That(result).IsNull();
@@ -166,7 +166,7 @@ public sealed class GeolocationPluginTests
         // 操作
         var result = await (Task<GeolocationPosition?>)InvokeCommand(
             context.Commands, "geolocation.getCurrentPosition", cmdCtx,
-            new GeolocationOptions { EnableHighAccuracy = true }, CancellationToken.None)!;
+            new GeolocationOptions { EnableHighAccuracy = true })!;
 
         // 断言
         await Assert.That(result).IsNotNull();

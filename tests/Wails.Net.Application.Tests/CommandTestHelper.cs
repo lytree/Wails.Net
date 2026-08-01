@@ -37,7 +37,9 @@ public static class CommandTestHelper
             throw new InvalidOperationException($"命令 '{name}' 未注册调用器");
         }
 
-        // 自动从 args 中提取 ICommandContext（若存在），剩余参数作为业务参数
+        // 自动从 args 中提取 ICommandContext（若存在），剩余参数作为业务参数。
+        // CancellationToken 不属于前端 JSON 参数，运行时由 ICommandContext.CancellationToken 提供，
+        // 测试调用时跳过序列化（CancellationToken 含 IntPtr WaitHandle 无法 JSON 序列化）。
         ICommandContext? ctx = null;
         var remainingArgs = new List<object?>();
         foreach (var arg in args)
@@ -45,6 +47,10 @@ public static class CommandTestHelper
             if (ctx is null && arg is ICommandContext c)
             {
                 ctx = c;
+            }
+            else if (arg is CancellationToken)
+            {
+                // 跳过：CancellationToken 由 ctx.CancellationToken 提供，不参与 JSON 序列化
             }
             else
             {

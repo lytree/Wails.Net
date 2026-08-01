@@ -53,10 +53,39 @@ public class AutostartPlugin : IPlugin
     /// <returns>应用名称。</returns>
     internal static string GetAppName()
     {
-        var asm = Process.GetCurrentProcess().MainModule?.FileName;
-        if (!string.IsNullOrEmpty(asm))
+        var exePath = ResolveExecutablePath();
+        return Path.GetFileNameWithoutExtension(exePath);
+    }
+
+    /// <summary>
+    /// 解析当前进程可执行文件路径，用于注册表值或 .desktop 文件名。
+    /// <para>
+    /// 优先使用 <see cref="Environment.ProcessPath"/>（可靠且不抛异常），
+    /// 其次尝试 <see cref="Process.MainModule"/>（某些环境如 CI 沙箱下其 getter 可能抛出
+    /// <see cref="System.ComponentModel.Win32Exception"/>，需捕获），
+    /// 最后回退到 <see cref="AppDomain.CurrentDomain.FriendlyName"/>。
+    /// </para>
+    /// </summary>
+    /// <returns>可执行文件路径或程序友好名称，永不为 null/空。</returns>
+    private static string ResolveExecutablePath()
+    {
+        var path = Environment.ProcessPath;
+        if (!string.IsNullOrEmpty(path))
         {
-            return Path.GetFileNameWithoutExtension(asm);
+            return path;
+        }
+
+        try
+        {
+            path = Process.GetCurrentProcess().MainModule?.FileName;
+            if (!string.IsNullOrEmpty(path))
+            {
+                return path;
+            }
+        }
+        catch (Exception)
+        {
+            // 某些沙箱/CI 环境下访问 MainModule 会抛异常，忽略并继续回退。
         }
 
         return AppDomain.CurrentDomain.FriendlyName;
@@ -143,17 +172,8 @@ public class AutostartPlugin : IPlugin
                 return false;
             }
 
-            var exePath = Process.GetCurrentProcess().MainModule?.FileName;
-            if (string.IsNullOrEmpty(exePath))
-            {
-                exePath = Environment.ProcessPath;
-            }
-
-            if (string.IsNullOrEmpty(exePath))
-            {
-                return false;
-            }
-
+            // 优先使用不抛异常的 Environment.ProcessPath；MainModule 在沙箱环境可能抛异常。
+            var exePath = ResolveExecutablePath();
             key.SetValue(appName, $"\"{exePath}\"");
             return true;
         }

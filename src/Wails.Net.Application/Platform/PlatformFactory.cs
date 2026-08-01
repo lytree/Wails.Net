@@ -52,6 +52,7 @@ public static class PlatformFactory
     private const string PlatformWindows = "windows";
     private const string PlatformLinux = "linux";
     private const string PlatformAndroid = "android";
+    private const string PlatformMacOS = "macos";
 
     /// <summary>
     /// FriendlyName 检测的关键字（Level 4）。
@@ -285,13 +286,13 @@ public static class PlatformFactory
         if (!string.IsNullOrEmpty(forced))
         {
             var normalized = forced.ToLowerInvariant().Trim();
-            if (normalized is PlatformWindows or PlatformLinux or PlatformAndroid)
+            if (normalized is PlatformWindows or PlatformLinux or PlatformAndroid or PlatformMacOS)
             {
                 LogDebug($"[Level 2] 平台由环境变量 {PlatformEnvVar}={normalized} 强制指定");
                 return normalized;
             }
 
-            LogDebug($"[Level 2] 环境变量 {PlatformEnvVar}={forced} 值无效（应为 windows/linux/android），继续下一级检测");
+            LogDebug($"[Level 2] 环境变量 {PlatformEnvVar}={forced} 值无效（应为 windows/linux/android/macos），继续下一级检测");
         }
 
         // Level 3：运行时自动检测
@@ -311,6 +312,12 @@ public static class PlatformFactory
         {
             LogDebug("[Level 3] 自动检测到 Android 平台");
             return PlatformAndroid;
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            LogDebug("[Level 3] 自动检测到 macOS 平台");
+            return PlatformMacOS;
         }
 
         // Level 4：AppDomain FriendlyName 关键字检测
@@ -415,6 +422,7 @@ public static class PlatformFactory
             PlatformWindows => "Wails.Net.Application.Windows",
             PlatformLinux => "Wails.Net.Application.Linux",
             PlatformAndroid => "Wails.Net.Application.Android",
+            PlatformMacOS => "Wails.Net.Application.MacOS",
             _ => null
         };
 

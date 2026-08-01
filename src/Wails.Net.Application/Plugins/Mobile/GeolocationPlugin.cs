@@ -50,18 +50,19 @@ public class GeolocationPlugin : IPlugin
             (Func<ICommandContext, string>)(ctx => ResolveGeolocation(ctx).CheckAvailability()));
 
         // 获取当前位置（单次定位）
+        // CancellationToken 由 ICommandContext 提供，不作为 JSON 业务参数暴露给前端（遵循 AGENTS.md §3.4.6）
         commands.MapCommand("geolocation.getCurrentPosition",
-            (Func<ICommandContext, GeolocationOptions?, CancellationToken, Task<GeolocationPosition?>>)((ctx, opts, ct) =>
-                ResolveGeolocation(ctx).GetCurrentPositionAsync(opts ?? new GeolocationOptions(), ct)));
+            (Func<ICommandContext, GeolocationOptions?, Task<GeolocationPosition?>>)((ctx, opts) =>
+                ResolveGeolocation(ctx).GetCurrentPositionAsync(opts ?? new GeolocationOptions(), ctx.CancellationToken)));
 
         // 开始持续监听位置变化
         commands.MapCommand("geolocation.watchPosition",
-            (Func<ICommandContext, GeolocationOptions?, CancellationToken, Task<WatchPositionResult>>)(async (ctx, opts, ct) =>
+            (Func<ICommandContext, GeolocationOptions?, Task<WatchPositionResult>>)(async (ctx, opts) =>
             {
                 var impl = ResolveGeolocation(ctx);
                 // watchPosition 的回调通过事件系统通知前端，此处仅启动监听
                 var watchId = await impl.WatchPositionAsync(opts ?? new GeolocationOptions(),
-                    position => OnPositionUpdate(ctx, position), ct);
+                    position => OnPositionUpdate(ctx, position), ctx.CancellationToken);
                 return new WatchPositionResult { WatchId = watchId };
             }));
 
