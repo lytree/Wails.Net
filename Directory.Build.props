@@ -23,9 +23,12 @@
     <CentrallyManagedPackageVersionEnabled>true</CentrallyManagedPackageVersionEnabled>
 
     <!--
-      版本号集中管理（手动维护）
-      发布新版本时，仅修改下方 WailsNetVersion 属性即可，所有 src/ 下的
-      程序集与 NuGet 包将自动派生以下属性：
+      版本号集中管理（本地开发默认值）
+      注意：在 GitLab CI 中，GitVersion 会自动计算语义化版本号，
+      并通过 -p:WailsNetVersion=<SemVer> 覆盖下方值注入 dotnet 构建，
+      因此生产发布无需手动修改本属性；本值作为本地/非 CI 构建的回退版本。
+      发布新版本时，本地开发可修改下方 WailsNetVersion 属性，但 CI 以 Git 标签为准。
+      所有 src/ 下的程序集与 NuGet 包将自动派生以下属性：
         Version / PackageVersion / InformationalVersion  含预发布标签
         AssemblyVersion / FileVersion                  4 段数字（剥离预发布标签）
       版本号遵循 Semantic Versioning 2.0：MAJOR.MINOR.PATCH 后接可选预发布标签

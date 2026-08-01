@@ -1,0 +1,80 @@
+# ============================================================================
+# GitVersion 配置 —— 替代 Directory.Build.props 中手动维护的 WailsNetVersion
+# ----------------------------------------------------------------------------
+# 版本号由 Git 历史自动推导（Semantic Versioning 2.0），无需手动改版本号。
+# 计算出的 SemVer 由 .gitlab-ci.yml 通过 -p:WailsNetVersion 注入 dotnet 构建。
+#
+# 约定：
+#   * 标签格式：vMAJOR.MINOR.PATCH（-预发布标签），例如 v1.2.3 / v1.2.3-alpha.1
+#   * 当前仓库尚无标签，使用 next-version 作为基线（0.1.0）
+#   * 首次发布建议打标签：git tag v0.1.0-alpha.1 && git push origin v0.1.0-alpha.1
+#
+# 分支版本策略：
+#   main        → 稳定版（0.1.0）
+#   develop     → alpha 预发布（0.1.0-alpha.1）
+#   feature/*   → 分支名预发布（0.1.0-feature.1）
+#   release/*   → rc 预发布（0.1.0-rc.1）
+#   hotfix/*    → 补丁预发布
+#
+# 提交信息手动提升版本（commit-message-incrementing）：
+#   "feat: xxx [+semver:minor]"  → 次版本 +1
+#   "feat: xxx [+semver:major]"  → 主版本 +1
+# ============================================================================
+
+mode: ContinuousDelivery
+
+# 标签前缀：v1.2.3 → 版本号 1.2.3（自动剥离前缀）
+tag-prefix: 'v'
+
+# 基线版本（仓库尚未打标签时使用；打标签后由标签接管）
+next-version: '0.1.0'
+
+# 允许通过提交信息中的 [+semver:...] 提升版本
+commit-message-incrementing: Enabled
+
+branches:
+  main:
+    mode: Mainline
+    tag: ''
+    increment: Patch
+    regex: '^main$'
+    is-mainline: true
+
+  develop:
+    mode: ContinuousDeployment
+    tag: alpha
+    increment: Minor
+    regex: '^dev(elop)?$'
+    source-branches: ['main']
+    prevent-increment-of-merged-branch-version: true
+
+  feature:
+    mode: ContinuousDelivery
+    tag: useBranchName
+    increment: Minor
+    regex: '^feature[/-]'
+    source-branches: ['develop', 'main']
+    prevent-increment-of-merged-branch-version: true
+
+  release:
+    mode: ContinuousDelivery
+    tag: rc
+    increment: Patch
+    regex: '^releases?[/-]'
+    is-release-branch: true
+    source-branches: ['develop', 'main']
+    prevent-increment-of-merged-branch-version: true
+
+  hotfix:
+    mode: ContinuousDelivery
+    tag: ''
+    increment: Patch
+    regex: '^hotfix[/-]'
+    source-branches: ['main', 'release']
+
+  pull-request:
+    mode: ContinuousDelivery
+    tag: PullRequest
+    increment: Inherit
+    regex: '^(pull|pull-requests|pr)[/-]'
+    source-branches: ['develop', 'main']
