@@ -34,24 +34,24 @@ name: CI
 on:
   push:
     branches:
-      - '**'
+      - "**"
     tags:
-      - 'v*.*.*'
+      - "v*.*.*"
   pull_request:
     branches:
       - main
 
 env:
-  DOTNET_NOLOGO: 'true'
-  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
   # 标记为 CI 构建，启用 ContinuousIntegrationBuild 与确定性构建
-  CI: 'true'
+  CI: "true"
   # 解决方案文件
-  SOLUTION: 'Wails.Net.slnx'
+  SOLUTION: "Wails.Net.slnx"
   # 打包输出目录
-  PACKAGE_OUTPUT: 'artifacts/packages'
+  PACKAGE_OUTPUT: "artifacts/packages"
   # 自包含构建产物目录
-  DIST_OUTPUT: 'artifacts/dist'
+  DIST_OUTPUT: "artifacts/dist"
 
 # ============================================================================
 # Job 1：构建（restore + build）
@@ -84,7 +84,7 @@ jobs:
       - name: 配置 .NET SDK
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: "10.0.x"
 
       - name: 配置 Git 安全目录（规避 LibGit2 safe.directory / worktreeConfig 导致的崩溃）
         run: |
@@ -117,7 +117,7 @@ jobs:
       - name: 设置 .NET SDK
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: "10.0.x"
 
       - name: 缓存 NuGet 包
         uses: actions/cache@v6
@@ -148,10 +148,10 @@ jobs:
             tests/**/bin/Release/
           retention-days: 1
 
-# ============================================================================
-# Job 2：测试
-# ============================================================================
-# 跨平台测试（Application + CLI + AssetServer），在 Windows runner 上运行
+  # ============================================================================
+  # Job 2：测试
+  # ============================================================================
+  # 跨平台测试（Application + CLI + AssetServer），在 Windows runner 上运行
   test-application:
     name: 测试 (Application + CLI + AssetServer)
     runs-on: windows-latest
@@ -163,7 +163,7 @@ jobs:
       - name: 设置 .NET SDK
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: "10.0.x"
 
       - name: 缓存 NuGet 包
         uses: actions/cache@v6
@@ -190,7 +190,7 @@ jobs:
       - name: 运行 AssetServer 测试
         run: dotnet run --project tests/Wails.Net.AssetServer.Tests/Wails.Net.AssetServer.Tests.csproj --no-build -c Release
 
-# Windows 平台测试（依赖 Win32 API、注册表、WinForms 剪贴板）
+  # Windows 平台测试（依赖 Win32 API、注册表、WinForms 剪贴板）
   test-windows:
     name: 测试 (Windows 平台)
     runs-on: windows-latest
@@ -202,7 +202,7 @@ jobs:
       - name: 设置 .NET SDK
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: "10.0.x"
 
       - name: 缓存 NuGet 包
         uses: actions/cache@v6
@@ -220,12 +220,12 @@ jobs:
       - name: 运行 Windows 平台测试
         run: dotnet run --project tests/Wails.Net.Application.Windows.Tests/Wails.Net.Application.Windows.Tests.csproj --no-build -c Release
 
-# Linux 平台测试（依赖 GirCore/GTK4 原生库，需在 Linux runner 上运行）
+  # Linux 平台测试（依赖 GirCore/GTK4 原生库，需在 Linux runner 上运行）
   test-linux:
     name: 测试 (Linux 平台)
     runs-on: ubuntu-latest
     needs: build
-    continue-on-error: true  # Linux 原生库环境可能不稳定，允许失败
+    continue-on-error: true # Linux 原生库环境可能不稳定，允许失败
     steps:
       - name: 检出代码
         uses: actions/checkout@v7
@@ -233,7 +233,7 @@ jobs:
       - name: 设置 .NET SDK
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: "10.0.x"
 
       - name: 缓存 NuGet 包
         uses: actions/cache@v6
@@ -261,12 +261,12 @@ jobs:
       - name: 运行 Linux 平台测试
         run: dotnet run --project tests/Wails.Net.Application.Linux.Tests/Wails.Net.Application.Linux.Tests.csproj --no-build -c Release
 
-# Android 平台测试（需 android 工作负载，允许失败）
+  # Android 平台测试（需 android 工作负载，允许失败）
   test-android:
     name: 测试 (Android 平台)
     runs-on: windows-latest
     needs: build
-    continue-on-error: true  # Android 工作负载环境可能不稳定，允许失败
+    continue-on-error: true # Android 工作负载环境可能不稳定，允许失败
     steps:
       - name: 检出代码
         uses: actions/checkout@v7
@@ -274,7 +274,7 @@ jobs:
       - name: 设置 .NET SDK
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: "10.0.x"
 
       - name: 缓存 NuGet 包
         uses: actions/cache@v6
@@ -300,15 +300,15 @@ jobs:
       - name: 运行 Android 平台测试
         run: dotnet run --project tests/Wails.Net.Application.Android.Tests/Wails.Net.Application.Android.Tests.csproj --no-build -c Release
 
-# Android E2E 设备端测试（需 Android 模拟器，允许失败）
-# 通过 F# 脚本驱动 adb 完成端到端 UI 测试，验证 Wails.Net 在真实 Android 环境的行为。
-# 替代方案：.NET 10 + TUnit 1.58.0 组合下无开箱即用的 Android 插桩测试方案，
-# 采用 F# 脚本 + adb 不违反 AGENTS.md §4.1（非测试框架）与 §7.5（强制 F# 脚本）。
+  # Android E2E 设备端测试（需 Android 模拟器，允许失败）
+  # 通过 F# 脚本驱动 adb 完成端到端 UI 测试，验证 Wails.Net 在真实 Android 环境的行为。
+  # 替代方案：.NET 10 + TUnit 1.58.0 组合下无开箱即用的 Android 插桩测试方案，
+  # 采用 F# 脚本 + adb 不违反 AGENTS.md §4.1（非测试框架）与 §7.5（强制 F# 脚本）。
   test-android-e2e:
     name: 测试 (Android E2E 模拟器)
     runs-on: ubuntu-latest
     needs: build
-    continue-on-error: true  # Android 模拟器环境可能不稳定，允许失败
+    continue-on-error: true # Android 模拟器环境可能不稳定，允许失败
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: 检出代码
@@ -317,7 +317,7 @@ jobs:
       - name: 设置 .NET SDK
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: "10.0.x"
 
       - name: 缓存 NuGet 包
         uses: actions/cache@v6
@@ -349,9 +349,9 @@ jobs:
             examples/Wails.Net.Demo.Android/bin/Release/**/*.apk
           retention-days: 7
 
-# ============================================================================
-# Job 3：打包 NuGet 包（仅 main 分支或 tag 触发）
-# ============================================================================
+  # ============================================================================
+  # Job 3：打包 NuGet 包（仅 main 分支或 tag 触发）
+  # ============================================================================
   pack:
     name: 打包 NuGet
     runs-on: windows-latest
@@ -366,7 +366,7 @@ jobs:
       - name: 设置 .NET SDK
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: "10.0.x"
 
       - name: 缓存 NuGet 包
         uses: actions/cache@v6
@@ -443,6 +443,19 @@ jobs:
         shell: pwsh
         run: Get-ChildItem ${{ env.PACKAGE_OUTPUT }} -Filter "*.nupkg" | Format-Table Name, Length
 
+      # 冒烟测试：用本地刚打包的 nupkg 验证 CLI 可作为 dotnet global tool 安装运行。
+      # 不依赖 nuget.org 索引（推送后索引有延迟），直接用 --add-source 指向本地包目录。
+      - name: 冒烟测试 CLI dotnet tool 安装
+        shell: pwsh
+        run: |
+          $toolPath = Join-Path $env:TEMP 'wails-net-tool-smoke'
+          Remove-Item -Recurse -Force $toolPath -ErrorAction SilentlyContinue
+          dotnet tool install Wails.Net.Cli --version ${{ env.WAILS_NET_VERSION }} --tool-path $toolPath --add-source ${{ env.PACKAGE_OUTPUT }}
+          if ($LASTEXITCODE -ne 0) { Write-Host "CLI tool 安装失败"; exit 1 }
+          & "$toolPath/wails-net.exe" --version
+          if ($LASTEXITCODE -ne 0) { Write-Host "wails-net --version 执行失败"; exit 1 }
+          Write-Host "CLI tool 冒烟测试通过：wails-net 可安装可执行"
+
       - name: 上传包产物
         uses: actions/upload-artifact@v7
         with:
@@ -452,14 +465,14 @@ jobs:
             ${{ env.PACKAGE_OUTPUT }}/*.snupkg
           retention-days: 7
 
-# ============================================================================
-# Job 4：三平台自包含构建（Windows / Linux / Android）
-# ============================================================================
-# 调用 cake.cs（Cake 构建脚本）统一构建，通过 --rid all 一键构建该平台全部架构。
-# 生成自包含可执行文件，无需终端用户安装 .NET 运行时。
-#   - Windows: win-x64, win-x86, win-arm64 → .exe + .zip
-#   - Linux:   linux-x64, linux-arm64     → 二进制 + .tar.gz
-#   - Android: android-arm64, android-x64, android-arm → .apk
+  # ============================================================================
+  # Job 4：三平台自包含构建（Windows / Linux / Android）
+  # ============================================================================
+  # 调用 cake.cs（Cake 构建脚本）统一构建，通过 --rid all 一键构建该平台全部架构。
+  # 生成自包含可执行文件，无需终端用户安装 .NET 运行时。
+  #   - Windows: win-x64, win-x86, win-arm64 → .exe + .zip
+  #   - Linux:   linux-x64, linux-arm64     → 二进制 + .tar.gz
+  #   - Android: android-arm64, android-x64, android-arm → .apk
   dist-windows:
     name: 自包含构建 (Windows)
     runs-on: windows-latest
@@ -474,7 +487,7 @@ jobs:
       - name: 设置 .NET SDK
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: "10.0.x"
 
       - name: 缓存 NuGet 包
         uses: actions/cache@v6
@@ -523,7 +536,7 @@ jobs:
       - name: 设置 .NET SDK
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: "10.0.x"
 
       - name: 缓存 NuGet 包
         uses: actions/cache@v6
@@ -568,7 +581,7 @@ jobs:
     runs-on: windows-latest
     needs: [pack, gitversion]
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-    continue-on-error: true  # Android 构建需要完整 Android SDK 配置
+    continue-on-error: true # Android 构建需要完整 Android SDK 配置
     env:
       WAILS_NET_VERSION: ${{ needs.gitversion.outputs.semVer }}
     steps:
@@ -578,7 +591,7 @@ jobs:
       - name: 设置 .NET SDK
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: "10.0.x"
 
       - name: 缓存 NuGet 包
         uses: actions/cache@v6
@@ -612,21 +625,25 @@ jobs:
           path: ${{ env.DIST_OUTPUT }}/android/
           retention-days: 7
 
-# ============================================================================
-# Job 5：发布到 NuGet.org（仅 tag 触发）
-# ============================================================================
-# 遍历所有生成的 nupkg 推送到 nuget.org，包括：
-#   - Wails.Net.Application（核心运行时）
-#   - Wails.Net.Bundle.Windows / Linux / Android（平台 Bundle）
-#   - Wails.Net.Sdk（统一 SDK 聚合包，自动选择平台）
-#   - Wails.Net.Templates（项目模板）
+  # ============================================================================
+  # Job 5：发布到 NuGet.org（仅 tag 触发，Trusted Publishing）
+  # ============================================================================
+  # 通过 NuGet Trusted Publishing（OIDC）发布，无需长期 API Key：
+  #   1. NuGet/login@v1 用 GitHub OIDC token 向 nuget.org 换取一次性临时 API key（约 1 小时过期）
+  #   2. dotnet nuget push 用临时 key 推送全部 nupkg（含 SDK/CLI/Templates/Bundle 等）
+  # 前提：nuget.org → Trusted Publishing 已创建 policy（owner 覆盖全部 Wails.Net.* 包），
+  #       指定 Repository=lytree/Wails.Net、Workflow=ci.yml、Environment=nuget-org。
+  # 所需 Secret：NUGET_USER（nuget.org 用户名 / profile name，非邮箱）。
   publish-nuget:
     name: 发布到 NuGet.org
     runs-on: windows-latest
     needs: pack
     if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      id-token: write # Trusted Publishing 必需：启用 GitHub OIDC token 颁发
+      contents: read
     environment:
-      name: nuget-org
+      name: release
       url: https://www.nuget.org/packages/Wails.Net.Sdk
     steps:
       - name: 检出代码
@@ -635,7 +652,7 @@ jobs:
       - name: 设置 .NET SDK
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: "10.0.x"
 
       - name: 下载包产物
         uses: actions/download-artifact@v8
@@ -643,11 +660,104 @@ jobs:
           name: package-output
           path: ${{ env.PACKAGE_OUTPUT }}
 
-      # 遍历所有 nupkg 推送到 nuget.org
+      # Trusted Publishing：用 GitHub OIDC token 向 nuget.org 换取一次性临时 API key（约 1 小时过期）。
+      # 无需长期 NUGET_API_KEY secret，仅需 NUGET_USER（nuget.org 用户名，非邮箱）。
+      # 前提：已在 nuget.org → Trusted Publishing 创建 policy（指定本仓库 + ci.yml + environment=nuget-org）。
+      - name: NuGet 登录（OIDC → 临时 API key）
+        uses: NuGet/login@v1
+        id: nuget_login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      # 遍历所有 nupkg 推送到 nuget.org，使用上一步换取的临时 API key
       - name: 推送 NuGet 包
         shell: pwsh
         run: |
           Get-ChildItem ${{ env.PACKAGE_OUTPUT }} -Filter "*.nupkg" | ForEach-Object {
             Write-Host "推送包: $($_.Name)"
-            dotnet nuget push $_.FullName --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+            dotnet nuget push $_.FullName --api-key ${{ steps.nuget_login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
           }
+
+  # ============================================================================
+  # Job 6：发布 GitHub Release（仅 tag 触发）
+  # ============================================================================
+  # 创建 GitHub Release 并上传全部发布产物，供用户直接从 GitHub 下载：
+  #   - NuGet 包（.nupkg / .snupkg）：SDK / CLI / Templates / Bundle 等
+  #   - 三平台自包含构建产物：Windows .zip、Linux .tar.gz(.deb/.rpm)、Android .apk
+  # 与 publish-nuget 并行：nuget.org 面向 dotnet 工具链消费者，GitHub Release 面向
+  # 直接下载二进制的用户。使用预装的 gh CLI 创建 Release 并上传资产。
+  publish-github-release:
+    name: 发布 GitHub Release
+    runs-on: ubuntu-latest
+    needs: [pack, dist-windows, dist-linux, dist-android, gitversion]
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write # gh release create 需要 write 权限
+    env:
+      WAILS_NET_VERSION: ${{ needs.gitversion.outputs.semVer }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 下载 NuGet 包产物
+        uses: actions/download-artifact@v8
+        with:
+          name: package-output
+          path: artifacts/packages
+
+      - name: 下载 Windows 自包含产物
+        uses: actions/download-artifact@v8
+        with:
+          name: dist-windows
+          path: artifacts/dist/windows
+
+      - name: 下载 Linux 自包含产物
+        uses: actions/download-artifact@v8
+        with:
+          name: dist-linux
+          path: artifacts/dist/linux
+
+      # Android 构建允许失败（continue-on-error），产物可能不存在，跳过下载
+      - name: 下载 Android 自包含产物
+        uses: actions/download-artifact@v8
+        with:
+          name: dist-android
+          path: artifacts/dist/android
+        continue-on-error: true
+
+      - name: 列出待发布产物
+        shell: bash
+        run: |
+          echo "=== NuGet 包 ==="
+          find artifacts/packages -type f \( -name '*.nupkg' -o -name '*.snupkg' \) -ls
+          echo "=== 自包含构建产物 ==="
+          find artifacts/dist -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.apk' -o -name '*.deb' -o -name '*.rpm' \) -ls
+
+      - name: 创建 GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          # 创建 Release（若已存在则跳过），自动生成 Release Notes
+          gh release create "${{ github.ref_name }}" \
+            --title "Wails.Net ${{ env.WAILS_NET_VERSION }}" \
+            --generate-notes \
+            --verify-tag || echo "Release ${{ github.ref_name }} 已存在，继续上传资产"
+
+      - name: 上传 NuGet 包到 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          # 上传全部 nupkg / snupkg（--clobber 覆盖已存在的同名资产）
+          find artifacts/packages -type f \( -name '*.nupkg' -o -name '*.snupkg' \) -print0 |
+            xargs -0 gh release upload "${{ github.ref_name }}" --clobber
+
+      - name: 上传三平台构建产物到 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          # 上传 Windows/Linux/Android 自包含产物（zip/tar.gz/apk/deb/rpm）
+          find artifacts/dist -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.apk' -o -name '*.deb' -o -name '*.rpm' \) -print0 |
+            xargs -0 gh release upload "${{ github.ref_name }}" --clobber

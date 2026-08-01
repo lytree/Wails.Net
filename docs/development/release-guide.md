@@ -101,7 +101,8 @@ build → test → pack → dist → publish
 | dist | dist-windows | windows-latest | Windows 自包含构建（win-x64/x86/arm64） |
 | dist | dist-linux | ubuntu-latest | Linux 自包含构建（linux-x64/arm64，含 .deb/.rpm 原生包打包） |
 | dist | dist-android | windows-latest | Android APK 构建（android-arm64/x64/arm，允许失败） |
-| publish | publish-nuget | windows-latest | 推送到 nuget.org（仅 tag 触发） |
+| publish | publish-nuget | windows-latest | 通过 Trusted Publishing(OIDC) 推送全部 nupkg（含 CLI/SDK/Templates）到 nuget.org（仅 tag 触发，无需 API Key） |
+| publish | publish-github-release | ubuntu-latest | 创建 GitHub Release 并上传 nupkg + 三平台 dist 产物（仅 tag 触发） |
 
 ### 触发条件
 
@@ -110,7 +111,7 @@ build → test → pack → dist → publish
 | Pull Request | build, test |
 | 推送到任意分支 | build, test |
 | 推送到 main 分支 | build, test, pack, dist |
-| 推送 tag（`v*.*.*` 格式） | build, test, pack, dist, publish |
+| 推送 tag（`v*.*.*` 格式） | build, test, pack, dist, publish-nuget, publish-github-release |
 
 ### Runner 要求
 
@@ -130,14 +131,70 @@ build → test → pack → dist → publish
 
 ### 必需的 Secrets
 
+本项目使用 **NuGet Trusted Publishing**（基于 GitHub OIDC）发布到 nuget.org，无需长期 API Key。仅需一个 Secret：
+
 | Secret | 说明 | 配置位置 |
 |--------|------|--------|
-| `NUGET_API_KEY` | nuget.org API Key | GitHub → Settings → Secrets and variables → Actions → Repository secrets |
+| `NUGET_USER` | nuget.org 用户名（profile name，非邮箱），用于 Trusted Publishing 换取临时 API key | GitHub → Settings → Secrets and variables → Actions → Repository secrets |
+
+> 不再需要 `NUGET_API_KEY`。Trusted Publishing 通过 `NuGet/login@v1` 用 GitHub OIDC token 换取一次性临时 key（约 1 小时过期），详见下方 [Trusted Publishing 配置](#trusted-publishing-配置) 章节。
 
 ### 构建产物
 
 - `artifacts/packages/*.nupkg` — NuGet 包
 - `artifacts/packages/*.snupkg` — 符号包（含 SourceLink 源码映射）
+
+### GitHub Release 产物
+
+tag 触发时，`publish-github-release` job 会创建 GitHub Release 并上传以下资产，供用户直接从 [Releases 页面](https://github.com/lytree/Wails.Net/releases) 下载：
+
+- **NuGet 包**：全部 `.nupkg` / `.snupkg`（SDK / CLI / Templates / Bundle 等）
+- **Windows 自包含**：`.zip`（win-x64 / win-x86 / win-arm64）
+- **Linux 自包含**：`.tar.gz` / `.deb` / `.rpm`（linux-x64 / linux-arm64）
+- **Android**：`.apk`（android-arm64 / android-x64 / android-arm，构建允许失败时可能缺失）
+
+Release 标题为 `Wails.Net <版本号>`，Release Notes 由 GitHub 自动生成（基于 commit 历史）。使用内置 `GITHUB_TOKEN`，无需额外配置 Secret。
+
+## Trusted Publishing 配置
+
+本项目通过 **NuGet Trusted Publishing**（OIDC）发布到 nuget.org，替代传统的长期 API Key。优势：
+
+- **无长期密钥**：不在仓库或 CI 存储 API Key，无需每年轮换
+- **短期凭证**：每次发布用 GitHub OIDC token 换取一次性临时 API key（约 1 小时过期）
+- **绑定身份**：nuget.org 校验 token 来自指定仓库 + workflow + environment，即使 workflow 文件泄露也无法被其他仓库利用
+
+### 一次性配置步骤（nuget.org 侧）
+
+1. 登录 [nuget.org](https://www.nuget.org) → 右上角用户菜单 → **Trusted Publishing**（在 API Keys 旁边）
+2. 点击 **Create** 创建 policy，填写：
+   - **Policy Name**：如 `Wails.Net CI`
+   - **Package Owner**：选择拥有 Wails.Net.* 包的个人账户或组织
+   - **Repository Owner**：`lytree`
+   - **Repository**：`Wails.Net`
+   - **Workflow File**：`ci.yml`
+   - **Environment**：`nuget-org`（与 ci.yml 中 publish-nuget job 的 environment 一致）
+3. 点击 **Create** 保存 policy
+
+> 一个 policy 覆盖该 owner 名下的**全部包**（Wails.Net.Sdk / Cli / Templates / Bundle 等），无需每个包单独配置。
+
+### GitHub 仓库侧配置
+
+1. 在 GitHub 仓库 → Settings → Environments 创建 `nuget-org` environment（与 ci.yml 一致），可按需添加 protection rules（如要求审批）
+2. 在 Settings → Secrets and variables → Actions → Repository secrets 添加 `NUGET_USER`，值为 nuget.org 用户名（profile name，非邮箱）
+3. **删除**旧的 `NUGET_API_KEY` secret（如存在），避免与 Trusted Publishing 冲突
+
+### 工作机制
+
+```
+GitHub Actions (tag 触发)
+  └─ publish-nuget job
+       ├─ permissions: id-token: write        ← 启用 OIDC token 颁发
+       ├─ NuGet/login@v1                      ← OIDC token 换取临时 API key
+       │    └─ 输出 steps.nuget_login.outputs.NUGET_API_KEY
+       └─ dotnet nuget push --api-key <临时key> ← 推送全部 nupkg
+```
+
+> 私有仓库的 policy 初始 7 天活跃；首次成功 `NuGet/login`（OIDC 换 key）后永久激活并绑定不可变 GitHub ID。如错过 7 天窗口，可在 Trusted Publishing 页面手动重新激活。
 
 ## 本地验证
 
@@ -161,6 +218,33 @@ dotnet pack src/Wails.Net.Templates/Wails.Net.Templates.csproj -c Release -o art
 # 5. 验证包内容
 dotnet nuget push --dry-run artifacts/packages/Wails.Net.Application.0.1.0-alpha.1.nupkg
 ```
+
+### 一键打包与冒烟测试（推荐）
+
+仓库提供 `scripts/pack-and-test.sh` 脚本，一键完成"打包 → 验证 SDK 可依赖 → 验证 CLI 可安装"全流程，模拟外部消费者真实体验：
+
+```bash
+# 打包全部 src/ 项目并完整验证（在 git bash 或 Linux/macOS 终端运行）
+bash scripts/pack-and-test.sh
+
+# 跳过打包，仅用 artifacts/nupkg 中已有的包验证
+bash scripts/pack-and-test.sh --skip-pack
+
+# 一并打包 Android 平台包（需已安装 android 工作负载）
+bash scripts/pack-and-test.sh --include-android
+
+# 保留临时测试目录便于排查
+bash scripts/pack-and-test.sh --keep-temp
+```
+
+脚本执行步骤：
+
+1. **打包**：按依赖顺序打包全部可发布项目到 `artifacts/nupkg/`（含 CLI、Templates，默认跳过 Android）
+2. **验证关键包**：检查 Sdk / Cli / Templates / Bundle / Application / SourceGenerators 等包已生成并解析版本号
+3. **SDK 依赖验证**：在仓库外临时目录创建测试项目，用 `PackageReference` 引用 `Wails.Net.Sdk`，验证可还原、可构建（依赖链 + 源生成器 analyzer 加载正常）
+4. **CLI 安装验证**：`dotnet tool install Wails.Net.Cli` 到临时路径，运行 `wails-net --version` 验证可执行
+
+> 该脚本不依赖 android 工作负载，开箱即用。Android 包的发布由 CI（已配置 android workload 安装）保障。
 
 ## NuGet 包清单
 

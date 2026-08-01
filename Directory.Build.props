@@ -17,7 +17,7 @@
     <Authors>Wails.Net</Authors>
     <Copyright>Copyright (c) 2026 Wails.Net</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <RepositoryUrl>https://github.com/wailsapp/wails.net</RepositoryUrl>
+    <RepositoryUrl>https://github.com/lytree/Wails.Net</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentrallyManagedPackageVersionEnabled>true</CentrallyManagedPackageVersionEnabled>
@@ -46,9 +46,9 @@
     <FileVersion>$(WailsNetVersion.Split('-')[0]).0</FileVersion>
 
     <!-- NuGet 包通用元数据 -->
-    <PackageProjectUrl>https://github.com/wailsapp/wails.net</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/lytree/Wails.Net</PackageProjectUrl>
     <PackageTags>wails;dotnet;webview;gtk;cross-platform;desktop</PackageTags>
-    <PackageReleaseNotes>https://github.com/wailsapp/wails.net/releases</PackageReleaseNotes>
+    <PackageReleaseNotes>https://github.com/lytree/Wails.Net/releases</PackageReleaseNotes>
 
     <!-- 生成符号包（snupkg），便于调试 -->
     <IncludeSymbols>true</IncludeSymbols>

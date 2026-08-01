@@ -273,6 +273,20 @@ dotnet run --project tests/Wails.Net.Application.Android.Tests/Wails.Net.Applica
 
 > **提示**：Linux 测试需在 Linux 或 WSL 环境中运行。在 Windows 上可通过 `wsl -d kali-linux -- bash -c "cd /mnt/f/Code/Dotnet/Wails.Net && dotnet run --project tests/Wails.Net.Application.Linux.Tests"` 运行。
 
+#### NuGet 包打包与冒烟测试
+
+发布前验证 NuGet 包可被外部项目依赖、CLI 可安装运行：
+
+```bash
+# 一键打包并验证（打包全部 src → SDK 依赖验证 → CLI 安装验证）
+bash scripts/pack-and-test.sh
+
+# 跳过打包，仅用已有包验证
+bash scripts/pack-and-test.sh --skip-pack
+```
+
+脚本会在仓库外临时目录创建测试项目，用 `PackageReference` 引用 `Wails.Net.Sdk` 验证可构建，并 `dotnet tool install Wails.Net.Cli` 验证 `wails-net` 可执行。详见 [发布指南](docs/development/release-guide.md#一键打包与冒烟测试推荐)。
+
 ### 三平台自包含打包（Cake Frosting）
 
 ```bash
