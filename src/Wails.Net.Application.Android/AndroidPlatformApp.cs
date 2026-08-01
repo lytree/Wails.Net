@@ -209,8 +209,8 @@ public sealed class AndroidPlatformApp : IPlatformApp
         {
             try
             {
-                // API 26+ 支持，旧版本返回空字符串
-                var version = Build.VERSION.SdkInt >= BuildVersionCodes.O
+                // API 26+ 支持，旧版本返回空字符串（使用分析器可识别的版本守卫抑制 CA1416）
+                var version = System.OperatingSystem.IsAndroidVersionAtLeast(26)
                     ? global::Android.Webkit.WebView.CurrentWebViewPackage?.VersionName?.ToString() ?? string.Empty
                     : string.Empty;
                 return new PlatformCapabilities
