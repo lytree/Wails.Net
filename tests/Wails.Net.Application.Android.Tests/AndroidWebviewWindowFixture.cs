@@ -11,8 +11,8 @@ namespace Wails.Net.Application.Android.Tests;
 /// <para>
 /// 通过 <see cref="AndroidWebviewWindow"/> 创建基于 <c>Android.Webkit.WebView</c> 的窗口。
 /// 由于单元测试运行在 .NET Android 工作负载下而非真实 Android 设备，
-/// <see cref="AndroidPlatformApp.GetActivity"/> 返回 null，
-/// <see cref="AndroidWebviewWindow.CreateWebView"/> 会回退到 <c>Application.Context</c> 路径，
+/// <c>AndroidPlatformApp.GetActivity</c> 返回 null，
+/// <c>AndroidWebviewWindow.CreateWebView</c> 会回退到 <c>Application.Context</c> 路径，
 /// 验证逻辑可执行但 WebView 不可见。
 /// </para>
 /// <para>
@@ -22,7 +22,7 @@ namespace Wails.Net.Application.Android.Tests;
 /// </para>
 /// <para>
 /// <see cref="RunOnUiThread(Action)"/> 调用
-/// <see cref="AndroidPlatformApp.DispatchOnMainThread"/>，
+/// <see cref="AndroidPlatformApp.DispatchOnMainThread(System.Action)"/>，
 /// 在测试环境（无 MainLooper）下回退为同步执行。
 /// </para>
 /// </summary>

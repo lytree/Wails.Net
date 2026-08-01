@@ -19,5 +19,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Wails.Net.Sdk\Wails.Net.Sdk.csproj" />
+    <!-- Demo 直接使用 Android 平台类型（AndroidPlatformApp / AndroidAssetServer / UseAndroid），
+         需显式引用平台工程；SDK 的 android TFM 经 Bundle.Android 传递引用在 Demo 侧未稳定解析。 -->
+    <ProjectReference Include="..\..\src\Wails.Net.Application.Android\Wails.Net.Application.Android.csproj" />
   </ItemGroup>
 </Project>
