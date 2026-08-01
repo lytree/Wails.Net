@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <PackageReference Include="System.CommandLine" />
+    <PackageReference Include="SixLabors.ImageSharp" />
     <InternalsVisibleTo Include="Wails.Net.Cli.Tests" />
   </ItemGroup>
 

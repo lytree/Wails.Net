@@ -113,6 +113,12 @@ public sealed class AndroidPlatformApp : IPlatformApp
     public AndroidBarcodeScanner? MobileBarcodeScanner { get; set; }
 
     /// <summary>
+    /// Android 地理定位实现，由 <c>UseAndroid</c> 扩展方法注入。
+    /// 对应 Tauri v2 <c>@tauri-apps/plugin-geolocation</c> 的 Android 后端。
+    /// </summary>
+    public AndroidGeolocation? MobileGeolocation { get; set; }
+
+    /// <summary>
     /// 构造 AndroidPlatformApp 实例。
     /// </summary>
     /// <param name="options">应用配置选项。</param>

@@ -13,19 +13,48 @@
   </PropertyGroup>
 
   <!--
+    OS 检测：推断当前构建环境的平台。
+    Windows_NT → windows，Unix → linux（macOS 不在支持范围内，按 linux 处理）。
+    消费者可通过 WailsNetDetectedPlatform 覆盖此检测结果。
+  -->
+  <PropertyGroup Condition="'$(WailsNetDetectedPlatform)' == ''">
+    <WailsNetDetectedPlatform Condition="'$(OS)' == 'Windows_NT'">windows</WailsNetDetectedPlatform>
+    <WailsNetDetectedPlatform Condition="'$(OS)' != 'Windows_NT'">linux</WailsNetDetectedPlatform>
+  </PropertyGroup>
+
+  <!--
     根据 TargetFramework 推断 WailsNetPlatform 属性。
     消费者可通过显式设置 WailsNetPlatform 覆盖此推断。
+
+    推断优先级：
+    1. 显式 WailsNetPlatform（消费者已设置则跳过）
+    2. TFM 包含平台后缀（windows/android）→ 对应平台
+    3. Debug 模式 + 无平台后缀 TFM → 按当前 OS 自动选择（WailsNetDetectedPlatform）
+    4. Release 模式 + 无平台后缀 TFM → linux（默认部署目标）
   -->
   <PropertyGroup Condition="'$(WailsNetPlatform)' == ''">
+    <!-- 优先级 2：TFM 显式指定平台 -->
     <WailsNetPlatform Condition="$(TargetFramework.Contains('windows'))">windows</WailsNetPlatform>
     <WailsNetPlatform Condition="$(TargetFramework.Contains('android'))">android</WailsNetPlatform>
-    <!-- 无平台后缀的 TFM（如 net10.0）默认为 linux -->
-    <WailsNetPlatform Condition="'$(WailsNetPlatform)' == '' AND !$(TargetFramework.Contains('windows')) AND !$(TargetFramework.Contains('android'))">linux</WailsNetPlatform>
+
+    <!-- 优先级 3：Debug + 无平台后缀 TFM → OS 自动检测 -->
+    <WailsNetPlatform Condition="'$(WailsNetPlatform)' == ''
+        AND '$(Configuration)' == 'Debug'
+        AND !$(TargetFramework.Contains('windows'))
+        AND !$(TargetFramework.Contains('android'))
+        AND '$(WailsNetAutoDetectPlatform)' != 'false'">$(WailsNetDetectedPlatform)</WailsNetPlatform>
+
+    <!-- 优先级 4：Release 或未检测到 → linux（默认） -->
+    <WailsNetPlatform Condition="'$(WailsNetPlatform)' == ''
+        AND !$(TargetFramework.Contains('windows'))
+        AND !$(TargetFramework.Contains('android'))">linux</WailsNetPlatform>
   </PropertyGroup>
 
   <!--
     Windows 平台：自动启用 WindowsForms（剪贴板等 Win32 互操作需要）。
     仅当消费者未显式设置时才自动启用。
+    当 WailsNetPlatform=windows 时启用，无论 TFM 是否包含 windows 后缀
+    （支持 Debug 模式下 net10.0 TFM 自动选择 windows 平台的场景）。
   -->
   <PropertyGroup Condition="'$(WailsNetPlatform)' == 'windows'">
     <UseWindowsForms Condition="'$(UseWindowsForms)' == ''">true</UseWindowsForms>
@@ -33,13 +62,34 @@
   </PropertyGroup>
 
   <!--
-    调试辅助：当 WailsNetPlatform 与构建 OS 不匹配时发出警告。
-    例如，在 Windows 上构建但 TFM 为 net10.0（推断为 linux）时，
-    提示开发者可能需要使用 net10.0-windows TFM。
+    Android 平台：设置最低支持版本。
+  -->
+  <PropertyGroup Condition="'$(WailsNetPlatform)' == 'android'">
+    <SupportedOSPlatformVersion Condition="'$(SupportedOSPlatformVersion)' == ''">24</SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <!--
+    调试辅助：当 WailsNetPlatform 与构建 OS 不匹配时发出提示。
+    仅在 Release 模式或未启用自动检测时检查，避免 Debug 自动检测模式下产生噪声。
     可通过设置 WailsNetSkipPlatformCheck=true 跳过此检查。
   -->
-  <PropertyGroup Condition="'$(WailsNetSkipPlatformCheck)' != 'true' AND '$(WailsNetPlatform)' == 'linux' AND '$(OS)' == 'Windows_NT'">
-    <WailsNetPlatformMismatchWarning>Wails.Net 警告：当前在 Windows 上构建，但 TargetFramework 为 $(TargetFramework)（推断平台为 linux）。如需在 Windows 上调试，请将 TargetFramework 改为 net10.0-windows10.0.19041.0，或设置 &lt;WailsNetPlatform&gt;windows&lt;/WailsNetPlatform&gt; 强制使用 Windows 平台。</WailsNetPlatformMismatchWarning>
+  <PropertyGroup Condition="'$(WailsNetSkipPlatformCheck)' != 'true'
+      AND '$(WailsNetPlatform)' == 'linux'
+      AND '$(WailsNetDetectedPlatform)' == 'windows'
+      AND ('$(Configuration)' != 'Debug' OR '$(WailsNetAutoDetectPlatform)' == 'false')">
+    <WailsNetPlatformMismatchWarning>Wails.Net 警告：当前在 Windows 上构建，TargetFramework 为 $(TargetFramework)（平台为 linux）。如需在 Windows 上调试，请设置 &lt;WailsNetPlatform&gt;windows&lt;/WailsNetPlatform&gt; 或使用 net10.0-windows10.0.19041.0 TFM。</WailsNetPlatformMismatchWarning>
+  </PropertyGroup>
+
+  <!--
+    自动检测提示：Debug 模式下自动切换到当前 OS 平台时输出信息。
+    可通过设置 WailsNetVerbose=true 或 WailsNetAutoDetectPlatform=false 控制。
+  -->
+  <PropertyGroup Condition="'$(WailsNetVerbose)' == 'true'
+      AND '$(Configuration)' == 'Debug'
+      AND '$(WailsNetAutoDetectPlatform)' != 'false'
+      AND !$(TargetFramework.Contains('windows'))
+      AND !$(TargetFramework.Contains('android'))">
+    <WailsNetAutoDetectMessage>Wails.Net SDK: Debug 模式自动选择平台 $(WailsNetPlatform)（检测到 OS=$(OS)，TFM=$(TargetFramework)）</WailsNetAutoDetectMessage>
   </PropertyGroup>
 
   <!--
@@ -47,7 +97,15 @@
     可通过设置 WailsNetVerbose=true 启用详细输出。
   -->
   <Target Name="WailsNetReportPlatform" BeforeTargets="BeforeBuild" Condition="'$(WailsNetVerbose)' == 'true'">
-    <Message Importance="High" Text="Wails.Net SDK: WailsNetPlatform=$(WailsNetPlatform), TargetFramework=$(TargetFramework), OS=$(OS)" />
+    <Message Importance="High" Text="Wails.Net SDK: WailsNetPlatform=$(WailsNetPlatform), TargetFramework=$(TargetFramework), Configuration=$(Configuration), OS=$(OS)" />
+  </Target>
+
+  <Target Name="WailsNetWarnPlatformMismatch" BeforeTargets="BeforeBuild" Condition="'$(WailsNetPlatformMismatchWarning)' != ''">
+    <Warning Text="$(WailsNetPlatformMismatchWarning)" />
+  </Target>
+
+  <Target Name="WailsNetInfoAutoDetect" BeforeTargets="BeforeBuild" Condition="'$(WailsNetAutoDetectMessage)' != ''">
+    <Message Importance="High" Text="$(WailsNetAutoDetectMessage)" />
   </Target>
 
 </Project>

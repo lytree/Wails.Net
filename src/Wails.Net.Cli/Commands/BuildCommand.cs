@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Xml.Linq;
 using Wails.Net.Cli.Build;
 using Wails.Net.Cli.Config;
 
@@ -11,6 +12,11 @@ namespace Wails.Net.Cli.Commands;
 /// </summary>
 internal sealed class BuildCommand : CliCommandBase
 {
+    /// <summary>
+    /// 全平台构建时依次设置 <c>WailsNetPlatform</c> 的平台列表。
+    /// </summary>
+    private static readonly string[] AllPlatforms = { "windows", "linux", "android" };
+
     /// <summary>
     /// 创建 build 命令实例。
     /// </summary>
@@ -39,6 +45,10 @@ internal sealed class BuildCommand : CliCommandBase
         skipFrontendOption.Description = "跳过前端构建（frontend.buildCommand / installCommand）";
         skipFrontendOption.DefaultValueFactory = _ => false;
 
+        var allPlatformsOption = new Option<bool>("--all-platforms");
+        allPlatformsOption.Description = "构建所有支持的平台（Windows/Linux/Android）。多 TFM 项目单次构建，单 TFM 项目分平台依次构建";
+        allPlatformsOption.DefaultValueFactory = _ => false;
+
         var command = new Command("build", "编译 Wails.Net 项目");
         command.Options.Add(projectOption);
         command.Options.Add(configurationOption);
@@ -46,6 +56,7 @@ internal sealed class BuildCommand : CliCommandBase
         command.Options.Add(selfContainedOption);
         command.Options.Add(skipHooksOption);
         command.Options.Add(skipFrontendOption);
+        command.Options.Add(allPlatformsOption);
 
         command.Action = AsyncAction.Create(async (parseResult, _) =>
         {
@@ -55,9 +66,10 @@ internal sealed class BuildCommand : CliCommandBase
             var selfContained = parseResult.GetValue(selfContainedOption);
             var skipHooks = parseResult.GetValue(skipHooksOption);
             var skipFrontend = parseResult.GetValue(skipFrontendOption);
+            var allPlatforms = parseResult.GetValue(allPlatformsOption);
 
             var cmd = new BuildCommand();
-            return await cmd.ExecuteAsync(project, configuration, runtime, selfContained, skipHooks, skipFrontend);
+            return await cmd.ExecuteAsync(project, configuration, runtime, selfContained, skipHooks, skipFrontend, allPlatforms);
         });
 
         return command;
@@ -72,6 +84,7 @@ internal sealed class BuildCommand : CliCommandBase
     /// <param name="selfContained">是否自包含。</param>
     /// <param name="skipHooks">是否跳过构建钩子。</param>
     /// <param name="skipFrontend">是否跳过前端构建。</param>
+    /// <param name="allPlatforms">是否构建所有平台。</param>
     /// <returns>退出码。</returns>
     private async Task<int> ExecuteAsync(
         FileInfo? project,
@@ -79,7 +92,8 @@ internal sealed class BuildCommand : CliCommandBase
         string? runtime,
         bool selfContained,
         bool skipHooks = false,
-        bool skipFrontend = false)
+        bool skipFrontend = false,
+        bool allPlatforms = false)
     {
         var projectPath = ResolveProjectPath(project);
         if (projectPath is null)
@@ -153,7 +167,16 @@ internal sealed class BuildCommand : CliCommandBase
 
         // 执行 dotnet build
         var builder = new ProjectBuilder();
-        var result = await builder.BuildAsync(projectPath, configuration, runtime, selfContained);
+        BuildResult? result;
+
+        if (allPlatforms)
+        {
+            result = await BuildAllPlatformsAsync(builder, projectPath, configuration, runtime, selfContained);
+        }
+        else
+        {
+            result = await builder.BuildAsync(projectPath, configuration, runtime, selfContained);
+        }
 
         if (!result.Success)
         {
@@ -183,6 +206,99 @@ internal sealed class BuildCommand : CliCommandBase
 
         Success($"构建成功：{result.OutputPath}");
         return 0;
+    }
+
+    /// <summary>
+    /// 全平台构建：优先检测多 TFM，单 TFM 则按 <see cref="AllPlatforms"/> 依次构建。
+    /// </summary>
+    /// <param name="builder">项目构建器。</param>
+    /// <param name="projectPath">项目文件。</param>
+    /// <param name="configuration">构建配置。</param>
+    /// <param name="runtime">运行时标识（可空，全平台构建时通常不指定）。</param>
+    /// <param name="selfContained">是否自包含。</param>
+    /// <returns>聚合构建结果（任一失败则整体失败）。</returns>
+    private async Task<BuildResult> BuildAllPlatformsAsync(
+        ProjectBuilder builder,
+        FileInfo projectPath,
+        string configuration,
+        string? runtime,
+        bool selfContained)
+    {
+        var targetFrameworks = ParseTargetFrameworks(projectPath.FullName);
+
+        // 多 TFM 项目：单次 dotnet build 即可，MSBuild 会为每个 TFM 分别构建
+        if (targetFrameworks.Count >= 2)
+        {
+            Info($"检测到多 TFM 项目（{string.Join(", ", targetFrameworks)}），单次构建覆盖全平台");
+            return await builder.BuildAsync(projectPath, configuration, runtime, selfContained);
+        }
+
+        // 单 TFM 项目：按平台依次构建，通过 WailsNetPlatform 属性切换平台
+        Info($"项目为单 TFM（{(targetFrameworks.Count == 1 ? targetFrameworks[0] : "未指定")}），将分平台依次构建");
+        var outputs = new List<string>();
+        foreach (var platform in AllPlatforms)
+        {
+            Info($"----- 构建 {platform} -----");
+            var props = new Dictionary<string, string>
+            {
+                ["WailsNetPlatform"] = platform,
+            };
+            var r = await builder.BuildAsync(projectPath, configuration, runtime, selfContained, props);
+            if (!r.Success)
+            {
+                return r;
+            }
+            if (!string.IsNullOrEmpty(r.OutputPath))
+            {
+                outputs.Add($"[{platform}] {r.OutputPath}");
+            }
+        }
+
+        return new BuildResult
+        {
+            Success = true,
+            OutputPath = string.Join("; ", outputs),
+        };
+    }
+
+    /// <summary>
+    /// 从 .csproj 文件解析 TargetFrameworks（复数）/ TargetFramework（单数）。
+    /// </summary>
+    /// <param name="projectPath">.csproj 文件路径。</param>
+    /// <returns>TFM 列表（空列表表示未找到）。</returns>
+    private static List<string> ParseTargetFrameworks(string projectPath)
+    {
+        try
+        {
+            var doc = XDocument.Load(projectPath);
+            var root = doc.Root;
+            if (root is null) return new List<string>();
+
+            var ns = root.GetDefaultNamespace();
+            var propsGroup = root.Element(XName.Get("PropertyGroup", ns.NamespaceName));
+            if (propsGroup is null) return new List<string>();
+
+            // 优先读 TargetFrameworks（复数）
+            var multi = propsGroup.Element(XName.Get("TargetFrameworks", ns.NamespaceName));
+            if (multi is not null && !string.IsNullOrWhiteSpace(multi.Value))
+            {
+                return multi.Value
+                    .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .ToList();
+            }
+
+            // 回退到 TargetFramework（单数）
+            var single = propsGroup.Element(XName.Get("TargetFramework", ns.NamespaceName));
+            if (single is not null && !string.IsNullOrWhiteSpace(single.Value))
+            {
+                return new List<string> { single.Value.Trim() };
+            }
+        }
+        catch
+        {
+            // 解析失败按空列表处理，调用方会回退到单次构建
+        }
+        return new List<string>();
     }
 
     /// <summary>

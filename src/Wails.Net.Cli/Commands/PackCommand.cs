@@ -33,7 +33,7 @@ internal sealed class PackCommand : CliCommandBase
         selfContainedOption.DefaultValueFactory = _ => false;
 
         var formatOption = new Option<string>("--format");
-        formatOption.Description = "打包格式（zip、targz、nsis、appimage）";
+        formatOption.Description = "打包格式（zip、targz、nsis、appimage、deb、rpm）";
         formatOption.DefaultValueFactory = _ => OperatingSystem.IsWindows() ? "zip" : "targz";
 
         var outputOption = new Option<DirectoryInfo?>("--output");
@@ -120,7 +120,7 @@ internal sealed class PackCommand : CliCommandBase
 
         if (!TryParseFormat(format, out var packageFormat))
         {
-            Error($"未知的打包格式：{format}（支持 zip、targz、nsis、appimage）");
+            Error($"未知的打包格式：{format}（支持 zip、targz、nsis、appimage、deb、rpm）");
             return 1;
         }
 
@@ -292,6 +292,12 @@ internal sealed class PackCommand : CliCommandBase
                 return true;
             case "appimage":
                 packageFormat = PackageFormat.AppImage;
+                return true;
+            case "deb":
+                packageFormat = PackageFormat.Deb;
+                return true;
+            case "rpm":
+                packageFormat = PackageFormat.Rpm;
                 return true;
             default:
                 packageFormat = PackageFormat.Zip;

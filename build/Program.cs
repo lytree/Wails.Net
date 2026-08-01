@@ -90,11 +90,16 @@ public sealed class BuildContext : FrostingContext
     /// <summary>
     /// 解析 RID 参数，返回指定平台要构建的 RID 列表。
     /// </summary>
+    /// <remarks>
+    /// 当 <see cref="Target"/> 为 <c>DistAll</c> 且未显式指定 RID 时，默认构建该平台的所有 RID。
+    /// </remarks>
     public List<string> ResolveRIDs(string plat, string ridArgument)
     {
         var supported = PlatformRIDs[plat];
         var defaultRid = DefaultRID[plat];
 
+        // DistAll 目标：未显式指定 RID 时默认构建全 RID
+        if (string.IsNullOrEmpty(ridArgument) && Target == "DistAll") return new List<string>(supported);
         if (string.IsNullOrEmpty(ridArgument)) return new List<string> { defaultRid };
         if (ridArgument == "all") return new List<string>(supported);
 
@@ -146,7 +151,10 @@ public sealed class BuildContext : FrostingContext
     /// <summary>
     /// 检查指定平台是否应构建（基于 --platform 参数）。
     /// </summary>
-    public bool ShouldBuildPlatform(string plat) => Platform == "all" || Platform == plat;
+    /// <remarks>
+    /// 当 <see cref="Target"/> 为 <c>DistAll</c> 时强制返回 <c>true</c>，无视 <see cref="Platform"/> 过滤。
+    /// </remarks>
+    public bool ShouldBuildPlatform(string plat) => Platform == "all" || Platform == plat || Target == "DistAll";
 
     /// <summary>
     /// 创建 tar.gz 压缩文件。

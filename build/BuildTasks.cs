@@ -754,6 +754,49 @@ public sealed class DistTask : FrostingTask<BuildContext>
 }
 
 // ============================================================================
+// TASK: DistAll（一键全平台全 RID，对应 build.cake 的 DistAll 入口）
+// ============================================================================
+
+/// <summary>
+/// 一键构建全平台全 RID 产物。
+/// <para>
+/// 等效于 <c>--target=Dist --platform=all --rid=all</c>，但无需显式指定平台和 RID 参数。
+/// <see cref="BuildContext.ShouldBuildPlatform"/> 和 <see cref="BuildContext.ResolveRIDs"/>
+/// 会在 <c>Target == "DistAll"</c> 时自动放行所有平台并默认构建全 RID。
+/// </para>
+/// <para>
+/// 三平台顺序执行（非并行），避免并行构建产生的文件锁与资源竞争。
+/// </para>
+/// </summary>
+[TaskDescription("一键构建全平台全 RID 产物")]
+[TaskName("DistAll")]
+[IsDependentOn(typeof(DistWindowsTask))]
+[IsDependentOn(typeof(DistLinuxTask))]
+[IsDependentOn(typeof(DistAndroidTask))]
+public sealed class DistAllTask : FrostingTask<BuildContext>
+{
+    public override void Run(BuildContext context)
+    {
+        var version = context.GetVersion();
+        context.Information("========== DistAll: 一键全平台全 RID 构建完成 ==========");
+        context.Information($"版本:      {version}");
+        context.Information($"配置:      {context.Configuration}");
+        context.Information($"输出根:    {context.OutputRoot}");
+        context.Information($"Linux 格式: {context.LinuxFormats}");
+        context.Information($"跳过前端:  {context.SkipFrontend}");
+        context.Information($"Dry-run:   {context.DryRun}");
+        context.Information($"产物目录:  {context.OutputRoot}/{{windows,linux,android}}/{version}/");
+
+        // 汇总各平台构建的 RID 数量
+        foreach (var plat in BuildContext.AllPlatforms)
+        {
+            var rids = context.ResolveRIDs(plat, context.RidArg);
+            context.Information($"  {plat}: {rids.Count} 个 RID ({string.Join(", ", rids)})");
+        }
+    }
+}
+
+// ============================================================================
 // TASK: Default（默认目标 = Test）
 // ============================================================================
 

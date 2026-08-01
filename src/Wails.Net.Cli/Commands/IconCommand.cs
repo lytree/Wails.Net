@@ -1,4 +1,6 @@
 using System.CommandLine;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Processing;
 using Wails.Net.Application.Icons;
 
 namespace Wails.Net.Cli.Commands;
@@ -74,15 +76,17 @@ internal sealed class IconCommand : CliCommandBase
         await GenerateIcoAsync(pngData, icoPath);
         Success($"生成 ICO: {icoPath}");
 
-        // 复制源 PNG 为各尺寸文件名
+        // 使用 ImageSharp 加载源图像并缩放为各尺寸 PNG
+        using var sourceImage = Image.Load(pngData);
         foreach (var size in StandardSizes)
         {
             var sizePath = Path.Combine(output.FullName, $"{size}x{size}.png");
-            await File.WriteAllBytesAsync(sizePath, pngData);
+            using var resized = sourceImage.Clone(ctx => ctx.Resize(size, size));
+            resized.SaveAsPng(sizePath);
             Info($"生成 PNG: {sizePath} ({size}x{size})");
         }
 
-        // 生成 32x32.png 作为标准小图标
+        // 生成 icon.png 作为标准图标（使用源图像原始尺寸）
         var standardPath = Path.Combine(output.FullName, "icon.png");
         await File.WriteAllBytesAsync(standardPath, pngData);
         Info($"生成标准 PNG: {standardPath}");

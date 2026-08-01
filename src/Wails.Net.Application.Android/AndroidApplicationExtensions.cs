@@ -17,7 +17,7 @@ public static class AndroidApplicationExtensions
     /// 创建 AndroidPlatformApp 并注册对话框、屏幕、浏览器、移动平台实现等服务。
     /// <para>
     /// 移动平台实现（<see cref="AndroidHaptics"/> / <see cref="AndroidBiometric"/> /
-    /// <see cref="AndroidNfc"/> / <see cref="AndroidBarcodeScanner"/>）注册到
+    /// <see cref="AndroidNfc"/> / <see cref="AndroidBarcodeScanner"/> / <see cref="AndroidGeolocation"/>）注册到
     /// <see cref="Application.Services"/>，供相应移动插件通过 DI 解析覆盖降级实现。
     /// </para>
     /// <para>
@@ -55,6 +55,7 @@ public static class AndroidApplicationExtensions
         platformApp.MobileBiometric = new AndroidBiometric();
         platformApp.MobileNfc = new AndroidNfc();
         platformApp.MobileBarcodeScanner = new AndroidBarcodeScanner();
+        platformApp.MobileGeolocation = new AndroidGeolocation();
 
         // ---------------------------------------------------------------------
         // Android 运行时插件注册（对齐 Wails v3 messageprocessor_android.go）

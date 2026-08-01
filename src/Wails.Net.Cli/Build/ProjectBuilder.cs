@@ -33,12 +33,14 @@ public sealed class ProjectBuilder
     /// <param name="configuration">构建配置（Debug/Release）。</param>
     /// <param name="runtime">运行时标识（可空）。</param>
     /// <param name="selfContained">是否自包含。</param>
+    /// <param name="additionalProperties">附加 MSBuild 属性（可空，用于传递 <c>WailsNetPlatform</c> 等）。</param>
     /// <returns>构建结果。</returns>
     public async Task<BuildResult> BuildAsync(
         FileInfo project,
         string configuration,
         string? runtime,
-        bool selfContained)
+        bool selfContained,
+        IDictionary<string, string>? additionalProperties = null)
     {
         var args = new List<string>
         {
@@ -57,6 +59,14 @@ public sealed class ProjectBuilder
         if (selfContained)
         {
             args.Add("--self-contained");
+        }
+
+        if (additionalProperties is not null)
+        {
+            foreach (var kv in additionalProperties)
+            {
+                args.Add($"-p:{kv.Key}={kv.Value}");
+            }
         }
 
         var (exitCode, output) = await RunDotnetAsync(args);
