@@ -211,7 +211,7 @@ public sealed class AndroidPlatformApp : IPlatformApp
             {
                 // API 26+ 支持，旧版本返回空字符串
                 var version = Build.VERSION.SdkInt >= BuildVersionCodes.O
-                    ? Android.Webkit.WebView.CurrentWebViewPackage?.VersionName?.ToString() ?? string.Empty
+                    ? global::Android.Webkit.WebView.CurrentWebViewPackage?.VersionName?.ToString() ?? string.Empty
                     : string.Empty;
                 return new PlatformCapabilities
                 {

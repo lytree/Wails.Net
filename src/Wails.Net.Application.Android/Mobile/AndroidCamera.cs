@@ -1,5 +1,6 @@
 using Android.Content;
 using Android.Content.PM;
+using Android.Provider;
 using Wails.Net.Application.Plugins.Mobile;
 
 namespace Wails.Net.Application.Android.Mobile;
