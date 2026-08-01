@@ -56,6 +56,8 @@ public static class AndroidApplicationExtensions
         platformApp.MobileNfc = new AndroidNfc();
         platformApp.MobileBarcodeScanner = new AndroidBarcodeScanner();
         platformApp.MobileGeolocation = new AndroidGeolocation();
+        platformApp.MobileCamera = new AndroidCamera();
+        platformApp.MobilePermissions = new AndroidPermissions();
 
         // ---------------------------------------------------------------------
         // Android 运行时插件注册（对齐 Wails v3 messageprocessor_android.go）
