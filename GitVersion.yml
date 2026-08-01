@@ -8,7 +8,7 @@
 # 版本号生成规则（Semantic Versioning 2.0）：
 #   - 标签 v1.2.3            → 1.2.3                 (正式发布)
 #   - 标签 v1.2.3-alpha.1    → 1.2.3-alpha.1         (预发布)
-#   - main 分支提交（v1.2.3 之后）→ 1.2.3.{n}        (补丁递增，稳定线)
+#   - main 分支提交（v1.2.3 之后）→ 1.2.4            (补丁递增，稳定线，无预发布后缀)
 #   - develop 分支           → 1.2.3-alpha.{n}
 #   - feature/* 分支         → 1.2.3-feature.<name>.{n}
 #   - release/* 分支         → 1.2.3-rc.{n}
@@ -42,7 +42,7 @@ next-version: '0.1.0'
 branches:
   main:
     regex: ^master$|^main$
-    mode: Mainline
+    mode: ContinuousDelivery
     label: ''
     increment: Patch
     prevent-increment-of-merged-branch-version: true
