@@ -50,8 +50,12 @@ Thumbs.db
 # npm 锁文件（使用 pnpm，pnpm-lock.yaml 会被跟踪）
 package-lock.json
 
-# CI/CD 构建产物
-artifacts/
+# CI/CD 构建产物（保留 artifacts/nupkg/.gitkeep 占位符，确保 CI 还原时
+# 本地 NuGet 源目录 artifacts/nupkg 始终存在，避免 NU1301 “源目录不存在”）
+artifacts/*
+!artifacts/nupkg/
+artifacts/nupkg/*
+!artifacts/nupkg/.gitkeep
 
 .fake
 
