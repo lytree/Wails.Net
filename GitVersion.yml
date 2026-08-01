@@ -1,80 +1,107 @@
-# ============================================================================
-# GitVersion 配置 —— 替代 Directory.Build.props 中手动维护的 WailsNetVersion
+# Wails.Net GitVersion 配置
 # ----------------------------------------------------------------------------
-# 版本号由 Git 历史自动推导（Semantic Versioning 2.0），无需手动改版本号。
-# 计算出的 SemVer 由 .gitlab-ci.yml 通过 -p:WailsNetVersion 注入 dotnet 构建。
+# 仿照 AvaloniaTemplate 的用法：仓库根目录 dotnet-tools.json 固定 GitVersion.Tool 版本，
+# CI 中通过 `dotnet tool restore` 安装本地工具，再用
+#   dotnet gitversion /showvariable SemVer /nocache
+# 直接读取单个版本变量，无需解析 JSON。
 #
-# 约定：
-#   * 标签格式：vMAJOR.MINOR.PATCH（-预发布标签），例如 v1.2.3 / v1.2.3-alpha.1
-#   * 当前仓库尚无标签，使用 next-version 作为基线（0.1.0）
-#   * 首次发布建议打标签：git tag v0.1.0-alpha.1 && git push origin v0.1.0-alpha.1
+# 版本号生成规则（Semantic Versioning 2.0）：
+#   - 标签 v1.2.3            → 1.2.3                 (正式发布)
+#   - 标签 v1.2.3-alpha.1    → 1.2.3-alpha.1         (预发布)
+#   - main 分支提交（v1.2.3 之后）→ 1.2.3.{n}        (补丁递增，稳定线)
+#   - develop 分支           → 1.2.3-alpha.{n}
+#   - feature/* 分支         → 1.2.3-feature.<name>.{n}
+#   - release/* 分支         → 1.2.3-rc.{n}
+#   - hotfix/* 分支          → 1.2.3.{n}
 #
-# 分支版本策略：
-#   main        → 稳定版（0.1.0）
-#   develop     → alpha 预发布（0.1.0-alpha.1）
-#   feature/*   → 分支名预发布（0.1.0-feature.1）
-#   release/*   → rc 预发布（0.1.0-rc.1）
-#   hotfix/*    → 补丁预发布
+# 提交消息 bump 规则（+semver: <token>）：
+#   breaking / major  → 主版本
+#   feature / minor   → 次版本
+#   fix / patch       → 修订版本
+#   none / skip       → 不递增
 #
-# 提交信息手动提升版本（commit-message-incrementing）：
-#   "feat: xxx [+semver:minor]"  → 次版本 +1
-#   "feat: xxx [+semver:major]"  → 主版本 +1
-# ============================================================================
+# 与 CI 集成：.github/workflows/ci.yml 的 gitversion 作业读取 SemVer，
+# 通过 -p:WailsNetVersion 注入 build/pack/dist 阶段。
 
-mode: ContinuousDelivery
-
-# 标签前缀：v1.2.3 → 版本号 1.2.3（自动剥离前缀）
-tag-prefix: 'v'
-
-# 基线版本（仓库尚未打标签时使用；打标签后由标签接管）
-next-version: '0.1.0'
-
-# 允许通过提交信息中的 [+semver:...] 提升版本
+assembly-versioning-scheme: MajorMinorPatch
+assembly-file-versioning-scheme: MajorMinorPatch
+tag-prefix: '[Vv]'
+major-version-bump-message: '\+semver:\s?(breaking|major)'
+minor-version-bump-message: '\+semver:\s?(feature|minor)'
+patch-version-bump-message: '\+semver:\s?(fix|patch)'
+no-bump-message: '\+semver:\s?(none|skip)'
+legacy-semver-padding: 0
+build-metadata-padding: 0
+commits-since-version-source-padding: 0
+tag-pre-release-weight: 10000
 commit-message-incrementing: Enabled
+
+# 仓库尚无标签时的基线版本（打标签后由标签接管）
+next-version: '0.1.0'
 
 branches:
   main:
+    regex: ^master$|^main$
     mode: Mainline
-    tag: ''
+    label: ''
     increment: Patch
-    regex: '^main$'
+    prevent-increment-of-merged-branch-version: true
+    track-merge-target: false
+    tracks-release-branches: false
+    is-release-branch: false
     is-mainline: true
-
   develop:
+    regex: ^dev(elop)?$
     mode: ContinuousDeployment
-    tag: alpha
+    label: alpha
     increment: Minor
-    regex: '^dev(elop)?$'
     source-branches: ['main']
     prevent-increment-of-merged-branch-version: true
-
+    track-merge-target: false
+    tracks-release-branches: false
+    is-release-branch: false
+    is-mainline: false
   feature:
+    regex: ^features?[/-]
     mode: ContinuousDelivery
-    tag: useBranchName
+    label: feature.{BranchName}
     increment: Minor
-    regex: '^feature[/-]'
     source-branches: ['develop', 'main']
     prevent-increment-of-merged-branch-version: true
-
+    track-merge-target: false
+    tracks-release-branches: false
+    is-release-branch: false
+    is-mainline: false
   release:
+    regex: ^releases?[/-]
     mode: ContinuousDelivery
-    tag: rc
+    label: rc
     increment: Patch
-    regex: '^releases?[/-]'
-    is-release-branch: true
     source-branches: ['develop', 'main']
     prevent-increment-of-merged-branch-version: true
-
+    track-merge-target: false
+    tracks-release-branches: false
+    is-release-branch: true
+    is-mainline: false
   hotfix:
+    regex: ^hotfix[/-]
     mode: ContinuousDelivery
-    tag: ''
+    label: ''
     increment: Patch
-    regex: '^hotfix[/-]'
     source-branches: ['main', 'release']
-
+    prevent-increment-of-merged-branch-version: true
+    track-merge-target: false
+    tracks-release-branches: false
+    is-release-branch: false
+    is-mainline: false
   pull-request:
+    regex: ^(pull|pull\-requests|pr)[/-]
     mode: ContinuousDelivery
-    tag: PullRequest
+    label: pr
     increment: Inherit
-    regex: '^(pull|pull-requests|pr)[/-]'
     source-branches: ['develop', 'main']
+    prevent-increment-of-merged-branch-version: false
+    track-merge-target: false
+    tracks-release-branches: false
+    is-release-branch: false
+    is-mainline: false

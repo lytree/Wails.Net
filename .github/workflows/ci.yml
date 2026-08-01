@@ -62,7 +62,9 @@ jobs:
   # ==========================================================================
   # Job 0：版本计算（GitVersion）
   # ==========================================================================
-  # 读取仓库根目录 GitVersion.yml，按 Git 历史/分支/标签自动计算语义化版本号，
+  # 仿照 AvaloniaTemplate 的用法：dotnet tool restore 安装仓库根目录 dotnet-tools.json
+  # 声明的 GitVersion.Tool，再用 `dotnet gitversion /showvariable <变量> /nocache` 直接读取
+  # 单个版本变量（无需解析 JSON，彻底规避 gittools/actions/gitversion/execute@v3 的解析 bug）。
   # 通过 needs.gitversion.outputs.semVer 注入后续 build/pack 阶段。
   gitversion:
     name: 计算版本 (GitVersion)
@@ -79,27 +81,28 @@ jobs:
           # 拉取全部标签，确保 GitVersion 能基于最近标签计算版本
           fetch-tags: true
 
+      - name: 配置 .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
       - name: 配置 Git 安全目录（规避 LibGit2 safe.directory / worktreeConfig 导致的崩溃）
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git config --global --unset extensions.worktreeConfig 2>/dev/null || true
 
-      - name: 安装 GitVersion 工具
-        # 直接安装 .NET 全局工具并固定版本，避免 gittools/actions/gitversion/execute@v3
-        # 在 GitVersion 6.x 下“输出不是合法 JSON”的解析 bug（见 GitTools/actions#1824）。
-        run: dotnet tool install GitVersion.Tool --tool-path ./gv --version 6.8.2
+      - name: 还原本地工具 (GitVersion.Tool)
+        run: dotnet tool restore
 
       - name: 计算版本
         id: gitversion
         run: |
-          # 用 file 输出模式把纯 JSON 写入文件，避免日志混入 stdout 污染解析
-          ./gv/dotnet-gitversion /output file /outputfile gitversion.json /config GitVersion.yml
-          echo "GitVersion 原始输出:"; cat gitversion.json
           {
-            echo "semVer=$(jq -r .SemVer gitversion.json)"
-            echo "fullSemVer=$(jq -r .FullSemVer gitversion.json)"
-            echo "assemblySemVer=$(jq -r .AssemblySemVer gitversion.json)"
+            echo "semVer=$(dotnet gitversion /showvariable SemVer /nocache)"
+            echo "fullSemVer=$(dotnet gitversion /showvariable FullSemVer /nocache)"
+            echo "assemblySemVer=$(dotnet gitversion /showvariable AssemblySemVer /nocache)"
           } >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $(dotnet gitversion /showvariable SemVer /nocache)"
 
   build:
     name: 构建
