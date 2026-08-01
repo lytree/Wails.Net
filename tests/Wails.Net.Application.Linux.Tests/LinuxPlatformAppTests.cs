@@ -183,6 +183,7 @@ public sealed class LinuxPlatformAppTests
     }
 
     [Test]
+    [NonLinuxOnly]
     public async Task GetPrimaryScreen_ReturnsNull_OnNonLinux()
     {
         // 安排
@@ -193,6 +194,7 @@ public sealed class LinuxPlatformAppTests
     }
 
     [Test]
+    [NonLinuxOnly]
     public async Task GetScreens_ReturnsEmptyArray_OnNonLinux()
     {
         // 安排
@@ -206,6 +208,7 @@ public sealed class LinuxPlatformAppTests
     }
 
     [Test]
+    [NonLinuxOnly]
     public async Task Run_ThrowsPlatformNotSupportedException_OnNonLinux()
     {
         // 安排
@@ -226,6 +229,7 @@ public sealed class LinuxPlatformAppTests
     }
 
     [Test]
+    [NonLinuxOnly]
     public async Task ShowMessageDialog_ReturnsZero_OnNonLinux()
     {
         // 安排
@@ -239,6 +243,7 @@ public sealed class LinuxPlatformAppTests
     }
 
     [Test]
+    [NonLinuxOnly]
     public async Task OpenFileDialog_ReturnsNull_OnNonLinux()
     {
         // 安排
@@ -252,6 +257,7 @@ public sealed class LinuxPlatformAppTests
     }
 
     [Test]
+    [NonLinuxOnly]
     public async Task SaveFileDialog_ReturnsNull_OnNonLinux()
     {
         // 安排
@@ -265,6 +271,7 @@ public sealed class LinuxPlatformAppTests
     }
 
     [Test]
+    [NonLinuxOnly]
     public async Task OpenMultipleFilesDialog_ReturnsNull_OnNonLinux()
     {
         // 安排
@@ -278,6 +285,7 @@ public sealed class LinuxPlatformAppTests
     }
 
     [Test]
+    [NonLinuxOnly]
     public async Task CreateWebviewWindow_DoesNotThrow_OnNonLinux()
     {
         // 安排
@@ -299,6 +307,7 @@ public sealed class LinuxPlatformAppTests
     }
 
     [Test]
+    [NonLinuxOnly]
     public async Task Hide_DoesNotThrow_OnNonLinux()
     {
         // 安排
@@ -309,6 +318,7 @@ public sealed class LinuxPlatformAppTests
     }
 
     [Test]
+    [NonLinuxOnly]
     public async Task Show_DoesNotThrow_OnNonLinux()
     {
         // 安排
@@ -319,6 +329,7 @@ public sealed class LinuxPlatformAppTests
     }
 
     [Test]
+    [NonLinuxOnly]
     public async Task ShowAboutDialog_DoesNotThrow_OnNonLinux()
     {
         // 安排
@@ -339,6 +350,7 @@ public sealed class LinuxPlatformAppTests
     }
 
     [Test]
+    [NonLinuxOnly]
     public async Task DispatchOnMainThread_ExecutesAction_OnNonLinux()
     {
         // 安排

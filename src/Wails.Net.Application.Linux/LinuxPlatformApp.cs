@@ -107,6 +107,12 @@ public sealed class LinuxPlatformApp : IPlatformApp
     {
         _name = options.Name;
         _linuxOptions = options.Linux;
+
+        // 记录构造线程为主线程 ID，供 IsOnMainThread 判断使用。
+        // 应用总是在主线程上构造，Run() 也复用同一线程启动 GTK 主循环，
+        // 因此此处捕获即可，无需等待 Run() 执行（Run 在非 Linux 平台会直接抛异常，
+        // 此前导致 _mainThreadId 始终为 0，IsOnMainThread 恒返回 false 的缺陷）。
+        _mainThreadId = Environment.CurrentManagedThreadId;
     }
 
     /// <inheritdoc />
