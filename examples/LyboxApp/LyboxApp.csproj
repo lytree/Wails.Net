@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>false</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RootNamespace>LyboxApp</RootNamespace>
+    <AssemblyName>LyboxApp</AssemblyName>
+    <!-- 版本号从 Directory.Build.props 继承，便于统一管理 -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <NoDefaultExcludes>true</NoDefaultExcludes>
+  </PropertyGroup>
+  <!-- ========== 前端自动构建配置 ========== -->
+  <PropertyGroup>
+    <!-- 前端项目根目录 -->
+    <FrontendDir>$(MSBuildProjectDirectory)\frontend</FrontendDir>
+    <!-- 前端构建产物目录 -->
+    <FrontendDistDir>$(FrontendDir)\dist</FrontendDistDir>
+    <!-- 设为 true 跳过前端构建（dotnet build -p:SkipFrontendBuild=true） -->
+    <SkipFrontendBuild Condition="'$(SkipFrontendBuild)' == ''">false</SkipFrontendBuild>
+    <!-- 设为 true 强制重建前端（dotnet build -p:RebuildFrontend=true） -->
+    <RebuildFrontend Condition="'$(RebuildFrontend)' == ''">false</RebuildFrontend>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- 前端构建产物：由 BuildFrontend Target 自动生成 -->
+    <None Update="frontend\dist\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+  <!--
+    前端自动构建 Target。
+    在 .NET 编译前自动执行 npm install（首次）和 npm run build。
+    增量策略：仅当 dist/index.html 不存在或 RebuildFrontend=true 时重建。
+  -->
+  <Target Name="BuildFrontend" BeforeTargets="BeforeBuild" Condition="'$(SkipFrontendBuild)' != 'true' And (!Exists('$(FrontendDistDir)\index.html') Or '$(RebuildFrontend)' == 'true')">
+    <Message Importance="high" Text="========== 正在构建前端（Vue 3 + vue-jsx-vapor + TailwindCSS）==========" />
+    <Exec Command="npm install" WorkingDirectory="$(FrontendDir)" Condition="!Exists('$(FrontendDir)\node_modules')" ConsoleToMSBuild="true" />
+    <Exec Command="npm run build" WorkingDirectory="$(FrontendDir)" ConsoleToMSBuild="true" />
+    <Message Importance="high" Text="========== 前端构建完成 ==========" />
+  </Target>
+  <Target Name="WatchFrontend">
+    <Message Importance="high" Text="启动前端 watch 模式（vite build watch）..." />
+    <Exec Command="npm run watch" WorkingDirectory="$(FrontendDir)" ConsoleToMSBuild="true" />
+  </Target>
+  <Target Name="CleanFrontend" AfterTargets="Clean">
+    <RemoveDir Directories="$(FrontendDistDir)" />
+  </Target>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Wails.Net.Sdk\Wails.Net.Sdk.csproj" />
+  </ItemGroup>
+</Project>

@@ -42,6 +42,8 @@ Thumbs.db
 /examples/Wails.Net.Demo.React/frontend/dist/
 /examples/Wails.Net.Demo.Vue/frontend/node_modules/
 /examples/Wails.Net.Demo.Vue/frontend/dist/
+/examples/LyboxApp/frontend/node_modules/
+/examples/LyboxApp/frontend/dist/
 
 # TypeScript 增量构建缓存
 *.tsbuildinfo
