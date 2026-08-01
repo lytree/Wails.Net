@@ -780,7 +780,7 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     /// </summary>
     /// <param name="x">拖放位置 X 坐标。</param>
     /// <param name="y">拖放位置 Y 坐标。</param>
-    private async Task QueryDropTargetAndEmitAsync(int x, int y)
+    private async System.Threading.Tasks.Task QueryDropTargetAndEmitAsync(int x, int y)
     {
         try
         {

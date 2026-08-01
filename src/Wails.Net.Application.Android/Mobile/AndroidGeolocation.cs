@@ -21,10 +21,10 @@ namespace Wails.Net.Application.Android.Mobile;
 public sealed class AndroidGeolocation : IPlatformGeolocation
 {
     /// <summary>
-    /// 位置监听器字典，键为 watchId，值为 LocationListener。
+    /// 位置监听器字典，键为 watchId，值为 ILocationListener。
     /// 用于 ClearWatch 时移除监听器。
     /// </summary>
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, LocationListener> _watchers = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, ILocationListener> _watchers = new();
 
     /// <summary>下一个监听句柄 ID（线程安全自增）</summary>
     private static int s_nextWatchId = 1;
@@ -230,7 +230,7 @@ public sealed class AndroidGeolocation : IPlatformGeolocation
     /// <summary>
     /// 位置监听器，将 Android 位置更新回调转换为 <see cref="GeolocationPosition"/>。
     /// </summary>
-    private sealed class PositionListener : Java.Lang.Object, LocationListener
+    private sealed class PositionListener : Java.Lang.Object, ILocationListener
     {
         private readonly Action<GeolocationPosition> _callback;
 
