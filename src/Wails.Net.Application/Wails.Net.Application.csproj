@@ -23,9 +23,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- 强制 SQLitePCLRaw 提升到 2.1.12，修复 Microsoft.Data.Sqlite 传递依赖 CVE-2025-6965（GHSA-2m69-gcr7-jv3q） -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Microsoft.Extensions.Configuration" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.Logging" />

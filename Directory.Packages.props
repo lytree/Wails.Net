@@ -24,6 +24,7 @@
   <ItemGroup>
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.0" />
@@ -54,6 +55,8 @@
   <!-- 服务/工具 -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.0" />
+    <!-- 修复 CVE-2025-6965（GHSA-2m69-gcr7-jv3q）：2.1.11 打包的 SQLite < 3.50.2 存在高危内存损坏漏洞，2.1.12 起已修复 -->
+    <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
     <PackageVersion Include="System.CommandLine" Version="2.0.9" />
     <!-- minisign 签名依赖（对应 Tauri v2 的 updater 签名方案） -->
