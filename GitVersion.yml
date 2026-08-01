@@ -25,6 +25,9 @@
 
 assembly-versioning-scheme: MajorMinorPatch
 assembly-file-versioning-scheme: MajorMinorPatch
+# 宽松 semver 解析：规避 GitVersion 6.x 在解析 next-version 时
+# “Failed to parse 0.1.0 into a Semantic Version” 的已知 bug（GitTools/GitVersion#3341）。
+semver-format: Loose
 tag-prefix: '[Vv]'
 major-version-bump-message: '\+semver:\s?(breaking|major)'
 minor-version-bump-message: '\+semver:\s?(feature|minor)'
@@ -37,7 +40,7 @@ tag-pre-release-weight: 10000
 commit-message-incrementing: Enabled
 
 # 仓库尚无标签时的基线版本（打标签后由标签接管）
-next-version: '0.1.0'
+next-version: 0.1.0
 
 branches:
   main:
