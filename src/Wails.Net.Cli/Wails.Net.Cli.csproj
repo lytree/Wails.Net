@@ -12,7 +12,7 @@
 
   <ItemGroup>
     <PackageReference Include="System.CommandLine" />
-    <PackageReference Include="SixLabors.ImageSharp" />
+    <PackageReference Include="SkiaSharp" />
     <InternalsVisibleTo Include="Wails.Net.Cli.Tests" />
   </ItemGroup>
 

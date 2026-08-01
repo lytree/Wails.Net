@@ -1,6 +1,5 @@
 using System.CommandLine;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Processing;
+using SkiaSharp;
 using Wails.Net.Application.Icons;
 
 namespace Wails.Net.Cli.Commands;
@@ -76,13 +75,36 @@ internal sealed class IconCommand : CliCommandBase
         await GenerateIcoAsync(pngData, icoPath);
         Success($"生成 ICO: {icoPath}");
 
-        // 使用 ImageSharp 加载源图像并缩放为各尺寸 PNG
-        using var sourceImage = Image.Load(pngData);
+        // 使用 SkiaSharp 加载源图像并缩放为各尺寸 PNG
+        using var sourceBitmap = SKBitmap.Decode(pngData);
+        if (sourceBitmap is null)
+        {
+            Error("无法解析源 PNG 图像，文件可能已损坏或不是有效的 PNG");
+            return 1;
+        }
+
         foreach (var size in StandardSizes)
         {
             var sizePath = Path.Combine(output.FullName, $"{size}x{size}.png");
-            using var resized = sourceImage.Clone(ctx => ctx.Resize(size, size));
-            resized.SaveAsPng(sizePath);
+            using var resized = sourceBitmap.Resize(
+                new SKImageInfo(size, size),
+                new SKSamplingOptions(SKFilterMode.Linear));
+            if (resized is null)
+            {
+                Error($"缩放至 {size}x{size} 失败");
+                return 1;
+            }
+
+            using var image = SKImage.FromBitmap(resized);
+            using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
+            if (encoded is null)
+            {
+                Error($"编码 {size}x{size} PNG 失败");
+                return 1;
+            }
+
+            await using var fileStream = File.Create(sizePath);
+            encoded.SaveTo(fileStream);
             Info($"生成 PNG: {sizePath} ({size}x{size})");
         }
 
