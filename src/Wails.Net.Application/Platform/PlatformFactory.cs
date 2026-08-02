@@ -55,6 +55,14 @@ public static class PlatformFactory
     private const string PlatformMacOS = "macos";
 
     /// <summary>
+    /// 无头测试平台名称。
+    /// 由 <c>Wails.Net.Testing</c> 包的 <c>MockPlatformRegistrar</c> 通过
+    /// <c>[ModuleInitializer]</c> 注册，仅可通过 <c>WAILS_PLATFORM=mock</c> 显式启用，
+    /// 不参与 Level 3~5 的自动检测，因此不会影响生产行为。
+    /// </summary>
+    private const string PlatformMock = "mock";
+
+    /// <summary>
     /// FriendlyName 检测的关键字（Level 4）。
     /// </summary>
     private static readonly string[] FriendlyNameKeywords = ["wailsapp", "wails-server", "wails-android"];
@@ -162,8 +170,8 @@ public static class PlatformFactory
         // 加载后仍未注册委托时抛出异常（遵循 AGENTS.md §3.4，禁止反射回退）
         throw new InvalidOperationException(
             $"平台 '{platform}' 未注册创建委托。请通过 PlatformFactory.RegisterPlatformApp(\"{platform}\", ...) 注册，" +
-            $"通常在 Wails.Net.Application.{Capitalize(platform)} 项目中通过 [ModuleInitializer] 自动调用。" +
-            $"已尝试自动加载程序集 Wails.Net.Application.{Capitalize(platform)} 但未找到委托，请确认项目已引用该平台包。");
+            $"通常在 {GetProviderPackageName(platform)} 项目中通过 [ModuleInitializer] 自动调用。" +
+            $"已尝试自动加载程序集 {GetProviderPackageName(platform)} 但未找到委托，请确认项目已引用该平台包。");
     }
 
     /// <summary>
@@ -231,8 +239,8 @@ public static class PlatformFactory
         // 加载后仍未注册委托时抛出异常（遵循 AGENTS.md §3.4，禁止反射回退）
         throw new InvalidOperationException(
             $"平台 '{platform}' 未注册剪贴板创建委托。请通过 PlatformFactory.RegisterClipboard(\"{platform}\", ...) 注册，" +
-            $"通常在 Wails.Net.Application.{Capitalize(platform)} 项目中通过 [ModuleInitializer] 自动调用。" +
-            $"已尝试自动加载程序集 Wails.Net.Application.{Capitalize(platform)} 但未找到委托，请确认项目已引用该平台包。");
+            $"通常在 {GetProviderPackageName(platform)} 项目中通过 [ModuleInitializer] 自动调用。" +
+            $"已尝试自动加载程序集 {GetProviderPackageName(platform)} 但未找到委托，请确认项目已引用该平台包。");
     }
 
     /// <summary>
@@ -286,13 +294,13 @@ public static class PlatformFactory
         if (!string.IsNullOrEmpty(forced))
         {
             var normalized = forced.ToLowerInvariant().Trim();
-            if (normalized is PlatformWindows or PlatformLinux or PlatformAndroid or PlatformMacOS)
+            if (normalized is PlatformWindows or PlatformLinux or PlatformAndroid or PlatformMacOS or PlatformMock)
             {
                 LogDebug($"[Level 2] 平台由环境变量 {PlatformEnvVar}={normalized} 强制指定");
                 return normalized;
             }
 
-            LogDebug($"[Level 2] 环境变量 {PlatformEnvVar}={forced} 值无效（应为 windows/linux/android/macos），继续下一级检测");
+            LogDebug($"[Level 2] 环境变量 {PlatformEnvVar}={forced} 值无效（应为 windows/linux/android/macos/mock），继续下一级检测");
         }
 
         // Level 3：运行时自动检测
@@ -383,6 +391,18 @@ public static class PlatformFactory
         return string.IsNullOrEmpty(value)
             ? value
             : char.ToUpperInvariant(value[0]) + value[1..];
+    }
+
+    /// <summary>
+    /// 获取提供指定平台实现的包（程序集）名称，用于生成可操作的错误提示。
+    /// </summary>
+    /// <param name="platform">平台名称。</param>
+    /// <returns>包名称。<c>mock</c> 平台由 <c>Wails.Net.Testing</c> 提供，其余为 <c>Wails.Net.Application.{Platform}</c>。</returns>
+    private static string GetProviderPackageName(string platform)
+    {
+        return platform == PlatformMock
+            ? "Wails.Net.Testing"
+            : $"Wails.Net.Application.{Capitalize(platform)}";
     }
 
     /// <summary>

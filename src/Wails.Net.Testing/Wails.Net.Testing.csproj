@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackageId>Wails.Net.Testing</PackageId>
+    <Description>Wails.Net 无头测试支持包：MockPlatform（内存态窗口/剪贴板/平台应用）与 WailsTestHost 测试门面，让绑定、命令、插件、窗口契约在无 GUI 的 CI 环境中可测。对标 Tauri v2 的 tauri::test MockRuntime。</Description>
+    <PackageTags>wails;dotnet;testing;mock;headless;ci</PackageTags>
+    <!-- Mock 平台注册器使用 [ModuleInitializer] 实现自动注册（替代反射路径），CA2255 警告不适用 -->
+    <NoWarn>CA2255</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Wails.Net.Application\Wails.Net.Application.csproj" />
+    <ProjectReference Include="..\Wails.Net.Errors\Wails.Net.Errors.csproj" />
+    <ProjectReference Include="..\Wails.Net.Events\Wails.Net.Events.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 测试宿主构建器通过 DI 注入 Mock 平台/剪贴板，需要 ServiceCollection 扩展方法 -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Wails.Net.Testing.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- TUnit 使用 Microsoft.Testing.Platform (MTP) 运行器 -->
+    <EnableMSTestRunner>false</EnableMSTestRunner>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TUnit" />
+    <PackageReference Include="TUnit.Assertions" />
+    <PackageReference Include="TUnit.Engine" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Wails.Net.Application\Wails.Net.Application.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Testing\Wails.Net.Testing.csproj" />
+  </ItemGroup>
+
+  <!--
+    源代码生成器：扫描 [Binding] / [Command] 特性，为测试服务生成强类型调用器（零反射验证）。
+    Wails.Net.Testing.Tests 是唯一调用 [Binding] 服务的测试程序集，
+    必须以 Analyzer 方式引用源生成器，使其在本程序集内生成并注册调用器。
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Wails.Net.SourceGenerators\Wails.Net.SourceGenerators.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <!--
+    链接共享契约测试基类源文件，使 TUnit 源生成器能发现基类的 [Test] 方法。
+    说明：TUnit 源生成器只能发现当前项目源代码中的 [Test] 方法，
+    无法跨程序集发现基类（即使加 [InheritsTests]）的测试方法。
+    因此采用 Compile Include 链接方式，与 Windows 测试项目保持一致。
+  -->
+  <ItemGroup>
+    <Compile Include="..\Wails.Net.Application.GuiContract.Tests\IWebviewWindowFixture.cs" Link="GuiContract\IWebviewWindowFixture.cs" />
+    <Compile Include="..\Wails.Net.Application.GuiContract.Tests\WebviewWindowContractTests.cs" Link="GuiContract\WebviewWindowContractTests.cs" />
+  </ItemGroup>
+
+</Project>

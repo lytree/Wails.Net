@@ -1,0 +1,43 @@
+{
+  "name": "@wails-net/runtime",
+  "version": "0.1.0",
+  "description": "TypeScript frontend runtime SDK for Wails.Net (the .NET 10 port of Wails v3). Self-contained IPC transport (WebView2 / WebKitGTK / Android native postMessage, HTTP chunked upload, Server-mode WebSocket) plus strongly-typed wrappers for every core namespace and all 46 built-in/mobile plugins.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "wails",
+    "wails.net",
+    "wails-v3",
+    "dotnet",
+    "ipc",
+    "desktop",
+    "tauri-alternative"
+  ],
+  "author": "Wails.Net contributors",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

@@ -590,6 +590,16 @@ public class MessageProcessor
                 };
             }
 
+            // 命令未找到：返回 null，保留 BindingManager 返回的 ReferenceError，
+            // 使"未知绑定"语义（ReferenceError）不被命令回退的 RuntimeError 覆盖。
+            // 而命令已找到但权限/Scope 拒绝或执行失败（错误不含 "Command not found"）时，
+            // 仍返回 RuntimeError，使真实的命令错误能正确暴露给前端。
+            if (response.Error is not null &&
+                response.Error.Contains("Command not found", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
             return new Dictionary<string, object?>
             {
                 ["result"] = null,
