@@ -31,7 +31,7 @@ public static class CommonEvents
     /// <summary>
     /// 判断指定名称是否为已知的系统事件名称（保留名称）。
     /// </summary>
-    /// <param name="name">要检查的事件名称。</param>
+    /// <param name="name">要检查的事件名称。为 null 时返回 false。</param>
     /// <returns>如果名称是保留的系统事件名称，则返回 true；否则返回 false。</returns>
-    public static bool IsKnownEvent(string name) => KnownEventNames.Contains(name);
+    public static bool IsKnownEvent(string? name) => name is not null && KnownEventNames.Contains(name);
 }

@@ -59,5 +59,7 @@
     <Project Path="tests/Wails.Net.Application.GuiContract.Tests/Wails.Net.Application.GuiContract.Tests.csproj" />
     <Project Path="tests/Wails.Net.Testing.Tests/Wails.Net.Testing.Tests.csproj" />
     <Project Path="tests/Wails.Net.SourceGenerators.Tests/Wails.Net.SourceGenerators.Tests.csproj" />
+    <Project Path="tests/Wails.Net.Errors.Tests/Wails.Net.Errors.Tests.csproj" />
+    <Project Path="tests/Wails.Net.Events.Tests/Wails.Net.Events.Tests.csproj" />
   </Folder>
 </Solution>
