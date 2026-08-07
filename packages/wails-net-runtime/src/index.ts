@@ -148,6 +148,8 @@ export const wails: WailsSdk = {
 // ---- 具名导出（兼容 `import { wails } from "@wails-net/runtime"` 与高级用法）----
 
 export { call, bindings, events, query, invoke, cancel };
+export { defineCommand } from "./core/commands.js";
+export type { PackMode } from "./core/commands.js";
 export { CallError, toCallError };
 export { transport, unpack, bindingId, fnv1a };
 export { installContextMenu, openContextMenu };
