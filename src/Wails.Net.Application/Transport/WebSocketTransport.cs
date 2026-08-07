@@ -45,8 +45,9 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
     /// <summary>
     /// WebSocket 端点完整 URL（P0-D：Server 模式事件 API 完善）。
     /// 由 <see cref="BaseUrl"/> 与 <see cref="WebSocketPath"/> 拼接而成，
-    /// 供 <see cref="Application.GenerateRuntimeJs"/> 注入到 <see cref="RuntimeOptions.WebSocketUrl"/>，
-    /// 使 Server 模式前端 <c>ServerRuntime</c> 知晓连接地址。
+    /// 供 <see cref="Application.GenerateRuntimeJs"/> 注入到 <c>window._wails.webSocketUrl</c> 标志对象，
+    /// 使 Server 模式前端的 <c>@wails-net/runtime</c>（npm 包）<c>Transport.init()</c> 能连接到正确的端点。
+    /// 前端运行时 JS 主体已迁往 <c>packages/wails-net-runtime/</c>。
     /// </summary>
     public string WebSocketUrl => $"ws://localhost:{Port}{WebSocketPath}";
 
@@ -111,7 +112,7 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
     }
 
     /// <summary>
-    /// 返回前端 JS 客户端代码（占位实现，实际由 RuntimeGenerator 生成）。
+    /// 返回前端 JS 客户端代码（占位实现；实际运行时 JS 已迁往 npm 包 @wails-net/runtime，本方法仅保留用于诊断输出）。
     /// </summary>
     /// <returns>JS 客户端代码字符串。</returns>
     public string JSClient()

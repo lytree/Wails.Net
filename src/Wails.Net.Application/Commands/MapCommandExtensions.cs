@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 
 namespace Wails.Net.Application.Commands;
@@ -28,8 +29,21 @@ public static class MapCommandExtensions
     /// <summary>
     /// 默认 JSON 反序列化选项（Web 风格：驼峰命名、不区分大小写）。
     /// 与 <see cref="CommandDispatcher"/> 的 _scopeJsonOptions 一致。
+    /// <para>
+    /// 额外注册 <see cref="JsonStringEnumConverter"/>（驼峰命名），使前端可用语义化字符串
+    /// （如 <c>"copy"</c>、<c>"selectAll"</c>）传递枚举参数，而非依赖易错的枚举序号。
+    /// 该转换器同时兼容数字形式，属于纯增量放宽，不破坏既有调用方。
+    /// </para>
+    /// <para>
+    /// 注意：本选项**仅用于入参反序列化**（<c>Deserialize</c> / <c>ParseArgsN</c>），
+    /// 命令返回值由 <see cref="Transport.MessageProcessor"/> 使用
+    /// <see cref="Bindings.JsonOptions.DefaultSerializerOptions"/> 序列化，不受此处影响。
+    /// </para>
     /// </summary>
-    private static readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
+    };
 
     // ============================================================
     // 同步重载：Action 系列

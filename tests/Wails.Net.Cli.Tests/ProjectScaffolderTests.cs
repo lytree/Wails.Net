@@ -205,7 +205,7 @@ public sealed class ProjectScaffolderTests
             // 验证 Vite 插件
             await Assert.That(content).Contains("\"@vitejs/plugin-vue\":");
             // 验证 Wails 运行时
-            await Assert.That(content).Contains("\"@wails/runtime\":");
+            await Assert.That(content).Contains("\"@wails-net/runtime\":");
         }
         finally
         {
@@ -233,7 +233,7 @@ public sealed class ProjectScaffolderTests
             await Assert.That(content).Contains("\"@types/react\":");
             await Assert.That(content).Contains("\"@types/react-dom\":");
             // 验证 Wails 运行时
-            await Assert.That(content).Contains("\"@wails/runtime\":");
+            await Assert.That(content).Contains("\"@wails-net/runtime\":");
         }
         finally
         {
@@ -259,7 +259,7 @@ public sealed class ProjectScaffolderTests
             await Assert.That(content).Contains("\"@sveltejs/vite-plugin-svelte\":");
             await Assert.That(content).Contains("\"svelte-check\":");
             // 验证 Wails 运行时
-            await Assert.That(content).Contains("\"@wails/runtime\":");
+            await Assert.That(content).Contains("\"@wails-net/runtime\":");
         }
         finally
         {
@@ -284,7 +284,7 @@ public sealed class ProjectScaffolderTests
             await Assert.That(content).DoesNotContain("\"react\":");
             await Assert.That(content).DoesNotContain("\"svelte\":");
             // vanilla 仍应包含 Wails 运行时
-            await Assert.That(content).Contains("\"@wails/runtime\":");
+            await Assert.That(content).Contains("\"@wails-net/runtime\":");
         }
         finally
         {
@@ -325,11 +325,13 @@ public sealed class ProjectScaffolderTests
             var result = await scaffolder.ScaffoldAsync("MyApp", "react-ts", tempRoot);
 
             await Assert.That(result.Success).IsTrue();
-            var mainPath = Path.Combine(tempRoot.FullName, "MyApp", "frontend", "src", "main.ts");
+            // React 模板使用 JSX，入口文件为 main.tsx
+            var mainPath = Path.Combine(tempRoot.FullName, "MyApp", "frontend", "src", "main.tsx");
             var content = await File.ReadAllTextAsync(mainPath);
 
             await Assert.That(content).Contains("createRoot");
             await Assert.That(content).Contains("from 'react-dom/client'");
+            await Assert.That(content).Contains("@wails-net/runtime");
         }
         finally
         {
@@ -396,6 +398,131 @@ public sealed class ProjectScaffolderTests
 
             await Assert.That(content).Contains("<Solution>");
             await Assert.That(content).Contains("MyApp.csproj");
+        }
+        finally
+        {
+            DeleteDirectory(tempRoot);
+        }
+    }
+
+    [Test]
+    public async Task ScaffoldAsync_GeneratesViteAndTsConfigAndGitIgnore()
+    {
+        var tempRoot = CreateTempDirectory();
+        try
+        {
+            var scaffolder = new ProjectScaffolder();
+            var result = await scaffolder.ScaffoldAsync("MyApp", "vanilla-ts", tempRoot);
+
+            await Assert.That(result.Success).IsTrue();
+            var projectDir = Path.Combine(tempRoot.FullName, "MyApp");
+
+            var vitePath = Path.Combine(projectDir, "frontend", "vite.config.ts");
+            await Assert.That(File.Exists(vitePath)).IsTrue();
+            var viteContent = await File.ReadAllTextAsync(vitePath);
+            await Assert.That(viteContent).Contains("defineConfig");
+            await Assert.That(viteContent).Contains("outDir: 'dist'");
+            await Assert.That(viteContent).Contains("port: 5173");
+
+            var tsconfigPath = Path.Combine(projectDir, "frontend", "tsconfig.json");
+            await Assert.That(File.Exists(tsconfigPath)).IsTrue();
+            var tsconfigContent = await File.ReadAllTextAsync(tsconfigPath);
+            // 宽松 TS 配置
+            await Assert.That(tsconfigContent).Contains("\"strict\": false");
+            await Assert.That(tsconfigContent).Contains("\"moduleResolution\": \"bundler\"");
+
+            var gitignorePath = Path.Combine(projectDir, ".gitignore");
+            await Assert.That(File.Exists(gitignorePath)).IsTrue();
+            var gitignoreContent = await File.ReadAllTextAsync(gitignorePath);
+            await Assert.That(gitignoreContent).Contains("node_modules/");
+            await Assert.That(gitignoreContent).Contains("frontend/dist/");
+
+            await Assert.That(File.Exists(Path.Combine(projectDir, "README.md"))).IsTrue();
+        }
+        finally
+        {
+            DeleteDirectory(tempRoot);
+        }
+    }
+
+    [Test]
+    public async Task ScaffoldAsync_ReactTemplate_ViteConfigUsesReactPluginAndJsx()
+    {
+        var tempRoot = CreateTempDirectory();
+        try
+        {
+            var scaffolder = new ProjectScaffolder();
+            var result = await scaffolder.ScaffoldAsync("MyApp", "react-ts", tempRoot);
+
+            await Assert.That(result.Success).IsTrue();
+            var frontendDir = Path.Combine(tempRoot.FullName, "MyApp", "frontend");
+
+            var viteContent = await File.ReadAllTextAsync(Path.Combine(frontendDir, "vite.config.ts"));
+            await Assert.That(viteContent).Contains("@vitejs/plugin-react");
+            await Assert.That(viteContent).Contains("plugins: [react()]");
+
+            var tsconfigContent = await File.ReadAllTextAsync(Path.Combine(frontendDir, "tsconfig.json"));
+            await Assert.That(tsconfigContent).Contains("\"jsx\": \"react-jsx\"");
+
+            // index.html 入口应指向 main.tsx
+            var indexContent = await File.ReadAllTextAsync(Path.Combine(frontendDir, "index.html"));
+            await Assert.That(indexContent).Contains("/src/main.tsx");
+        }
+        finally
+        {
+            DeleteDirectory(tempRoot);
+        }
+    }
+
+    [Test]
+    public async Task ScaffoldAsync_WailsJson_LeavesFrontendCommandsEmptyForCliAutoDetect()
+    {
+        var tempRoot = CreateTempDirectory();
+        try
+        {
+            var scaffolder = new ProjectScaffolder();
+            var result = await scaffolder.ScaffoldAsync("MyApp", "vanilla-ts", tempRoot);
+
+            await Assert.That(result.Success).IsTrue();
+            var content = await File.ReadAllTextAsync(Path.Combine(tempRoot.FullName, "MyApp", "wails.json"));
+
+            // 留空以便 CLI 自动探测 pnpm（回退 npm）
+            await Assert.That(content).Contains("\"installCommand\": \"\"");
+            await Assert.That(content).Contains("\"buildCommand\": \"\"");
+            await Assert.That(content).DoesNotContain("npm install");
+        }
+        finally
+        {
+            DeleteDirectory(tempRoot);
+        }
+    }
+
+    [Test]
+    public async Task ScaffoldAsync_PackageJson_IsValidJsonWithRuntimeDependency()
+    {
+        var tempRoot = CreateTempDirectory();
+        try
+        {
+            var scaffolder = new ProjectScaffolder();
+            var result = await scaffolder.ScaffoldAsync("My.App", "vue-ts", tempRoot);
+
+            await Assert.That(result.Success).IsTrue();
+            var pkgPath = Path.Combine(tempRoot.FullName, "My.App", "frontend", "package.json");
+            var content = await File.ReadAllTextAsync(pkgPath);
+
+            // 必须是合法 JSON（历史实现用手工拼接逗号，易产生非法 JSON）
+            using var doc = System.Text.Json.JsonDocument.Parse(content);
+            var root = doc.RootElement;
+
+            await Assert.That(root.GetProperty("name").GetString()).IsEqualTo("my.app-frontend");
+            await Assert.That(root.GetProperty("dependencies")
+                .TryGetProperty("@wails-net/runtime", out _)).IsTrue();
+            await Assert.That(root.GetProperty("dependencies")
+                .TryGetProperty("vue", out _)).IsTrue();
+            await Assert.That(root.GetProperty("devDependencies")
+                .TryGetProperty("vite", out _)).IsTrue();
+            await Assert.That(root.GetProperty("devDependencies")
+                .TryGetProperty("@vitejs/plugin-vue", out _)).IsTrue();
         }
         finally
         {

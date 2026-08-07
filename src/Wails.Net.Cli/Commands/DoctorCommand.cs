@@ -39,6 +39,7 @@ internal sealed class DoctorCommand : CliCommandBase
         {
             CheckDotNetSdk(),
             CheckNodeJs(),
+            CheckPackageManager(),
             CheckGit(),
             CheckOsPlatform(),
         };
@@ -59,23 +60,29 @@ internal sealed class DoctorCommand : CliCommandBase
         await Task.CompletedTask;
 
         var passed = 0;
+        var warned = 0;
         var failed = 0;
         foreach (var check in checks)
         {
             ReportCheck(check);
-            if (check.Status == DiagnosticStatus.Pass)
+            switch (check.Status)
             {
-                passed++;
-            }
-            else
-            {
-                failed++;
+                case DiagnosticStatus.Pass:
+                    passed++;
+                    break;
+                case DiagnosticStatus.Warn:
+                    warned++;
+                    break;
+                default:
+                    failed++;
+                    break;
             }
         }
 
         Info(string.Empty);
-        Info($"诊断完成：{passed} 通过 / {failed} 失败 / {checks.Count} 总计");
+        Info($"诊断完成：{passed} 通过 / {warned} 警告 / {failed} 失败 / {checks.Count} 总计");
 
+        // 仅硬性缺失（Fail）视为诊断不通过；可降级项（Warn，如缺 pnpm 回退 npm、缺 NSIS）不影响退出码
         return failed == 0 ? 0 : 1;
     }
 
@@ -127,6 +134,37 @@ internal sealed class DoctorCommand : CliCommandBase
             "Node.js",
             DiagnosticStatus.Pass,
             $"已安装：{version}");
+    }
+
+    /// <summary>
+    /// 检测前端包管理器（pnpm 优先，npm 回退）。
+    /// 与 <see cref="Build.FrontendToolchain"/> 的检测策略保持一致：
+    /// 项目约定前端使用 vite + pnpm 管理，缺失 pnpm 时可降级到 npm。
+    /// </summary>
+    private static DiagnosticResult CheckPackageManager()
+    {
+        var pnpmVersion = ReadShellCommandOutput("pnpm --version");
+        if (!string.IsNullOrEmpty(pnpmVersion))
+        {
+            return new DiagnosticResult(
+                "pnpm",
+                DiagnosticStatus.Pass,
+                $"已安装：v{pnpmVersion}");
+        }
+
+        var npmVersion = ReadShellCommandOutput("npm --version");
+        if (!string.IsNullOrEmpty(npmVersion))
+        {
+            return new DiagnosticResult(
+                "pnpm",
+                DiagnosticStatus.Warn,
+                $"未找到 pnpm，将回退 npm v{npmVersion}；推荐安装 pnpm：npm i -g pnpm");
+        }
+
+        return new DiagnosticResult(
+            "pnpm",
+            DiagnosticStatus.Warn,
+            "未找到 pnpm / npm，前端（vite）依赖安装与构建将不可用");
     }
 
     private static DiagnosticResult CheckOsPlatform()
@@ -503,6 +541,63 @@ internal sealed class DoctorCommand : CliCommandBase
             }
             _ = stderrTask.Result;
             return output.Trim();
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// 通过系统 shell 执行命令并读取首行标准输出。
+    /// 用于 pnpm / npm 等在 Windows 上以 <c>.cmd</c> 脚本形式分发、
+    /// 无法被 <c>CreateProcess</c> 直接启动的命令。
+    /// </summary>
+    /// <param name="command">完整命令字符串（如 <c>pnpm --version</c>）。</param>
+    /// <returns>首行输出（已去除空白），执行失败或退出码非零时返回空字符串。</returns>
+    private static string ReadShellCommandOutput(string command)
+    {
+        try
+        {
+            var (fileName, arguments) = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                ? ("cmd.exe", $"/c \"{command}\"")
+                : ("sh", $"-c \"{command}\"");
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = arguments,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+
+            using var proc = Process.Start(psi);
+            if (proc is null)
+            {
+                return string.Empty;
+            }
+
+            // 异步读取 stderr 防止缓冲区满导致的死锁
+            var stderrTask = proc.StandardError.ReadToEndAsync();
+            var output = proc.StandardOutput.ReadToEnd();
+            if (!proc.WaitForExit(5000))
+            {
+                try { proc.Kill(entireProcessTree: true); } catch { /* 忽略 */ }
+                return string.Empty;
+            }
+
+            _ = stderrTask.Result;
+            if (proc.ExitCode != 0)
+            {
+                return string.Empty;
+            }
+
+            var firstLine = output
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .FirstOrDefault();
+            return firstLine?.Trim() ?? string.Empty;
         }
         catch
         {

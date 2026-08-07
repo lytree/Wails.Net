@@ -117,17 +117,45 @@ internal sealed class BuildCommand : CliCommandBase
             var frontendDir = Path.Combine(workingDir, frontend.Dir);
             if (Directory.Exists(frontendDir))
             {
+                // 包管理器自动检测（pnpm 优先，npm 回退）；后续 install/build 优先使用
+                // wails.json 显式命令，缺失时回退到工具链智能默认（含 monorepo 工作区根安装）。
+                FrontendToolchain? toolchain = null;
+                try
+                {
+                    toolchain = await FrontendToolchain.DetectAsync();
+                }
+                catch (InvalidOperationException ex)
+                {
+                    // 仅在需要工具链默认值时才致命；显式命令可绕过。
+                    if (string.IsNullOrWhiteSpace(frontend.InstallCommand) ||
+                        string.IsNullOrWhiteSpace(frontend.BuildCommand))
+                    {
+                        Error(ex.Message);
+                        return 3;
+                    }
+
+                    Warn($"未检测到 pnpm/npm，使用 wails.json 中显式命令：{ex.Message}");
+                }
+
                 if (!string.IsNullOrWhiteSpace(frontend.InstallCommand))
                 {
                     Info($"安装前端依赖：{frontend.InstallCommand}");
-                    var installResult = await BuildHooks.ExecuteAsync(frontend.InstallCommand, frontendDir);
+                    var installResult = await BuildHooks.ExecuteAsync(
+                        frontend.InstallCommand, frontendDir, streamOutput: true);
                     if (!installResult.Success)
                     {
+                        // 输出已在执行过程中流式打印，此处不再重复
                         Error($"前端依赖安装失败：{installResult.ErrorMessage}");
-                        if (!string.IsNullOrEmpty(installResult.Output))
-                        {
-                            Info(installResult.Output);
-                        }
+                        return 3;
+                    }
+                }
+                else if (toolchain is not null)
+                {
+                    Info($"安装前端依赖（{toolchain.PackageManager}，工作区根）");
+                    var code = await toolchain.InstallAsync(frontendDir);
+                    if (code != 0)
+                    {
+                        Error($"前端依赖安装失败（退出码 {code}）");
                         return 3;
                     }
                 }
@@ -135,14 +163,22 @@ internal sealed class BuildCommand : CliCommandBase
                 if (!string.IsNullOrWhiteSpace(frontend.BuildCommand))
                 {
                     Info($"构建前端：{frontend.BuildCommand}");
-                    var frontendBuild = await BuildHooks.ExecuteAsync(frontend.BuildCommand, frontendDir);
+                    var frontendBuild = await BuildHooks.ExecuteAsync(
+                        frontend.BuildCommand, frontendDir, streamOutput: true);
                     if (!frontendBuild.Success)
                     {
+                        // 输出已在执行过程中流式打印，此处不再重复
                         Error($"前端构建失败：{frontendBuild.ErrorMessage}");
-                        if (!string.IsNullOrEmpty(frontendBuild.Output))
-                        {
-                            Info(frontendBuild.Output);
-                        }
+                        return 3;
+                    }
+                }
+                else if (toolchain is not null)
+                {
+                    Info($"构建前端（{toolchain.PackageManager} build）");
+                    var code = await toolchain.BuildAsync(frontendDir);
+                    if (code != 0)
+                    {
+                        Error($"前端构建失败（退出码 {code}）");
                         return 3;
                     }
                 }

@@ -120,7 +120,7 @@ export class Transport {
     const w = globalThis as unknown as {
       chrome?: { webview?: { postMessage?: (s: string) => void; addEventListener?: (t: string, cb: (e: { data: unknown }) => void) => void } };
       webkit?: { messageHandlers?: { external?: { postMessage?: (s: string) => void } } };
-      wails?: { invoke?: (s: string) => string };
+      WailsBridge?: { invoke?: (s: string) => string };
     };
     if (w.chrome?.webview?.postMessage) {
       return (s) => w.chrome!.webview!.postMessage!(s);
@@ -128,10 +128,14 @@ export class Transport {
     if (w.webkit?.messageHandlers?.external?.postMessage) {
       return (s) => w.webkit!.messageHandlers!.external!.postMessage!(s);
     }
-    if (typeof w.wails?.invoke === "function") {
-      // Android：同步上行，仅用于发送；下行由 onMessage 桥接。
+    if (typeof w.WailsBridge?.invoke === "function") {
+      // Android：AndroidWebviewWindow 通过 AddJavascriptInterface(listener, "WailsBridge")
+      // 注入同步桥接对象，上行调用 window.WailsBridge.invoke(json)；下行仍由
+      // __wailsNative.onMessage / _wailsEmitEvent 承接。
+      // 注意：探测键必须是 WailsBridge 而非 wails——本包自身会挂载 window.wails.invoke，
+      // 用 wails.invoke 探测会在任意平台产生误判，把消息发进自己的 API。
       return (s) => {
-        w.wails!.invoke!(s);
+        w.WailsBridge!.invoke!(s);
       };
     }
     return undefined;
@@ -415,5 +419,14 @@ export function bindingId(fullName: string): number {
   return fnv1a(fullName);
 }
 
-/** 全局传输单例。 */
-export const transport = new Transport();
+/**
+ * 全局传输单例。
+ *
+ * 通过 `globalThis.__wailsTransport` 做跨副本交接：同一页面若因打包边界
+ * （主 bundle + 动态 import 的子 chunk、或宿主注入脚本与应用 bundle 并存）
+ * 加载了多份本模块，各副本必须共用同一个 Transport 实例，否则
+ * pending 表与事件订阅表会被割裂，出现「调用无响应」「事件收不到」。
+ */
+const transportHost = globalThis as unknown as { __wailsTransport?: Transport };
+transportHost.__wailsTransport ??= new Transport();
+export const transport: Transport = transportHost.__wailsTransport;

@@ -40,11 +40,17 @@ public static class BuildHooks
     /// <param name="command">钩子命令字符串；为 null 或空白时跳过执行。</param>
     /// <param name="workingDirectory">命令执行的工作目录；为 null 时使用当前目录。</param>
     /// <param name="cancellationToken">取消令牌。</param>
+    /// <param name="streamOutput">
+    /// 是否边执行边把标准输出 / 错误逐行转发到控制台。
+    /// 长耗时命令（如 <c>pnpm install</c>、<c>vite build</c>）应开启，避免长时间无输出。
+    /// 关闭时沿用一次性读取，命令结束后由调用方自行打印 <see cref="HookResult.Output"/>。
+    /// </param>
     /// <returns>执行结果；命令为空时返回 <see cref="HookResult.Skipped"/> 为 true 的结果。</returns>
     public static async Task<HookResult> ExecuteAsync(
         string? command,
         string? workingDirectory = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool streamOutput = false)
     {
         if (string.IsNullOrWhiteSpace(command))
         {
@@ -67,24 +73,10 @@ public static class BuildHooks
         try
         {
             using var proc = new Process { StartInfo = psi };
-            proc.Start();
 
-            var stdoutTask = proc.StandardOutput.ReadToEndAsync();
-            var stderrTask = proc.StandardError.ReadToEndAsync();
-
-            await proc.WaitForExitAsync(cancellationToken);
-
-            var stdout = await stdoutTask;
-            var stderr = await stderrTask;
-            var combined = string.IsNullOrEmpty(stderr) ? stdout : $"{stdout}\n{stderr}";
-
-            return new HookResult
-            {
-                Success = proc.ExitCode == 0,
-                ExitCode = proc.ExitCode,
-                Output = combined,
-                ErrorMessage = proc.ExitCode == 0 ? null : $"钩子命令退出码 {proc.ExitCode}",
-            };
+            return streamOutput
+                ? await RunStreamingAsync(proc, cancellationToken)
+                : await RunBufferedAsync(proc, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -93,6 +85,118 @@ public static class BuildHooks
         catch (Exception ex)
         {
             return new HookResult { Success = false, ErrorMessage = ex.Message };
+        }
+    }
+
+    /// <summary>
+    /// 一次性读取模式：命令结束后返回完整输出（历史行为）。
+    /// </summary>
+    /// <param name="proc">已配置好 StartInfo 的进程对象。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>执行结果。</returns>
+    private static async Task<HookResult> RunBufferedAsync(Process proc, CancellationToken cancellationToken)
+    {
+        proc.Start();
+
+        var stdoutTask = proc.StandardOutput.ReadToEndAsync(cancellationToken);
+        var stderrTask = proc.StandardError.ReadToEndAsync(cancellationToken);
+
+        await proc.WaitForExitAsync(cancellationToken);
+
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
+        var combined = string.IsNullOrEmpty(stderr) ? stdout : $"{stdout}\n{stderr}";
+
+        return BuildResult(proc.ExitCode, combined);
+    }
+
+    /// <summary>
+    /// 流式模式：逐行转发到控制台，同时累积完整输出供调用方复用。
+    /// </summary>
+    /// <param name="proc">已配置好 StartInfo 的进程对象。</param>
+    /// <param name="cancellationToken">取消令牌（触发时终止整个子进程树）。</param>
+    /// <returns>执行结果。</returns>
+    private static async Task<HookResult> RunStreamingAsync(Process proc, CancellationToken cancellationToken)
+    {
+        var buffer = new System.Text.StringBuilder();
+        var sync = new object();
+
+        void Append(string line, bool isError)
+        {
+            lock (sync)
+            {
+                buffer.AppendLine(line);
+                if (isError)
+                {
+                    Console.Error.WriteLine(line);
+                }
+                else
+                {
+                    Console.WriteLine(line);
+                }
+            }
+        }
+
+        proc.OutputDataReceived += (_, e) =>
+        {
+            if (e.Data is not null)
+            {
+                Append(e.Data, isError: false);
+            }
+        };
+        proc.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data is not null)
+            {
+                Append(e.Data, isError: true);
+            }
+        };
+
+        proc.Start();
+        proc.BeginOutputReadLine();
+        proc.BeginErrorReadLine();
+
+        using var cancelReg = cancellationToken.Register(() => TryKill(proc));
+
+        try
+        {
+            await proc.WaitForExitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            TryKill(proc);
+            throw;
+        }
+
+        string output;
+        lock (sync)
+        {
+            output = buffer.ToString();
+        }
+
+        return BuildResult(proc.ExitCode, output);
+    }
+
+    private static HookResult BuildResult(int exitCode, string output) => new()
+    {
+        Success = exitCode == 0,
+        ExitCode = exitCode,
+        Output = output,
+        ErrorMessage = exitCode == 0 ? null : $"钩子命令退出码 {exitCode}",
+    };
+
+    private static void TryKill(Process proc)
+    {
+        try
+        {
+            if (!proc.HasExited)
+            {
+                proc.Kill(entireProcessTree: true);
+            }
+        }
+        catch
+        {
+            /* 进程可能已退出 */
         }
     }
 

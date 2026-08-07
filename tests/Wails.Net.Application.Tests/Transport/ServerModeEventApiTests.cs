@@ -6,7 +6,6 @@ using Wails.Net.Application.Events;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform.ServerMode;
 using Wails.Net.Application.Transport;
-using Wails.Net.Runtime.Js;
 
 namespace Wails.Net.Application.Tests.Transport;
 
@@ -165,10 +164,10 @@ public sealed class ServerModeEventApiTests
         {
             var js = app.GenerateRuntimeJs(isDebug: false);
 
-            // 验证 ServerRuntime 模板中的 wsUrl 变量被注入
+            // 验证 window._wails.webSocketUrl 被正确注入
             await Assert.That(js).Contains("ws://localhost:");
             await Assert.That(js).Contains("/wails/ws");
-            await Assert.That(js).Contains("WebSocket 已连接");
+            await Assert.That(js).Contains("webSocketUrl");
         }
         finally
         {
@@ -187,33 +186,9 @@ public sealed class ServerModeEventApiTests
 
         var js = app.GenerateRuntimeJs(isDebug: false);
 
-        // 应该是 ServerRuntime 模板，但 wsUrl 应为空字符串序列化结果
-        await Assert.That(js).Contains("WailsNET Server Runtime");
-        // 空字符串序列化为 ""，不应包含 ws://localhost: 实际 URL
-        await Assert.That(js.Contains("ws://localhost:")).IsFalse();
-    }
-
-    /// <summary>
-    /// 验证 ServerRuntime 生成的 JS 代码包含 _wailsInvoke、_wailsCancelCall、_wailsOnEvent、_wailsEmitEvent 全套 API。
-    /// </summary>
-    [Test]
-    public async Task ServerRuntime_Generate_ContainsAllAlignedEventApis()
-    {
-        var options = new RuntimeOptions
-        {
-            Platform = "server",
-            IsServerMode = true,
-            WebSocketUrl = "ws://localhost:9999/wails/ws",
-            AssetServerUrl = "http://localhost:9999",
-        };
-
-        var js = ServerRuntime.Generate(options);
-
-        await Assert.That(js).Contains("window._wailsInvoke");
-        await Assert.That(js).Contains("window._wailsCancelCall");
-        await Assert.That(js).Contains("window._wailsOnEvent");
-        await Assert.That(js).Contains("window._wailsEmitEvent");
-        await Assert.That(js).Contains("ws://localhost:9999/wails/ws");
+        // 应注入 window._wails 标志；ws URL 在无传输层时为空字符串
+        await Assert.That(js).Contains("window._wails");
+        await Assert.That(js.Contains("\"ws://localhost:")).IsFalse();
     }
 
     /// <summary>

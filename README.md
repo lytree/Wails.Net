@@ -201,7 +201,7 @@ Wails.Net/
 │   ├── Wails.Net.Application.Android/  # Android 平台实现（.NET Android + WebView）
 │   ├── Wails.Net.Application.MacOS/    # macOS 平台骨架（G7，降级到 ServerPlatformApp）
 │   ├── Wails.Net.AssetServer/          # 资源服务器（含 Security/Nonce/Isolation）
-│   ├── Wails.Net.Runtime.Js/           # JS 运行时生成器
+│   ├── @wails-net/runtime/           # JS 运行时生成器
 │   ├── Wails.Net.SourceGenerators/     # 源代码生成器（AOT 友好）
 │   ├── Wails.Net.Generator/            # 代码生成器核心库（TS 绑定）
 │   ├── Wails.Net.Errors/               # 错误类型

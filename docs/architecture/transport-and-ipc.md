@@ -287,18 +287,18 @@ public class AssetsOptions
 
 ## 8. 运行时 JS 注入
 
-前端能调用 `window.wails.*` API 的前提是 [`RuntimeGenerator`](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 生成的运行时 JS 已注入到 WebView。
+前端能调用 `window.wails.*` API 的前提是 [`@wails-net/runtime`](file:///f:/Code/Dotnet/Wails.Net/packages/wails-net-runtime/src/core/runtime.ts) 生成的运行时 JS 已注入到 WebView。
 
 ### 8.1 Generate(options) — 生成 window.wails API
 
-`RuntimeGenerator.Generate(RuntimeOptions)` 由四部分拼接而成：
+`@wails-net/runtime.Generate(`Application.GenerateRuntimeJs`)` 由四部分拼接而成：
 
 ```csharp
 var flags          = GenerateFlags(options);          // window._wails 标志对象
 var api           = GenerateApi(options);             // window.wails API 对象
 var transport     = LoadTemplate(TransportTemplateFileName, options); // 传输层模板
 var platformRuntime = options.IsServerMode
-    ? ServerRuntime.Generate(options)
+    ? transport (WebSocket).Generate(options)
     : DesktopRuntime.Generate(options);
 return $"{flags}\n{api}\n{transport}\n{platformRuntime}";
 ```

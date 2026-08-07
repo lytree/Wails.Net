@@ -183,7 +183,7 @@
 ### 关键差异
 
 - **Wails.Net** 的 [WindowPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/WindowPlugin.cs) 借鉴 Tauri v2 的"核心即插件"哲学，将所有窗口操作以插件命令形式暴露，同时声明三层权限集（`window:default` / `window:allow-readonly` / `window:allow-dangerous`）。命令分为：标题与尺寸、显示/隐藏/状态、全屏与置顶、DevTools、缩放、导航、打印与导出、执行 JS 与注入 CSS、透明度、可调整大小、自定义协议、任务栏、查询类操作（有返回值）。
-- **Wails.Net** 自 P1-4 起新增 [MenuManager](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Managers/MenuManager.cs) 与 [ContextMenuData](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Menus/ContextMenuData.cs)，并让 [RuntimeGenerator](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 注入 ContextMenu 钩子，对齐 Wails v3 的右键菜单行为（[MessageProcessorContextMenuTests](file:///f:/Code/Dotnet/Wails.Net/tests/Wails.Net.Application.Tests/Transport/MessageProcessorContextMenuTests.cs) 验证）。
+- **Wails.Net** 自 P1-4 起新增 [MenuManager](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Managers/MenuManager.cs) 与 [ContextMenuData](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Menus/ContextMenuData.cs)，并让 [@wails-net/runtime](file:///f:/Code/Dotnet/Wails.Net/packages/wails-net-runtime/src/core/runtime.ts) 注入 ContextMenu 钩子，对齐 Wails v3 的右键菜单行为（[MessageProcessorContextMenuTests](file:///f:/Code/Dotnet/Wails.Net/tests/Wails.Net.Application.Tests/Transport/MessageProcessorContextMenuTests.cs) 验证）。
 - **Wails.Net** 自 P1-5 起统一三平台 Frameless 拖拽实现：[DragRegionHelper](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Windows/DragRegionHelper.cs) 统一使用 `--wails-drag-region` CSS 变量，Windows / Linux / Android 三平台 WebviewWindow 行为一致。
 - **Wails 3** 窗口 API 直接通过 `wails.window.*` 暴露，无权限校验。
 - **Wails.Net** Win32 实现 [Win32WebviewWindow](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Windows/Win32WebviewWindow.cs) 完整处理 WM_DESTROY/WM_CLOSE/WM_SIZE/WM_COMMAND/WM_SYSCOMMAND/WM_GETMINMAXINFO/WM_DPICHANGED/WM_HOTKEY/WM_DROPFILES/WM_SETTINGCHANGE/WM_MOVE/WM_NCLBUTTONDOWN/WM_SETICON/WM_ACTIVATE/WM_DISPLAYCHANGE/WM_CLIPBOARDUPDATE/WM_KEYDOWN/WM_CONTEXTMENU 等 18+ 消息。
@@ -234,7 +234,7 @@
   - **全局热键注册**：角色带默认 Accelerator 时自动注册到 `KeyBindingManager`，修复了现有 Accelerator 仅在菜单栏内生效、不全局响应的 bug。
   - **关于对话框**（[AboutMetadata](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Menus/AboutMetadata.cs)）：对应 Tauri v2 `AboutMetadata`，包含 Name/Version/ShortVersion/Authors/Copyright/License/Website/WebsiteLabel/Comments 9 个字段。
   - **标准菜单组合**：`Menu.AddStandardEditMenu()`（Undo/Redo/Sep/Cut/Copy/Paste/SelectAll）+ `AddStandardWindowMenu()`（Minimize/Maximize/Sep/CloseWindow）+ `AddStandardHelpMenu(metadata)`（About），一键构建跨平台标准菜单。
-  - **前端 API 注入**：[RuntimeGenerator](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 注入 `wails.MenuRole` 常量枚举与 4 个 menu.* 命令，前端可直接构造角色菜单。
+  - **前端 API 注入**：[@wails-net/runtime](file:///f:/Code/Dotnet/Wails.Net/packages/wails-net-runtime/src/core/runtime.ts) 注入 `wails.MenuRole` 常量枚举与 4 个 menu.* 命令，前端可直接构造角色菜单。
   - **测试覆盖**：[MenuRoleTests](file:///f:/Code/Dotnet/Wails.Net/tests/Wails.Net.Application.Tests/MenuRoleTests.cs) 30+ 项测试覆盖 MenuRole 枚举、AboutMetadata、MenuItem 工厂方法、MenuRoleHelper。
 - **Tauri 2** 通过 `PredefinedMenuItem` 提供约 14 个预定义菜单项，工厂 API 与 Wails.Net 类似，但无标准菜单组合方法。
 - **Wails 3** 通过 `Role` 常量支持菜单角色，但缺少工厂方法与跨平台辅助工具的统一封装。
@@ -697,7 +697,7 @@ IBrowserManager 接口在 Windows / Linux / Android 三平台均有实现，支�
 - **全局热键注册**：角色带默认 Accelerator 时自动注册到 `KeyBindingManager`，修复了现有 Accelerator 仅在菜单栏内生效、不全局响应的 bug。
 - **关于对话框元数据**：[AboutMetadata](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Menus/AboutMetadata.cs) 9 个字段（对应 Tauri v2 AboutMetadata）。
 - **标准菜单组合**：`AddStandardEditMenu` / `AddStandardWindowMenu` / `AddStandardHelpMenu` 一键构建跨平台标准菜单。
-- **前端 API 注入**：[RuntimeGenerator](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 注入 `wails.MenuRole` 常量枚举与 4 个 menu.* 命令。
+- **前端 API 注入**：[@wails-net/runtime](file:///f:/Code/Dotnet/Wails.Net/packages/wails-net-runtime/src/core/runtime.ts) 注入 `wails.MenuRole` 常量枚举与 4 个 menu.* 命令。
 - **macOS 专属降级**：通过运行时 `IsMacOSExclusive` 判定，Windows/Linux 静默 no-op，不抛异常；不使用 `[SupportedOSPlatform]` 特性以避免跨平台代码触发 CA1416。
 - **测试覆盖**：[MenuRoleTests](file:///f:/Code/Dotnet/Wails.Net/tests/Wails.Net.Application.Tests/MenuRoleTests.cs) 30+ 项测试。
 
@@ -766,7 +766,7 @@ IBrowserManager 接口在 Windows / Linux / Android 三平台均有实现，支�
 - ✅ P1-1：BrowserManager 三平台实现（Windows / Linux / Android / Server）
 - ✅ P1-2：事件 senderWindowId 传播（EventProcessor + Transport 全链路）
 - ✅ P1-3：Logger ↔ 前端 console 双向桥接（BrowserConsoleLogReceiver + Forwarder + LoggerProvider）
-- ✅ P1-4：ContextMenu 行为对齐（MenuManager + ContextMenuData + RuntimeGenerator 钩子）
+- ✅ P1-4：ContextMenu 行为对齐（MenuManager + ContextMenuData + @wails-net/runtime 钩子）
 - ✅ P1-5：Frameless 拖拽 CSS 变量统一（`--wails-drag-region`，三平台一致）
 - ✅ P1-6：AssetServer Service Route 挂载能力（IHttpServiceHandler）
 - ✅ P1-7：Event Hooks 补齐（PostShutdown / ShouldQuit）

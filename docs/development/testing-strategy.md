@@ -430,7 +430,7 @@ public async Task Src_MustNotUseRuntimeReflection()
 
 ---
 
-### 4.4 前端测试（`Wails.Net.Runtime.Js` 1141 行零测试）
+### 4.4 前端测试（`@wails-net/runtime` 1141 行零测试）
 
 对标 `@tauri-apps/api/mocks`，为 `@wails-net/runtime` 增加 `/mocks` 子路径导出：
 
@@ -568,7 +568,7 @@ public async Task ContractTestCount_MustMatchAcrossPlatforms()
 | **A** | `Wails.Net.Testing` + MockPlatform + 接入 GuiContract 契约 | 无 GUI 跑通 IPC 全链路；Mock 受 109 契约约束 | 无 | ✅ **已完成**（2026-08-02，116 测试全绿：8 个 A2 + 108 个 A3 继承契约） |
 | **A'** | 覆盖率基线（不设门禁，先出数） | 知道真实覆盖率是多少 | 无 | ⬜ 待开始 |
 | **B** | 源生成器测试（`CSharpGeneratorDriver` 驱动 + 结构化快照）+ 禁反射守卫 | 1402 行基石有测试；§3.4 自动化 | 无 | ✅ **已完成**（2026-08-02，B1 5 测试 + B2 1 测试；详见 `Wails.Net.SourceGenerators.Tests` 与 `ReflectionGuardTests`） |
-| **C** | `Events`/`Errors`/`MacOS` 补测 + 覆盖率门禁开启 | 8 个零测试模块降到 4 个 | A' | ⬜ 待开始 |
+| **C** | `Events`/`Errors`/`MacOS` 补测 + 覆盖率门禁开启 | 8 个零测试模块降到 4 个 | A' | 🟡 **进行中**（2026-08-02：`Errors`/`Events` 补测完成，13+10 测试全绿；`MacOS` 需 macOS runner、`A'` 覆盖率基线待建、门禁待开） |
 | **D** | 前端 `mocks` 包 + Vitest + 跨语言哈希黄金用例 | Runtime.Js 脱离零测试 | 无 | ⬜ 待开始 |
 | **E** | CI 重构（xvfb、拆分 continue-on-error、契约计数元测试） | Linux/Android 有真门禁 | A、B | ⬜ 待开始 |
 | **F** | 桌面 E2E-Lite（测试后门插件） | 三平台 E2E 对齐 | A | ⬜ 待开始 |
@@ -577,6 +577,8 @@ public async Task ContractTestCount_MustMatchAcrossPlatforms()
 > **进度说明（2026-08-02）**：阶段 A 已全部落地并通过。`tests/Wails.Net.Testing.Tests` 是 A 的载体（A2 门面验证 + A3 Mock 第 4 平台契约）。**阶段 B 已完成**：B1 在 `tests/Wails.Net.SourceGenerators.Tests` 用 `CSharpGeneratorDriver` 驱动 `BindingSourceGenerator`（离线环境以「结构化断言 + 确定性 + 语法有效性 + 生成代码可编译性」替代 `Verify.TUnit` 全文快照，因仓库缓存无 `Verify.TUnit` 与 `Basic.Reference.Assemblies.*`），共 5 测试；B2 在 `tests/Wails.Net.Application.Tests/Architecture/ReflectionGuardTests.cs` 扫描 `src/` 禁用运行时反射（注释/字符串已剥离，白名单 3 处例外），共 1 测试。两者均已通过。阶段 A 修复的关键坑（C# `params` 前带可选数值参数的重载决议陷阱）已记入 `.workbuddy/memory/MEMORY.md`，接手前必读。仓库根目录已确认无 `invoke_json.txt` / `parse_json.txt` / `binding_args.txt` / `DiagnosticTests.cs` 等临时文件残留，交接干净。
 
 **建议起手**：A → B 两步价值密度最高。A 让绝大多数"必须有 GUI"的测试变成 CI 可跑；B 堵住整个禁反射架构的验证空白。
+
+**进度更新（2026-08-02 续）**：阶段 C 的 `Errors`/`Events` 补测已落地并全绿——新增 `tests/Wails.Net.Errors.Tests`（13 测试：`CallError`/`WailsError`/`ErrorCodes` 的 IPC 契约与枚举数值稳定性）与 `tests/Wails.Net.Events.Tests`（10 测试：`CommonEvents` 保留名识别 + `KnownEvents` 事件名映射与 `uint` 阈值路由）。两项均 0 警告 0 错误编译通过。`CommonEvents.IsKnownEvent` 顺带把参数由 `string` 改为 `string?`（方法内部 `Contains` 本就容忍 null，属合理生产改进）。`MacOS` 补测因代码受 macOS TFM 条件编译约束、本机（Windows）无法构建运行，留待 macOS CI runner；覆盖率门禁（§5.1）依赖 `A'` 基线，亦未开启。C 阶段目前只看 `Errors`/`Events` 已实质性推进。
 
 ---
 
@@ -587,7 +589,7 @@ public async Task ContractTestCount_MustMatchAcrossPlatforms()
 | 模块 | 规模 | 风险 |
 |------|------|------|
 | `Wails.Net.SourceGenerators` | 3 文件 / **1402 行** | 🔴 极高——禁反射架构基石 |
-| `Wails.Net.Runtime.Js` | 4 文件 / 1141 行 | 🔴 高——前端唯一入口 |
+| `@wails-net/runtime` | 4 文件 / 1141 行 | 🔴 高——前端唯一入口 |
 | `Wails.Net.Events` | 5 / 588 | 🟡 中 |
 | `Wails.Net.Application.MacOS` | 4 / 341 | 🟢 低——骨架实现 |
 | `Wails.Net.Errors` | 3 / 256 | 🟡 中 |

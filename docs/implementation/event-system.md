@@ -416,7 +416,7 @@ AndroidPlatformApp.On(uint androidEventId)
 
 ## 4. 前端事件 API
 
-前端运行时由 [RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 生成并注入到 Webview，事件相关 API 暴露在 `window.wails.events` 命名空间。
+前端运行时由 [@wails-net/runtime.cs](file:///f:/Code/Dotnet/Wails.Net/packages/wails-net-runtime/src/core/runtime.ts) 生成并注入到 Webview，事件相关 API 暴露在 `window.wails.events` 命名空间。
 
 ### 4.1 wails.events.on — 订阅事件
 
@@ -437,7 +437,7 @@ events: {
 
 ### 4.2 _wailsOnEvent / _wailsEmitEvent 内部机制
 
-实际的回调注册表由 [transport.template.js](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/Resources/transport.template.js) 维护：
+实际的回调注册表由 [transport.template.js](file:///f:/Code/Dotnet/Wails.Net/packages/wails-net-runtime/src/internal/transport.ts) 维护：
 
 ```javascript
 var _eventCallbacks = {};

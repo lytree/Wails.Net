@@ -1,0 +1,16 @@
+# Wails.Net 前端 pnpm 工作区
+#
+# 全仓单一工作区：共享一份 node_modules 存储与一份 pnpm-lock.yaml。
+# 示例前端通过 "@wails-net/runtime": "workspace:*" 直接链接到本地包源码，
+# 无需发布到 npm registry 即可联调。
+#
+# 约定：
+#   - packages/*            —— 可发布的公共包（@wails-net/runtime 等）
+#   - examples/*/frontend   —— 示例应用的前端工程（private，不发布）
+packages:
+  - "packages/*"
+  - "examples/*/frontend"
+
+# esbuild / vite 等含安装脚本的依赖需显式放行，否则 pnpm 会跳过其 postinstall
+onlyBuiltDependencies:
+  - esbuild

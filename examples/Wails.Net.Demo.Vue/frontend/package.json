@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@wails-net/runtime": "workspace:*",
     "vue": "^3.5.13"
   },
   "devDependencies": {

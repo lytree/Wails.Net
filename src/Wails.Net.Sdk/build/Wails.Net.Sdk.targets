@@ -4,6 +4,13 @@
   在消费者项目评估后期自动导入，处理 Wails.Net 相关的构建目标。
 
   此文件由 NuGet 自动导入（位于 build/ 目录），无需消费者手动 Import。
+
+  前端自动构建（vite + pnpm）：
+  - 约定消费者项目在 $(MSBuildProjectDirectory)\frontend 下提供 vite 项目。
+  - 通过 pnpm（默认，可用 WailsNetPackageManager 切换为 npm）执行 install/build。
+  - 在 .NET 编译前自动构建前端，并将 dist 作为静态资源由 Assets 配置托管。
+  - 目标以 Exists('$(WailsNetFrontendDir)') 自动守卫：SDK / Bundle 等无前端目录的项目
+    不会触发前端构建，无需消费者显式关闭。
 -->
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
@@ -13,6 +20,58 @@
   -->
   <Target Name="WailsNetWarnPlatformMismatch" BeforeTargets="BeforeBuild" Condition="'$(WailsNetPlatformMismatchWarning)' != ''">
     <Warning Text="$(WailsNetPlatformMismatchWarning)" />
+  </Target>
+
+  <!-- ============ 前端自动构建默认属性 ============ -->
+  <PropertyGroup>
+    <!-- 前端项目根目录（vite 项目所在目录）。 -->
+    <WailsNetFrontendDir Condition="'$(WailsNetFrontendDir)' == ''">$(MSBuildProjectDirectory)\frontend</WailsNetFrontendDir>
+    <!-- 前端构建产物目录。 -->
+    <WailsNetFrontendDistDir Condition="'$(WailsNetFrontendDistDir)' == ''">$(WailsNetFrontendDir)\dist</WailsNetFrontendDistDir>
+    <!-- 设为 true 跳过前端构建（dotnet build -p:WailsNetSkipFrontendBuild=true）。 -->
+    <WailsNetSkipFrontendBuild Condition="'$(WailsNetSkipFrontendBuild)' == ''">false</WailsNetSkipFrontendBuild>
+    <!-- 设为 true 强制重建前端（dotnet build -p:WailsNetRebuildFrontend=true）。 -->
+    <WailsNetRebuildFrontend Condition="'$(WailsNetRebuildFrontend)' == ''">false</WailsNetRebuildFrontend>
+    <!-- 包管理器：pnpm（默认，遵循「前端使用 vite + pnpm 管理」约定），可切换为 npm。 -->
+    <WailsNetPackageManager Condition="'$(WailsNetPackageManager)' == ''">pnpm</WailsNetPackageManager>
+  </PropertyGroup>
+
+  <!--
+    前端构建目标（BeforeBuild）。
+    自动守卫：仅当存在前端目录、未显式跳过、且 dist 缺失或强制重建时执行。
+    增量策略：dist/index.html 已存在且未强制重建则跳过。
+  -->
+  <Target Name="WailsNetBuildFrontend"
+          BeforeTargets="BeforeBuild"
+          Condition="'$(WailsNetSkipFrontendBuild)' != 'true' And Exists('$(WailsNetFrontendDir)') And (!Exists('$(WailsNetFrontendDistDir)\index.html') Or '$(WailsNetRebuildFrontend)' == 'true')">
+    <Message Importance="high" Text="========== 正在构建前端（vite + $(WailsNetPackageManager)）==========" />
+    <!-- install：仅当前端目录或工作区根尚未安装依赖时执行（pnpm 会自动向上发现 workspace 根）。 -->
+    <Exec Command="$(WailsNetPackageManager) install"
+          WorkingDirectory="$(WailsNetFrontendDir)"
+          Condition="!Exists('$(WailsNetFrontendDir)\node_modules') And !Exists('$(MSBuildProjectDirectory)\..\..\node_modules')"
+          ConsoleToMSBuild="true" />
+    <!-- build -->
+    <Exec Command="$(WailsNetPackageManager) build"
+          WorkingDirectory="$(WailsNetFrontendDir)"
+          ConsoleToMSBuild="true" />
+    <Message Importance="high" Text="========== 前端构建完成 ==========" />
+  </Target>
+
+  <!--
+    开发模式：watch 前端变化并自动重建 dist。
+    用法：dotnet msbuild -t:WailsNetWatchFrontend
+    另开终端运行 dotnet run（可配合 -p:WailsNetSkipFrontendBuild=true 跳过构建）。
+  -->
+  <Target Name="WailsNetWatchFrontend" Condition="Exists('$(WailsNetFrontendDir)')">
+    <Message Importance="high" Text="启动前端 watch 模式（vite build --watch）..." />
+    <Message Importance="high" Text="按 Ctrl+C 停止。另开终端运行: dotnet run（可加 -p:WailsNetSkipFrontendBuild=true）" />
+    <Exec Command="$(WailsNetPackageManager) watch" WorkingDirectory="$(WailsNetFrontendDir)" ConsoleToMSBuild="true" />
+  </Target>
+
+  <!-- 清理前端构建产物（dotnet clean 时自动执行）。 -->
+  <Target Name="WailsNetCleanFrontend" AfterTargets="Clean" Condition="Exists('$(WailsNetFrontendDistDir)')">
+    <Message Importance="normal" Text="清理前端构建产物: $(WailsNetFrontendDistDir)" />
+    <RemoveDir Directories="$(WailsNetFrontendDistDir)" />
   </Target>
 
 </Project>

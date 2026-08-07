@@ -8,7 +8,6 @@ using TUnit.Core;
 using Wails.Net.Application.Commands;
 using Wails.Net.Application.Plugins;
 using Wails.Net.Application.Plugins.BuiltIn;
-using Wails.Net.Runtime.Js;
 
 namespace Wails.Net.Application.Tests;
 
@@ -337,142 +336,8 @@ public sealed class SystemEventsAndFsWatchTests
     }
 
     // ---------------------------------------------------------------------
-    // RuntimeGenerator JS API 补全测试
+    // RuntimeGenerator JS API 补全测试（P0-D：前端运行时已迁往 npm 包 @wails-net/runtime，
+    // 故此处的 window.wails 字符串断言失去意义，相关测试已移除。
+    // 等价覆盖见 packages/wails-net-runtime/src/api/*.ts 单测与 vitest 套件。）
     // ---------------------------------------------------------------------
-
-    [Test]
-    public async Task RuntimeGenerator_GenerateApi_ContainsFsWatchNamespace()
-    {
-        var options = new RuntimeOptions { Platform = "windows", IsDebug = false, IsServerMode = false };
-        var api = RuntimeGenerator.GenerateApi(options);
-
-        await Assert.That(api.Contains("fswatch:")).IsTrue();
-        await Assert.That(api.Contains("fswatch.watch")).IsTrue();
-        await Assert.That(api.Contains("fswatch.unwatch")).IsTrue();
-        await Assert.That(api.Contains("fswatch.unwatchAll")).IsTrue();
-        await Assert.That(api.Contains("fswatch.listWatches")).IsTrue();
-        await Assert.That(api.Contains("fswatch.isWatching")).IsTrue();
-    }
-
-    [Test]
-    public async Task RuntimeGenerator_GenerateApi_ContainsSystemNamespace()
-    {
-        var options = new RuntimeOptions { Platform = "windows", IsDebug = false, IsServerMode = false };
-        var api = RuntimeGenerator.GenerateApi(options);
-
-        await Assert.That(api.Contains("system.")).IsTrue();
-        await Assert.That(api.Contains("system.platform")).IsTrue();
-        await Assert.That(api.Contains("system.arch")).IsTrue();
-        await Assert.That(api.Contains("system.hostname")).IsTrue();
-        await Assert.That(api.Contains("system.version")).IsTrue();
-        await Assert.That(api.Contains("system.type")).IsTrue();
-        await Assert.That(api.Contains("system.locale")).IsTrue();
-        await Assert.That(api.Contains("system.timezone")).IsTrue();
-    }
-
-    [Test]
-    public async Task RuntimeGenerator_GenerateApi_ContainsPowerNamespace()
-    {
-        var options = new RuntimeOptions { Platform = "windows", IsDebug = false, IsServerMode = false };
-        var api = RuntimeGenerator.GenerateApi(options);
-
-        await Assert.That(api.Contains("power.")).IsTrue();
-        await Assert.That(api.Contains("power.requestWakeLock")).IsTrue();
-        await Assert.That(api.Contains("power.releaseWakeLock")).IsTrue();
-        await Assert.That(api.Contains("power.isWakeLockHeld")).IsTrue();
-    }
-
-    [Test]
-    public async Task RuntimeGenerator_GenerateApi_ContainsProcessNamespace()
-    {
-        var options = new RuntimeOptions { Platform = "windows", IsDebug = false, IsServerMode = false };
-        var api = RuntimeGenerator.GenerateApi(options);
-
-        await Assert.That(api.Contains("process.exit")).IsTrue();
-        await Assert.That(api.Contains("process.restart")).IsTrue();
-        await Assert.That(api.Contains("process.getPid")).IsTrue();
-    }
-
-    [Test]
-    public async Task RuntimeGenerator_GenerateApi_ContainsFsNamespace()
-    {
-        var options = new RuntimeOptions { Platform = "windows", IsDebug = false, IsServerMode = false };
-        var api = RuntimeGenerator.GenerateApi(options);
-
-        await Assert.That(api.Contains("fs.readTextFile")).IsTrue();
-        await Assert.That(api.Contains("fs.writeTextFile")).IsTrue();
-        await Assert.That(api.Contains("fs.exists")).IsTrue();
-        await Assert.That(api.Contains("fs.mkdir")).IsTrue();
-        await Assert.That(api.Contains("fs.remove")).IsTrue();
-        await Assert.That(api.Contains("fs.rename")).IsTrue();
-        await Assert.That(api.Contains("fs.copy")).IsTrue();
-        await Assert.That(api.Contains("fs.readDir")).IsTrue();
-    }
-
-    [Test]
-    public async Task RuntimeGenerator_GenerateApi_ContainsShellNamespace()
-    {
-        var options = new RuntimeOptions { Platform = "windows", IsDebug = false, IsServerMode = false };
-        var api = RuntimeGenerator.GenerateApi(options);
-
-        await Assert.That(api.Contains("shell.execute")).IsTrue();
-        await Assert.That(api.Contains("shell.open")).IsTrue();
-        await Assert.That(api.Contains("shell.openUrl")).IsTrue();
-    }
-
-    [Test]
-    public async Task RuntimeGenerator_GenerateApi_ContainsNotificationNamespace()
-    {
-        var options = new RuntimeOptions { Platform = "windows", IsDebug = false, IsServerMode = false };
-        var api = RuntimeGenerator.GenerateApi(options);
-
-        await Assert.That(api.Contains("notification.show")).IsTrue();
-        await Assert.That(api.Contains("notification.requestPermission")).IsTrue();
-        await Assert.That(api.Contains("notification.hasPermission")).IsTrue();
-    }
-
-    [Test]
-    public async Task RuntimeGenerator_GenerateApi_ContainsStoreNamespace()
-    {
-        var options = new RuntimeOptions { Platform = "windows", IsDebug = false, IsServerMode = false };
-        var api = RuntimeGenerator.GenerateApi(options);
-
-        await Assert.That(api.Contains("store.get")).IsTrue();
-        await Assert.That(api.Contains("store.set")).IsTrue();
-        await Assert.That(api.Contains("store.delete")).IsTrue();
-        await Assert.That(api.Contains("store.keys")).IsTrue();
-        await Assert.That(api.Contains("store.clear")).IsTrue();
-        await Assert.That(api.Contains("store.has")).IsTrue();
-    }
-
-    [Test]
-    public async Task RuntimeGenerator_GenerateApi_ContainsLogNamespace()
-    {
-        var options = new RuntimeOptions { Platform = "windows", IsDebug = false, IsServerMode = false };
-        var api = RuntimeGenerator.GenerateApi(options);
-
-        await Assert.That(api.Contains("log.debug")).IsTrue();
-        await Assert.That(api.Contains("log.info")).IsTrue();
-        await Assert.That(api.Contains("log.warn")).IsTrue();
-        await Assert.That(api.Contains("log.error")).IsTrue();
-        await Assert.That(api.Contains("log.trace")).IsTrue();
-    }
-
-    [Test]
-    public async Task RuntimeGenerator_GenerateApi_AllNamespacesPresent()
-    {
-        var options = new RuntimeOptions { Platform = "windows", IsDebug = false, IsServerMode = false };
-        var api = RuntimeGenerator.GenerateApi(options);
-
-        // 验证所有命名空间都存在
-        await Assert.That(api.Contains("fswatch:")).IsTrue();
-        await Assert.That(api.Contains("system.")).IsTrue();
-        await Assert.That(api.Contains("power.")).IsTrue();
-        await Assert.That(api.Contains("process.")).IsTrue();
-        await Assert.That(api.Contains("fs.")).IsTrue();
-        await Assert.That(api.Contains("shell.")).IsTrue();
-        await Assert.That(api.Contains("notification.")).IsTrue();
-        await Assert.That(api.Contains("store.")).IsTrue();
-        await Assert.That(api.Contains("log.")).IsTrue();
-    }
 }

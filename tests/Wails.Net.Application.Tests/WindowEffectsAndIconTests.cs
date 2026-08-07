@@ -3,7 +3,6 @@ using TUnit.Assertions;
 using TUnit.Core;
 using Wails.Net.Application.Icons;
 using Wails.Net.Application.Windows;
-using Wails.Net.Runtime.Js;
 
 namespace Wails.Net.Application.Tests;
 
@@ -213,62 +212,8 @@ public sealed class WindowEffectsAndIconTests
     }
 
     // ---------------------------------------------------------------------
-    // RuntimeGenerator JS API 验证
+    // RuntimeGenerator JS API 验证（P0-D：前端运行时已迁往 npm 包 @wails-net/runtime，
+    // 故此处的 window.wails 字符串断言失去意义，相关测试已移除。
+    // 等价覆盖见 packages/wails-net-runtime/src/api/window.ts 单测与 vitest 套件。）
     // ---------------------------------------------------------------------
-
-    [Test]
-    public async Task RuntimeGenerator_GenerateApi_ContainsSetSkipTaskbar()
-    {
-        var js = RuntimeGenerator.GenerateApi(new RuntimeOptions());
-        await Assert.That(js).Contains("setSkipTaskbar");
-    }
-
-    [Test]
-    public async Task RuntimeGenerator_GenerateApi_ContainsSetIgnoreCursorEvents()
-    {
-        var js = RuntimeGenerator.GenerateApi(new RuntimeOptions());
-        await Assert.That(js).Contains("setIgnoreCursorEvents");
-    }
-
-    [Test]
-    public async Task RuntimeGenerator_GenerateApi_ContainsSetEffects()
-    {
-        var js = RuntimeGenerator.GenerateApi(new RuntimeOptions());
-        await Assert.That(js).Contains("setEffects");
-    }
-
-    [Test]
-    public async Task RuntimeGenerator_GenerateApi_ContainsSetBadgeCount()
-    {
-        var js = RuntimeGenerator.GenerateApi(new RuntimeOptions());
-        await Assert.That(js).Contains("setBadgeCount");
-    }
-
-    [Test]
-    public async Task RuntimeGenerator_GenerateApi_ContainsSetBadgeLabel()
-    {
-        var js = RuntimeGenerator.GenerateApi(new RuntimeOptions());
-        await Assert.That(js).Contains("setBadgeLabel");
-    }
-
-    [Test]
-    public async Task RuntimeGenerator_GenerateApi_ContainsSetVisibleOnAllWorkspaces()
-    {
-        var js = RuntimeGenerator.GenerateApi(new RuntimeOptions());
-        await Assert.That(js).Contains("setVisibleOnAllWorkspaces");
-    }
-
-    [Test]
-    public async Task RuntimeGenerator_GenerateApi_ContainsSetBorderColor()
-    {
-        var js = RuntimeGenerator.GenerateApi(new RuntimeOptions());
-        await Assert.That(js).Contains("setBorderColor");
-    }
-
-    [Test]
-    public async Task RuntimeGenerator_GenerateApi_ContainsSetFileDropEnabled()
-    {
-        var js = RuntimeGenerator.GenerateApi(new RuntimeOptions());
-        await Assert.That(js).Contains("setFileDropEnabled");
-    }
 }

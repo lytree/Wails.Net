@@ -520,7 +520,7 @@
 - [Menu](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Menus/Menu.cs) 新增 `AddRoleItem`/`AddStandardEditMenu`/`AddStandardWindowMenu`/`AddStandardHelpMenu` 方法。
 - [Win32Menu.ApplyRole](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Windows/Win32Menu.cs) / [LinuxMenu.ApplyRole](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Linux/LinuxMenu.cs) 各自实现 ExecuteRole，编辑命令通过 `document.execCommand` 调用。
 - [AboutMetadata](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Menus/AboutMetadata.cs) 9 个字段（Name/Version/ShortVersion/Authors/Copyright/License/Website/WebsiteLabel/Comments），对应 Tauri v2 `AboutMetadata`。
-- [RuntimeGenerator](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 注入前端 `wails.MenuRole` 常量枚举与 4 个 menu.* 命令。
+- [@wails-net/runtime](file:///f:/Code/Dotnet/Wails.Net/packages/wails-net-runtime/src/core/runtime.ts) 注入前端 `wails.MenuRole` 常量枚举与 4 个 menu.* 命令。
 
 **差异分析**：
 - Wails.Net 的 MenuRole 系统是**三者中最完整**的角色菜单实现，结合 Wails v3 Role 常量模型与 Tauri v2 PredefinedMenuItem 工厂模式：

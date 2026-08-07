@@ -8,7 +8,6 @@
       - Wails.Net.Application          核心应用框架（绑定、命令、插件、平台抽象）
       - Wails.Net.Application.Windows  Windows 平台实现（WebView2 + CsWin32）
       - Wails.Net.AssetServer          静态资源服务器
-      - Wails.Net.Runtime.Js           前端运行时 JS 注入
       - Wails.Net.Errors               错误类型
       - Wails.Net.Events               事件类型定义
       - Wails.Net.SourceGenerators     源代码生成器（[Binding]/[Command]）
@@ -45,7 +44,6 @@
     <ProjectReference Include="..\Wails.Net.Application\Wails.Net.Application.csproj" />
     <ProjectReference Include="..\Wails.Net.Application.Windows\Wails.Net.Application.Windows.csproj" />
     <ProjectReference Include="..\Wails.Net.AssetServer\Wails.Net.AssetServer.csproj" />
-    <ProjectReference Include="..\Wails.Net.Runtime.Js\Wails.Net.Runtime.Js.csproj" />
     <ProjectReference Include="..\Wails.Net.Errors\Wails.Net.Errors.csproj" />
     <ProjectReference Include="..\Wails.Net.Events\Wails.Net.Events.csproj" />
     <ProjectReference Include="..\Wails.Net.SourceGenerators\Wails.Net.SourceGenerators.csproj"

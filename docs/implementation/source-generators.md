@@ -12,7 +12,7 @@ Wails.Net 采用**两套互补**的代码生成系统以消除运行时反射、
 |------|--------|----------|----------|
 | **编译期源生成器** | `Wails.Net.SourceGenerators` | 编译期（Roslyn 增量生成器） | 强类型调用器委托、绑定元数据 |
 | **运行时代码生成器** | `Wails.Net.Generator` | CLI 命令 `wails.net generate` | TypeScript 类型定义、调用封装、事件常量 |
-| **运行时 JS 生成器** | `Wails.Net.Runtime.Js` | 应用启动期 | 注入 Webview 的 `window.wails` API |
+| **运行时 JS 生成器** | `@wails-net/runtime` | 应用启动期 | 注入 Webview 的 `window.wails` API |
 | **表达式树编译器** | `Wails.Net.Application.Commands` | 命令注册时（首次调用前） | `CompiledCommandInvoker` 委托 |
 
 设计原则：
@@ -534,20 +534,20 @@ export const KnownEvents = {
 
 ---
 
-## 5. 运行时 JS 生成器（RuntimeGenerator）
+## 5. 运行时 JS 生成器（@wails-net/runtime）
 
 ### 5.1 Generate(options) 主入口
 
-[RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 在应用启动时生成注入 Webview 的 JavaScript 运行时：
+[@wails-net/runtime.cs](file:///f:/Code/Dotnet/Wails.Net/packages/wails-net-runtime/src/core/runtime.ts) 在应用启动时生成注入 Webview 的 JavaScript 运行时：
 
 ```csharp
-public static string Generate(RuntimeOptions options)
+public static string Generate(`Application.GenerateRuntimeJs` options)
 {
     var flags = GenerateFlags(options);
     var api = GenerateApi(options);
     var transport = LoadTemplate(TransportTemplateFileName, options);
     var platformRuntime = options.IsServerMode
-        ? ServerRuntime.Generate(options)
+        ? transport (WebSocket).Generate(options)
         : DesktopRuntime.Generate(options);
 
     return $"{flags}\n{api}\n{transport}\n{platformRuntime}";
@@ -594,9 +594,9 @@ window._wails = {
 `LoadTemplate` 从程序集嵌入资源加载模板：
 
 ```csharp
-internal static string LoadTemplate(string templateFileName, RuntimeOptions options)
+internal static string LoadTemplate(string templateFileName, `Application.GenerateRuntimeJs` options)
 {
-    var assembly = typeof(RuntimeGenerator).Assembly;
+    var assembly = typeof(@wails-net/runtime).Assembly;
     var resourceName = assembly.GetManifestResourceNames()
         .FirstOrDefault(n => n.EndsWith(templateFileName, StringComparison.Ordinal));
 
@@ -617,18 +617,18 @@ internal static string LoadTemplate(string templateFileName, RuntimeOptions opti
 | `{ASSET_SERVER_URL}` | 资源服务器 URL（Server 模式） |
 | `{WEBSOCKET_URL}` | WebSocket URL（Server 模式） |
 
-### 5.5 DesktopRuntime vs ServerRuntime
+### 5.5 DesktopRuntime vs transport (WebSocket)
 
 通过 `options.IsServerMode` 选择平台运行时：
 
 ```csharp
 var platformRuntime = options.IsServerMode
-    ? ServerRuntime.Generate(options)   // 容器化部署、无 GUI
+    ? transport (WebSocket).Generate(options)   // 容器化部署、无 GUI
     : DesktopRuntime.Generate(options); // 桌面应用（WebView2 / WebKitGTK）
 ```
 
 - `DesktopRuntime`：通过 Webview IPC 通信（`window._wailsInvoke` 由原生拦截）
-- `ServerRuntime`：通过 WebSocket / HTTP 与浏览器通信（`{WEBSOCKET_URL}` 占位符）
+- `transport (WebSocket)`：通过 WebSocket / HTTP 与浏览器通信（`{WEBSOCKET_URL}` 占位符）
 
 ---
 
@@ -742,7 +742,7 @@ return methodInfo.Invoke(instance, BindingFlags.Default, null, args, null);
 
 | 文件 | 职责 |
 |------|------|
-| [RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) | `window.wails` API 与模板生成 |
+| [@wails-net/runtime.cs](file:///f:/Code/Dotnet/Wails.Net/packages/wails-net-runtime/src/core/runtime.ts) | `window.wails` API 与模板生成 |
 
 ---
 

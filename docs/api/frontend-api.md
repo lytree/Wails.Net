@@ -1,24 +1,24 @@
 # 前端 JavaScript API 参考
 
-> 本文档全面描述 Wails.Net 项目注入 Webview 的前端 JavaScript 运行时 API。
-> 全部 API 通过 `window.wails` 全局对象暴露，由 [RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 在运行时动态生成。
-> 传输层实现位于 [transport.template.js](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/Resources/transport.template.js)。
+> 本文档全面描述 Wails.Net 项目的前端 JavaScript 运行时 API。
+> 全部 API 由 npm 包 [`@wails-net/runtime`](../../packages/wails-net-runtime/) 提供（TypeScript 实现，自包含 IPC 传输 + 全部核心命名空间 + 46 个插件命令的强类型封装）。
+> 前端需执行 `import { wails } from "@wails-net/runtime";` 加载；后端通过 `Application.GenerateRuntimeJs()` 注入轻量 `window._wails` 标志对象（platform / isDebug / isServerMode / webSocketUrl / assetServerUrl），由 SDK 内部 `readRuntimeFlags()` 读取。
 
 ## 概述
 
-Wails.Net 在 Webview 启动时注入两段 JavaScript 代码：
+Wails.Net 在 Webview 启动时由后端注入一段轻量 `window._wails` 标志对象，前端业务运行时则由 npm 包 [`@wails-net/runtime`](../../packages/wails-net-runtime/) 加载：
 
-1. **标志对象** `window._wails` — 暴露运行时元信息（平台、调试模式、Server 模式）。
-2. **API 对象** `window.wails` — 包含全部前端可调用 API，按命名空间组织。
+1. **后端注入** `window._wails` — 暴露运行时元信息（platform / isDebug / isServerMode / webSocketUrl / assetServerUrl），由 `Application.GenerateRuntimeJs()` 生成。
+2. **前端加载** `import { wails } from "@wails-net/runtime";` — 包含全部可调用 API 与自包含 IPC 传输（HTTP / 原生 postMessage / Server 模式 WebSocket）。
 
-所有 API 调用最终通过 `window._wailsInvoke(method, params)` 经 HTTP `POST /wails/<method>` 发送到后端 `MessageProcessor`，并返回 `Promise`。事件订阅通过 `window._wailsOnEvent(eventName, callback)` 注册本地回调，由后端 `ExecuteScriptAsync` 调用 `window._wailsEmitEvent(name, data)` 触发。
+所有 API 调用最终通过 SDK 内部 `transport.invoke(type, payload)` 发送，HTTP 通道走 `POST /wails/message`、原生通道走 WebView2 / WebKitGTK / Android `WailsBridge` 同步桥接。事件订阅通过 `wails.events.on(name, callback)` 注册本地回调；后端桌面模式走 `ExecuteScriptAsync` 调用全局 `window._wailsEmitEvent`，Server 模式走 WebSocket 推送 `{ type: "event", name, data }` 消息。
 
 ### 命名空间总览
 
 | 命名空间 | 说明 | 对应参考 |
 |---------|------|---------|
 | `wails` | 顶层对象，包含 `call` 与所有子命名空间 | — |
-| `wails.bindings` | 按绑定 ID 调用后端方法 | Wails v3 bindings |
+| `wails.bindings` | 按 FNV-1a ID 调用后端方法 | [`internal/transport.ts`](../../packages/wails-net-runtime/src/internal/transport.ts) |
 | `wails.events` | 事件订阅与发布 | Wails v3 Events |
 | `wails.channels` | 双向流式通道（订阅/推送/关闭） | Wails v3 Channels |
 | `wails.window` | 当前窗口操作 | Tauri v2 window / Wails v3 Window |
@@ -66,13 +66,15 @@ Wails.Net 在 Webview 启动时注入两段 JavaScript 代码：
 
 ### 运行时标志对象
 
-`window._wails` 由 [RuntimeGenerator.GenerateFlags](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 生成，字段对应 [RuntimeOptions](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeOptions.cs)：
+`window._wails` 由 [`Application.GenerateRuntimeJs`](../../src/Wails.Net.Application/Application.cs) 生成，字段对应 `Application.GenerateRuntimeJs`：
 
 ```javascript
 window._wails = {
-  platform: "windows",   // "windows" | "linux" | "android" | "server"
-  isDebug: true,          // 调试模式
-  isServerMode: false     // 是否为无 GUI 的 Server 模式
+  platform: "windows",       // "windows" | "linux" | "android" | "server"
+  isDebug: true,              // 调试模式
+  isServerMode: false,        // 是否为无 GUI 的 Server 模式
+  webSocketUrl: "",           // Server 模式 WebSocket 端点（仅 isServerMode=true 时使用）
+  assetServerUrl: ""          // 资源服务器基地址（Server 模式下注入）
 };
 ```
 
@@ -80,7 +82,7 @@ window._wails = {
 
 ### wails.call(name, args)
 
-通过绑定名称调用后端方法。对应 [RuntimeGenerator.cs GenerateApi](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 中的 `call` 字段。
+通过绑定名称调用后端方法。对应 [`Application.GenerateRuntimeJs`](../../src/Wails.Net.Application/Application.cs) 中的 `call` 字段。
 
 **签名**
 
@@ -133,7 +135,7 @@ const result = await wails.bindings.call(0x12345678, ["参数1", 42]);
 
 ## 事件 API (wails.events)
 
-事件 API 提供本地事件订阅与跨窗口事件发布能力。对应 [RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 中的 `events` 命名空间。
+事件 API 提供本地事件订阅与跨窗口事件发布能力。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `events` 命名空间。
 
 ### wails.events.on(eventName, callback)
 
@@ -194,7 +196,7 @@ await wails.events.emit("buttonClicked", { buttonId: 42 });
 
 ## 窗口 API (wails.window)
 
-操作当前窗口。对应 [RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 中的 `window` 命名空间，所有方法均返回 `Promise`。
+操作当前窗口。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `window` 命名空间，所有方法均返回 `Promise`。
 
 ### 窗口大小与位置
 
@@ -692,7 +694,7 @@ await wails.window.setFileDropEnabled(true);
 
 ## 托盘 API (wails.tray)
 
-系统托盘操作。对应 [RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 中的 `tray` 命名空间。所有方法返回 `Promise`。
+系统托盘操作。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `tray` 命名空间。所有方法返回 `Promise`。
 
 ### wails.tray.setIcon(iconData)
 
@@ -763,7 +765,7 @@ await wails.tray.hide();
 
 ## 窗口管理 API (wails.windows)
 
-多窗口管理 API。对应 [RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 中的 `windows` 命名空间。
+多窗口管理 API。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `windows` 命名空间。
 
 ### wails.windows.getCurrent()
 
@@ -832,7 +834,7 @@ screens.forEach(s => console.log(s.id, s.width, s.height));
 
 ## 剪贴板 API (wails.clipboard)
 
-剪贴板操作。对应 [RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 中的 `clipboard` 命名空间。
+剪贴板操作。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `clipboard` 命名空间。
 
 ### wails.clipboard.setText(text)
 
@@ -892,7 +894,7 @@ const files = await wails.clipboard.getFiles();
 
 ## 对话框 API (wails.dialog)
 
-系统对话框。对应 [RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 中的 `dialog` 命名空间。
+系统对话框。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `dialog` 命名空间。
 
 ### wails.dialog.openFile(options?)
 
@@ -967,7 +969,7 @@ if (answer === "是") {
 
 ## 菜单 API (wails.menu)
 
-菜单管理。对应 [RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 中的 `menu` 命名空间。
+菜单管理。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `menu` 命名空间。
 
 ### wails.menu.setApplicationMenu(menu)
 
@@ -1104,7 +1106,7 @@ await wails.menu.addStandardHelpMenu(parentId, {
 
 ### wails.MenuRole — MenuRole 常量
 
-[RuntimeGenerator](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 注入 `wails.MenuRole` 常量对象，包含全部 21 个角色枚举值字符串，供 `wails.menu.addRoleItem` 的 `role` 参数使用：
+[`Application.GenerateRuntimeJs`](../../src/Wails.Net.Application/Application.cs) 注入 `wails.MenuRole` 常量对象，包含全部 21 个角色枚举值字符串，供 `wails.menu.addRoleItem` 的 `role` 参数使用：
 
 ```javascript
 wails.MenuRole = {
@@ -1124,7 +1126,7 @@ wails.MenuRole = {
 
 ## 应用 API (wails.application)
 
-应用级操作。对应 [RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 中的 `application` 命名空间。
+应用级操作。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `application` 命名空间。
 
 ### wails.application.quit()
 
@@ -1203,7 +1205,7 @@ const unsub = await wails.application.onThemeChanged((isDark) => {
 
 ## 加密存储 API (wails.stronghold)
 
-加密安全存储。对应 [RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 中的 `stronghold` 命名空间，参考 Tauri v2 plugin-stronghold。
+加密安全存储。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `stronghold` 命名空间，参考 Tauri v2 plugin-stronghold。
 
 所有方法均支持可选的 `vaultPath` 参数以指定不同的保险库文件，省略时使用默认保险库。
 
@@ -1301,7 +1303,7 @@ await wails.stronghold.changePassword("old-pwd", "new-pwd");
 
 ## 文件系统范围 API (wails.scope)
 
-文件系统范围持久化管理。对应 [RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 中的 `scope` 命名空间，参考 Tauri v2 plugin-persisted-scope。
+文件系统范围持久化管理。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `scope` 命名空间，参考 Tauri v2 plugin-persisted-scope。
 
 `scopePath` 参数可选，用于指定不同的范围持久化文件路径，省略时使用默认范围。
 
@@ -1371,7 +1373,7 @@ await wails.scope.load();
 
 ## 本地 HTTP API (wails.localhost)
 
-嵌入式本地 HTTP 服务器。对应 [RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 中的 `localhost` 命名空间，参考 Tauri v2 plugin-localhost。
+嵌入式本地 HTTP 服务器。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `localhost` 命名空间，参考 Tauri v2 plugin-localhost。
 
 所有方法均以 `port` 作为服务器标识。
 
@@ -1450,7 +1452,7 @@ const routes = await wails.localhost.listRoutes(8080);
 
 ## 文件监听 API (wails.fswatch)
 
-文件系统监听。对应 [RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 中的 `fswatch` 命名空间，参考 Tauri v2 plugin-fs-watch。
+文件系统监听。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `fswatch` 命名空间，参考 Tauri v2 plugin-fs-watch。
 
 ### wails.fswatch.watch(path, recursive?, extensions?)
 
@@ -1506,7 +1508,7 @@ const active = await wails.fswatch.isWatching(watchId);
 
 ## 系统信息 API (wails.system)
 
-系统信息查询。对应 [RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 中的 `system` 命名空间，参考 Tauri v2 plugin-os。
+系统信息查询。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `system` 命名空间，参考 Tauri v2 plugin-os。
 
 ### wails.system.platform()
 
@@ -1566,7 +1568,7 @@ const tz = await wails.system.timezone(); // 例如 "Asia/Shanghai"
 
 ## 电源 API (wails.power)
 
-电源管理。对应 [RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 中的 `power` 命名空间。
+电源管理。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `power` 命名空间。
 
 ### wails.power.requestWakeLock()
 
@@ -1594,7 +1596,7 @@ const held = await wails.power.isWakeLockHeld();
 
 ## 进程 API (wails.process)
 
-进程管理。对应 [RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 中的 `process` 命名空间。
+进程管理。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `process` 命名空间。
 
 ### wails.process.exit(code?)
 
@@ -1630,7 +1632,7 @@ const pid = await wails.process.getPid();
 
 ## 文件系统 API (wails.fs)
 
-文件系统操作。对应 [RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 中的 `fs` 命名空间，参考 Tauri v2 plugin-fs。
+文件系统操作。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `fs` 命名空间，参考 Tauri v2 plugin-fs。
 
 ### wails.fs.readTextFile(path)
 
@@ -1739,7 +1741,7 @@ entries.forEach(e => console.log(e.name, e.isDirectory));
 
 ## Shell API (wails.shell)
 
-Shell 调用。对应 [RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 中的 `shell` 命名空间，参考 Tauri v2 plugin-shell。
+Shell 调用。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `shell` 命名空间，参考 Tauri v2 plugin-shell。
 
 ### wails.shell.execute(command, args?, cwd?)
 
@@ -1780,7 +1782,7 @@ await wails.shell.openUrl("https://github.com");
 
 ## 通知 API (wails.notification)
 
-系统通知。对应 [RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 中的 `notification` 命名空间，参考 Tauri v2 plugin-notification。
+系统通知。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `notification` 命名空间，参考 Tauri v2 plugin-notification。
 
 ### wails.notification.show(title, body)
 
@@ -1816,7 +1818,7 @@ const ok = await wails.notification.hasPermission();
 
 ## 存储 API (wails.store)
 
-持久化键值存储。对应 [RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 中的 `store` 命名空间，参考 Tauri v2 plugin-store。
+持久化键值存储。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `store` 命名空间，参考 Tauri v2 plugin-store。
 
 ### wails.store.get(key)
 
@@ -1876,7 +1878,7 @@ const exists = await wails.store.has("lastLogin");
 
 ## 日志 API (wails.log)
 
-日志记录。对应 [RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs) 中的 `log` 命名空间，参考 Tauri v2 plugin-log。所有日志最终通过 `Microsoft.Extensions.Logging` 输出到后端日志管线。
+日志记录。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `log` 命名空间，参考 Tauri v2 plugin-log。所有日志最终通过 `Microsoft.Extensions.Logging` 输出到后端日志管线。
 
 ### wails.log.debug(message)
 
@@ -2385,7 +2387,7 @@ await wails.call('toast.show', [{ message: "已保存" }]);
 
 ## 内部机制
 
-以下三个全局函数由 [transport.template.js](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/Resources/transport.template.js) 提供，属于运行时内部实现，前端代码通常不直接调用，但理解其工作原理有助于高级用法与调试。
+以下三个全局函数由 [`@wails-net/runtime` 的 transport 模块](../../packages/wails-net-runtime/src/internal/transport.ts) 提供，属于运行时内部实现，前端代码通常不直接调用，但理解其工作原理有助于高级用法与调试。
 
 ### window._wailsInvoke(method, params)
 
@@ -2456,11 +2458,9 @@ window._wailsEmitEvent("myCustomEvent", { foo: "bar" });
 
 ## 参考资源
 
-- 后端生成入口：[RuntimeGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeGenerator.cs)
-- 生成选项：[RuntimeOptions.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/RuntimeOptions.cs)
-- 传输层模板：[transport.template.js](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/Resources/transport.template.js)
-- 运行时模板：[runtime.template.js](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/Resources/runtime.template.js)
-- 桌面运行时：[DesktopRuntime.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/DesktopRuntime.cs)
-- Server 模式运行时：[ServerRuntime.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Runtime.Js/ServerRuntime.cs)
+- 前端运行时 SDK：[`@wails-net/runtime`](../../packages/wails-net-runtime/)（TypeScript，自包含 IPC 传输 + 全部核心命名空间 + 46 个插件命令）
+- 传输层实现：[`internal/transport.ts`](../../packages/wails-net-runtime/src/internal/transport.ts)（HTTP / 原生 postMessage / WebSocket 三态通道 + 分块上传 + 调用取消）
+- ContextMenu 钩子：[`core/contextmenu.ts`](../../packages/wails-net-runtime/src/core/contextmenu.ts)（CSS 变量驱动，自动安装）
+- 后端标志注入：[`Application.GenerateRuntimeJs`](../../src/Wails.Net.Application/Application.cs)（`window._wails` 标志对象）
 - 项目架构文档：[architecture.md](file:///f:/Code/Dotnet/Wails.Net/docs/architecture.md)
 - 传输层与 IPC：[transport-and-ipc.md](file:///f:/Code/Dotnet/Wails.Net/docs/architecture/transport-and-ipc.md)

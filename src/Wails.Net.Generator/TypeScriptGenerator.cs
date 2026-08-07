@@ -79,7 +79,7 @@ public class TypeScriptGenerator
         sb.AppendLine();
 
         // 导入 wails 运行时
-        sb.AppendLine("import { wails } from '@wails/runtime';");
+        sb.AppendLine("import { wails } from '@wails-net/runtime';");
         sb.AppendLine();
 
         if (methods.Count == 0)

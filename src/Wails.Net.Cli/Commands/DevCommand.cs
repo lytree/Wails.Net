@@ -79,6 +79,9 @@ internal sealed class DevCommand : CliCommandBase
 
         var workingDir = Path.GetDirectoryName(projectPath.FullName) ?? Directory.GetCurrentDirectory();
 
+        // 用于统一终止前端开发服务器的取消源（dotnet watch 结束或 Ctrl+C 时取消）。
+        using var devCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
         // 加载 wails.json（若存在）
         var (config, configPath) = await ProjectConfig.FindAndLoadAsync(projectPath.FullName);
         if (config is not null)
@@ -112,6 +115,44 @@ internal sealed class DevCommand : CliCommandBase
                     Info(beforeResult.Output);
                 }
                 return 4;
+            }
+        }
+
+        // 前端开发服务器（vite dev）与 dotnet watch 并行运行。
+        // 任一结束（正常退出或 Ctrl+C）时统一终止另一个，避免孤立进程。
+        var frontendDir = config?.Frontend is { } fe ? Path.Combine(workingDir, fe.Dir) : null;
+        var devServerTask = Task.CompletedTask;
+        FrontendToolchain? toolchain = null;
+        if (frontendDir is not null && Directory.Exists(frontendDir))
+        {
+            try
+            {
+                toolchain = await FrontendToolchain.DetectAsync(cancellationToken);
+                Info($"启动前端开发服务器（{toolchain.PackageManager} dev）…");
+                devServerTask = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await toolchain!.DevAsync(frontendDir, devCts.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        /* 正常终止 */
+                    }
+                    catch (Exception ex)
+                    {
+                        Warn($"前端开发服务器异常：{ex.Message}");
+                    }
+                }, devCts.Token);
+            }
+            catch (InvalidOperationException ex)
+            {
+                Warn($"未检测到 pnpm/npm，跳过前端开发服务器：{ex.Message}");
+            }
+            catch (OperationCanceledException)
+            {
+                Warn("开发模式已停止");
+                return 0;
             }
         }
 
@@ -155,6 +196,19 @@ internal sealed class DevCommand : CliCommandBase
         {
             Error($"启动 dotnet watch 失败：{ex.Message}");
             return 2;
+        }
+        finally
+        {
+            // dotnet watch 结束（正常或 Ctrl+C）→ 终止前端开发服务器
+            try
+            {
+                devCts.Cancel();
+                await Task.WhenAny(devServerTask, Task.Delay(2000, CancellationToken.None));
+            }
+            catch
+            {
+                /* ignore */
+            }
         }
 
         // 执行 afterDevCommand 钩子（仅在 dotnet watch 正常退出时）

@@ -37,18 +37,20 @@ Thumbs.db
 # Trae 文档（计划文件，不提交）
 .trae/
 
-# 前端构建产物与依赖
-/examples/Wails.Net.Demo.React/frontend/node_modules/
-/examples/Wails.Net.Demo.React/frontend/dist/
-/examples/Wails.Net.Demo.Vue/frontend/node_modules/
-/examples/Wails.Net.Demo.Vue/frontend/dist/
+# 前端依赖与构建产物
+# 全仓采用根 pnpm 工作区（pnpm-workspace.yaml），依赖统一安装在根 node_modules，
+# 各前端工程的 dist 属于构建产物，由 wails3 build / dotnet build 生成，不入库。
+node_modules/
+dist/
+.vite/
 
 # TypeScript 增量构建缓存
 *.tsbuildinfo
 **/dist-tsbuildinfo/
 
-# npm 锁文件（使用 pnpm，pnpm-lock.yaml 会被跟踪）
+# 非 pnpm 的锁文件（本仓统一使用 pnpm，pnpm-lock.yaml 需要入库）
 package-lock.json
+yarn.lock
 
 # CI/CD 构建产物（保留 artifacts/nupkg/.gitkeep 占位符，确保 CI 还原时
 # 本地 NuGet 源目录 artifacts/nupkg 始终存在，避免 NU1301 “源目录不存在”）

@@ -263,7 +263,7 @@ bash scripts/pack-and-test.sh --keep-temp
 | `Wails.Net.Application.Windows` | Windows 平台实现 |
 | `Wails.Net.Application.Linux` | Linux 平台实现 |
 | `Wails.Net.AssetServer` | 资源服务器 |
-| `Wails.Net.Runtime.Js` | 前端运行时 JS 生成器 |
+| `@wails-net/runtime` | 前端运行时 JS 生成器 |
 | `Wails.Net.Errors` | 错误类型 |
 | `Wails.Net.Events` | 事件类型 |
 | `Wails.Net.Generator` | 代码生成器 |

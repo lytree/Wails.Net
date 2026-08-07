@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -15,7 +16,6 @@ using Wails.Net.Application.Services;
 using Wails.Net.Application.Transport;
 using Wails.Net.Application.Windows;
 using Wails.Net.Events;
-using Wails.Net.Runtime.Js;
 
 namespace Wails.Net.Application;
 
@@ -1503,9 +1503,20 @@ public class Application
 
     /// <summary>
     /// 生成 JavaScript 运行时代码并注入到资源服务器。
+    /// <para>
+    /// 重构（2026-08-02）：前端运行时 JS 已全量迁往 <c>@wails-net/runtime</c>（npm 包，
+    /// 见 <c>packages/wails-net-runtime/</c>），本方法仅负责注入后端 → 前端的最小配置
+    /// —— <c>window._wails</c> 标志对象（platform / isDebug / isServerMode / 各 URL），
+    /// 供 <c>@wails-net/runtime/src/internal/types.ts#readRuntimeFlags()</c> 在初始化时读取。
+    /// 前端业务 API（call / bindings / events / 46 个命名空间）由前端 <c>import { wails } from "@wails-net/runtime"</c> 加载。
+    /// </para>
+    /// <para>
+    /// 同时向 <c>console.info</c> 输出一次性加载提示，便于诊断「前端未引 npm 包 → 调用全 404」问题：
+    /// 未看到提示 = 后端未注入；看到提示但前端仍不工作 = 前端未 import。
+    /// </para>
     /// </summary>
     /// <param name="isDebug">是否调试模式。</param>
-    /// <returns>生成的 JS 运行时代码。</returns>
+    /// <returns>生成的 JS 运行时代码（含 window._wails 标志 + 一次性 console 提示）。</returns>
     public string GenerateRuntimeJs(bool isDebug = false)
     {
         var platform = _platformApp switch
@@ -1516,30 +1527,54 @@ public class Application
             _ => "unknown",
         };
 
-        var options = new RuntimeOptions
-        {
-            Platform = platform,
-            IsDebug = isDebug,
-            IsServerMode = _platformApp is null or Platform.ServerMode.ServerPlatformApp,
-        };
+        var isServerMode = _platformApp is null or Platform.ServerMode.ServerPlatformApp;
 
-        // P0-D：Server 模式事件 API 完善 — 将传输层 URL 注入 RuntimeOptions，
-        // 使 ServerRuntime 生成的 JS 客户端代码能连接到正确的 WebSocket 端点。
+        // P0-D：Server 模式事件 API 完善 — 将传输层 URL 注入标志对象，
+        // 使前端 @wails-net/runtime 的 Transport.init() 能连接到正确的端点。
         // 对应 Wails v3 中通过 wails:// 将 transport 信息注入到前端 runtime 的机制。
-        if (options.IsServerMode)
+        string webSocketUrl = string.Empty;
+        string assetServerUrl = string.Empty;
+        if (isServerMode)
         {
             if (_transport is WebSocketTransport wsTransport)
             {
-                options.WebSocketUrl = wsTransport.WebSocketUrl;
-                options.AssetServerUrl = wsTransport.BaseUrl;
+                webSocketUrl = wsTransport.WebSocketUrl;
+                assetServerUrl = wsTransport.BaseUrl;
             }
             else if (_transport is HttpTransport httpTransport)
             {
-                options.AssetServerUrl = httpTransport.BaseUrl;
+                assetServerUrl = httpTransport.BaseUrl;
             }
         }
 
-        return RuntimeGenerator.Generate(options);
+        // JSON 序列化保证字符串安全转义（前端 wails 标志字段须为合法 JSON 值）。
+        var platformJson = JsonSerializer.Serialize(platform);
+        var isDebugJson = isDebug ? "true" : "false";
+        var isServerModeJson = isServerMode ? "true" : "false";
+        var webSocketUrlJson = JsonSerializer.Serialize(webSocketUrl);
+        var assetServerUrlJson = JsonSerializer.Serialize(assetServerUrl);
+
+        return $$"""
+        // Wails.NET Runtime Flags - 由 Application.GenerateRuntimeJs() 自动生成，请勿手动修改。
+        // 前端运行时 JS（wails 对象、传输层、contextmenu 钩子等）已迁至 npm 包 @wails-net/runtime，
+        // 见 https://github.com/wails-net/wails-net/tree/main/packages/wails-net-runtime。
+        // 前端必须执行 import { wails } from "@wails-net/runtime"; 后才能调用后端。
+        (function() {
+          if (window.__wailsFlagsInjected) return;
+          window.__wailsFlagsInjected = true;
+          window._wails = {
+            platform: {{platformJson}},
+            isDebug: {{isDebugJson}},
+            isServerMode: {{isServerModeJson}},
+            webSocketUrl: {{webSocketUrlJson}},
+            assetServerUrl: {{assetServerUrlJson}}
+          };
+          if (!window.__wailsRuntimeSkippedNotice && !window.__wailsRuntimeLoaded) {
+            window.__wailsRuntimeSkippedNotice = true;
+            console.info("[Wails.NET] window._wails 已注入。前端请 import { wails } from \"@wails-net/runtime\"; 加载完整运行时。");
+          }
+        })();
+        """;
     }
 
     /// <summary>

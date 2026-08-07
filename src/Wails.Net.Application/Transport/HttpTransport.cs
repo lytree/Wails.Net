@@ -129,7 +129,9 @@ public class HttpTransport : ITransport, IWailsEventListener, ITransportHttpHand
     }
 
     /// <summary>
-    /// 返回前端 JS 客户端代码（占位实现，实际由 RuntimeGenerator 生成）。
+    /// 返回前端 JS 客户端代码（占位实现；实际运行时 JS 已迁往 npm 包 <c>@wails-net/runtime</c>，
+    /// 见 <c>packages/wails-net-runtime/</c>，由前端 <c>import { wails } from "@wails-net/runtime"</c> 加载；
+    /// 本方法仅保留用于诊断输出）。
     /// </summary>
     /// <returns>JS 客户端代码字符串。</returns>
     public string JSClient()

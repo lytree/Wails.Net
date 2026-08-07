@@ -16,8 +16,8 @@ export const application = {
   show: () => call<void>("application.show", []),
   quit: () => call<void>("application.quit", []),
   isDarkMode: () => call<boolean>("application.isDarkMode", []),
-  /** 设置应用图标（Base64）。 */
-  setIcon: (base64Data: string) => call<void>("application.setIcon", [base64Data]),
+  /** 设置应用图标（Base64 字符串，对应后端 `ApplicationIconOptions.IconData`）。 */
+  setIcon: (base64Data: string) => call<void>("application.setIcon", [{ iconData: base64Data }]),
   showAboutDialog: () => call<void>("application.showAboutDialog", []),
 };
 
@@ -52,7 +52,6 @@ export const os = {
   type: () => call<string>("os.type", []),
   hostname: () => call<string>("os.hostname", []),
   locale: () => call<string>("os.locale", []),
-  timezone: () => call<string>("os.timezone", []),
 };
 
 /** 系统信息（OsInfo 插件的 `system.*` 别名）。 */
@@ -66,9 +65,12 @@ export const system = {
   timezone: () => call<string>("system.timezone", []),
 };
 
-/** 电源管理（命令前缀 `power.*`）。 */
+/**
+ * 电源管理（命令前缀 `power.*`）。
+ * 后端 `PowerManagementPlugin` 的唤醒锁为进程级全局锁，命令不接收参数。
+ */
 export const power = {
-  requestWakeLock: (lockType?: string) => call<void>("power.requestWakeLock", [lockType]),
-  releaseWakeLock: (lockType?: string) => call<void>("power.releaseWakeLock", [lockType]),
-  isWakeLockHeld: (lockType?: string) => call<boolean>("power.isWakeLockHeld", [lockType]),
+  requestWakeLock: () => call<boolean>("power.requestWakeLock", []),
+  releaseWakeLock: () => call<boolean>("power.releaseWakeLock", []),
+  isWakeLockHeld: () => call<boolean>("power.isWakeLockHeld", []),
 };

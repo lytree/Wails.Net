@@ -28,6 +28,12 @@ import {
   type WailsEvents,
   type WailsRuntime,
 } from "./core/runtime.js";
+import {
+  installContextMenu,
+  openContextMenu,
+  type ContextMenuPayload,
+  type ContextMenuOptions,
+} from "./core/contextmenu.js";
 
 // 核心命名空间
 import { clipboard } from "./api/clipboard.js";
@@ -144,7 +150,10 @@ export const wails: WailsSdk = {
 export { call, bindings, events, query, invoke, cancel };
 export { CallError, toCallError };
 export { transport, unpack, bindingId, fnv1a };
+export { installContextMenu, openContextMenu };
 export type {
+  ContextMenuPayload,
+  ContextMenuOptions,
   CancellablePromise,
   WailsBindings,
   WailsEvents,
