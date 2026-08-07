@@ -14,6 +14,9 @@ using Wails.Net.Application.Plugins.BuiltIn;
 using Wails.Net.Demo.Screen.Services;
 
 // 创建桌面应用构建器
+// 通过 DebugMode 统一判定当前模式（优先级：WAILS_DEBUG > --debug > .NET 环境变量）
+var isDebugMode = DebugMode.IsEnabled(args);
+
 var builder = DesktopApplicationBuilder.CreateBuilder(args);
 
 // 配置应用选项
@@ -31,8 +34,9 @@ builder.Services.AddSingleton<ScreenLogService>();
 // 启用内置 ScreenPlugin（提供 screen.getPrimary / screen.getAll 命令）
 builder.UsePlugin<ScreenPlugin>();
 
-// 配置日志级别
-builder.Logging.SetMinimumLevel(LogLevel.Information);
+// 配置日志级别（Debug 模式输出更详细日志，Release 模式仅 Information 以上）
+builder.Logging.SetMinimumLevel(isDebugMode ? LogLevel.Debug : LogLevel.Information);
+builder.Logging.AddFilter("Microsoft", isDebugMode ? LogLevel.Information : LogLevel.Warning);
 
 // 使用平台工厂自动检测并注册平台实现
 builder.UseAutoPlatform();
@@ -47,13 +51,30 @@ app.RegisterBindings<ScreenLogService>();
 // 应用启动后创建主窗口
 app.Options.OnAfterStart = () =>
 {
-    app.CreateWebviewWindow(new WebviewWindowOptions
+    var mainWindow = app.CreateWebviewWindow(new WebviewWindowOptions
     {
         Name = "main",
-        Title = "Wails.Net Demo - Screen",
+        Title = isDebugMode ? "Wails.Net Demo - Screen (Debug)" : "Wails.Net Demo - Screen",
         Width = 1000,
         Height = 700,
     });
+
+    // Debug 模式：窗口创建后自动打开 DevTools（延迟等待 WebView2 初始化完成）
+    if (isDebugMode)
+    {
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(500);
+            try
+            {
+                mainWindow.OpenDevTools();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Demo] DevTools 打开失败：{ex.Message}");
+            }
+        });
+    }
 };
 
 await desktopApp.RunAsync();

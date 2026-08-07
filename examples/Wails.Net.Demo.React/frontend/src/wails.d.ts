@@ -16,7 +16,7 @@ interface WailsAPI {
   }
   events: {
     on(eventName: string, callback: (data: any) => void): () => void
-    emit(eventName: string, data?: any): Promise<void>
+    emit(eventName: string, data?: any): void
   }
 }
 

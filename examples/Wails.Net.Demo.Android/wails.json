@@ -1,0 +1,44 @@
+{
+  "$schema": "https://wails.net/schema/wails.json",
+  "name": "Wails.Net.Demo.Android",
+  "version": "1.0.0",
+  "author": {
+    "name": "Wails.Net",
+    "email": "demo@example.com"
+  },
+  "description": "Wails.Net 框架示例：Android 平台（.NET Android + WebView，自定义 scheme http://wails.localhost/）。",
+
+  "outputFilename": "Wails.Net.Demo.Android",
+  "assetDir": "Assets",
+
+  "frontend": {
+    "dir": "frontend",
+    "devServerUrl": "http://localhost:5173",
+    "installCommand": "echo \"Demo 使用纯 HTML/CSS/JS，无需安装前端依赖\"",
+    "buildCommand": "echo \"Demo 使用纯 HTML/CSS/JS，无需前端构建\"",
+    "outputDir": "."
+  },
+
+  "bindings": {
+    "outputDir": "frontend/src/wails"
+  },
+
+  "wailsJsDir": "frontend",
+
+  "bundle": {
+    "identifier": "io.wailsnet.demo.android",
+    "iconPath": "build/icons",
+    "category": "Developer Tools",
+    "shortDescription": "Wails.Net Android Demo",
+    "longDescription": "演示 Wails.Net 在 Android 平台（.NET Android + WebView）的运行：MainActivity 入口、AndroidAssetServer 静态资源、生命周期事件映射。",
+    "copyright": "Copyright © 2026 Wails.Net",
+    "android": {
+      "package": "io.wailsnet.demo.android"
+    }
+  },
+
+  "beforeBuildCommand": "echo \"[hook] 开始构建 Wails.Net.Demo.Android\"",
+  "afterBuildCommand": "echo \"[hook] Wails.Net.Demo.Android 构建完成\"",
+  "beforeDevCommand": "echo \"[hook] 启动开发模式\"",
+  "afterDevCommand": "echo \"[hook] 开发模式已退出\""
+}

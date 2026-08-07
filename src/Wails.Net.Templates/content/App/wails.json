@@ -1,0 +1,56 @@
+{
+  "$schema": "https://wails.net/schema/wails.json",
+  "name": "Company.AppName",
+  "version": "0.1.0",
+  "author": {
+    "name": "Your Name",
+    "email": "you@example.com"
+  },
+  "description": "Wails.Net 桌面应用模板项目。",
+
+  "outputFilename": "Company.AppName",
+  "assetDir": "frontend",
+
+  "frontend": {
+    "dir": "frontend",
+    "devServerUrl": "http://localhost:5173",
+    "installCommand": "echo '当前模板使用纯 HTML/CSS/JS，无需安装依赖'",
+    "buildCommand": "echo '当前模板使用纯 HTML/CSS/JS，无需构建'",
+    "outputDir": "."
+  },
+
+  "bindings": {
+    "outputDir": "frontend/src/wails"
+  },
+
+  "wailsJsDir": "frontend",
+
+  "bundle": {
+    "identifier": "com.example.company.appname",
+    "iconPath": "build",
+    "category": "Developer Tools",
+    "shortDescription": "Wails.Net Template",
+    "longDescription": "通过 `dotnet new wails-net-app` 生成的 Wails.Net 模板项目，演示绑定服务、内置插件、窗口管理与 Debug/Release 双模式。",
+    "copyright": "Copyright © 2026 Wails.Net",
+    "windows": {
+      "publisher": "Your Company",
+      "webviewInstallMode": true
+    },
+    "linux": {
+      "maintainer": "Your Company <you@example.com>",
+      "debDependencies": [
+        "libwebkit2gtk-4.1-0",
+        "libgtk-3-0"
+      ],
+      "rpmDependencies": [
+        "webkit2gtk3",
+        "gtk3"
+      ]
+    }
+  },
+
+  "beforeBuildCommand": "echo '[hook] beforeBuildCommand — 开始构建 Company.AppName'",
+  "afterBuildCommand": "echo '[hook] afterBuildCommand — Company.AppName 构建完成'",
+  "beforeDevCommand": "echo '[hook] beforeDevCommand — 启动开发模式'",
+  "afterDevCommand": "echo '[hook] afterDevCommand — 开发模式已退出'"
+}

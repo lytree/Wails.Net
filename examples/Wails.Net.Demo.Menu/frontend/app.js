@@ -1,3 +1,5 @@
+import { wails } from "./wails-runtime/index.js";
+
 /**
  * Wails.Net Demo - Menu 前端脚本
  * 演示应用菜单点击事件的接收与历史记录。

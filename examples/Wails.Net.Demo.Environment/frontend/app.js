@@ -1,3 +1,5 @@
+import { wails } from "./wails-runtime/index.js";
+
 /**
  * Wails.Net Demo - Environment 前端脚本
  * 演示通过 OsInfoPlugin / PathPlugin / AppInfoPlugin 命令查询环境信息，

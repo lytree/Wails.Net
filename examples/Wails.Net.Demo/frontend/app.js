@@ -1,3 +1,5 @@
+import { wails } from "./wails-runtime/index.js";
+
 /**
  * Wails.Net Demo 前端 JavaScript
  *

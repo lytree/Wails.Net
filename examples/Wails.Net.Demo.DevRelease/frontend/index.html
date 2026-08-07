@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wails.Net DevRelease Demo</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+    <main class="app">
+        <header class="header">
+            <h1>Wails.Net · DevRelease 演示</h1>
+            <p class="subtitle">Debug / Release 模式 + 前后端项目分布</p>
+            <div id="modeBanner" class="banner banner-unknown">加载中…</div>
+        </header>
+
+        <section class="card">
+            <h2>模式信息（来自后端）</h2>
+            <div class="kv-grid" id="modeInfo">
+                <span class="kv-key">Mode</span>
+                <span class="kv-value" id="kvMode">—</span>
+
+                <span class="kv-key">ProcessId</span>
+                <span class="kv-value" id="kvPid">—</span>
+
+                <span class="kv-key">Runtime</span>
+                <span class="kv-value" id="kvRuntime">—</span>
+
+                <span class="kv-key">Started At</span>
+                <span class="kv-value" id="kvStartedAt">—</span>
+
+                <span class="kv-key">Up Time</span>
+                <span class="kv-value" id="kvUpTime">—</span>
+
+                <span class="kv-key">Call Count</span>
+                <span class="kv-value" id="kvCallCount">—</span>
+
+                <span class="kv-key">OS</span>
+                <span class="kv-value" id="kvOs">—</span>
+            </div>
+            <div class="row">
+                <button id="refreshBtn">刷新模式信息</button>
+                <button id="incBtn">调用 Increment（+1）</button>
+                <button id="resetBtn">重置</button>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>异步绑定（AddAsync）</h2>
+            <div class="row">
+                <input id="aInput" type="number" value="17" />
+                <span>+</span>
+                <input id="bInput" type="number" value="25" />
+                <button id="addBtn">计算</button>
+            </div>
+            <p id="addResult" class="result">点击"计算"按钮</p>
+        </section>
+
+        <section class="card">
+            <h2>错误处理（ThrowError）</h2>
+            <div class="row">
+                <button id="throwBtn">故意抛错</button>
+            </div>
+            <p id="throwResult" class="result result-muted">点击"故意抛错"按钮观察错误处理</p>
+        </section>
+
+        <section class="card">
+            <h2>窗口操作（来自 wails.window 命名空间）</h2>
+            <div class="row">
+                <button id="minBtn">最小化</button>
+                <button id="maxBtn">最大化/还原</button>
+                <button id="closeBtn">关闭</button>
+                <button id="devtoolsBtn">打开 DevTools</button>
+            </div>
+        </section>
+
+        <footer class="footer">
+            <p>
+                详细说明见
+                <code>docs/development/project-structure-and-modes.md</code> ·
+                模板项目 <code>Wails.Net.Templates</code>（<code>dotnet new wails-net-app</code>）
+            </p>
+        </footer>
+    </main>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>

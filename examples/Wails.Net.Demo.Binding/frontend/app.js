@@ -1,3 +1,5 @@
+import { wails } from "./wails-runtime/index.js";
+
 /**
  * Wails.Net Demo - Binding 前端脚本
  * 演示 wails.call 调用各类后端绑定方法。

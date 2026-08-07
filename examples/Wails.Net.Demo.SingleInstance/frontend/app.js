@@ -1,3 +1,5 @@
+import { wails } from "./wails-runtime/index.js";
+
 /**
  * Wails.Net Demo - SingleInstance 前端脚本
  * 订阅 wails:second-instance:launched 事件，实时显示二次启动尝试。

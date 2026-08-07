@@ -6,6 +6,7 @@
     <Project Path="examples/Wails.Net.Demo.CancelAsync/Wails.Net.Demo.CancelAsync.csproj" />
     <Project Path="examples/Wails.Net.Demo.Clipboard/Wails.Net.Demo.Clipboard.csproj" />
     <Project Path="examples/Wails.Net.Demo.ContextMenus/Wails.Net.Demo.ContextMenus.csproj" />
+    <Project Path="examples/Wails.Net.Demo.DevRelease/Wails.Net.Demo.DevRelease.csproj" />
     <Project Path="examples/Wails.Net.Demo.Dialogs/Wails.Net.Demo.Dialogs.csproj" />
     <Project Path="examples/Wails.Net.Demo.DragAndDrop/Wails.Net.Demo.DragAndDrop.csproj" />
     <Project Path="examples/Wails.Net.Demo.Environment/Wails.Net.Demo.Environment.csproj" />

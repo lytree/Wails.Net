@@ -1,3 +1,5 @@
+import { wails } from "./wails-runtime/index.js";
+
 /**
  * Wails.Net Demo - DragAndDrop 前端脚本
  * 订阅 wails:window:file:dropped 事件，将文件路径传给后端 FileDropService 持久化。

@@ -24,6 +24,10 @@ using Wails.Net.Application.Services;
 using Wails.Net.AssetServer;
 using Wails.Net.Demo.Server.Services;
 
+// 通过 DebugMode 统一判定当前模式（优先级：WAILS_DEBUG > --debug > .NET 环境变量）。
+// Server 模式无 GUI，模式差异主要体现在日志级别。
+var isDebugMode = DebugMode.IsEnabled(args);
+
 // 创建桌面应用构建器（Server 模式仍使用 DesktopApplicationBuilder，
 // 仅在平台层用 ServerPlatformApp 替代 GUI 平台实现）
 var builder = DesktopApplicationBuilder.CreateBuilder(args);
@@ -40,8 +44,9 @@ builder.Configure(options =>
 // 注册后台任务服务到 DI 容器
 builder.Services.AddSingleton<BackgroundTaskService>();
 
-// 配置日志级别
-builder.Logging.SetMinimumLevel(LogLevel.Information);
+// 配置日志级别（Debug 模式输出更详细日志，Release 模式仅 Information 以上）
+builder.Logging.SetMinimumLevel(isDebugMode ? LogLevel.Debug : LogLevel.Information);
+builder.Logging.AddFilter("Microsoft", isDebugMode ? LogLevel.Information : LogLevel.Warning);
 
 // 显式使用 ServerPlatformApp（无 GUI 桩实现），覆盖 UseAutoPlatform 的自动检测。
 // 对应 AGENTS.md §6.1 Server 模式降级：用于容器化部署和测试。

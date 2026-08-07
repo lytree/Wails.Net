@@ -1,10 +1,12 @@
+import { wails } from "./wails-runtime/index.js";
+
 /**
  * Wails.Net Demo - CancelAsync 前端脚本
- * 演示通过 wails.call 调用长任务绑定方法，并使用 _wailsCancelCall 取消。
+ * 演示通过 wails.call 调用长任务绑定方法，并使用 wails.cancel 取消。
  *
  * 关键 API：
  *   - wails.call('LongRunningService.StartLongTask', [durationSeconds])
- *       返回 Promise，前端可通过 promise.cancel() 或 _wailsCancelCall(callId) 取消。
+ *       返回 CancellablePromise，前端可通过 promise.cancel() 或 wails.cancel(callId) 取消。
  *   - wails.call('LongRunningService.GetProgress', [])
  *   - wails.call('LongRunningService.IsRunning', [])
  *   - wails.call('LongRunningService.CancelFromServer', [])  // 后端主动取消
@@ -45,7 +47,7 @@ async function onStart() {
     }
 }
 
-// 前端取消：通过 _wailsCancelCall 发送 cancel 消息
+// 前端取消：通过 wails.cancel 发送 cancel 消息
 async function onCancelFromFrontend() {
     if (!currentCallId) {
         log('当前没有运行中的任务');
@@ -53,11 +55,10 @@ async function onCancelFromFrontend() {
     }
     log(`前端发起取消：callId=${currentCallId}`);
     try {
-        // _wailsCancelCall 由 wails runtime 注入到 window 对象
-        if (typeof window._wailsCancelCall === 'function') {
-            await window._wailsCancelCall(currentCallId);
-        } else if (typeof wails.cancelCall === 'function') {
-            await wails.cancelCall(currentCallId);
+        // 取消：通过 wails.cancel(callId) 发送取消消息（@wails-net/runtime 标准 API）
+        if (typeof wails.cancel === 'function') {
+            wails.cancel(currentCallId);
+            log('已发送取消请求（wails.cancel）');
         } else {
             log('当前 runtime 不支持 cancel API，改用服务端取消');
             await wails.call('LongRunningService.CancelFromServer', []);

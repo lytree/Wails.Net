@@ -1,3 +1,5 @@
+import { wails } from "./wails-runtime/index.js";
+
 /**
  * Wails.Net Demo - Services 前端脚本
  * 演示通过 [Binding] 方法调用后端 UserService/ProductService/OrderService，

@@ -1,3 +1,5 @@
+import { wails } from "./wails-runtime/index.js";
+
 /**
  * Wails.Net Demo - Keybindings 前端脚本
  * 演示前端动态注册/注销快捷键，订阅后端与前端快捷键触发事件。

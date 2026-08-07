@@ -1,3 +1,5 @@
+import { wails } from "./wails-runtime/index.js";
+
 /**
  * Wails.Net Demo - Clipboard 前端脚本
  * 演示通过 clipboard.setText / clipboard.getText 命令操作剪贴板，

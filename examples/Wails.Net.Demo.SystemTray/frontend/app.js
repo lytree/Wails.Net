@@ -1,3 +1,5 @@
+import { wails } from "./wails-runtime/index.js";
+
 /**
  * Wails.Net Demo - SystemTray 前端脚本
  * 演示通过 tray.* 插件命令操作托盘，通过 TrayLogService 绑定方法查询历史。

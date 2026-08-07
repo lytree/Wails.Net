@@ -2,15 +2,22 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
-    <UseWindowsForms>true</UseWindowsForms>
+    <TargetFrameworks>net10.0-windows10.0.19041.0;net10.0</TargetFrameworks>
     <UseWPF>false</UseWPF>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <RootNamespace>Wails.Net.Demo.React</RootNamespace>
     <AssemblyName>Wails.Net.Demo.React</AssemblyName>
     <!-- 版本号从 Directory.Build.props 继承，便于统一管理 -->
-    <ApplicationManifest>app.manifest</ApplicationManifest>
     <NoDefaultExcludes>true</NoDefaultExcludes>
+  </PropertyGroup>
+  <!-- Windows TFM：启用 WinForms + 应用清单（WSL2 调试器仅支持 Exe，故 net10.0 改 OutputType） -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-windows10.0.19041.0'">
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <!-- Linux TFM：WSL 调试器仅支持 Exe -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <OutputType>Exe</OutputType>
   </PropertyGroup>
   <ItemGroup>
     <None Update="appsettings.json">

@@ -1,0 +1,43 @@
+{
+  "profiles": {
+    "Company.AppName (Windows · Debug)": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "WAILS_DEBUG": "true",
+        "DOTNET_ENVIRONMENT": "Development"
+      },
+      "jsWebView2Debugging": true,
+      "nativeDebugging": true
+    },
+    "Company.AppName (Windows · Release)": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Production",
+        "WAILS_DEBUG": "false"
+      },
+      "jsWebView2Debugging": false,
+      "nativeDebugging": false
+    },
+    "Company.AppName (WSL2 · Linux · Debug)": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "WAILS_DEBUG": "true",
+        "DOTNET_ROLL_FORWARD": "Major"
+      },
+      "remoteDebuggedTarget": "WSL2",
+      "distributionName": "Ubuntu-22.04",
+      "jsWebView2Debugging": false
+    },
+    "Company.AppName (WSL2 · Linux · Release)": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "WAILS_DEBUG": "false",
+        "DOTNET_ROLL_FORWARD": "Major"
+      },
+      "remoteDebuggedTarget": "WSL2",
+      "distributionName": "Ubuntu-22.04",
+      "jsWebView2Debugging": false
+    }
+  }
+}

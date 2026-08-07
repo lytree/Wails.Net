@@ -1,3 +1,5 @@
+import { wails } from "./wails-runtime/index.js";
+
 /**
  * Wails.Net Demo - Screen 前端脚本
  * 演示 ScreenPlugin 提供的屏幕查询命令。

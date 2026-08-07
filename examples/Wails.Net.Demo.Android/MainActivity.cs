@@ -116,7 +116,7 @@ public class MainActivity : Activity
             androidApp.SetActivity(this);
         }
 
-        // 注册绑定服务到 Application（公共方法通过反射暴露给前端）
+        // 注册绑定服务（[Binding] 标记的方法由源代码生成器生成强类型调用器，无反射）
         _app.RegisterService(new GreetingService());
 
         // 进入应用主循环（阻塞直到 Quit 被调用）

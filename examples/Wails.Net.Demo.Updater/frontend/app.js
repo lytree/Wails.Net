@@ -1,3 +1,5 @@
+import { wails } from "./wails-runtime/index.js";
+
 /**
  * Wails.Net Demo - Updater 前端脚本
  * 演示多 Provider 更新检查、版本切换、下载流程，订阅更新相关事件。

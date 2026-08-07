@@ -11,10 +11,12 @@ using Wails.Net.Demo;
 using Wails.Net.Demo.Plugins;
 using Wails.Net.Demo.Services;
 
-// 注意：必须显式调用 UseWindows()/UseLinux() 而非 UseAutoPlatform()，
-// 因为 [ModuleInitializer] 仅在程序集被加载时触发，
-// 而 .NET 程序集按需加载——只有显式引用平台程序集中的类型，
-// 才会触发 WindowsPlatformRegistrar / LinuxPlatformRegistrar 的模块初始化器完成委托注册。
+// 通过 DebugMode 统一判定当前模式（优先级：WAILS_DEBUG 环境变量 > --debug 参数 > .NET 环境变量）。
+// wails dev 会自动设置 WAILS_DEBUG=true；F5 调试由 launchSettings.json 的环境变量控制。
+var isDebugMode = DebugMode.IsEnabled(args);
+Console.WriteLine(isDebugMode
+    ? "[Demo] ✓ Debug 模式（开发与热重载）"
+    : "[Demo] ✓ Release 模式（生产构建）");
 
 // 创建桌面应用构建器（使用 Generic Host 模式）
 var builder = DesktopApplicationBuilder.CreateBuilder(args);
@@ -82,8 +84,9 @@ builder.UsePlugin<UpdaterPlugin>();          // 更新插件（P1-8）
 // 使用自定义插件
 builder.UsePlugin<MyCustomPlugin>();          // 自定义计数器插件
 
-// 配置日志级别
-builder.Logging.SetMinimumLevel(LogLevel.Information);
+// 配置日志级别（Debug 模式输出更详细日志，Release 模式仅 Information 以上）
+builder.Logging.SetMinimumLevel(isDebugMode ? LogLevel.Debug : LogLevel.Information);
+builder.Logging.AddFilter("Microsoft", isDebugMode ? LogLevel.Information : LogLevel.Warning);
 
 // 使用平台工厂自动检测并注册平台实现。
 // Windows 上注册 WindowsPlatformApp，Linux 上注册 LinuxPlatformApp。
@@ -140,10 +143,12 @@ app.Options.OnAfterStart = () =>
     // 未设置 URL 或 HTML 时，窗口将自动导航到 http://wails.localhost/ (Windows)
     // 或 wails://localhost/ (Linux)，由 AssetServer 提供静态资源服务。
     // 无需构建 file:// URL，避免权限问题。
-    app.CreateWebviewWindow(new WebviewWindowOptions
+    var mainWindow = app.CreateWebviewWindow(new WebviewWindowOptions
     {
         Name = "main",
-        Title = "Wails.Net Demo - 桌面应用示例（含 P1 新能力）",
+        Title = isDebugMode
+            ? "Wails.Net Demo (Debug) - 桌面应用示例（含 P1 新能力）"
+            : "Wails.Net Demo - 桌面应用示例（含 P1 新能力）",
         Width = 1200,
         Height = 800,
         MinWidth = 800,
@@ -153,6 +158,23 @@ app.Options.OnAfterStart = () =>
         Minimisable = true,
         Fullscreen = false,
     });
+
+    // Debug 模式：窗口创建后自动打开 DevTools（延迟等待 WebView2 初始化完成）
+    if (isDebugMode)
+    {
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(500);
+            try
+            {
+                mainWindow.OpenDevTools();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Demo] DevTools 打开失败：{ex.Message}");
+            }
+        });
+    }
 };
 
 // 构建并运行应用

@@ -1,3 +1,5 @@
+import { wails } from "./wails-runtime/index.js";
+
 /**
  * Wails.Net Demo - Events 前端脚本
  * 演示 wails.events.on / emit 与后端 EventProcessor 的双向通信。

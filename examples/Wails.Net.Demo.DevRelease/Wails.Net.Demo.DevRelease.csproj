@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Wails.Net.Demo.DevRelease
+  ====================================================================
+  Debug 与 Release 模式演示 Demo
+
+  本 Demo 专门演示 Wails.Net 项目的"前后端项目分布"与
+  "Debug + Release 模式"工作机制，对应 Tauri v2 与 Wails v3
+  的项目组织方式。
+  详细说明见 docs/development/project-structure-and-modes.md
+  ====================================================================
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!--
+      TFM：默认仅启用 Windows + Linux。
+      设置 WailsNetEnableAndroid=true 可启用 Android。
+    -->
+    <TargetFrameworks>net10.0-windows10.0.19041.0;net10.0</TargetFrameworks>
+    <UseWPF>false</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RootNamespace>Wails.Net.Demo.DevRelease</RootNamespace>
+    <AssemblyName>Wails.Net.Demo.DevRelease</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <!-- Windows TFM 专用属性 -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-windows10.0.19041.0'">
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <!-- Linux TFM：WSL 调试器仅支持 Exe -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <!--
+    资源文件复制：
+    - appsettings.json：.NET 配置
+    - wails.json：Wails.Net 项目元信息
+    - frontend/：前端资源（Debug 时由 vite dev server 增量构建；Release 时嵌入为 .NET 资源）
+  -->
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="wails.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="frontend\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- 引用 Wails.Net.Sdk（聚合包，根据 TFM 自动选择平台实现） -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Wails.Net.Sdk\Wails.Net.Sdk.csproj" />
+  </ItemGroup>
+</Project>

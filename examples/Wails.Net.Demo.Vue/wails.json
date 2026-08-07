@@ -1,0 +1,56 @@
+{
+  "$schema": "https://wails.net/schema/wails.json",
+  "name": "Wails.Net.Demo.Vue",
+  "version": "1.0.0",
+  "author": {
+    "name": "Wails.Net",
+    "email": "demo@example.com"
+  },
+  "description": "Wails.Net 框架示例：Vue 3 (vue-jsx-vapor + Vite) 前端框架集成。",
+
+  "outputFilename": "Wails.Net.Demo.Vue",
+  "assetDir": "frontend/dist",
+
+  "frontend": {
+    "dir": "frontend",
+    "devServerUrl": "http://localhost:5173",
+    "installCommand": "pnpm install",
+    "buildCommand": "pnpm build",
+    "outputDir": "dist"
+  },
+
+  "bindings": {
+    "outputDir": "frontend/src/wails"
+  },
+
+  "wailsJsDir": "frontend",
+
+  "bundle": {
+    "identifier": "io.wailsnet.demo.vue",
+    "iconPath": "build/icons",
+    "category": "Developer Tools",
+    "shortDescription": "Wails.Net Vue Demo",
+    "longDescription": "演示 Wails.Net 与 Vue 3 (vue-jsx-vapor + Vite) 前端框架的集成，包含绑定服务、自定义插件与 Debug/Release 双模式。",
+    "copyright": "Copyright © 2026 Wails.Net",
+    "windows": {
+      "publisher": "Wails.Net",
+      "webviewInstallMode": true
+    },
+    "linux": {
+      "maintainer": "Wails.Net <demo@example.com>",
+      "debDependencies": [
+        "libwebkit2gtk-4.1-0",
+        "libgtk-3-0"
+      ],
+      "rpmDependencies": [
+        "webkit2gtk3",
+        "gtk3"
+      ]
+    }
+  },
+
+  "beforeBuildCommand": "echo \"[hook] 开始构建 Wails.Net.Demo.Vue\"",
+  "afterBuildCommand": "echo \"[hook] Wails.Net.Demo.Vue 构建完成\"",
+  "beforeDevCommand": "echo \"[hook] 启动开发模式\"",
+  "afterDevCommand": "echo \"[hook] 开发模式已退出\""
+}

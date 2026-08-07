@@ -1,3 +1,5 @@
+import { wails } from "./wails-runtime/index.js";
+
 /**
  * Wails.Net Demo - Frameless 前端脚本
  * 演示无边框窗口的自定义标题栏与窗口控制按钮。

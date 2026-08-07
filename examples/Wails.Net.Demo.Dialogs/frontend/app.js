@@ -1,3 +1,5 @@
+import { wails } from "./wails-runtime/index.js";
+
 /**
  * Wails.Net Demo - Dialogs 前端脚本
  * 演示 dialog.* 插件命令调用各类原生对话框，并通过 DialogHistoryService 记录操作历史。

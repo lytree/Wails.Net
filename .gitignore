@@ -37,6 +37,9 @@ Thumbs.db
 # Trae 文档（计划文件，不提交）
 .trae/
 
+# 项目数据目录（智能体工作记忆，不提交）
+.workbuddy/
+
 # 前端依赖与构建产物
 # 全仓采用根 pnpm 工作区（pnpm-workspace.yaml），依赖统一安装在根 node_modules，
 # 各前端工程的 dist 属于构建产物，由 wails3 build / dotnet build 生成，不入库。

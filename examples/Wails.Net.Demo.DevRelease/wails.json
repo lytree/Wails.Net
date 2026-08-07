@@ -1,0 +1,56 @@
+{
+  "$schema": "https://wails.net/schema/wails.json",
+  "name": "Wails.Net.Demo.DevRelease",
+  "version": "1.0.0",
+  "author": {
+    "name": "Wails.Net",
+    "email": "demo@wails.net"
+  },
+  "description": "演示 Wails.Net 项目的 Debug / Release 模式与前后端项目分布（参照 Tauri v2 / Wails v3）。",
+
+  "outputFilename": "Wails.Net.Demo.DevRelease",
+  "assetDir": "frontend",
+
+  "frontend": {
+    "dir": "frontend",
+    "devServerUrl": "http://localhost:5173",
+    "installCommand": "echo '此 Demo 使用纯 HTML/CSS/JS，无需安装前端依赖'",
+    "buildCommand": "echo '此 Demo 使用纯 HTML/CSS/JS，无需构建'",
+    "outputDir": "."
+  },
+
+  "bindings": {
+    "outputDir": "frontend/src/wails"
+  },
+
+  "wailsJsDir": "frontend",
+
+  "bundle": {
+    "identifier": "io.wailsnet.demo.devrelease",
+    "iconPath": "build",
+    "category": "Developer Tools",
+    "shortDescription": "Wails.Net DevRelease Demo",
+    "longDescription": "演示 Wails.Net 项目的 Debug / Release 模式与前后端项目分布（参照 Tauri v2 / Wails v3）。",
+    "copyright": "Copyright © 2026 Wails.Net",
+    "windows": {
+      "publisher": "Wails.Net",
+      "webviewInstallMode": true
+    },
+    "linux": {
+      "maintainer": "Wails.Net <demo@wails.net>",
+      "debDependencies": [
+        "libwebkit2gtk-4.1-0",
+        "libgtk-3-0"
+      ],
+      "rpmDependencies": [
+        "webkit2gtk3",
+        "gtk3"
+      ]
+    }
+  },
+
+  "beforeDevCommand": "echo '[hook] beforeDevCommand — DevRelease Demo 启动开发模式'",
+  "afterDevCommand": "echo '[hook] afterDevCommand — DevRelease Demo 开发模式已退出'",
+  "beforeBuildCommand": "echo '[hook] beforeBuildCommand — DevRelease Demo 开始构建'",
+  "afterBuildCommand": "echo '[hook] afterBuildCommand — DevRelease Demo 构建完成'"
+}

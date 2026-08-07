@@ -13,6 +13,7 @@
 
   "frontend": {
     "dir": "frontend",
+    "devServerUrl": "http://localhost:5173",
     "installCommand": "echo \"Demo 使用纯 HTML/CSS/JS，无需安装前端依赖\"",
     "buildCommand": "echo \"Demo 使用纯 HTML/CSS/JS，无需前端构建\"",
     "outputDir": "."

@@ -1,3 +1,5 @@
+import { wails } from "./wails-runtime/index.js";
+
 /**
  * Wails.Net Demo - MultiWindow 前端脚本
  * 演示多窗口管理：创建子窗口、列表查询、聚焦、关闭、窗口事件订阅。

@@ -3,17 +3,13 @@ using Microsoft.Extensions.Logging;
 using Wails.Net.Application;
 using Wails.Net.Application.Hosting;
 using Wails.Net.Application.Options;
-using Wails.Net.Application.Platform;
 using Wails.Net.Application.Plugins;
 using Wails.Net.Application.Plugins.BuiltIn;
 using Wails.Net.Demo.Vue.Plugins;
 using Wails.Net.Demo.Vue.Services;
-using Wails.Net.Generated;
 
-// 显式调用源生成器生成的注册方法，作为 [ModuleInitializer] 的安全网。
-// 在某些场景下 ModuleInitializer 可能未按预期运行（如 Assembly.LoadFrom 加载的程序集），
-// 此处显式调用确保 GeneratedBindingRegistry 在应用启动前已填充。
-GeneratedBindingsRegistration.Register();
+// 通过 DebugMode 统一判定当前模式（优先级：WAILS_DEBUG 环境变量 > --debug 参数 > .NET 环境变量）。
+var isDebugMode = DebugMode.IsEnabled(args);
 
 // 创建桌面应用构建器（使用 Generic Host 模式）
 var builder = DesktopApplicationBuilder.CreateBuilder(args);
@@ -25,7 +21,7 @@ builder.Configure(options =>
     options.SingleInstance = true;
     options.Window.Frameless = false;
 
-    // 前端构建产物目录（npm run build 后生成）
+    // 前端构建产物目录（pnpm build 后生成，由 Wails.Net.Sdk 的 WailsNetBuildFrontend 自动构建）
     options.Assets.RootPath = "frontend/dist";
     options.Assets.DefaultDocument = "index.html";
     options.Assets.EnableSpaFallback = true;
@@ -48,11 +44,12 @@ builder.UsePlugin<AppInfoPlugin>();
 // 使用自定义插件
 builder.UsePlugin<MyCustomPlugin>();
 
-// 配置日志级别
-builder.Logging.SetMinimumLevel(LogLevel.Information);
+// 配置日志级别（Debug 模式输出更详细日志，Release 模式仅 Information 以上）
+builder.Logging.SetMinimumLevel(isDebugMode ? LogLevel.Debug : LogLevel.Information);
+builder.Logging.AddFilter("Microsoft", isDebugMode ? LogLevel.Information : LogLevel.Warning);
 
-// 注册 Windows 平台实现
-builder.UsePlatform<WindowsPlatformApp>();
+// 使用平台工厂自动检测并注册平台实现（Windows/Linux/Android）
+builder.UseAutoPlatform();
 
 // 构建应用实例
 var desktopApp = builder.Build();
@@ -62,9 +59,9 @@ var app = desktopApp.Application;
 app.Options.EnableDefaultContextMenu = true;
 app.Options.DragAndDrop = true;
 
-// 注册绑定服务到 Application（标记 [Binding] 的方法由源代码生成器生成强类型调用器）
-app.RegisterService(new GreetingService());
-app.RegisterService(new TodoService());
+// 从 DI 容器获取绑定服务并注册到 BindingManager（对应 ASP.NET Core 风格：DI 是单一注册点）
+app.RegisterBindings<GreetingService>();
+app.RegisterBindings<TodoService>();
 
 // 注册 CounterService 实例到 BindingManager
 // CounterService 的方法标记了 [Command] 特性，由源代码生成器生成强类型调用器，
@@ -74,10 +71,12 @@ app.RegisterService(desktopApp.Services.GetRequiredService<CounterService>());
 // 应用启动后创建主窗口
 app.Options.OnAfterStart = () =>
 {
-    app.CreateWebviewWindow(new WebviewWindowOptions
+    var mainWindow = app.CreateWebviewWindow(new WebviewWindowOptions
     {
         Name = "main",
-        Title = "Wails.Net Vue Demo - vue-jsx-vapor 示例",
+        Title = isDebugMode
+            ? "Wails.Net Vue Demo (Debug) - vue-jsx-vapor 示例"
+            : "Wails.Net Vue Demo - vue-jsx-vapor 示例",
         Width = 1200,
         Height = 800,
         MinWidth = 800,
@@ -87,6 +86,23 @@ app.Options.OnAfterStart = () =>
         Minimisable = true,
         Fullscreen = false,
     });
+
+    // Debug 模式：窗口创建后自动打开 DevTools（延迟等待 WebView2 初始化完成）
+    if (isDebugMode)
+    {
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(500);
+            try
+            {
+                mainWindow.OpenDevTools();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Vue Demo] DevTools 打开失败：{ex.Message}");
+            }
+        });
+    }
 };
 
 // 构建并运行应用

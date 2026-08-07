@@ -1,3 +1,5 @@
+import { wails } from "./wails-runtime/index.js";
+
 /**
  * Wails.Net Demo - ContextMenus 前端脚本
  * 演示上下文菜单的注册与点击事件接收。

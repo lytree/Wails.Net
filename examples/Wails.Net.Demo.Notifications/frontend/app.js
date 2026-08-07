@@ -1,3 +1,5 @@
+import { wails } from "./wails-runtime/index.js";
+
 /**
  * Wails.Net Demo - Notifications 前端脚本
  * 演示通过 NotificationService 绑定方法发送立即/延迟通知，并维护历史记录。

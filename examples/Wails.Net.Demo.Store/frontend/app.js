@@ -1,3 +1,5 @@
+import { wails } from "./wails-runtime/index.js";
+
 /**
  * Wails.Net Demo - Store 前端脚本
  * 演示通过 StorePlugin 的 store.* 命令操作键值存储，
