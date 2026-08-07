@@ -157,3 +157,24 @@
 | 6 | Android 多窗口（activity embedding） | ❌ Android 单 Activity | P3（远期） |
 
 **结论**：Wails.Net 与 Tauri 的差异集中在插件生态丰富度（Tauri 30+ 官方插件 vs Wails.Net 45+ BuiltIn 命令）与 ACL 机制（Tauri 动态 ACL vs Wails.Net 静态 Capability）；架构融合策略（AGENTS.md §1.1.1 维度 3）无需调整，方向一致。
+
+---
+
+## 8. P1 / P2 实施记录（2026-08-07）
+
+按决策执行：「P0 分析后确认（P0-1 已转双包模型专项）；P1/P2 优先补齐」。已完成项：
+
+| 项 | 状态 | 实现内容 |
+|----|------|----------|
+| P1 Windows 暗色模式菜单边界（#5876/#5877） | ✅ 已实现 | 新增 `src/Wails.Net.Application.Windows/Win32Theme.cs`（对齐 v3 theme.go）：uxtheme ordinal 132/133/135/136/104 动态加载（≥17763 门槛，不在 18334）、`SetPreferredAppMode(AllowDark)` 应用级暗色、`SetMenuTheme`（`SetWindowTheme("DarkMode_Explorer")` + 系统浅色回退防暗底暗字 + `AllowDarkModeForWindow(hwnd)` 传 HWND + `InvalidateRect`）；`WindowsPlatformApp.ApplyDarkModeToWindow` 委托 `Win32Theme.SetTheme`（DWM attribute 19/20 按版本 18985 选择），构造函数启动时 `Initialize()` |
+| P1 Linux 窗口状态事件（#5830） | ✅ 部分实现 | `LinuxWebviewWindow.OnWindowNotify` 扩展 `is-maximized`/`is-fullscreen` → WindowMaximised/Unmaximised/Fullscreen/Unfullscreen（标题栏/WM 操作可感知）；**限制**：resize/minimise 外部通知需 GdkSurface layout 信号，GirCore 0.8.0 无 `Gtk.Widget.Surface` API，待升级 GirCore 后补 |
+| P1 Linux 其他（#5854/#5898/#5899） | ✅ 核对 | fetch shim（Blob/FormData）不适用（前端传输仅 JSON/Uint8Array）；isvisible null 检查已有；IsDarkMode 已有（D-Bus color-scheme），闪白时序优化需 Linux 实机验证 |
+| P1 CLI setup 向导（#5601） | ✅ 已实现 | `DoctorCommand.RunDiagnostics()` 提取为 internal 复用；新增 `SetupCommand`（`wails setup`）：复用诊断 + 分平台安装指引（Windows/Linux），已注册到 CLI |
+| P1 Updater 资产匹配器（#5861） | ✅ 已实现 | 新增 `UpdateAssetMatcher`（默认排除 installer/setup/.msi）；接入 GitHub/GitLab provider 资产选择（用户显式 assetNamePattern 时尊重用户） |
+| P2 TS 绑定注释保留 | ✅ 已实现 | 链路：`BoundMethodInfo/BoundParameterInfo` + `BoundMethodModel/ParameterModel` 加 `Summary`；源生成器 `XmlDocParser` 提取 `<summary>/<param>`（Roslyn 编译期，白名单内）；`TypeScriptGenerator` 输出 JSDoc（方法摘要 + @param） |
+| P2 Android 默认 arm64（#5890） | ✅ 已实现 | `BuildCommand.BuildAllPlatformsAsync` 单 TFM 分支：platform=android 且未指定 --runtime 时注入 `RuntimeIdentifier=android-arm64` |
+| P2 macOS 细节（#5900/#5870/#5866/#5897） | ⏸ 推迟 | macOS 平台当前为 stub（窗口/菜单未实现，仅 341 行骨架），细节优化无实现载体且无测试环境；建议 macOS 完整实现后再对齐 |
+
+**构建验证说明**：代码改动已全部落地；本机环境存在文件锁问题（NuGet 漏洞审计缓存 `vuln_index.dat-new` 与部分 obj 产物写入被拒，被 TreatWarningsAsErrors 升级为 error，且 `dotnet build-server shutdown` 后仍间歇复现），CLI 构建验证受阻。建议在正常终端验证：
+`dotnet build src/Wails.Net.Application.Windows/Wails.Net.Application.Windows.csproj`、`dotnet build src/Wails.Net.Cli/Wails.Net.Cli.csproj`、`dotnet build src/Wails.Net.SourceGenerators/Wails.Net.SourceGenerators.csproj`、`dotnet build src/Wails.Net.Generator/Wails.Net.Generator.csproj`
+（若遇 NU1900 审计缓存错误：删除 `%LocalAppData%\NuGet\v3-cache` 下残留 `*.dat-new` 文件后重试。）
