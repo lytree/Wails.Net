@@ -47,6 +47,11 @@ public sealed class BoundMethodModel
     public bool IsAsync { get; }
 
     /// <summary>
+    /// 方法的 XML 文档摘要（<c>&lt;summary&gt;</c> 注释内容），可为 null。
+    /// </summary>
+    public string? Summary { get; }
+
+    /// <summary>
     /// 使用指定参数构造 BoundMethodModel 实例。
     /// </summary>
     /// <param name="fullName">方法全限定名。</param>
@@ -57,6 +62,7 @@ public sealed class BoundMethodModel
     /// <param name="parameters">参数列表。</param>
     /// <param name="returnTypeName">返回类型的 TypeScript 类型。</param>
     /// <param name="isAsync">是否为异步方法。</param>
+    /// <param name="summary">方法的 XML 文档摘要，可为 null。</param>
     public BoundMethodModel(
         string fullName,
         uint id,
@@ -65,7 +71,8 @@ public sealed class BoundMethodModel
         string methodName,
         IReadOnlyList<ParameterModel> parameters,
         string returnTypeName,
-        bool isAsync)
+        bool isAsync,
+        string? summary = null)
     {
         FullName = fullName;
         ID = id;
@@ -75,6 +82,7 @@ public sealed class BoundMethodModel
         Parameters = parameters;
         ReturnTypeName = returnTypeName;
         IsAsync = isAsync;
+        Summary = summary;
     }
 }
 
@@ -104,17 +112,24 @@ public sealed class ParameterModel
     public bool IsCancellationToken { get; }
 
     /// <summary>
+    /// 参数的 XML 文档摘要（<c>&lt;param&gt;</c> 注释内容），可为 null。
+    /// </summary>
+    public string? Summary { get; }
+
+    /// <summary>
     /// 使用指定参数构造 ParameterModel 实例。
     /// </summary>
     /// <param name="name">参数名称。</param>
     /// <param name="typeName">TypeScript 类型。</param>
     /// <param name="isVariadic">是否为可变参数。</param>
     /// <param name="isCancellationToken">是否为 CancellationToken。</param>
-    public ParameterModel(string name, string typeName, bool isVariadic, bool isCancellationToken)
+    /// <param name="summary">参数的 XML 文档摘要，可为 null。</param>
+    public ParameterModel(string name, string typeName, bool isVariadic, bool isCancellationToken, string? summary = null)
     {
         Name = name;
         TypeName = typeName;
         IsVariadic = isVariadic;
         IsCancellationToken = isCancellationToken;
+        Summary = summary;
     }
 }

@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using Wails.Net.Application;
 using Wails.Net.Application.Clipboard;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform.ServerMode;
@@ -39,12 +40,6 @@ public static class PlatformFactory
     /// 设置为 <c>windows</c>、<c>linux</c> 或 <c>android</c> 可覆盖自动检测。
     /// </summary>
     private const string PlatformEnvVar = "WAILS_PLATFORM";
-
-    /// <summary>
-    /// 用于启用调试日志的环境变量名称。
-    /// 设置为 <c>true</c>（不区分大小写）时，平台工厂会输出诊断信息到控制台。
-    /// </summary>
-    private const string DebugEnvVar = "WAILS_DEBUG";
 
     /// <summary>
     /// 支持的平台名称常量。
@@ -257,11 +252,7 @@ public static class PlatformFactory
     /// 检查是否启用了调试日志。
     /// </summary>
     /// <returns>如果 WAILS_DEBUG 环境变量为 "true"（不区分大小写）则返回 true。</returns>
-    public static bool IsDebugEnabled()
-    {
-        var value = Environment.GetEnvironmentVariable(DebugEnvVar);
-        return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
-    }
+    public static bool IsDebugEnabled() => DebugMode.IsEnvironmentEnabled();
 
     /// <summary>
     /// 返回所有 6 级检测的快照字符串，便于诊断平台识别问题。

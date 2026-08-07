@@ -8,11 +8,13 @@ namespace Wails.Net.Application.Bindings;
 /// <param name="TypeName">参数的 TypeScript 类型字符串（由源生成器映射）。</param>
 /// <param name="IsVariadic">是否为可变参数（params 关键字）。</param>
 /// <param name="IsCancellationToken">是否为 CancellationToken（自动注入，不暴露给前端）。</param>
+/// <param name="Summary">参数的 XML 文档摘要（<c>&lt;param&gt;</c> 注释内容，可为 null）。</param>
 public sealed record BoundParameterInfo(
     string Name,
     string TypeName,
     bool IsVariadic,
-    bool IsCancellationToken);
+    bool IsCancellationToken,
+    string? Summary = null);
 
 /// <summary>
 /// 绑定方法的元数据，由源代码生成器在编译期填充。
@@ -28,6 +30,7 @@ public sealed record BoundParameterInfo(
 /// <param name="ReturnTypeName">方法返回类型的 TypeScript 类型字符串。</param>
 /// <param name="IsAsync">是否为异步方法（返回 Task 或 Task&lt;T&gt;）。</param>
 /// <param name="IsCommand">是否为命令方法（标记了 [Command] 特性，命令名与 <paramref name="FullName"/> 相同）。</param>
+/// <param name="Summary">方法的 XML 文档摘要（<c>&lt;summary&gt;</c> 注释内容，可为 null）。</param>
 public sealed record BoundMethodInfo(
     string FullName,
     uint Id,
@@ -37,7 +40,8 @@ public sealed record BoundMethodInfo(
     IReadOnlyList<BoundParameterInfo> Parameters,
     string ReturnTypeName,
     bool IsAsync,
-    bool IsCommand);
+    bool IsCommand,
+    string? Summary = null);
 
 /// <summary>
 /// 编译时生成的绑定元数据注册表。

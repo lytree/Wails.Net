@@ -398,6 +398,18 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
         // 计算 FNV-1a 哈希 ID（与运行时 BindingManager.FNV1aHash 一致）
         var id = ComputeFnv1aHash(info.FullName);
 
+        // 提取 XML 文档注释（方法摘要 + 各参数摘要），供 TypeScript 绑定生成保留注释
+        var docXml = methodSymbol.GetDocumentationCommentXml();
+        var methodSummary = XmlDocParser.ExtractSummary(docXml);
+        var paramSummaries = new Dictionary<string, string?>(StringComparer.Ordinal);
+        if (!string.IsNullOrEmpty(docXml))
+        {
+            foreach (var name in parameters.Select(p => p.Name))
+            {
+                paramSummaries[name] = XmlDocParser.ExtractParam(docXml, name);
+            }
+        }
+
         // 生成参数元数据数组
         var paramBuilder = new StringBuilder();
         paramBuilder.Append("            new BoundParameterInfo[]");
@@ -415,8 +427,9 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
             var isVariadic = param.IsParams && !isCancellationToken;
             var tsParamType = isCancellationToken ? "void" : MapTypeToTypeScript(param.Type);
             var paramName = string.IsNullOrEmpty(param.Name) ? "arg" + i : param.Name;
+            var paramSummary = paramSummaries.TryGetValue(param.Name, out var ps) ? ps : null;
 
-            paramBuilder.Append($"                new BoundParameterInfo(\"{EscapeString(paramName)}\", \"{EscapeString(tsParamType)}\", {(isVariadic ? "true" : "false")}, {(isCancellationToken ? "true" : "false")})");
+            paramBuilder.Append($"                new BoundParameterInfo(\"{EscapeString(paramName)}\", \"{EscapeString(tsParamType)}\", {(isVariadic ? "true" : "false")}, {(isCancellationToken ? "true" : "false")}, {FormatStringLiteral(paramSummary)})");
             if (i < parameters.Length - 1)
             {
                 paramBuilder.Append(",");
@@ -436,7 +449,16 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
         sb.AppendLine($"                    Parameters: {paramBuilder},");
         sb.AppendLine($"                    ReturnTypeName: \"{EscapeString(returnTypeName)}\",");
         sb.AppendLine($"                    IsAsync: {(isAsync ? "true" : "false")},");
-        sb.AppendLine($"                    IsCommand: {(info.IsCommand ? "true" : "false")}));");
+        sb.AppendLine($"                    IsCommand: {(info.IsCommand ? "true" : "false")},");
+        sb.AppendLine($"                    Summary: {FormatStringLiteral(methodSummary)}));");
+    }
+
+    /// <summary>
+    /// 将可空字符串格式化为 C# 字符串字面量；null 输出 <c>null</c>。
+    /// </summary>
+    private static string FormatStringLiteral(string? value)
+    {
+        return value is null ? "null" : $"\"{EscapeString(value)}\"";
     }
 
     /// <summary>

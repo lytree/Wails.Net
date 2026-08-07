@@ -73,11 +73,6 @@ public sealed class WindowsPlatformApp : IPlatformApp
     private const int ErrorAlreadyExists = 183;
 
     /// <summary>
-    /// DWMWA_USE_IMMERSIVE_DARK_MODE（20）：DwmSetWindowAttribute 用于启用暗色模式标题栏。
-    /// </summary>
-    private const uint DwmwaUseImmersiveDarkMode = 20;
-
-    /// <summary>
     /// WM_SETICON（0x0080）：设置窗口图标消息。
     /// </summary>
     private const uint WmSetIcon = 0x0080;
@@ -169,6 +164,10 @@ public sealed class WindowsPlatformApp : IPlatformApp
 
         // 设置进程 DPI 感知，必须在创建任何窗口之前完成。
         SetDpiAwareness();
+
+        // 初始化 uxtheme 应用级暗色（SetPreferredAppMode），必须在创建窗口前完成。
+        // 对应 Wails v3 theme.go init()。
+        Win32Theme.Initialize();
     }
 
     /// <inheritdoc />
@@ -800,7 +799,8 @@ public sealed class WindowsPlatformApp : IPlatformApp
     }
 
     /// <summary>
-    /// 将暗色模式应用到指定窗口（标题栏）。
+    /// 将暗色模式应用到指定窗口（DWM 标题栏 + 原生菜单主题）。
+    /// 委托给 <see cref="Win32Theme.SetTheme"/>，对应 Wails v3 theme.go SetTheme。
     /// </summary>
     /// <param name="hwnd">窗口句柄。</param>
     /// <param name="dark">是否暗色模式。</param>
@@ -811,18 +811,7 @@ public sealed class WindowsPlatformApp : IPlatformApp
             return;
         }
 
-        try
-        {
-            var value = (BOOL)(dark ? 1 : 0);
-            unsafe
-            {
-                PInvoke.DwmSetWindowAttribute(hwnd, (DWMWINDOWATTRIBUTE)DwmwaUseImmersiveDarkMode, &value, (uint)sizeof(BOOL));
-            }
-        }
-        catch
-        {
-            // 暗色模式设置失败时忽略
-        }
+        Win32Theme.SetTheme(hwnd, dark);
     }
 
     /// <summary>

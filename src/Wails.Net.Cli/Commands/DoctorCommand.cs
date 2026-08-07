@@ -35,28 +35,7 @@ internal sealed class DoctorCommand : CliCommandBase
         Info("==================");
         Info(string.Empty);
 
-        var checks = new List<DiagnosticResult>
-        {
-            CheckDotNetSdk(),
-            CheckNodeJs(),
-            CheckPackageManager(),
-            CheckGit(),
-            CheckOsPlatform(),
-        };
-
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            checks.Add(CheckWebView2Runtime());
-            checks.Add(CheckNsis());
-        }
-        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-        {
-            checks.Add(CheckGtk4());
-            checks.Add(CheckWebKitGtk());
-            checks.Add(CheckLinuxSharedLibraries());
-            checks.Add(CheckDBus());
-        }
-
+        var checks = RunDiagnostics();
         await Task.CompletedTask;
 
         var passed = 0;
@@ -84,6 +63,38 @@ internal sealed class DoctorCommand : CliCommandBase
 
         // 仅硬性缺失（Fail）视为诊断不通过；可降级项（Warn，如缺 pnpm 回退 npm、缺 NSIS）不影响退出码
         return failed == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// 运行全部环境诊断检查。
+    /// 提取为可复用方法，供 <c>setup</c> 命令等复用。
+    /// </summary>
+    /// <returns>诊断结果列表。</returns>
+    internal static List<DiagnosticResult> RunDiagnostics()
+    {
+        var checks = new List<DiagnosticResult>
+        {
+            CheckDotNetSdk(),
+            CheckNodeJs(),
+            CheckPackageManager(),
+            CheckGit(),
+            CheckOsPlatform(),
+        };
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            checks.Add(CheckWebView2Runtime());
+            checks.Add(CheckNsis());
+        }
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            checks.Add(CheckGtk4());
+            checks.Add(CheckWebKitGtk());
+            checks.Add(CheckLinuxSharedLibraries());
+            checks.Add(CheckDBus());
+        }
+
+        return checks;
     }
 
     private static void ReportCheck(DiagnosticResult result)
@@ -605,14 +616,14 @@ internal sealed class DoctorCommand : CliCommandBase
         }
     }
 
-    private enum DiagnosticStatus
+    internal enum DiagnosticStatus
     {
         Pass,
         Warn,
         Fail,
     }
 
-    private sealed record DiagnosticResult(
+    internal sealed record DiagnosticResult(
         string Name,
         DiagnosticStatus Status,
         string Message);

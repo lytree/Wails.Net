@@ -170,7 +170,7 @@ public class TypeScriptGenerator
     }
 
     /// <summary>
-    /// 生成单个方法的 TypeScript 签名。
+    /// 生成单个方法的 TypeScript 签名（含 JSDoc 注释，保留后端 XML 文档摘要）。
     /// </summary>
     /// <param name="sb">字符串构建器。</param>
     /// <param name="method">方法模型。</param>
@@ -179,6 +179,25 @@ public class TypeScriptGenerator
     {
         // 过滤掉 CancellationToken 参数（不暴露给前端）
         var visibleParams = method.Parameters.Where(p => !p.IsCancellationToken).ToList();
+
+        // JSDoc：方法摘要 + 参数注释（对齐 Wails v3 静态分析生成保留注释）
+        var hasSummary = !string.IsNullOrEmpty(method.Summary) || visibleParams.Any(p => !string.IsNullOrEmpty(p.Summary));
+        if (hasSummary)
+        {
+            sb.AppendLine($"{indent}/**");
+            if (!string.IsNullOrEmpty(method.Summary))
+            {
+                sb.AppendLine($"{indent} * {method.Summary}");
+            }
+            foreach (var p in visibleParams)
+            {
+                if (!string.IsNullOrEmpty(p.Summary))
+                {
+                    sb.AppendLine($"{indent} * @param {p.Name} {p.Summary}");
+                }
+            }
+            sb.AppendLine($"{indent} */");
+        }
 
         var paramList = visibleParams.Select(p =>
         {
@@ -193,7 +212,7 @@ public class TypeScriptGenerator
     }
 
     /// <summary>
-    /// 生成单个方法的调用封装。
+    /// 生成单个方法的调用封装（含 JSDoc 注释，保留后端 XML 文档摘要）。
     /// </summary>
     /// <param name="sb">字符串构建器。</param>
     /// <param name="method">方法模型。</param>
@@ -202,6 +221,25 @@ public class TypeScriptGenerator
     {
         // 过滤掉 CancellationToken 参数
         var visibleParams = method.Parameters.Where(p => !p.IsCancellationToken).ToList();
+
+        // JSDoc
+        var hasSummary = !string.IsNullOrEmpty(method.Summary) || visibleParams.Any(p => !string.IsNullOrEmpty(p.Summary));
+        if (hasSummary)
+        {
+            sb.AppendLine($"{indent}/**");
+            if (!string.IsNullOrEmpty(method.Summary))
+            {
+                sb.AppendLine($"{indent} * {method.Summary}");
+            }
+            foreach (var p in visibleParams)
+            {
+                if (!string.IsNullOrEmpty(p.Summary))
+                {
+                    sb.AppendLine($"{indent} * @param {p.Name} {p.Summary}");
+                }
+            }
+            sb.AppendLine($"{indent} */");
+        }
 
         var paramList = visibleParams.Select(p =>
         {

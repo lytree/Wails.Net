@@ -70,9 +70,10 @@ public class BindingAnalyzer
             className: info.ClassName,
             methodName: info.MethodName,
             parameters: info.Parameters
-                .Select(p => new ParameterModel(p.Name, p.TypeName, p.IsVariadic, p.IsCancellationToken))
+                .Select(p => new ParameterModel(p.Name, p.TypeName, p.IsVariadic, p.IsCancellationToken, p.Summary))
                 .ToList(),
             returnTypeName: info.ReturnTypeName,
-            isAsync: info.IsAsync);
+            isAsync: info.IsAsync,
+            summary: info.Summary);
     }
 }

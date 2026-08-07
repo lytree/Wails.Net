@@ -921,14 +921,15 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     }
 
     /// <summary>
-    /// 处理 GTK 窗口的 notify 信号，检测 is-active 属性变化以分发窗口焦点事件。
-    /// GTK4 中窗口激活状态通过 is-active 属性变更通知，IsActive 返回当前焦点状态。
+    /// 处理 GTK 窗口的 notify 信号，分发窗口状态事件。
+    /// 对齐 Wails v3 beta.2（PR #5830）：除焦点外，从窗口状态属性发出 maximise / fullscreen 事件，
+    /// 使通过标题栏按钮或窗口管理器执行的状态切换也能被前端感知（而不只是方法调用时派发）。
     /// </summary>
     /// <param name="sender">触发事件的对象。</param>
     /// <param name="args">通知事件参数，包含 Pspec。</param>
     private void OnWindowNotify(GObject.Object sender, GObject.Object.NotifySignalArgs args)
     {
-        if (args.Pspec is null || args.Pspec.GetName() != "is-active")
+        if (args.Pspec is null)
         {
             return;
         }
@@ -939,14 +940,35 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
             return;
         }
 
-        // 读取窗口激活状态分发对应的焦点事件。
-        if (_window.IsActive)
+        switch (args.Pspec.GetName())
         {
-            app.DispatchWindowEvent(_id, (uint)WindowEventType.WindowFocus);
-        }
-        else
-        {
-            app.DispatchWindowEvent(_id, (uint)WindowEventType.WindowFocusLost);
+            case "is-active":
+                // 读取窗口激活状态分发对应的焦点事件。
+                if (_window.IsActive)
+                {
+                    app.DispatchWindowEvent(_id, (uint)WindowEventType.WindowFocus);
+                }
+                else
+                {
+                    app.DispatchWindowEvent(_id, (uint)WindowEventType.WindowFocusLost);
+                }
+                break;
+
+            case "is-maximized":
+                app.DispatchWindowEvent(
+                    _id,
+                    _window.IsMaximized()
+                        ? (uint)WindowEventType.WindowMaximised
+                        : (uint)WindowEventType.WindowUnmaximised);
+                break;
+
+            case "is-fullscreen":
+                app.DispatchWindowEvent(
+                    _id,
+                    _window.IsFullscreen()
+                        ? (uint)WindowEventType.WindowFullscreen
+                        : (uint)WindowEventType.WindowUnfullscreen);
+                break;
         }
     }
 

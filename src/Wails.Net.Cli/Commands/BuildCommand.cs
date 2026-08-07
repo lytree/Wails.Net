@@ -49,6 +49,17 @@ internal sealed class BuildCommand : CliCommandBase
         allPlatformsOption.Description = "构建所有支持的平台（Windows/Linux/Android）。多 TFM 项目单次构建，单 TFM 项目分平台依次构建";
         allPlatformsOption.DefaultValueFactory = _ => false;
 
+        // 显式模式开关（参照 Tauri v2 / Wails v3 的 `tauri build` 行为）
+        //   --frontend-only：仅构建前端（pnpm build），跳过 dotnet build
+        //   --backend-only：仅构建后端（dotnet build），跳过前端构建
+        var frontendOnlyOption = new Option<bool>("--frontend-only");
+        frontendOnlyOption.Description = "仅构建前端（执行 frontend.buildCommand / installCommand），跳过 .NET 后端构建。";
+        frontendOnlyOption.DefaultValueFactory = _ => false;
+
+        var backendOnlyOption = new Option<bool>("--backend-only");
+        backendOnlyOption.Description = "仅构建 .NET 后端（dotnet build），跳过前端构建。";
+        backendOnlyOption.DefaultValueFactory = _ => false;
+
         var command = new Command("build", "编译 Wails.Net 项目");
         command.Options.Add(projectOption);
         command.Options.Add(configurationOption);
@@ -57,6 +68,8 @@ internal sealed class BuildCommand : CliCommandBase
         command.Options.Add(skipHooksOption);
         command.Options.Add(skipFrontendOption);
         command.Options.Add(allPlatformsOption);
+        command.Options.Add(frontendOnlyOption);
+        command.Options.Add(backendOnlyOption);
 
         command.Action = AsyncAction.Create(async (parseResult, _) =>
         {
@@ -67,9 +80,25 @@ internal sealed class BuildCommand : CliCommandBase
             var skipHooks = parseResult.GetValue(skipHooksOption);
             var skipFrontend = parseResult.GetValue(skipFrontendOption);
             var allPlatforms = parseResult.GetValue(allPlatformsOption);
+            var frontendOnly = parseResult.GetValue(frontendOnlyOption);
+            var backendOnly = parseResult.GetValue(backendOnlyOption);
+
+            // 互斥校验：--frontend-only 与 --backend-only 不可同时指定
+            if (frontendOnly && backendOnly)
+            {
+                Error("--frontend-only 与 --backend-only 互斥，请仅指定其中一个");
+                return 1;
+            }
+            if (frontendOnly && allPlatforms)
+            {
+                Error("--frontend-only 与 --all-platforms 互斥（前端构建与平台无关）");
+                return 1;
+            }
 
             var cmd = new BuildCommand();
-            return await cmd.ExecuteAsync(project, configuration, runtime, selfContained, skipHooks, skipFrontend, allPlatforms);
+            return await cmd.ExecuteAsync(
+                project, configuration, runtime, selfContained,
+                skipHooks, skipFrontend, allPlatforms, frontendOnly, backendOnly);
         });
 
         return command;
@@ -85,6 +114,8 @@ internal sealed class BuildCommand : CliCommandBase
     /// <param name="skipHooks">是否跳过构建钩子。</param>
     /// <param name="skipFrontend">是否跳过前端构建。</param>
     /// <param name="allPlatforms">是否构建所有平台。</param>
+    /// <param name="frontendOnly">仅构建前端。</param>
+    /// <param name="backendOnly">仅构建后端。</param>
     /// <returns>退出码。</returns>
     private async Task<int> ExecuteAsync(
         FileInfo? project,
@@ -93,7 +124,9 @@ internal sealed class BuildCommand : CliCommandBase
         bool selfContained,
         bool skipHooks = false,
         bool skipFrontend = false,
-        bool allPlatforms = false)
+        bool allPlatforms = false,
+        bool frontendOnly = false,
+        bool backendOnly = false)
     {
         var projectPath = ResolveProjectPath(project);
         if (projectPath is null)
@@ -111,77 +144,77 @@ internal sealed class BuildCommand : CliCommandBase
             Info($"加载配置：{configPath}");
         }
 
+        // 输出当前模式（参照 Tauri v2 / Wails v3 的 `tauri build` 行为）
+        Info("================================================================");
+        Info(" Wails.Net Release 模式（参照 Tauri v2 / Wails v3 的 build 命令）");
+        Info("================================================================");
+        Info($"项目：{projectPath.FullName}");
+        Info($"Configuration：{configuration}");
+        Info($"Runtime：{(string.IsNullOrEmpty(runtime) ? "(默认)" : runtime)}");
+        Info($"Self-contained：{selfContained}");
+        Info($"模式：{(backendOnly ? "仅后端" : frontendOnly ? "仅前端" : "前端 + 后端")}");
+        if (allPlatforms)
+        {
+            Info("全平台构建：Windows / Linux / Android");
+        }
+        Info("================================================================");
+
+        // ---- 显式模式处理：仅前端 ----
+        // --frontend-only：执行 beforeBuildCommand + 前端构建 + afterBuildCommand，跳过 dotnet build
+        if (frontendOnly)
+        {
+            Info("--frontend-only：仅构建前端，跳过后端 dotnet build");
+
+            // 执行 beforeBuildCommand 钩子
+            if (!skipHooks && !string.IsNullOrWhiteSpace(config?.BeforeBuildCommand))
+            {
+                Info($"执行 beforeBuildCommand：{config!.BeforeBuildCommand}");
+                var beforeResult = await BuildHooks.ExecuteAsync(config.BeforeBuildCommand, workingDir);
+                if (!beforeResult.Success)
+                {
+                    Error($"beforeBuildCommand 失败：{beforeResult.ErrorMessage}");
+                    if (!string.IsNullOrEmpty(beforeResult.Output))
+                    {
+                        Info(beforeResult.Output);
+                    }
+                    return 4;
+                }
+            }
+
+            // 执行前端构建（install + build）
+            var frontendOnlyResult = await BuildFrontendAsync(workingDir, config);
+            if (frontendOnlyResult != 0)
+            {
+                return frontendOnlyResult;
+            }
+
+            // 执行 afterBuildCommand 钩子
+            if (!skipHooks && !string.IsNullOrWhiteSpace(config?.AfterBuildCommand))
+            {
+                Info($"执行 afterBuildCommand：{config!.AfterBuildCommand}");
+                var afterResult = await BuildHooks.ExecuteAsync(config.AfterBuildCommand, workingDir);
+                if (!afterResult.Success)
+                {
+                    Warn($"afterBuildCommand 失败：{afterResult.ErrorMessage}");
+                }
+            }
+
+            Success("前端构建完成（--frontend-only 模式）");
+            return 0;
+        }
+        if (backendOnly)
+        {
+            Info("--backend-only：仅构建后端，跳过前端构建");
+            skipFrontend = true;
+        }
+
         // 执行前端构建（install + build）
         if (!skipFrontend && config?.Frontend is { } frontend)
         {
-            var frontendDir = Path.Combine(workingDir, frontend.Dir);
-            if (Directory.Exists(frontendDir))
+            var frontendResult = await BuildFrontendAsync(workingDir, config);
+            if (frontendResult != 0)
             {
-                // 包管理器自动检测（pnpm 优先，npm 回退）；后续 install/build 优先使用
-                // wails.json 显式命令，缺失时回退到工具链智能默认（含 monorepo 工作区根安装）。
-                FrontendToolchain? toolchain = null;
-                try
-                {
-                    toolchain = await FrontendToolchain.DetectAsync();
-                }
-                catch (InvalidOperationException ex)
-                {
-                    // 仅在需要工具链默认值时才致命；显式命令可绕过。
-                    if (string.IsNullOrWhiteSpace(frontend.InstallCommand) ||
-                        string.IsNullOrWhiteSpace(frontend.BuildCommand))
-                    {
-                        Error(ex.Message);
-                        return 3;
-                    }
-
-                    Warn($"未检测到 pnpm/npm，使用 wails.json 中显式命令：{ex.Message}");
-                }
-
-                if (!string.IsNullOrWhiteSpace(frontend.InstallCommand))
-                {
-                    Info($"安装前端依赖：{frontend.InstallCommand}");
-                    var installResult = await BuildHooks.ExecuteAsync(
-                        frontend.InstallCommand, frontendDir, streamOutput: true);
-                    if (!installResult.Success)
-                    {
-                        // 输出已在执行过程中流式打印，此处不再重复
-                        Error($"前端依赖安装失败：{installResult.ErrorMessage}");
-                        return 3;
-                    }
-                }
-                else if (toolchain is not null)
-                {
-                    Info($"安装前端依赖（{toolchain.PackageManager}，工作区根）");
-                    var code = await toolchain.InstallAsync(frontendDir);
-                    if (code != 0)
-                    {
-                        Error($"前端依赖安装失败（退出码 {code}）");
-                        return 3;
-                    }
-                }
-
-                if (!string.IsNullOrWhiteSpace(frontend.BuildCommand))
-                {
-                    Info($"构建前端：{frontend.BuildCommand}");
-                    var frontendBuild = await BuildHooks.ExecuteAsync(
-                        frontend.BuildCommand, frontendDir, streamOutput: true);
-                    if (!frontendBuild.Success)
-                    {
-                        // 输出已在执行过程中流式打印，此处不再重复
-                        Error($"前端构建失败：{frontendBuild.ErrorMessage}");
-                        return 3;
-                    }
-                }
-                else if (toolchain is not null)
-                {
-                    Info($"构建前端（{toolchain.PackageManager} build）");
-                    var code = await toolchain.BuildAsync(frontendDir);
-                    if (code != 0)
-                    {
-                        Error($"前端构建失败（退出码 {code}）");
-                        return 3;
-                    }
-                }
+                return frontendResult;
             }
         }
 
@@ -245,6 +278,91 @@ internal sealed class BuildCommand : CliCommandBase
     }
 
     /// <summary>
+    /// 执行前端构建（install + build）。
+    /// 从 wails.json 读取 frontend.installCommand / frontend.buildCommand，
+    /// 或回退到工具链智能默认（pnpm/npm install + build）。
+    /// </summary>
+    /// <param name="workingDir">后端项目目录。</param>
+    /// <param name="config">已加载的 wails.json 配置（可空）。</param>
+    /// <returns>退出码：0 成功；3 前端构建失败。</returns>
+    private async Task<int> BuildFrontendAsync(string workingDir, ProjectConfig? config)
+    {
+        if (config?.Frontend is not { } frontend)
+        {
+            return 0;
+        }
+
+        var frontendDir = Path.Combine(workingDir, frontend.Dir);
+        if (!Directory.Exists(frontendDir))
+        {
+            return 0;
+        }
+
+        // 包管理器自动检测（pnpm 优先，npm 回退）
+        FrontendToolchain? toolchain = null;
+        try
+        {
+            toolchain = await FrontendToolchain.DetectAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            if (string.IsNullOrWhiteSpace(frontend.InstallCommand) ||
+                string.IsNullOrWhiteSpace(frontend.BuildCommand))
+            {
+                Error(ex.Message);
+                return 3;
+            }
+            Warn($"未检测到 pnpm/npm，使用 wails.json 中显式命令：{ex.Message}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(frontend.InstallCommand))
+        {
+            Info($"安装前端依赖：{frontend.InstallCommand}");
+            var installResult = await BuildHooks.ExecuteAsync(
+                frontend.InstallCommand, frontendDir, streamOutput: true);
+            if (!installResult.Success)
+            {
+                Error($"前端依赖安装失败：{installResult.ErrorMessage}");
+                return 3;
+            }
+        }
+        else if (toolchain is not null)
+        {
+            Info($"安装前端依赖（{toolchain.PackageManager}，工作区根）");
+            var code = await toolchain.InstallAsync(frontendDir);
+            if (code != 0)
+            {
+                Error($"前端依赖安装失败（退出码 {code}）");
+                return 3;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(frontend.BuildCommand))
+        {
+            Info($"构建前端：{frontend.BuildCommand}");
+            var frontendBuild = await BuildHooks.ExecuteAsync(
+                frontend.BuildCommand, frontendDir, streamOutput: true);
+            if (!frontendBuild.Success)
+            {
+                Error($"前端构建失败：{frontendBuild.ErrorMessage}");
+                return 3;
+            }
+        }
+        else if (toolchain is not null)
+        {
+            Info($"构建前端（{toolchain.PackageManager} build）");
+            var code = await toolchain.BuildAsync(frontendDir);
+            if (code != 0)
+            {
+                Error($"前端构建失败（退出码 {code}）");
+                return 3;
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>
     /// 全平台构建：优先检测多 TFM，单 TFM 则按 <see cref="AllPlatforms"/> 依次构建。
     /// </summary>
     /// <param name="builder">项目构建器。</param>
@@ -279,6 +397,15 @@ internal sealed class BuildCommand : CliCommandBase
             {
                 ["WailsNetPlatform"] = platform,
             };
+
+            // 对齐 Wails v3 beta.4（PR #5890）：Android 打包默认 arm64，而非宿主机架构（HOST_ARCH），
+            // 避免在 x64 开发机上产出 x86_64 ABI 包而无法部署到主流 arm64 设备。
+            // 用户通过 --runtime 显式指定时尊重用户选择。
+            if (platform == "android" && string.IsNullOrEmpty(runtime))
+            {
+                props["RuntimeIdentifier"] = "android-arm64";
+            }
+
             var r = await builder.BuildAsync(projectPath, configuration, runtime, selfContained, props);
             if (!r.Success)
             {

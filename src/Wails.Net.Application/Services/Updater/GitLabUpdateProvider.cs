@@ -110,7 +110,9 @@ public sealed class GitLabUpdateProvider : IUpdateProvider
                 ? relDate
                 : (DateTime?)null;
 
-        // 从 assets.links 数组中选择首个匹配平台的链接
+        // 从 assets.links 数组中选择首个匹配平台的链接。
+        // 默认排除安装程序类资产（installer/setup/msi，对齐 Wails v3 beta.2 #5861）；
+        // 用户显式指定 assetNamePattern 时按用户模式优先。
         string? downloadUrl = null;
         if (root.TryGetProperty("assets", out var assetsEl) &&
             assetsEl.TryGetProperty("links", out var linksEl) &&
@@ -121,6 +123,12 @@ public sealed class GitLabUpdateProvider : IUpdateProvider
                 var name = link.TryGetProperty("name", out var nameEl) && nameEl.ValueKind == JsonValueKind.String
                     ? nameEl.GetString() ?? string.Empty
                     : string.Empty;
+
+                if (string.IsNullOrEmpty(_assetNamePattern) && UpdateAssetMatcher.IsDefaultExcluded(name))
+                {
+                    continue;
+                }
+
                 if (string.IsNullOrEmpty(_assetNamePattern) ||
                     name.Contains(_assetNamePattern, StringComparison.OrdinalIgnoreCase))
                 {

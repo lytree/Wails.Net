@@ -30,6 +30,7 @@ public static class Program
         var root = new RootCommand("Wails.Net CLI - .NET 10 桌面应用开发工具链");
         root.Subcommands.Add(GenerateCommand.Create());
         root.Subcommands.Add(DoctorCommand.Create());
+        root.Subcommands.Add(SetupCommand.Create());
         root.Subcommands.Add(NewCommand.Create());
         root.Subcommands.Add(BuildCommand.Create());
         root.Subcommands.Add(DevCommand.Create());

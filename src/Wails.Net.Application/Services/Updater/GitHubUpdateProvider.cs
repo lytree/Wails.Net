@@ -116,7 +116,9 @@ public sealed class GitHubUpdateProvider : IUpdateProvider
                 ? pubDate
                 : (DateTime?)null;
 
-        // 选择首个匹配平台的资产
+        // 选择首个匹配平台的资产。
+        // 默认排除安装程序类资产（installer/setup/msi，对齐 Wails v3 beta.2 #5861）；
+        // 用户显式指定 assetNamePattern 时按用户模式优先（尊重显式选择）。
         string? downloadUrl = null;
         long? contentLength = null;
         if (root.TryGetProperty("assets", out var assetsEl) && assetsEl.ValueKind == JsonValueKind.Array)
@@ -126,6 +128,12 @@ public sealed class GitHubUpdateProvider : IUpdateProvider
                 var name = asset.TryGetProperty("name", out var nameEl) && nameEl.ValueKind == JsonValueKind.String
                     ? nameEl.GetString() ?? string.Empty
                     : string.Empty;
+
+                if (string.IsNullOrEmpty(_assetNamePattern) && UpdateAssetMatcher.IsDefaultExcluded(name))
+                {
+                    continue;
+                }
+
                 if (string.IsNullOrEmpty(_assetNamePattern) ||
                     name.Contains(_assetNamePattern, StringComparison.OrdinalIgnoreCase))
                 {
