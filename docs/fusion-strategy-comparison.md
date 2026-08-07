@@ -1,6 +1,6 @@
 # Wails.Net 架构融合策略对比详情
 
-> 本文档按 **架构融合策略**（AGENTS.md §1.1.1）的三大维度，详细对比 **Wails.Net**（当前项目）、**Tauri 2**（Rust 桌面/移动框架）和 **Wails 3 v3.0.0-alpha.102**（Go 原版）在功能实现项上的差别。
+> 本文档按 **架构融合策略**（AGENTS.md §1.1.1）的三大维度，详细对比 **Wails.Net**（当前项目）、**Tauri 2**（Rust 桌面/移动框架，GA `2.11.5`）和 **Wails 3 v3.0.0-beta.4**（Go 原版）在功能实现项上的差别。
 >
 > - **融合策略**：
 >   - 维度 1：Host/DI/Config/Logging → 学 ASP.NET Core（Microsoft.Extensions.* 全栈）

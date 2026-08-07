@@ -1,6 +1,6 @@
 # Wails.Net vs Tauri 2 vs Wails 3 功能对比详情
 
-> 本文档对比 **Wails.Net**（当前项目，Wails v3 的 .NET 10 移植实现）、**Tauri 2**（Rust 桌面/移动框架）和 **Wails 3 v3.0.0-alpha.102**（Go 原版）三者的功能实现项与差异项。
+> 本文档对比 **Wails.Net**（当前项目，Wails v3 的 .NET 10 移植实现）、**Tauri 2**（Rust 桌面/移动框架，GA `2.11.5`）和 **Wails 3 v3.0.0-beta.4**（Go 原版）三者的功能实现项与差异项。
 >
 > - **更新日期**：2026-07-23（基于实际仓库代码核对，P1 阶段新增：平台能力探测 + GetPID + 服务注册运行时保护 + 拖放目标元素详情 + KeychainPlugin；P2 阶段新增：OriginInfo 三字段消息来源 + Linux D-Bus 系统主题事件监听；并修正反射绑定描述为「零反射」以对齐 AGENTS.md §3.4 禁令）
 > - **对比基线**：基于本仓库当前 `src/` 实际代码状态（含 P1/P2 未提交工作区变更）

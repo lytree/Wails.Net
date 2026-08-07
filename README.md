@@ -1,6 +1,6 @@
 # Wails.Net
 
-> 基于 .NET 10 的 [Wails v3](https://github.com/wailsapp/wails/tree/v3.0.0-alpha.102) 移植实现，专注于 Windows、Linux 和 Android 平台。
+> 基于 .NET 10 的 [Wails v3](https://github.com/wailsapp/wails/tree/v3.0.0-beta.4) 移植实现，专注于 Windows、Linux 和 Android 平台。
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20Android%20%7C%20macOS(skeleton)-lightgrey.svg)](#平台支持)

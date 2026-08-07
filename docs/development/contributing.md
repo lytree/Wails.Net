@@ -326,7 +326,8 @@ dotnet fsi script.fsx
 
 | 资源 | 链接 |
 |------|------|
-| Wails v3 源码 | https://github.com/wailsapp/wails/tree/v3.0.0-alpha.102 |
+| Wails v3 源码 | https://github.com/wailsapp/wails/tree/v3.0.0-beta.4 |
+| Tauri v2 源码 | https://github.com/tauri-apps/tauri |
 | GirCore | https://github.com/gircore/gir.core |
 | TUnit | https://github.com/thomhurst/TUnit |
 | CsWin32 | https://github.com/microsoft/CsWin32 |

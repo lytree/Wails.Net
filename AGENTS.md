@@ -8,7 +8,8 @@
 ## 1. 项目背景
 
 - **项目**：Wails.Net — Wails v3 (Go) 的 .NET 10 移植实现
-- **参考版本**：`wails v3.0.0-*`
+- **参考版本**：`wails v3.0.0-beta.4`（2026-08-05 发布；2026-08-02 alpha → beta 升级，桌面 API 已稳定）
+- **对比基线**：Tauri v2 GA `2.11.5`（2026-07-01；Tauri 2.0 于 2024-10-02 正式发布，**无 beta 阶段**；Tauri 3 仅有 CLI-CEF alpha 预览，不作为参考）
 - **目标平台**：Windows、Linux、Android（macOS 已提供骨架实现 `Wails.Net.Application.MacOS`，iOS 暂不实现）
 - **实施计划**：详见 `.trae/documents/wails-net-dotnet10-implementation-plan.md`
 
@@ -37,6 +38,11 @@
 - **Host/DI/Config/Logging** → 学 ASP.NET Core（Microsoft.Extensions.* 全栈）
 - **Runtime/Window/IPC** → 学 Wails v3（对象模型、IPC、多窗口、事件总线）
 - **Plugin/Security/Capability** → 学 Tauri v2（插件能力、权限模型、安全设计）
+
+> **参考基线（2026-08-07 确认）**：
+> - Wails v3 = `v3.0.0-beta.4`（master 分支 `v3/` 目录，2026-08-02 alpha → beta）
+> - Tauri = v2 GA `2.11.5`（2026-07-01；Tauri 2 已于 2024-10-02 正式发布，不再有 beta 版本）
+> - 三方差异确认详见 `docs/development/wails-v3-beta-comparison.md`（Wails v3 beta 维度）与 `docs/fusion-strategy-comparison.md`（三方功能对比）
 
 ### 1.2 互操作策略
 
@@ -541,13 +547,15 @@ dotnet fsi script.fsx
 
 | 资源 | 链接 |
 |------|------|
-| Wails v3 源码 | https://github.com/wailsapp/wails/tree/v3.0.0-alpha.102 |
+| Wails v3 源码 | https://github.com/wailsapp/wails/tree/v3.0.0-beta.4 |
+| Tauri v2 源码 | https://github.com/tauri-apps/tauri |
 | GirCore | https://github.com/gircore/gir.core |
 | .NET Android | https://learn.microsoft.com/dotnet/android/ |
 | TUnit | https://github.com/thomhurst/TUnit |
 | CsWin32 | https://github.com/microsoft/CsWin32 |
 | System.CommandLine | https://github.com/dotnet/command-line-api |
 | 实施计划 | `.trae/documents/wails-net-dotnet10-implementation-plan.md` |
+| 三方差异确认 | `docs/development/wails-v3-beta-comparison.md` |
 
 ---
 
@@ -558,4 +566,4 @@ dotnet fsi script.fsx
 
 ---
 
-**最后更新**：2026-08-01（新增 §3.4.6 插件命令 CancellationToken 约定 + macOS 骨架实现 `Wails.Net.Application.MacOS` + 运行时 CLI 插件 `CliPlugin` + 移动端 Camera/Permissions 插件 + CLI `build --all-platforms` 一键全平台构建 + Cake `DistAll` 目标 + §6.2 命名空间结构补全 macOS/Plugins）
+**最后更新**：2026-08-07（参考基线升级：Wails v3 `v3.0.0-alpha.*` → `v3.0.0-beta.4`，Tauri 对比基线明确为 v2 GA `2.11.5`；§1.1.1 增补参考基线确认，§8 资源链接更新；三方差异确认见 `docs/development/wails-v3-beta-comparison.md`）

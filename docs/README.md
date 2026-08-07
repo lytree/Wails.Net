@@ -50,8 +50,10 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 
 | 文档 | 内容 |
 |------|------|
+| [项目结构与调试/发布模式](development/project-structure-and-modes.md) | 前后端项目分布、Debug 模式（`wails dev`）、Release 模式（`wails build` / `wails publish` / `wails pack`），与 Tauri v2 / Wails v3 对照 |
 | [构建打包指南](development/build-and-pack.md) | 开发模式、构建、打包分发（zip/deb/rpm/appimage/nsis）、wails.json 配置、代码签名、Android 构建、CI/CD 示例 |
 | [测试指南](development/testing-guide.md) | TUnit 使用、测试组织、断言模式、平台特定测试、覆盖率要求 |
+| [插件前后端一体发布](development/plugin-packaging.md) | 双包模型（NuGet + npm 同版本发布）、vite 项目调用、类型提示、发布流水线 |
 | [贡献指南](development/contributing.md) | 编码规范、命名约定、Git 提交规范、PR 流程、代码审查要点 |
 | [发布指南](development/release-guide.md) | 版本号集中管理、发布流程、GitHub Actions CI/CD 流水线、NuGet 发布 |
 
@@ -115,7 +117,8 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 
 ## 参考资源
 
-- [Wails v3 源码](https://github.com/wailsapp/wails/tree/v3.0.0-alpha.102) — Go 版本参考实现
+- [Wails v3 源码](https://github.com/wailsapp/wails/tree/v3.0.0-beta.4) — Go 版本参考实现
+- [Tauri v2 源码](https://github.com/tauri-apps/tauri) — Rust 对比参考（v2 GA 2.11.5）
 - [GirCore](https://github.com/gircore/gir.core) — GTK4 .NET 绑定
 - [TUnit](https://github.com/thomhurst/TUnit) — 现代 .NET 测试框架
 - [CsWin32](https://github.com/microsoft/CsWin32) — Win32 源生成器
@@ -123,4 +126,4 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 
 ---
 
-**最后更新**：2026-07-20（P3 阶段：新增 20 个聚焦单一主题的 Demo；P2 阶段：MenuRole 角色菜单项系统 + Android 移动端插件平台后端 + Android 平台事件映射；P1 阶段已完成三平台 BrowserManager、Logger 双向桥接、多 Provider Updater、Service Route 挂载等 8 项对齐）
+**最后更新**：2026-08-03（新增 `Wails.Net.Demo.DevRelease` 演示 + `docs/development/project-structure-and-modes.md` 指南；CLI `wails dev` 新增 `--open-devtools` / `--frontend-only` / `--backend-only` / `--platform`，`wails build` 新增 `--frontend-only` / `--backend-only`）
