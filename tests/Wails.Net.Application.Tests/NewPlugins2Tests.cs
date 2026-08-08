@@ -1,3 +1,4 @@
+using Wails.Net.Plugins.FileAssociation;
 using Wails.Net.Plugins.Localization;
 using Wails.Net.Plugins.Upload;
 using System.Text.Json;
@@ -8,7 +9,6 @@ using NSubstitute;
 using TUnit.Core;
 using Wails.Net.Application.Commands;
 using Wails.Net.Application.Plugins;
-using Wails.Net.Application.Plugins.BuiltIn;
 
 namespace Wails.Net.Application.Tests;
 

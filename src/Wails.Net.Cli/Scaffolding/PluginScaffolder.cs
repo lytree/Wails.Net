@@ -84,7 +84,9 @@ public sealed class PluginScaffolder
         try
         {
             var kebab = PluginBuilder.ToKebabCase(name);
-            var pascal = PluginBuilder.ToPascalCase(name);
+            // pascal 必须由 kebab 推导：ToPascalCase 直接作用于 PascalCase 输入
+            // 会把内部大写转小写（OsInfo → Osinfo），先经 kebab 规范化再还原（os-info → OsInfo）
+            var pascal = PluginBuilder.ToPascalCase(kebab);
             var normalizedPlatform = platform.ToLowerInvariant();
 
             var backendDir = Path.Combine(repoRoot, "src", $"{PluginBuilder.BackendPrefix}{pascal}");

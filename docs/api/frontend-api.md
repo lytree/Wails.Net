@@ -2065,7 +2065,7 @@ const names = await wails.updater.providers();
 
 ## 深度链接 API (wails.deeplink)
 
-深度链接（Custom URL Scheme）注册与解析。对应 [DeepLinkPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/DeepLinkPlugin.cs)，参考 Tauri v2 plugin-deep-link。
+深度链接（Custom URL Scheme）注册与解析。对应 [DeepLinkPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Plugins.Deeplink/DeepLinkPlugin.cs)（M3 已拆分为独立插件包），参考 Tauri v2 plugin-deep-link。
 
 ### wails.deeplink.register(scheme)
 
@@ -2143,7 +2143,7 @@ const registered = await wails.deeplink.isRegistered("myapp");
 
 ## DPI 缩放 API (wails.dpi)
 
-DPI 缩放查询与设置。对应 [DpiScalePlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/DpiScalePlugin.cs)。
+DPI 缩放查询与设置。对应 [DpiScalePlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Plugins.Dpiscale/DpiScalePlugin.cs)（M3 已拆分为独立插件包）。
 
 ### wails.dpi.getScale()
 

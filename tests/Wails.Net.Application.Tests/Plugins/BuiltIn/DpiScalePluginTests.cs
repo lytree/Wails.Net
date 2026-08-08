@@ -1,3 +1,4 @@
+using Wails.Net.Plugins.DpiScale;
 using System.Reflection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -8,7 +9,6 @@ using Wails.Net.Application.Commands;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform.ServerMode;
 using Wails.Net.Application.Plugins;
-using Wails.Net.Application.Plugins.BuiltIn;
 using Wails.Net.Application.Windows;
 
 namespace Wails.Net.Application.Tests.Plugins.BuiltIn;

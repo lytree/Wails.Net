@@ -29,4 +29,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Wails.Net.Sdk\Wails.Net.Sdk.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- M3: UI 组插件包 -->
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Notification\Wails.Net.Plugins.Notification.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Tray\Wails.Net.Plugins.Tray.csproj" />
+  </ItemGroup>
 </Project>

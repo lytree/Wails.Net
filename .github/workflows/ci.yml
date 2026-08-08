@@ -679,7 +679,47 @@ jobs:
           }
 
   # ============================================================================
-  # Job 6：发布 GitHub Release（仅 tag 触发）
+  # Job 6：发布 npm 双包（仅 tag 触发，M4 闭环）
+  # ============================================================================
+  # 前端双包发布：@wails-net/runtime + 全部 @wails-net/plugin-*（39 个）。
+  # 与 publish-nuget 并行；前置版本一致性校验（scripts/verify-versions.mjs，
+  # Directory.Build.props 的 WailsNetVersion == 各 package.json version），
+  # 不一致即失败，保证 NuGet 与 npm 同版本发布。
+  # 认证：NPM_TOKEN secret（npmjs.com 自动化 token，packages 具写权限）。
+  publish-npm:
+    name: 发布到 npmjs.org
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: 启用 pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.0 --activate
+
+      - name: 版本一致性校验（WailsNetVersion == 前端包版本）
+        run: node scripts/verify-versions.mjs
+
+      - name: 安装依赖并构建全部前端包
+        run: |
+          pnpm install --no-frozen-lockfile
+          pnpm -r build
+
+      - name: 发布前端双包（runtime + 39 插件包）
+        run: pnpm -r publish --no-git-checks --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ============================================================================
+  # Job 7：发布 GitHub Release（仅 tag 触发）
   # ============================================================================
   # 创建 GitHub Release 并上传全部发布产物，供用户直接从 GitHub 下载：
   #   - NuGet 包（.nupkg / .snupkg）：SDK / CLI / Templates / Bundle 等

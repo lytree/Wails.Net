@@ -1,3 +1,4 @@
+using Wails.Net.Plugins.Clipboard;
 // Demo: Wails.Net.Demo.Clipboard
 // 目的：演示内置 ClipboardPlugin 与自定义绑定方法的配合使用。
 // ClipboardPlugin 提供 clipboard.setText / clipboard.getText 命令，

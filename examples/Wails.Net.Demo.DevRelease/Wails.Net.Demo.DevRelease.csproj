@@ -62,5 +62,11 @@
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Osinfo\Wails.Net.Plugins.Osinfo.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Appinfo\Wails.Net.Plugins.Appinfo.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Path\Wails.Net.Plugins.Path.csproj" />
+    <!-- M3: Log 插件包 -->
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Log\Wails.Net.Plugins.Log.csproj" />
+    <!-- M3: 窗口组插件包 -->
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Window\Wails.Net.Plugins.Window.csproj" />
+    <!-- M3: 系统组插件包 -->
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Application\Wails.Net.Plugins.Application.csproj" />
   </ItemGroup>
 </Project>

@@ -1,7 +1,7 @@
+using Wails.Net.Plugins.Autostart;
 using TUnit.Assertions;
 using TUnit.Core;
 using TUnit.Core.Exceptions;
-using Wails.Net.Application.Plugins.BuiltIn;
 
 namespace Wails.Net.Application.Tests;
 

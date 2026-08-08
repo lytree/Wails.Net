@@ -1,3 +1,4 @@
+using Wails.Net.Plugins.Window;
 // Demo: Wails.Net.Demo.DragAndDrop
 // 目的：演示文件拖放能力。
 // 平台层在窗口收到文件拖放事件后会广播 KnownEvents.WindowFileDropped 事件

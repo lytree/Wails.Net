@@ -1,3 +1,5 @@
+using Wails.Net.Plugins.Tray;
+using Wails.Net.Plugins.Notification;
 // Demo: Wails.Net.Demo.SystemTray
 // 目的：演示系统托盘（SystemTray）能力。
 // 通过 ISystemTrayManager.CreateSystemTray 创建托盘实例，

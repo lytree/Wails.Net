@@ -1,3 +1,6 @@
+using Wails.Net.Plugins.DeepLink;
+using Wails.Net.Plugins.PowerManagement;
+using Wails.Net.Plugins.WindowState;
 using System.Reflection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -6,7 +9,6 @@ using NSubstitute;
 using TUnit.Core;
 using Wails.Net.Application.Commands;
 using Wails.Net.Application.Plugins;
-using Wails.Net.Application.Plugins.BuiltIn;
 
 namespace Wails.Net.Application.Tests;
 

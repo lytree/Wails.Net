@@ -6,7 +6,10 @@ using Wails.Net.Application.Hosting;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform;
 using Wails.Net.Application.Plugins;
-using Wails.Net.Application.Plugins.BuiltIn;
+using Wails.Net.Plugins.OsInfo;
+using Wails.Net.Plugins.Log;
+using Wails.Net.Plugins.Window;
+using Wails.Net.Plugins.Application;
 
 using Company.AppName.Services;
 

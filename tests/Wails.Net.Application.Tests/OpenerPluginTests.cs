@@ -1,3 +1,4 @@
+using Wails.Net.Plugins.Opener;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

@@ -293,10 +293,12 @@ flowchart LR
 
 | 环节 | 做法 |
 |------|------|
-| NuGet 发布 | `dotnet pack` + `dotnet nuget push`（见 [release-guide.md](release-guide.md)） |
-| npm 发布 | `pnpm publish --provenance`（OIDC Trusted Publisher，对齐 LY.Tool release-frontend.yml 模式） |
-| 版本一致性校验 | CI 脚本断言 `WailsNetVersion` == 各插件 package.json version，不一致即失败 |
-| 前端产物完整性 | `dist/` 必须先构建（`pnpm build`），禁止发布未构建源码 |
+| NuGet 发布 | `dotnet pack` + `dotnet nuget push`（CI `publish-nuget` job，Trusted Publishing OIDC，见 [release-guide.md](release-guide.md)） |
+| npm 发布 | `pnpm -r publish --access public`（CI `publish-npm` job，`NPM_TOKEN` secret；OIDC Trusted Publisher 对齐 LY.Tool release-frontend.yml 模式） |
+| 版本一致性校验 | `scripts/verify-versions.mjs`：断言 `WailsNetVersion` == 各插件 package.json version（含 runtime 与 mobile 聚合包），不一致即失败；本地可 `--fix` 自动对齐 |
+| 前端产物完整性 | `dist/` 必须先构建（`pnpm -r build`），禁止发布未构建源码 |
+
+> **M4 落地（2026-08-08）**：CI 已补 `publish-npm` job（checkout → setup-node → corepack pnpm → `verify-versions.mjs` → `pnpm -r build` → `pnpm -r publish`），与 `publish-nuget` 并行触发（Git 标签 `v*`）；`@wails-net/runtime` 与 39 个插件包同版本发布。
 
 ### 5.3 本地联调（无发布）
 

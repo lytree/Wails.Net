@@ -1,14 +1,18 @@
 /**
  * @wails-net/runtime — Wails.Net 前端运行时 SDK（TypeScript）。
  *
- * 自包含 IPC 传输 + 全部核心命名空间与 46 个插件命令的强类型封装。
+ * 自包含 IPC 传输 + 核心 API（wails/call/events/defineCommand）+ 共享类型。
+ * 桌面插件封装（window/windows/screen/…/log/store/net/fs 等）与移动端插件
+ * （barcodeScanner/biometric/…）已随 M3 迁移至各自 `@wails-net/plugin-*` 包
+ * （按需安装），本包仅保留核心运行时与 re-export 类型。
  *
  * 用法：
  * ```ts
  * import { wails } from "@wails-net/runtime";
+ * import { window } from "@wails-net/plugin-window";
  *
  * const res = await wails.call("GreetingService.Greet", ["World"]);
- * await wails.clipboard.setText("hi");
+ * await window.setTitle("hi");
  * const off = wails.events.on("wails:window:created", (e) => console.log(e));
  * ```
  *
@@ -35,42 +39,6 @@ import {
   type ContextMenuOptions,
 } from "./core/contextmenu.js";
 
-// 核心命名空间
-import { clipboard } from "./api/clipboard.js";
-import { dialog } from "./api/dialog.js";
-import { window, windows, screen, tray, menu, positioner, windowstate, dpiScale } from "./api/window.js";
-import {
-  application,
-  app,
-  autostart,
-  process,
-  os,
-  system,
-  power,
-} from "./api/application.js";
-import { fs, fswatch, path, fileassociation } from "./api/fs.js";
-import { http, upload, websocket, localhost, cookie, deeplink, opener } from "./api/net.js";
-import {
-  store,
-  sqlite,
-  keychain,
-  stronghold,
-  localization,
-  scope,
-} from "./api/data.js";
-import { notification, shell } from "./api/notification.js";
-import { log, globalshortcut, updater, cli } from "./api/log.js";
-import {
-  barcodeScanner,
-  biometric,
-  camera,
-  geolocation,
-  haptics,
-  nfc,
-  permissions,
-  device,
-} from "./api/mobile.js";
-
 // 底层 / 错误
 import { CallError, toCallError } from "./internal/call-error.js";
 import { bindingId, transport, unpack, type CancellablePromise } from "./internal/transport.js";
@@ -84,57 +52,8 @@ import type {
   WailsRuntimeFlags,
 } from "./internal/types.js";
 
-/** 命名空间集合（全部插件 + 核心 API）。 */
-const namespaces = {
-  window,
-  windows,
-  screen,
-  tray,
-  menu,
-  positioner,
-  windowstate,
-  dpiScale,
-  clipboard,
-  dialog,
-  application,
-  app,
-  autostart,
-  process,
-  os,
-  system,
-  power,
-  fs,
-  fswatch,
-  path,
-  fileassociation,
-  http,
-  upload,
-  websocket,
-  localhost,
-  cookie,
-  deeplink,
-  opener,
-  store,
-  sqlite,
-  keychain,
-  stronghold,
-  localization,
-  scope,
-  notification,
-  shell,
-  log,
-  globalshortcut,
-  updater,
-  cli,
-  barcodeScanner,
-  biometric,
-  camera,
-  geolocation,
-  haptics,
-  nfc,
-  permissions,
-  device,
-};
+/** 命名空间集合（核心 API）。 */
+const namespaces = {};
 
 /** Wails.Net 前端 SDK 完整类型。 */
 export type WailsSdk = WailsRuntime & typeof namespaces;

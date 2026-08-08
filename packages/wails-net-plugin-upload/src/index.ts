@@ -1,9 +1,15 @@
-/**
- * @wails-net/plugin-upload — upload 插件前端封装。
- * 命令前缀 `upload.*`，后端经 L2 抽象层 `defineCommand` 转发（强类型化）。
- * @platform windows,linux,macos  桌面通用插件。
- */
-import { defineCommand } from "@wails-net/runtime";
+/** M3 runtime 变薄：从 @wails-net/runtime 迁移，按需安装 */
+import { call } from "@wails-net/runtime";
 
-/** 示例：upload.ping（无参数，返回字符串）。 */
-export const ping = defineCommand<[], string>("upload.ping", "none");
+export const upload = {
+  /** 上传本地文件到目标 URL。 */
+  upload: (url: string, filePath: string) => call<boolean>("upload.upload", [url, filePath]),
+  /** 上传本地文件（预留进度上报）。 */
+  uploadWithProgress: (url: string, filePath: string) =>
+    call<boolean>("upload.uploadWithProgress", [url, filePath]),
+  /** 从 URL 下载文件到本地路径。 */
+  download: (url: string, path: string) => call<boolean>("upload.download", [url, path]),
+  /** 从 URL 下载文件（预留进度上报）。 */
+  downloadWithProgress: (url: string, path: string) =>
+    call<boolean>("upload.downloadWithProgress", [url, path]),
+};

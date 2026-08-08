@@ -1,3 +1,7 @@
+using Wails.Net.Plugins.Notification;
+using Wails.Net.Plugins.Dialog;
+using Wails.Net.Plugins.Clipboard;
+using Wails.Net.Plugins.Log;
 using Wails.Net.Plugins.Path;
 using Wails.Net.Plugins.AppInfo;
 using Wails.Net.Plugins.OsInfo;

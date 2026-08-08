@@ -1,3 +1,4 @@
+using Wails.Net.Plugins.GlobalShortcut;
 // Demo: Wails.Net.Demo.Keybindings
 // 目的：演示全局快捷键（Global Shortcut / KeyBinding）能力。
 // 通过 Application.KeyBindingManager.RegisterKeyBinding 注册后端全局热键
@@ -13,7 +14,6 @@ using Wails.Net.Application;
 using Wails.Net.Application.Hosting;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Plugins;
-using Wails.Net.Application.Plugins.BuiltIn;
 using Wails.Net.Demo.Keybindings.Services;
 
 // 创建桌面应用构建器

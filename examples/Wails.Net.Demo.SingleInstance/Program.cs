@@ -1,3 +1,4 @@
+using Wails.Net.Plugins.Window;
 // Demo: Wails.Net.Demo.SingleInstance
 // 目的：演示单实例锁（Single Instance）能力。
 // 通过 ApplicationOptions.SingleInstance 启用单实例模式，

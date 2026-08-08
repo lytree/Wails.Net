@@ -30,6 +30,34 @@
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Process\Wails.Net.Plugins.Process.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Store\Wails.Net.Plugins.Store.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Sql\Wails.Net.Plugins.Sql.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.OsInfo\Wails.Net.Plugins.OsInfo.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.AppInfo\Wails.Net.Plugins.AppInfo.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Path\Wails.Net.Plugins.Path.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Log\Wails.Net.Plugins.Log.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Window\Wails.Net.Plugins.Window.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Windows\Wails.Net.Plugins.Windows.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.WindowState\Wails.Net.Plugins.WindowState.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Screen\Wails.Net.Plugins.Screen.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Positioner\Wails.Net.Plugins.Positioner.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Dialog\Wails.Net.Plugins.Dialog.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Notification\Wails.Net.Plugins.Notification.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Clipboard\Wails.Net.Plugins.Clipboard.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Menu\Wails.Net.Plugins.Menu.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Tray\Wails.Net.Plugins.Tray.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Application\Wails.Net.Plugins.Application.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Autostart\Wails.Net.Plugins.Autostart.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.PowerManagement\Wails.Net.Plugins.PowerManagement.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Globalshortcut\Wails.Net.Plugins.Globalshortcut.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Dpiscale\Wails.Net.Plugins.Dpiscale.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Fileassociation\Wails.Net.Plugins.Fileassociation.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Deeplink\Wails.Net.Plugins.Deeplink.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Cli\Wails.Net.Plugins.Cli.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Cookie\Wails.Net.Plugins.Cookie.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.FileSystem\Wails.Net.Plugins.FileSystem.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.FsWatch\Wails.Net.Plugins.FsWatch.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Opener\Wails.Net.Plugins.Opener.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.PersistedScope\Wails.Net.Plugins.PersistedScope.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Shell\Wails.Net.Plugins.Shell.csproj" />
     <!-- 源代码生成器：扫描 [Binding] / [Command] 特性，生成强类型调用器。
          用于测试生成器调用器路径（GeneratedBindingRegistry）的端到端流程。 -->
     <ProjectReference Include="..\..\src\Wails.Net.SourceGenerators\Wails.Net.SourceGenerators.csproj"

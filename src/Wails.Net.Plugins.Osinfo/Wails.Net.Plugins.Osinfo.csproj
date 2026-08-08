@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <PackageId>Wails.Net.Plugins.Osinfo</PackageId>
+    <PackageId>Wails.Net.Plugins.OsInfo</PackageId>
     <Description>Wails.Net Osinfo 插件（前后端一体双包）</Description>
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>

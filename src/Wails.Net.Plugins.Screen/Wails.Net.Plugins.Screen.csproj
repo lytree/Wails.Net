@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <PackageId>Wails.Net.Plugins.Screen</PackageId>
+    <Description>Wails.Net Screen 插件（前后端一体双包）</Description>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Wails.Net.Application\Wails.Net.Application.csproj" />
+  </ItemGroup>
+
+</Project>

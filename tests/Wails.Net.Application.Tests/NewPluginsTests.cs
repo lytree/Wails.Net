@@ -1,3 +1,5 @@
+using Wails.Net.Plugins.Dialog;
+using Wails.Net.Plugins.Positioner;
 using Wails.Net.Plugins.Sql;
 using Wails.Net.Plugins.WebSocket;
 using Microsoft.Extensions.Configuration;

@@ -1,3 +1,4 @@
+using Wails.Net.Plugins.Menu;
 // Demo: Wails.Net.Demo.ContextMenus
 // 目的：演示上下文菜单（Context Menu）的注册与触发。
 // 通过 menu.setContextMenu 命令注册多个命名上下文菜单，

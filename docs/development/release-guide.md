@@ -76,12 +76,27 @@ git push origin main --tags
 
 ### 5. 触发 CI 发布流水线
 
-推送 tag 后，GitHub Actions 将自动触发 `publish-nuget` job，推送 NuGet 包到 nuget.org。
+推送 tag 后，GitHub Actions 将自动触发发布流水线：
+
+- `publish-nuget`：推送 NuGet 包到 nuget.org（Trusted Publishing OIDC）
+- `publish-npm`：推送前端双包到 npmjs.org——`@wails-net/runtime` + 全部 `@wails-net/plugin-*`（M4 闭环）
+- `publish-github-release`：创建 GitHub Release 并上传三平台构建产物
+
+发布前 CI 执行版本一致性校验（`scripts/verify-versions.mjs`）：`Directory.Build.props` 的 `WailsNetVersion` 必须等于所有 `packages/*/package.json` 的 `version`，不一致即失败——保证 NuGet 与 npm 同版本发布。
+
+本地校验命令：
+
+```bash
+node scripts/verify-versions.mjs        # 校验（不一致退出码 1）
+node scripts/verify-versions.mjs --fix  # 校验并自动把前端包版本对齐 WailsNetVersion
+```
 
 ### 6. 验证发布
 
 - 在 [nuget.org](https://www.nuget.org/packages/Wails.Net.Application) 查看包是否上传成功
 - 使用 `dotnet add package Wails.Net.Application --version 0.2.0` 验证可安装
+- 在 [npmjs.com](https://www.npmjs.com/package/@wails-net/runtime) 查看前端包是否上传成功
+- 使用 `npm view @wails-net/plugin-window version` 验证版本一致
 
 ## GitHub Actions CI/CD 流水线
 

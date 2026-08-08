@@ -1,3 +1,4 @@
+using Wails.Net.Plugins.Notification;
 // Demo: Wails.Net.Demo.Notifications
 // 目的：演示内置 NotificationPlugin 与框架 NotificationService 的系统通知能力。
 // 通过自定义 NotificationService 绑定方法提供立即发送、延迟发送与历史记录功能。

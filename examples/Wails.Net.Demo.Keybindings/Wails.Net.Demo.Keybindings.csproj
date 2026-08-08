@@ -28,5 +28,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Wails.Net.Sdk\Wails.Net.Sdk.csproj" />
+    <!-- M3: 系统组插件包 -->
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Globalshortcut\Wails.Net.Plugins.Globalshortcut.csproj" />
   </ItemGroup>
 </Project>

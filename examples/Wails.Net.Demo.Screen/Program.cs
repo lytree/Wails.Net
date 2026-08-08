@@ -1,3 +1,4 @@
+using Wails.Net.Plugins.Screen;
 // Demo: Wails.Net.Demo.Screen
 // 目的：演示屏幕信息查询能力。
 // 通过 ScreenPlugin 注册 screen.getPrimary / screen.getAll 命令，

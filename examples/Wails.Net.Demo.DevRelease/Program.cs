@@ -1,3 +1,6 @@
+using Wails.Net.Plugins.Application;
+using Wails.Net.Plugins.Window;
+using Wails.Net.Plugins.Log;
 using Wails.Net.Plugins.Path;
 using Wails.Net.Plugins.AppInfo;
 using Wails.Net.Plugins.OsInfo;
@@ -7,7 +10,6 @@ using Wails.Net.Application;
 using Wails.Net.Application.Hosting;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Plugins;
-using Wails.Net.Application.Plugins.BuiltIn;
 using Wails.Net.Demo.DevRelease.Services;
 
 // =====================================================================

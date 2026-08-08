@@ -1,3 +1,4 @@
+using Wails.Net.Plugins.PersistedScope;
 using Wails.Net.Plugins.Stronghold;
 using Wails.Net.Plugins.Localhost;
 using System.Text.Json;

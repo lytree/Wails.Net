@@ -1,3 +1,4 @@
+using Wails.Net.Plugins.Menu;
 // Demo: Wails.Net.Demo.Menu
 // 目的：演示应用菜单（Application Menu）的构建与点击处理。
 // 通过 MenuPlugin 注册菜单命令，通过 Application.SetApplicationMenu 设置应用菜单，

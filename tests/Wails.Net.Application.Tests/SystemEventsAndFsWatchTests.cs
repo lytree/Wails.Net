@@ -1,3 +1,4 @@
+using Wails.Net.Plugins.FsWatch;
 using System.IO;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;

@@ -1,3 +1,5 @@
+using Wails.Net.Plugins.Windows;
+using Wails.Net.Plugins.Window;
 // Demo: Wails.Net.Demo.MultiWindow
 // 目的：演示多窗口管理能力。
 // 启用 WindowPlugin（单窗口操作）与 WindowsPlugin（窗口列表查询），

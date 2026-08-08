@@ -264,7 +264,7 @@ private static WebviewWindow GetWindowOrThrow(ICommandContext ctx)
 
 #### ApplicationPlugin
 
-[ApplicationPlugin.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/ApplicationPlugin.cs) 通过 `Application.Get()` 静态单例定位应用实例，暴露 12 个应用级命令（quit/hide/show/getName/getVersion/getDescription/setIcon/isDarkMode/getAccentColor/getPrimaryScreen/getScreens/showAboutDialog）。
+[ApplicationPlugin.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Plugins.Application/ApplicationPlugin.cs)（M3 已拆分为独立插件包 `Wails.Net.Plugins.Application`，基座 BuiltIn 版本已移除）通过 `Application.Get()` 静态单例定位应用实例，暴露 12 个应用级命令（quit/hide/show/getName/getVersion/getDescription/setIcon/isDarkMode/getAccentColor/getPrimaryScreen/getScreens/showAboutDialog）。
 
 #### TrayPlugin
 

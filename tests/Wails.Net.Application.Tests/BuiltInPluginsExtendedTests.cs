@@ -1,3 +1,10 @@
+using Wails.Net.Plugins.GlobalShortcut;
+using Wails.Net.Plugins.Notification;
+using Wails.Net.Plugins.Clipboard;
+using Wails.Net.Plugins.Log;
+using Wails.Net.Plugins.Path;
+using Wails.Net.Plugins.AppInfo;
+using Wails.Net.Plugins.OsInfo;
 using Wails.Net.Plugins.Store;
 using Wails.Net.Plugins.Process;
 using Microsoft.Extensions.Configuration;
@@ -7,7 +14,6 @@ using NSubstitute;
 using TUnit.Core;
 using Wails.Net.Application.Commands;
 using Wails.Net.Application.Plugins;
-using Wails.Net.Application.Plugins.BuiltIn;
 
 namespace Wails.Net.Application.Tests;
 

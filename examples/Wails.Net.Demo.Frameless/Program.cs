@@ -1,3 +1,4 @@
+using Wails.Net.Plugins.Window;
 // Demo: Wails.Net.Demo.Frameless
 // 目的：演示无边框窗口（Frameless）与自定义标题栏的实现。
 // 通过 options.Window.Frameless = true 启用无边框模式，

@@ -56,9 +56,9 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// 添加 Wails.Net 内置服务（FileServer、Log、Notification）。
+    /// 添加 Wails.Net 内置服务（FileServer、Log）。
     /// 服务注册为单例生命周期，均使用无参构造函数创建默认实例。
-    /// <para>Updater / Store / Sql 服务已随插件包迁移（M1/M3 双包拆分）：
+    /// <para>Updater / Store / Sql / Notification 服务已随插件包迁移（M1/M3 双包拆分）：
     /// 需显式注册对应 Service 并调用 <c>UsePlugin&lt;XxxPlugin&gt;()</c>。</para>
     /// </summary>
     /// <param name="services">服务集合。</param>
@@ -67,7 +67,6 @@ public static class ServiceCollectionExtensions
     {
         services.AddSingleton<FileServerService>();
         services.AddSingleton<LogService>();
-        services.AddSingleton<NotificationService>();
 
         // P1-3：注册 LogServiceLoggerProvider 为 ILoggerProvider，
         // 使所有 ILogger<T> 写入自动进入 LogService 的 handler 链，

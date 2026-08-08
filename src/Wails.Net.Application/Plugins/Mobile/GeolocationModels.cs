@@ -1,3 +1,5 @@
+using Wails.Net.Application.Plugins;
+using Wails.Net.Application.Plugins.Mobile;
 namespace Wails.Net.Application.Plugins.Mobile;
 
 /// <summary>

@@ -1,3 +1,4 @@
+using Wails.Net.Plugins.Dialog;
 // Demo: Wails.Net.Demo.Dialogs
 // 目的：演示内置 DialogPlugin 提供的各类原生对话框（信息/警告/错误/询问/打开文件/保存文件/多文件选择），
 // 并通过 DialogHistoryService 绑定方法记录用户操作历史。

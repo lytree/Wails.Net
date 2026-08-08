@@ -14,6 +14,11 @@
   <ItemGroup>
     <!-- 引用 Wails.Net.Bundle.Windows 聚合包即可获得全部 Windows 平台依赖 -->
     <PackageReference Include="Wails.Net.Bundle.Windows" />
+    <!-- M3：内置插件已拆分为独立包，模板按需引用 -->
+    <PackageReference Include="Wails.Net.Plugins.OsInfo" />
+    <PackageReference Include="Wails.Net.Plugins.Log" />
+    <PackageReference Include="Wails.Net.Plugins.Window" />
+    <PackageReference Include="Wails.Net.Plugins.Application" />
   </ItemGroup>
 
   <ItemGroup>

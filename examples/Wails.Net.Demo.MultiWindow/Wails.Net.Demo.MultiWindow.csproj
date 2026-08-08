@@ -28,5 +28,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Wails.Net.Sdk\Wails.Net.Sdk.csproj" />
+    <!-- M3: 窗口组插件包 -->
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Window\Wails.Net.Plugins.Window.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Windows\Wails.Net.Plugins.Windows.csproj" />
   </ItemGroup>
 </Project>

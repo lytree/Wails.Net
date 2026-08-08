@@ -1,9 +1,13 @@
-/**
- * @wails-net/plugin-web-socket — websocket 插件前端封装。
- * 命令前缀 `websocket.*`，后端经 L2 抽象层 `defineCommand` 转发（强类型化）。
- * @platform windows,linux,macos  桌面通用插件。
- */
-import { defineCommand } from "@wails-net/runtime";
+/** M3 runtime 变薄：从 @wails-net/runtime 迁移，按需安装 */
+import { call } from "@wails-net/runtime";
 
-/** 示例：websocket.ping（无参数，返回字符串）。 */
-export const ping = defineCommand<[], string>("websocket.ping", "none");
+export const websocket = {
+  /** 建立连接，返回连接 ID。 */
+  connect: (url: string) => call<string>("websocket.connect", [url]),
+  send: (connectionId: string, message: string) =>
+    call<boolean>("websocket.send", [connectionId, message]),
+  sendBinary: (connectionId: string, base64Data: string) =>
+    call<boolean>("websocket.sendBinary", [connectionId, base64Data]),
+  close: (connectionId: string) => call<boolean>("websocket.close", [connectionId]),
+  getState: (connectionId: string) => call<string>("websocket.getState", [connectionId]),
+};
