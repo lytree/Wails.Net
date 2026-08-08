@@ -1,3 +1,6 @@
+using Wails.Net.Plugins.Path;
+using Wails.Net.Plugins.AppInfo;
+using Wails.Net.Plugins.OsInfo;
 // Demo: Wails.Net.Demo.Binding
 // 目的：演示 Wails.Net 绑定系统的各类方法签名（同步、异步、重载、复杂对象、集合、异常、CancellationToken）。
 // 所有公共方法用 [Binding] 特性标记，由源代码生成器（非反射）暴露给前端 JavaScript。

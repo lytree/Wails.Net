@@ -1,30 +1,44 @@
+using WailsApplication = Wails.Net.Application.Application;
+using Wails.Net.Application.Plugins;
 using Microsoft.Extensions.DependencyInjection;
 using Wails.Net.Application.Commands;
-using Wails.Net.Application.Plugins;
 
-namespace Wails.Net.Plugins.Appinfo;
+namespace Wails.Net.Plugins.AppInfo;
 
 /// <summary>
-/// Appinfo 插件：桌面通用插件：Windows / Linux / macOS。
-/// 对应 docs/development/plugin-packaging.md 的前后端一体双包模型。
+/// 应用信息插件，提供获取应用名称、版本、描述等信息的命令。
+/// 对应 Tauri v2 的 <c>@tauri-apps/api/app</c>。
 /// </summary>
-public class AppinfoPlugin : IPlugin
+public class AppInfoPlugin : IPlugin
 {
-    /// <summary>插件名称（命令命名空间前缀）。</summary>
+    /// <summary>插件名称</summary>
     public string Name => "app";
 
-    /// <summary>注册插件 DI 服务（Host 构建前调用）。</summary>
+    /// <summary>
+    /// 注册插件依赖的服务到 DI 容器。此插件无需注册额外服务。
+    /// </summary>
     /// <param name="services">DI 服务集合。</param>
     public void ConfigureServices(IServiceCollection services)
     {
-        // 示例：services.AddSingleton<AppinfoService>();
+        // 无需注册额外服务
     }
 
-    /// <summary>注册插件命令（Build 阶段调用）。</summary>
-    /// <param name="context">插件配置上下文。</param>
+    /// <summary>
+    /// 配置插件，注册应用信息相关命令。
+    /// </summary>
+    /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
-        // 示例：无参命令 app.ping
-        context.Commands.MapCommand("app.ping", (Func<ICommandContext, string>)(ctx => "pong"));
+        context.Commands.MapCommand("app.getName", (Func<ICommandContext, string>)(ctx =>
+            WailsApplication.Get()?.Options.Name ?? string.Empty));
+
+        context.Commands.MapCommand("app.getVersion", (Func<ICommandContext, string>)(ctx =>
+            WailsApplication.Get()?.Options.Version ?? string.Empty));
+
+        context.Commands.MapCommand("app.getDescription", (Func<ICommandContext, string>)(ctx =>
+            WailsApplication.Get()?.Options.Description ?? string.Empty));
+
+        context.Commands.MapCommand("app.getTauriVersion", (Func<ICommandContext, string>)(ctx =>
+            "wails-net-1.0.0"));
     }
 }

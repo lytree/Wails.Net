@@ -1,3 +1,6 @@
+using Wails.Net.Plugins.Path;
+using Wails.Net.Plugins.AppInfo;
+using Wails.Net.Plugins.OsInfo;
 // Demo: Wails.Net.Demo.Environment
 // 目的：演示内置 OsInfoPlugin / PathPlugin / AppInfoPlugin 的命令调用。
 // OsInfoPlugin 命令（参见 OsInfoPlugin.cs，同时注册 os.* 与 system.* 两套名）：

@@ -1,3 +1,6 @@
+using Wails.Net.Plugins.Path;
+using Wails.Net.Plugins.AppInfo;
+using Wails.Net.Plugins.OsInfo;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Wails.Net.Application;

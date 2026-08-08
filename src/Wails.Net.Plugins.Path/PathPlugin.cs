@@ -1,30 +1,76 @@
+using WailsApplication = Wails.Net.Application.Application;
+using Wails.Net.Application.Plugins;
 using Microsoft.Extensions.DependencyInjection;
 using Wails.Net.Application.Commands;
-using Wails.Net.Application.Plugins;
 
 namespace Wails.Net.Plugins.Path;
 
 /// <summary>
-/// Path 插件：桌面通用插件：Windows / Linux / macOS。
-/// 对应 docs/development/plugin-packaging.md 的前后端一体双包模型。
+/// 路径插件，提供获取各种系统目录路径的命令。
+/// 对应 Tauri v2 的 <c>@tauri-apps/api/path</c>。
 /// </summary>
 public class PathPlugin : IPlugin
 {
-    /// <summary>插件名称（命令命名空间前缀）。</summary>
+    /// <summary>插件名称</summary>
     public string Name => "path";
 
-    /// <summary>注册插件 DI 服务（Host 构建前调用）。</summary>
+    /// <summary>
+    /// 注册插件依赖的服务到 DI 容器。此插件无需注册额外服务。
+    /// </summary>
     /// <param name="services">DI 服务集合。</param>
     public void ConfigureServices(IServiceCollection services)
     {
-        // 示例：services.AddSingleton<PathService>();
+        // 无需注册额外服务
     }
 
-    /// <summary>注册插件命令（Build 阶段调用）。</summary>
-    /// <param name="context">插件配置上下文。</param>
+    /// <summary>
+    /// 配置插件，注册路径相关命令。
+    /// </summary>
+    /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
-        // 示例：无参命令 path.ping
-        context.Commands.MapCommand("path.ping", (Func<ICommandContext, string>)(ctx => "pong"));
+        context.Commands.MapCommand("path.appDataDir", (Func<ICommandContext, string>)(ctx =>
+            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppName)));
+
+        context.Commands.MapCommand("path.appConfigDir", (Func<ICommandContext, string>)(ctx =>
+            OperatingSystem.IsWindows()
+                ? System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppName)
+                : System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", AppName)));
+
+        context.Commands.MapCommand("path.appLogDir", (Func<ICommandContext, string>)(ctx =>
+            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppName, "logs")));
+
+        context.Commands.MapCommand("path.appCacheDir", (Func<ICommandContext, string>)(ctx =>
+            System.IO.Path.Combine(System.IO.Path.GetTempPath(), AppName)));
+
+        context.Commands.MapCommand("path.downloadDir", (Func<ICommandContext, string>)(ctx =>
+        {
+            var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var downloads = System.IO.Path.Combine(profile, "Downloads");
+            return Directory.Exists(downloads) ? downloads : profile;
+        }));
+
+        context.Commands.MapCommand("path.documentDir", (Func<ICommandContext, string>)(ctx =>
+            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)));
+
+        context.Commands.MapCommand("path.homeDir", (Func<ICommandContext, string>)(ctx =>
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)));
+
+        context.Commands.MapCommand("path.tempDir", (Func<ICommandContext, string>)(ctx =>
+            System.IO.Path.GetTempPath()));
+
+        context.Commands.MapCommand("path.configDir", (Func<ICommandContext, string>)(ctx =>
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)));
+
+        context.Commands.MapCommand("path.dataDir", (Func<ICommandContext, string>)(ctx =>
+            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppName)));
+
+        context.Commands.MapCommand("path.runtimeDir", (Func<ICommandContext, string>)(ctx =>
+            System.IO.Path.GetTempPath()));
     }
+
+    /// <summary>
+    /// 获取当前应用名称，用于构建应用专属目录路径。
+    /// </summary>
+    private static string AppName => WailsApplication.Get()?.Options.Name ?? "WailsNet";
 }

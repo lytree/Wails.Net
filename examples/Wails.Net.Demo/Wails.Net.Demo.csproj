@@ -35,4 +35,10 @@
     <!-- M3：Store 插件包 -->
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Store\Wails.Net.Plugins.Store.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- M3: OsInfo/AppInfo/Path 插件包 -->
+    <ProjectReference Include="....srcWails.Net.Plugins.Wails.Net.Plugins..csproj" />
+    <ProjectReference Include="....srcWails.Net.Plugins.Wails.Net.Plugins..csproj" />
+    <ProjectReference Include="....srcWails.Net.Plugins.Wails.Net.Plugins..csproj" />
+  </ItemGroup>
 </Project>
