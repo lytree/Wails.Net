@@ -2,21 +2,44 @@
 
   <PropertyGroup>
     <!--
-      使用 net10.0（非 net10.0-macos）使项目可在任意宿主平台编译。
-      实际的 macOS API 调用（WKWebView / NSWindow / AppKit）将在后续阶段通过
-      条件编译 (OperatingSystem.IsMacOS) + 包引用 Microsoft.macOS.AppKit 实现。
-      当前为骨架实现，运行时降级到 ServerPlatformApp 行为。
+      双 TFM 策略（对应 Android 的 WailsNetEnableAndroid 模式）：
+        - net10.0        : 任意宿主编译的骨架目标。AppKit 代码由 #if MACOS 保护，
+                           在 Windows/Linux 开发机上仅编译 Server 降级行为。
+        - net10.0-macos  : 完整 AppKit + WebKit（WKWebView）实现，仅在 macOS 主机
+                           自动启用；也可通过 -p:WailsNetEnableMacOS=true 强制启用
+                           （需要 macos 工作负载与 macOS SDK）。
+      .NET SDK 对 net10.0-macos 自动定义 MACOS 条件编译符号。
     -->
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks>net10.0</TargetFrameworks>
+    <TargetFrameworks Condition="'$(WailsNetEnableMacOS)' == 'true' OR $([MSBuild]::IsOSPlatform('osx'))">net10.0;net10.0-macos</TargetFrameworks>
+    <!-- 最低 macOS 12.0（Monterey，2021），对应 .NET for macOS 运行时支持范围 -->
+    <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('macos'))">12.0</SupportedOSPlatformVersion>
     <IsPackable>true</IsPackable>
     <PackageId>Wails.Net.Application.MacOS</PackageId>
-    <Description>Wails.Net macOS 平台实现骨架（G7）：当前为占位实现，后续将集成 WKWebView。</Description>
+    <Description>Wails.Net macOS 平台实现：AppKit + WebKit（WKWebView）。</Description>
     <!-- 平台注册器使用 [ModuleInitializer] 实现自动注册（替代反射路径），CA2255 警告不适用 -->
-    <NoWarn>CA2255</NoWarn>
+    <NoWarn>$(NoWarn);CA2255</NoWarn>
+    <!--
+      多 TFM 条件编译的预期产物：net10.0 骨架目标（#else 分支）下，
+      仅在 #if MACOS 分支使用的字段/事件会被报告为"未使用"（CS0169/CS0067/CS0414）。
+      这些成员在 net10.0-macos 目标中均有实际使用点，故抑制。
+    -->
+    <NoWarn>$(NoWarn);CS0169;CS0067;CS0414</NoWarn>
   </PropertyGroup>
+
+  <!-- 标记整个程序集为 macOS 平台特定（仅 macos TFM），消除 CA1416 平台兼容性警告 -->
+  <ItemGroup Condition="$(TargetFramework.Contains('macos'))">
+    <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatformAttribute">
+      <_Parameter1>macos</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Wails.Net.Application\Wails.Net.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="$(TargetFramework.Contains('macos'))">
+    <InternalsVisibleTo Include="Wails.Net.Application.MacOS.Tests" />
   </ItemGroup>
 
 </Project>

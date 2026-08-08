@@ -41,6 +41,17 @@
     <Project Path="src/Wails.Net.Bundle.Windows/Wails.Net.Bundle.Windows.csproj" />
     <Project Path="src/Wails.Net.Bundle.Linux/Wails.Net.Bundle.Linux.csproj" />
     <Project Path="src/Wails.Net.Bundle.Android/Wails.Net.Bundle.Android.csproj" />
+    <Project Path="src/Wails.Net.Bundle.MacOS/Wails.Net.Bundle.MacOS.csproj" />
+    <Project Path="src/Wails.Net.Plugins.Http/Wails.Net.Plugins.Http.csproj" />
+    <Project Path="src/Wails.Net.Plugins.Localhost/Wails.Net.Plugins.Localhost.csproj" />
+    <Project Path="src/Wails.Net.Plugins.Localization/Wails.Net.Plugins.Localization.csproj" />
+    <Project Path="src/Wails.Net.Plugins.Process/Wails.Net.Plugins.Process.csproj" />
+    <Project Path="src/Wails.Net.Plugins.Sql/Wails.Net.Plugins.Sql.csproj" />
+    <Project Path="src/Wails.Net.Plugins.Store/Wails.Net.Plugins.Store.csproj" />
+    <Project Path="src/Wails.Net.Plugins.Stronghold/Wails.Net.Plugins.Stronghold.csproj" />
+    <Project Path="src/Wails.Net.Plugins.Updater/Wails.Net.Plugins.Updater.csproj" />
+    <Project Path="src/Wails.Net.Plugins.Upload/Wails.Net.Plugins.Upload.csproj" />
+    <Project Path="src/Wails.Net.Plugins.WebSocket/Wails.Net.Plugins.WebSocket.csproj" />
     <Project Path="src/Wails.Net.Sdk/Wails.Net.Sdk.csproj" />
     <Project Path="src/Wails.Net.Testing/Wails.Net.Testing.csproj" />
     <!--
@@ -54,10 +65,12 @@
     <Project Path="tests/Wails.Net.Application.Windows.Tests/Wails.Net.Application.Windows.Tests.csproj" />
     <Project Path="tests/Wails.Net.Application.Linux.Tests/Wails.Net.Application.Linux.Tests.csproj" />
     <Project Path="tests/Wails.Net.Application.Android.Tests/Wails.Net.Application.Android.Tests.csproj" />
+    <Project Path="tests/Wails.Net.Application.MacOS.Tests/Wails.Net.Application.MacOS.Tests.csproj" />
     <Project Path="tests/Wails.Net.Cli.Tests/Wails.Net.Cli.Tests.csproj" />
     <Project Path="tests/Wails.Net.AssetServer.Tests/Wails.Net.AssetServer.Tests.csproj" />
     <Project Path="tests/Wails.Net.Application.GuiContract.Tests/Wails.Net.Application.GuiContract.Tests.csproj" />
     <Project Path="tests/Wails.Net.Testing.Tests/Wails.Net.Testing.Tests.csproj" />
+    <Project Path="tests/Wails.Net.Plugins.Updater.Tests/Wails.Net.Plugins.Updater.Tests.csproj" />
     <Project Path="tests/Wails.Net.SourceGenerators.Tests/Wails.Net.SourceGenerators.Tests.csproj" />
     <Project Path="tests/Wails.Net.Errors.Tests/Wails.Net.Errors.Tests.csproj" />
     <Project Path="tests/Wails.Net.Events.Tests/Wails.Net.Events.Tests.csproj" />

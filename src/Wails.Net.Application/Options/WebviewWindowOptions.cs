@@ -179,6 +179,13 @@ public class WebviewWindowOptions
     public object? Linux { get; set; }
 
     /// <summary>
+    /// macOS 平台特定选项。
+    /// 对应 Wails v3 Go 版本 <c>WebviewWindowOptions.Mac</c>。
+    /// 为 null 时回退到 <see cref="ApplicationOptions.Mac"/> 与应用级默认。
+    /// </summary>
+    public WebviewWindowMacOptions? Mac { get; set; }
+
+    /// <summary>
     /// 是否居中显示。
     /// </summary>
     public bool Centered { get; set; } = false;

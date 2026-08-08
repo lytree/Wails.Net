@@ -278,4 +278,12 @@ public class ApplicationOptions
     /// 仅在 Linux 平台生效，其他平台忽略。
     /// </summary>
     public LinuxOptions? Linux { get; set; }
+
+    /// <summary>
+    /// 获取或设置 macOS 平台特定应用级选项。
+    /// 对应 Wails v3 Go 版本 <c>Options.Mac</c> 字段。
+    /// 为 null 时使用 AppKit 默认行为（激活策略 Regular、默认窗口外观）。
+    /// 仅在 macOS 平台生效，其他平台忽略。
+    /// </summary>
+    public MacOptions? Mac { get; set; }
 }

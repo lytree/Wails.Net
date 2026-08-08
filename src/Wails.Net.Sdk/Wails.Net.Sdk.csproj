@@ -35,10 +35,13 @@
       默认仅启用 Windows/Linux TFM。
       Android TFM 仅在消费者显式设置 <WailsNetEnableAndroid>true</WailsNetEnableAndroid> 时启用，
       避免 Windows/Linux Demo 通过 ProjectReference 引用 SDK 时触发 Android workload 检查。
+      macOS TFM 在 macOS 主机自动启用，也可通过 <WailsNetEnableMacOS>true</WailsNetEnableMacOS> 强制启用。
     -->
     <TargetFrameworks>net10.0;net10.0-windows10.0.19041.0</TargetFrameworks>
     <TargetFrameworks Condition="'$(WailsNetEnableAndroid)' == 'true'">$(TargetFrameworks);net10.0-android36.0</TargetFrameworks>
+    <TargetFrameworks Condition="'$(WailsNetEnableMacOS)' == 'true' OR $([MSBuild]::IsOSPlatform('osx'))">$(TargetFrameworks);net10.0-macos</TargetFrameworks>
     <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('android'))">24</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('macos'))">12.0</SupportedOSPlatformVersion>
     <IsPackable>true</IsPackable>
     <PackageId>Wails.Net.Sdk</PackageId>
     <Description>Wails.Net 统一 SDK：根据 TargetFramework 自动引用对应平台实现包，一站式引用 Wails.Net 全部能力。</Description>
@@ -55,13 +58,18 @@
   </ItemGroup>
 
   <!-- Linux TFM（net10.0 无平台后缀）：引用 Linux 平台 Bundle 包 -->
-  <ItemGroup Condition="!$(TargetFramework.Contains('windows')) AND !$(TargetFramework.Contains('android'))">
+  <ItemGroup Condition="!$(TargetFramework.Contains('windows')) AND !$(TargetFramework.Contains('android')) AND !$(TargetFramework.Contains('macos'))">
     <ProjectReference Include="..\Wails.Net.Bundle.Linux\Wails.Net.Bundle.Linux.csproj" />
   </ItemGroup>
 
   <!-- Android TFM：引用 Android 平台 Bundle 包 -->
   <ItemGroup Condition="$(TargetFramework.Contains('android'))">
     <ProjectReference Include="..\Wails.Net.Bundle.Android\Wails.Net.Bundle.Android.csproj" />
+  </ItemGroup>
+
+  <!-- macOS TFM：引用 macOS 平台 Bundle 包 -->
+  <ItemGroup Condition="$(TargetFramework.Contains('macos'))">
+    <ProjectReference Include="..\Wails.Net.Bundle.MacOS\Wails.Net.Bundle.MacOS.csproj" />
   </ItemGroup>
 
   <!--

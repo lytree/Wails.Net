@@ -88,19 +88,19 @@ public interface IWebviewWindowImpl
 
 平台抽象不仅覆盖顶层应用与窗口，还细分为多个职责清晰的子接口。下表列出每个接口的职责与各平台实现：
 
-| 接口 | 命名空间 | Windows 实现 | Linux 实现 | Android 实现 | Server 实现 |
-|------|---------|-------------|-----------|-------------|------------|
-| `IPlatformApp` | `Wails.Net.Application.Platform` | `WindowsPlatformApp` | `LinuxPlatformApp` | `AndroidPlatformApp` | `ServerPlatformApp` |
-| `IWebviewWindowImpl` | `Wails.Net.Application.Windows` | `Win32WebviewWindow` | `LinuxWebviewWindow` | `AndroidWebviewWindow` | `ServerWebviewWindow` |
-| `IClipboardImpl` | `Wails.Net.Application.Clipboard` | `WindowsClipboard` | `LinuxClipboard` | `AndroidClipboard` | `ServerClipboard` |
-| `IMenuImpl` | `Wails.Net.Application.Menus` | `Win32Menu` | `LinuxMenu` | （未实现，MenuRole 不可用） | （未实现） |
-| `ISystemTrayImpl` | `Wails.Net.Application.SystemTray` | `Win32SystemTray` | `LinuxSystemTray` | （未实现） | （未实现） |
-| `IKeyBindingManager` | `Wails.Net.Application.Managers` | `Win32KeyBindingManager` | `LinuxKeyBindingManager` | （未实现） | （未实现） |
-| `IWebView` | `Wails.Net.Application.WebViews` | （由 `Win32WebviewWindow` 内嵌 `CoreWebView2` 实现） | （由 `LinuxWebviewWindow` 内嵌 WebKitGTK `WebView` 实现） | （由 `AndroidWebviewWindow` 内嵌 `Android.Webkit.WebView` 实现） | （无） |
-| `IPlatformBiometric` | `Wails.Net.Application.Plugins.Mobile` | （未实现） | （未实现） | `AndroidBiometric` | （未实现） |
-| `IPlatformNfc` | `Wails.Net.Application.Plugins.Mobile` | （未实现） | （未实现） | `AndroidNfc` | （未实现） |
-| `IPlatformBarcodeScanner` | `Wails.Net.Application.Plugins.Mobile` | （未实现） | （未实现） | `AndroidBarcodeScanner` | （未实现） |
-| `IPlatformHaptics` | `Wails.Net.Application.Plugins.Mobile` | （未实现） | （未实现） | `AndroidHaptics` | （未实现） |
+| 接口 | 命名空间 | Windows 实现 | Linux 实现 | Android 实现 | macOS 实现 | Server 实现 |
+|------|---------|-------------|-----------|-------------|-----------|------------|
+| `IPlatformApp` | `Wails.Net.Application.Platform` | `WindowsPlatformApp` | `LinuxPlatformApp` | `AndroidPlatformApp` | `MacOSPlatformApp` | `ServerPlatformApp` |
+| `IWebviewWindowImpl` | `Wails.Net.Application.Windows` | `Win32WebviewWindow` | `LinuxWebviewWindow` | `AndroidWebviewWindow` | `MacOSWebviewWindow` | `ServerWebviewWindow` |
+| `IClipboardImpl` | `Wails.Net.Application.Clipboard` | `WindowsClipboard` | `LinuxClipboard` | `AndroidClipboard` | `MacOSClipboard` | `ServerClipboard` |
+| `IMenuImpl` | `Wails.Net.Application.Menus` | `Win32Menu` | `LinuxMenu` | （未实现，MenuRole 不可用） | `MacOSMenu` | （未实现） |
+| `ISystemTrayImpl` | `Wails.Net.Application.SystemTray` | `Win32SystemTray` | `LinuxSystemTray` | （未实现） | `MacOSSystemTray` | （未实现） |
+| `IKeyBindingManager` | `Wails.Net.Application.Managers` | `Win32KeyBindingManager` | `LinuxKeyBindingManager` | （未实现） | `MacOSKeyBindingManager` | （未实现） |
+| `IWebView` | `Wails.Net.Application.WebViews` | （由 `Win32WebviewWindow` 内嵌 `CoreWebView2` 实现） | （由 `LinuxWebviewWindow` 内嵌 WebKitGTK `WebView` 实现） | （由 `AndroidWebviewWindow` 内嵌 `Android.Webkit.WebView` 实现） | （由 `MacOSWebviewWindow` 内嵌 `WKWebView` 实现） | （无） |
+| `IPlatformBiometric` | `Wails.Net.Application.Plugins.Mobile` | （未实现） | （未实现） | `AndroidBiometric` | （未实现） | （未实现） |
+| `IPlatformNfc` | `Wails.Net.Application.Plugins.Mobile` | （未实现） | （未实现） | `AndroidNfc` | （未实现） | （未实现） |
+| `IPlatformBarcodeScanner` | `Wails.Net.Application.Plugins.Mobile` | （未实现） | （未实现） | `AndroidBarcodeScanner` | （未实现） | （未实现） |
+| `IPlatformHaptics` | `Wails.Net.Application.Plugins.Mobile` | （未实现） | （未实现） | `AndroidHaptics` | （未实现） | （未实现） |
 
 > **Android 移动端插件抽象**：5 个移动端接口（`IPlatformBiometric` / `IPlatformNfc` / `IPlatformBarcodeScanner` / `IPlatformHaptics` + `AndroidRuntimePlugin` 平台类）的 Android 实现位于 [Wails.Net.Application.Android/Mobile](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/Mobile)，通过 `AndroidPlatformApp` 注入委托解耦 Activity 生命周期。
 
@@ -303,6 +303,74 @@ _webView?.LoadUri(wailsUrl);
 | `AndroidRuntimePlugin` | `Android.OS.Build` + `Toast.MakeText` | 提供 `device.info` / `toast.show` 命令，对应 Wails v3 `androidDeviceInfo` / `androidShowToast` |
 
 **委托注入模式**：Activity 生命周期相关 API（`BiometricPrompt`、`OnNewIntent`、`OnActivityResult`）无法在单元测试中直接触发，因此平台类通过构造函数接受 `Func<...>` / `Action` 委托参数。`AndroidPlatformApp` 在 Activity 可用时注入实际实现，单元测试环境使用默认 null 委托降级为 no-op。这使 `Wails.Net.Application.Android.Tests` 可在 Windows 上运行（无需模拟器），详见 AGENTS.md §4.4。
+
+## macOS 平台实现
+
+macOS 实现参照 Wails v3 官方源码（`v3/pkg/application/*_darwin.go` / `*.m`，参考版本 `v3.0.0-beta.4`）移植，位于 [Wails.Net.Application.MacOS](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.MacOS)。由于 AppKit / WebKit 绑定（`net10.0-macos`）只能在 macOS 宿主编译，采用**双 TFM + 条件编译**策略：
+
+| 目标 | 编译内容 | 说明 |
+|------|---------|------|
+| `net10.0` | `#else` 骨架（Server 降级 / no-op） | 任意宿主（Windows/Linux）可编译，保证 CI 与打包链路不依赖 macOS |
+| `net10.0-macos` | `#if MACOS` 完整 AppKit + WKWebView 实现 | macOS 主机自动启用；也可 `-p:WailsNetEnableMacOS=true` 强制启用（需 macos 工作负载 + Xcode） |
+
+.NET SDK 对 `net10.0-macos` 自动定义 `MACOS` 条件编译符号，代码按 `#if MACOS / #else` 双分支组织，同一文件两个目标共享接口契约。
+
+### MacOSPlatformApp — NSApplication 主循环
+
+[MacOSPlatformApp.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.MacOS/MacOSPlatformApp.cs) 对应 Go 版 `application_darwin.go`：
+
+- **主循环**：`NSApplication.SharedApplication.Run()` 阻塞，`Destroy()` 调 `Terminate`。
+- **应用菜单**：`SetApplicationMenu(null)` 构建 macOS 默认菜单（App/Edit/Window/Help 角色菜单），否则由 `MacOSMenu` 构建 `NSApp.MainMenu`。
+- **激活策略**：`ActivationPolicy` 由 `ApplicationOptions.Mac.ActivationPolicy` 配置（0=Regular、1=Accessory、2=Prohibited）。
+- **暗色模式 / 强调色**：`NSUserDefaults` 的 `AppleInterfaceStyle` / `NSColor.ControlAccentColor`，对应 `isDarkMode` / `getAccentColor`。
+- **屏幕**：主线程枚举 `NSScreen.Screens`，将 bottom-left 原点坐标系翻转为 top-left（主屏左上为 (0,0)），`Physical*` = 点值 × `backingScaleFactor`，对应 `screen_darwin.go`。
+- **对话框**：`NSAlert`（消息框，sheet 或模态）、`NSOpenPanel` / `NSSavePanel`（文件对话框，`Begin`/`BeginSheet` 异步回调 + `TaskCompletionSource`），对应 `dialogs_darwin.go`。
+- **单实例**：`NSTemporaryDirectory` 文件锁（`FileShare.None`）+ `NSDistributedNotificationCenter` 通知（object 传参规避沙盒限制），对应 `single_instance_darwin.go`。
+- **主线程调度**：`NSThread.IsMain` 判断 + `InvokeOnMainThread` 异步 + `DispatchOnMainThreadSync`（SemaphoreSlim 同步等待）静态辅助，供窗口与菜单调用。
+
+### MacOSWebviewWindow — WKWebView + NSWindow
+
+[MacOSWebviewWindow.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.MacOS/MacOSWebviewWindow.cs) 对应 Go 版 `webview_window_darwin.go` + `.m`，并参照 DevToys（`DevToys.MacOS/Controls/BlazorWebView/BlazorWKWebView.cs`）验证 `.NET for macOS` 绑定 API：
+
+- **窗口创建**：按 `Frameless` / `CornerType` / `CornerRadius` 组合 `NSWindowStyleMask`（Borderless 或 Titled|Closable|Miniaturizable|Resizable|FullSizeContentView）。
+- **运行时注入**：`WKUserScript`（document start）注入 `Application.GenerateRuntimeJs(false)` 生成的 `window._wails` 标志，与 Linux `InjectRuntimeJs` 时机一致。
+- **上行消息**：`WKScriptMessageHandler("external")` → `HandleMessageFromFrontend`（对应 transport 的 `window.webkit.messageHandlers.external.postMessage`）；响应经 `EvaluateJavaScript`（带 completionHandler 重载，对齐 DevToys）调 `window.__wailsNative.onMessage` 下行。
+- **wails:// 自定义协议**：`WKUrlSchemeHandler` 处理 `wails://localhost/`：POST `/wails/message` 走 IPC（`HandleMessageFromFrontend` + JSON 响应），GET 走 `AssetServer.ServeAsync`（含 SPA 回退与 MIME 推断），响应带 `Cache-Control: no-cache`（对齐 DevToys 防缓存）。
+- **外部链接策略**：`DecidePolicy` 拦截顶层导航——`wails://` 与 `http(s)://localhost` 留在 WebView，其余链接交由 `NSWorkspace` 默认浏览器打开并取消导航（对齐 DevToys `WebViewNavigationDelegate.DecidePolicy`）。
+- **窗口事件**：NSWindow 强类型事件（`DidResize`/`DidMove`/`DidBecomeKey`/`DidMiniaturize`/`DidEnterFullScreen` 等）→ `DispatchWindowEvent(WindowEventType)`，映射到 1000+ 的公共事件枚举。
+- **位置坐标**：`SetPosition`/`GetPosition` 使用主屏 top-left 原点（Y-down）约定，与屏幕枚举、Windows/GTK 对齐。
+- **JS 对话框**：`WKUIDelegate` 将 JS `alert`/`confirm`/`prompt` 转发到 `NSAlert`（sheet 呈现，参照 DevToys `WebViewUiDelegate`）。
+- **DevTools**：`Preferences.SetValueForKey(developerExtrasEnabled)` 启用 Web Inspector（参照 DevToys），调试走 Safari「开发」菜单。
+- **透明背景**：`SetValueForKey(drawsBackground)` KVC 键（参照 DevToys）。
+
+### 主题监听与入口（参照 DevToys）
+
+- **入口**：`Run()` 执行 `NSApplication.Init()`（对齐 DevToys `Program.cs` 的 Init → SharedApplication → Main 流程）。
+- **系统主题变更**：KVO 监听 `NSApplication.EffectiveAppearance`（`MacSystemThemeObserver`，参照 DevToys `ThemeListener.SystemThemeObserver`），切换时经 `HandlePlatformEvent(ApplicationEventType.ThemeChanged)` 分发 `wails:theme:changed` 事件。
+- **明暗判定**：`EffectiveAppearance.FindBestMatch(NameAqua, NameDarkAqua)`（`MacOSPlatformApp.IsDarkMode` 与 `MacOSEnvironmentManager.IsDarkMode` 统一使用），替代 NSUserDefaults 的 AppleInterfaceStyle。
+- **剪贴板**：所有 NSPasteboard 操作调度到主线程（对齐 DevToys `Clipboard.cs`），文件/图片用 `ReadObjectsForClasses` / `WriteObjects` + `NSImage.AsTiff` 标准做法。
+
+### 系统集成组件
+
+| 组件 | 底层 API | 对应 Go 文件 |
+|------|---------|-------------|
+| `MacOSMenu`（IMenuImpl） | `NSMenu` / `NSMenuItem`（整树重建；Activated 事件分发回调；keyEquivalent 转换） | `menu_darwin.go` / `menuitem_darwin.go` |
+| `MacOSSystemTray`（ISystemTrayImpl） | `NSStatusItem` + `NSStatusBarButton`（左右键/双击区分） | `systemtray_darwin.go` |
+| `MacOSClipboard`（IClipboardImpl） | `NSPasteboard`（文本/HTML/图片 TIFF/文件） | `clipboard_darwin.go` |
+| `MacOSKeyBindingManager`（IKeyBindingManager） | Carbon `RegisterEventHotKey` + `UnmanagedCallersOnly` 回调（kVK 键码表 + Carbon 修饰掩码，无需辅助功能权限） | `global_shortcut_darwin.go` |
+| `MacOSKeychain`（IPlatformKeychain） | `Security.framework`（`SecRecord`/`SecKeyChain`，GenericPassword） | `internal/keychain/keychain_darwin.go` |
+| `MacOSBrowserManager`（IBrowserManager） | `NSWorkspace.SharedWorkspace.OpenUrl` | `internal/browser` |
+| `MacOSAutostartManager`（IAutostartManager） | LaunchAgent plist + `launchctl bootstrap/bootout`（开发期未打包二进制同样可用） | `autostart_darwin.go` |
+| `MacOSEnvironmentManager`（IEnvironmentManager） | `NSUserDefaults` / `NSColor` / `RuntimeInformation` | `environment_manager_darwin.go` |
+
+### 选项模型
+
+`ApplicationOptions.Mac`（[MacOptions.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Options/MacOptions.cs)）与 `WebviewWindowOptions.Mac`（`WebviewWindowMacOptions`）承载平台配置：激活策略、标题栏（AppearsTransparent/Hide/HideTitle/FullSizeContent/Toolbar）、背景类型（Normal/Transparent/Translucent）、圆角、窗口层级、WKWebView 偏好（TabFocusesLinks、AllowsMagnification、EnableAutoplayWithoutUserAction 等），对齐 Wails v3 `Options.Mac` 结构。
+
+### 分发与验证
+
+- **打包**：`Wails.Net.Bundle.MacOS` 聚合包（与 `Sdk` 的 `net10.0-macos` TFM 映射），随 `WailsNetEnableMacOS`/主机判断条件启用。
+- **验证**：Windows/Linux 上仅能编译 `net10.0` 骨架目标；完整 AppKit 分支需在 macOS 上以 `net10.0-macos` 目标编译运行验证（`Wails.Net.Application.MacOS.Tests` 尚未建立，见 AGENTS.md 阶段计划）。
 
 ## Server 模式
 

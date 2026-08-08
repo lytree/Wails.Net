@@ -9,7 +9,7 @@ namespace Wails.Net.Application.Plugins.Keychain;
 /// <list type="bullet">
 /// <item>Windows：通过 <c>CredReadW/CredWriteW</c> 调用 Credential Manager（advapi32.dll）。</item>
 /// <item>Linux：通过 <c>libsecret</c> 调用 Secret Service（D-Bus）。</item>
-/// <item>macOS：通过 Keychain Services（暂未实现）。</item>
+/// <item>macOS：通过 Keychain Services（Security.framework，<see cref="Wails.Net.Application.Platform.MacOSKeychain"/>）。</item>
 /// <item>Server：no-op 回退。</item>
 /// </list>
 /// </remarks>

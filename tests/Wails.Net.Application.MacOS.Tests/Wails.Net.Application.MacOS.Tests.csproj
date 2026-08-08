@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      macOS 测试项目：在任意宿主编译运行，验证 net10.0 骨架目标（#else 分支）的行为
+      （选项模型、环境管理器、剪贴板降级、菜单/托盘骨架 no-op 等）。
+      net10.0-macos 完整 AppKit 分支需在 macOS 上验证（见 AGENTS.md）。
+    -->
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- TUnit 使用 Microsoft.Testing.Platform (MTP) 运行器 -->
+    <EnableMSTestRunner>false</EnableMSTestRunner>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TUnit" />
+    <PackageReference Include="TUnit.Assertions" />
+    <PackageReference Include="TUnit.Engine" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Wails.Net.Application.MacOS\Wails.Net.Application.MacOS.csproj" />
+  </ItemGroup>
+
+</Project>

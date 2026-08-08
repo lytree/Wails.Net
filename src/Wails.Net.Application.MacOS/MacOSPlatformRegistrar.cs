@@ -15,15 +15,11 @@ namespace Wails.Net.Application;
 /// 当用户应用引用了 <c>Wails.Net.Application.MacOS</c> 程序集时，编译器会自动生成
 /// 调用 <see cref="Register"/> 的模块初始化代码，无需用户手动调用。
 /// </para>
-/// <para>
-/// 当前为 G7 阶段骨架实现：<see cref="MacOSPlatformApp"/> 降级为 Server 模式行为，
-/// 后续阶段将集成 WKWebView / NSWindow / AppKit 实现完整 macOS GUI 支持。
-/// </para>
 /// </remarks>
 internal static class MacOSPlatformRegistrar
 {
     /// <summary>
-    /// 模块初始化器，注册 macOS 平台应用和剪贴板的创建委托。
+    /// 模块初始化器，注册 macOS 平台应用、剪贴板和钥匙串的创建委托。
     /// 由 .NET 运行时在加载此程序集时自动调用一次。
     /// </summary>
     [ModuleInitializer]

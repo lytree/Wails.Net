@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Wails.Net.Bundle.MacOS
+    macOS 平台聚合包（meta-package）。
+    引用 macOS 平台开发所需的全部 Wails.Net 包，用户安装此包即可获得：
+
+      - Wails.Net.Application          核心应用框架（绑定、命令、插件、平台抽象）
+      - Wails.Net.Application.MacOS    macOS 平台实现（AppKit + WebKit/WKWebView）
+      - Wails.Net.AssetServer          静态资源服务器
+      - Wails.Net.Errors               错误类型
+      - Wails.Net.Events               事件类型定义
+      - Wails.Net.SourceGenerators     源代码生成器（[Binding]/[Command]）
+
+    使用方式：
+      <PackageReference Include="Wails.Net.Bundle.MacOS" Version="x.y.z" />
+
+    TFM 说明：双目标（与 Wails.Net.Application.MacOS 一致）。
+      - net10.0        : 任意宿主编译（骨架目标）
+      - net10.0-macos  : macOS 主机自动启用（完整 AppKit 实现），
+                         也可通过 -p:WailsNetEnableMacOS=true 强制启用
+  -->
+
+  <PropertyGroup>
+    <TargetFrameworks>net10.0</TargetFrameworks>
+    <TargetFrameworks Condition="'$(WailsNetEnableMacOS)' == 'true' OR $([MSBuild]::IsOSPlatform('osx'))">net10.0;net10.0-macos</TargetFrameworks>
+    <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('macos'))">12.0</SupportedOSPlatformVersion>
+    <IsPackable>true</IsPackable>
+    <PackageId>Wails.Net.Bundle.MacOS</PackageId>
+    <Description>Wails.Net macOS 平台聚合包：一键引用 macOS 平台开发所需的全部 Wails.Net 包。</Description>
+    <!-- 聚合包本身不输出程序集，仅传递依赖 -->
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <!-- 聚合包无 lib/ref 程序集，抑制 NU5128（无 lib 文件夹警告） -->
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Wails.Net.Application\Wails.Net.Application.csproj" />
+    <ProjectReference Include="..\Wails.Net.Application.MacOS\Wails.Net.Application.MacOS.csproj" />
+    <ProjectReference Include="..\Wails.Net.AssetServer\Wails.Net.AssetServer.csproj" />
+    <ProjectReference Include="..\Wails.Net.Errors\Wails.Net.Errors.csproj" />
+    <ProjectReference Include="..\Wails.Net.Events\Wails.Net.Events.csproj" />
+    <ProjectReference Include="..\Wails.Net.SourceGenerators\Wails.Net.SourceGenerators.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>
