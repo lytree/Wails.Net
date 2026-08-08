@@ -10,7 +10,7 @@ using Wails.Net.Application;
 using Wails.Net.Application.Hosting;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Plugins;
-using Wails.Net.Application.Plugins.BuiltIn;
+
 using Wails.Net.Demo.Clipboard.Services;
 
 // 创建桌面应用构建器

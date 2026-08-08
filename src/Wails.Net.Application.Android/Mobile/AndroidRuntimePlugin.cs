@@ -9,7 +9,7 @@ namespace Wails.Net.Application.Android.Mobile;
 
 /// <summary>
 /// Android 运行时插件，提供 Android 平台专属的运行时命令。
-/// 对应 Wails v3 Go 版本 <c>messageprocessor_android.go</c> 中除 Haptics（由 <see cref="Wails.Net.Application.Plugins.Mobile.HapticsPlugin"/> 提供）外的两个方法：
+/// 对应 Wails v3 Go 版本 <c>messageprocessor_android.go</c> 中除 Haptics（由 <see cref="Wails.Net.Application.Plugins.Mobile"/> 提供）外的两个方法：
 /// <list type="bullet">
 ///   <item><c>device.info</c> — 对应 <c>androidDeviceInfo()</c>，返回设备制造商、品牌、型号等信息。</item>
 ///   <item><c>toast.show</c> — 对应 <c>androidShowToast(message)</c>，显示 Android Toast 提示。</item>

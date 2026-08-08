@@ -9,10 +9,9 @@ using Wails.Net.Application.Managers;
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Plugins;
-using Wails.Net.Application.Plugins.BuiltIn;
 using Wails.Net.Application.Windows;
 
-namespace Wails.Net.Application.Tests.Plugins.BuiltIn;
+namespace Wails.Net.Application.Tests.Plugins;
 
 /// <summary>
 /// <see cref="MenuPlugin"/> 的单元测试（P1-4 Step 7）。

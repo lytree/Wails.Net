@@ -7,6 +7,7 @@ using TUnit.Core;
 using Wails.Net.Application.Commands;
 using Wails.Net.Application.Plugins;
 using Wails.Net.Application.Plugins.Mobile;
+using Wails.Net.Plugins.Mobile;
 
 namespace Wails.Net.Application.Tests.Plugins.Mobile;
 

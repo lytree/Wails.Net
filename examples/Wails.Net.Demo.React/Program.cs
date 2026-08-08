@@ -12,7 +12,7 @@ using Wails.Net.Application;
 using Wails.Net.Application.Hosting;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Plugins;
-using Wails.Net.Application.Plugins.BuiltIn;
+
 using Wails.Net.Demo.React.Plugins;
 using Wails.Net.Demo.React.Services;
 

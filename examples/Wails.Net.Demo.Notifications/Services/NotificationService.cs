@@ -1,6 +1,7 @@
 using Wails.Net.Application.Bindings;
 // 框架通知服务（与 Demo 自己的 NotificationService 类型区分）
-using FrameworkNotificationService = Wails.Net.Application.Services.NotificationService;
+using FrameworkNotificationService = Wails.Net.Plugins.Notification.Services.NotificationService;
+
 
 namespace Wails.Net.Demo.Notifications.Services;
 

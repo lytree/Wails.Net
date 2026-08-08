@@ -1,6 +1,7 @@
 using Wails.Net.Application;
 using Wails.Net.Application.Bindings;
 using Wails.Net.Application.Services;
+using Wails.Net.Plugins.Notification.Services;
 
 namespace Wails.Net.Demo.SystemTray.Services;
 

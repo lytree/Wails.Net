@@ -13,7 +13,7 @@ using Wails.Net.Application.Hosting;
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Plugins;
-using Wails.Net.Application.Plugins.BuiltIn;
+
 using Wails.Net.Demo.ContextMenus.Services;
 
 // 创建桌面应用构建器

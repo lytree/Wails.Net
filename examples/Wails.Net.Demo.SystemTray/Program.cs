@@ -16,9 +16,10 @@ using Wails.Net.Application.Hosting;
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Plugins;
-using Wails.Net.Application.Plugins.BuiltIn;
+
 using Wails.Net.Application.Services;
 using Wails.Net.Demo.SystemTray.Services;
+using Wails.Net.Plugins.Notification.Services;
 
 // 创建桌面应用构建器
 // 通过 DebugMode 统一判定当前模式（优先级：WAILS_DEBUG > --debug > .NET 环境变量）

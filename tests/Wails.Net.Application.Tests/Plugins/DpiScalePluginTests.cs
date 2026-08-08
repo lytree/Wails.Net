@@ -11,7 +11,7 @@ using Wails.Net.Application.Platform.ServerMode;
 using Wails.Net.Application.Plugins;
 using Wails.Net.Application.Windows;
 
-namespace Wails.Net.Application.Tests.Plugins.BuiltIn;
+namespace Wails.Net.Application.Tests.Plugins;
 
 /// <summary>
 /// DpiScalePlugin 的单元测试（TUnit）。
