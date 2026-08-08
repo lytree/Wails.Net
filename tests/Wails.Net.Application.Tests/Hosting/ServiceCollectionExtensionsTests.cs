@@ -91,13 +91,10 @@ public sealed class ServiceCollectionExtensionsTests
         services.AddWailsServices();
         var provider = services.BuildServiceProvider();
 
-        // 断言：内置服务全部注册
+        // 断言：内置服务全部注册（Updater/Store/Sql 已随 M1/M3 拆分至插件包，不再默认注册）
         await Assert.That(provider.GetService<FileServerService>()).IsNotNull();
-        await Assert.That(provider.GetService<KvStoreService>()).IsNotNull();
         await Assert.That(provider.GetService<LogService>()).IsNotNull();
         await Assert.That(provider.GetService<NotificationService>()).IsNotNull();
-        await Assert.That(provider.GetService<SqliteService>()).IsNotNull();
-        await Assert.That(provider.GetService<UpdaterService>()).IsNotNull();
     }
 
     [Test]

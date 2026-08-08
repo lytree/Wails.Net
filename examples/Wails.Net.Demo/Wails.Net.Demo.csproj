@@ -30,5 +30,9 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Wails.Net.Sdk\Wails.Net.Sdk.csproj" />
+    <!-- M1：Updater 已拆分为独立插件包（双包模型示范） -->
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Updater\Wails.Net.Plugins.Updater.csproj" />
+    <!-- M3：Store 插件包 -->
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Store\Wails.Net.Plugins.Store.csproj" />
   </ItemGroup>
 </Project>

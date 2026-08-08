@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text.RegularExpressions;
 
 namespace Wails.Net.SourceGenerators;
@@ -6,15 +7,19 @@ namespace Wails.Net.SourceGenerators;
 /// XML 文档注释解析器：从 <c>GetDocumentationCommentXml()</c> 返回的 XML 中提取
 /// <c>&lt;summary&gt;</c> 与 <c>&lt;param&gt;</c> 的纯文本内容，供 TypeScript 绑定生成保留注释。
 /// </summary>
-internal static partial class XmlDocParser
+/// <remarks>
+/// 本项目 TFM 为 netstandard2.1，不支持 <c>[GeneratedRegex]</c>（.NET 7+ API），
+/// 故使用静态 Regex 字段并复用实例，避免每次调用重复编译正则。
+/// </remarks>
+internal static class XmlDocParser
 {
     // <summary>...</summary>（Singleline 模式跨行匹配）
-    [GeneratedRegex(@"<summary>(.*?)</summary>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
-    private static partial Regex SummaryRegex();
+    private static readonly Regex SummaryRegex =
+        new(@"<summary>(.*?)</summary>", RegexOptions.Singleline | RegexOptions.IgnoreCase);
 
     // <param name="xxx">...</param>
-    [GeneratedRegex(@"<param\s+name=""([^""]*)""\s*>(.*?)</param>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
-    private static partial Regex ParamRegex();
+    private static readonly Regex ParamRegex =
+        new(@"<param\s+name=""([^""]*)""\s*>(.*?)</param>", RegexOptions.Singleline | RegexOptions.IgnoreCase);
 
     /// <summary>
     /// 提取 XML 文档中的方法摘要纯文本。
@@ -28,7 +33,7 @@ internal static partial class XmlDocParser
             return null;
         }
 
-        var m = SummaryRegex().Match(docXml);
+        var m = SummaryRegex.Match(docXml);
         return m.Success ? Clean(m.Groups[1].Value) : null;
     }
 
@@ -45,7 +50,7 @@ internal static partial class XmlDocParser
             return null;
         }
 
-        foreach (Match m in ParamRegex().Matches(docXml))
+        foreach (Match m in ParamRegex.Matches(docXml))
         {
             if (m.Groups[1].Value == paramName)
             {

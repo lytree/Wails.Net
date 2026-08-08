@@ -71,7 +71,49 @@ public static async Task<int> Main(string[] args)
 | `publish` | `PublishCommand` | 发布可分发产物 | `build.go`（发布部分） |
 | `doctor` | `DoctorCommand` | 环境诊断 | `internal/doctor/doctor.go` |
 | `version` | `VersionCommand` | 显示版本信息 | Tauri `tauri version` |
-| `plugin`/`clean`/`info`/`icon`/`signer`/`platform`/`self-update` | — | 辅助命令 | — |
+| `plugin`（add/remove/list/build/publish） | `PluginCommand` | 插件引用管理 + 插件双包构建发布 | — |
+| `clean`/`info`/`icon`/`signer`/`platform`/`self-update` | — | 辅助命令 | — |
+
+### 3.1 plugin build / plugin publish — 插件双包构建与发布
+
+`plugin` 命令组除 `add`/`remove`/`list`（管理项目内 NuGet 包引用）外，还提供 **`build`** 与 **`publish`** 子命令，支撑 [docs/development/plugin-packaging.md](../development/plugin-packaging.md) 定义的「一插件 = 后端 NuGet 包 + 前端 npm 包」双包模型：
+
+```bash
+# 构建全部插件双包（后端 dotnet pack + 前端 pnpm build）
+wails.net plugin build
+
+# 构建指定插件（短名或完整包名）
+wails.net plugin build --plugin updater
+
+# 只构建后端 NuGet 包 / 只构建前端 npm 包
+wails.net plugin build --plugin file-system --backend-only
+wails.net plugin build --plugin file-system --frontend-only
+
+# 发布双包（默认先构建，带版本一致性硬校验）
+wails.net plugin publish --plugin updater --dry-run          # 演练
+wails.net plugin publish --plugin updater --api-key $NUGET_KEY
+wails.net plugin publish --plugin updater --skip-build       # 直接发布已有产物
+```
+
+**插件定位**：从当前目录向上查找仓库根（含 `Directory.Build.props`），扫描 `src/Wails.Net.Plugins.*/`（后端）与 `packages/wails-net-plugin-*/`（前端）目录；未指定 `--plugin` 时处理全部，名称匹配对大小写与 kebab/Pascal 风格不敏感（`updater` / `Updater` 等价）。
+
+**`plugin build` 选项**：
+
+| 选项 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--plugin` | `string?` | 全部 | 插件短名或完整包名 |
+| `--backend-only` / `--frontend-only` | `bool` | `false` | 仅构建单端（互斥） |
+| `--configuration` | `string` | `Release` | dotnet pack 构建配置 |
+| `--output` | `DirectoryInfo?` | `<仓库根>/artifacts/nupkg` | NuGet 包输出目录 |
+
+**`plugin publish` 选项**：`--plugin`、`--skip-build`（跳过发布前构建）、`--source`（NuGet 源，默认 `https://api.nuget.org/v3/index.json`）、`--api-key`（未提供时读环境变量 `NUGET_API_KEY`）、`--dry-run`（演练，只打印不执行）、`--backend-only`/`--frontend-only`、`--configuration`、`--output`。
+
+**发布硬约束**（对齐 plugin-packaging.md §5）：
+1. **版本一致性**：后端 `WailsNetVersion`（Directory.Build.props）必须与前端 package.json `version` 一致，不一致直接失败并提示两端版本；
+2. **双端同发**：双包插件禁止只发布一端（`--backend-only`/`--frontend-only` 对双包插件报错），保证 registry 上两端版本始终同步；
+3. **先构建后发布**：默认先执行构建，`--skip-build` 时要求产物已存在，否则报错并提示先构建。
+
+前端构建/发布通过 `FrontendToolchain` 检测 pnpm（回退 npm），实现类见 [PluginBuilder](../../src/Wails.Net.Cli/Build/PluginBuilder.cs) 与 [PluginPublisher](../../src/Wails.Net.Cli/Build/PluginPublisher.cs)。
 
 ## 4. new 命令 — 项目脚手架
 

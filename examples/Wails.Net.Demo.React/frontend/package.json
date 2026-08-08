@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@wails-net/runtime": "workspace:*",
+    "@wails-net/plugin-updater": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

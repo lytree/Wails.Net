@@ -20,6 +20,16 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Wails.Net.Application\Wails.Net.Application.csproj" />
+    <!-- M3：L1 纯托管插件已拆分为独立包，测试引用插件包（混合测试文件保留在本项目） -->
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Http\Wails.Net.Plugins.Http.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.WebSocket\Wails.Net.Plugins.WebSocket.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Upload\Wails.Net.Plugins.Upload.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Stronghold\Wails.Net.Plugins.Stronghold.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Localization\Wails.Net.Plugins.Localization.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Localhost\Wails.Net.Plugins.Localhost.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Process\Wails.Net.Plugins.Process.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Store\Wails.Net.Plugins.Store.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Sql\Wails.Net.Plugins.Sql.csproj" />
     <!-- 源代码生成器：扫描 [Binding] / [Command] 特性，生成强类型调用器。
          用于测试生成器调用器路径（GeneratedBindingRegistry）的端到端流程。 -->
     <ProjectReference Include="..\..\src\Wails.Net.SourceGenerators\Wails.Net.SourceGenerators.csproj"

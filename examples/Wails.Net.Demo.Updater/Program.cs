@@ -18,9 +18,8 @@ using Wails.Net.Application;
 using Wails.Net.Application.Hosting;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Plugins;
-using Wails.Net.Application.Plugins.BuiltIn;
-using Wails.Net.Application.Services;
-using Wails.Net.Application.Services.Updater;
+using Wails.Net.Plugins.Updater;
+using Wails.Net.Plugins.Updater.Services;
 using Wails.Net.Demo.Updater.Services;
 
 // 创建桌面应用构建器

@@ -404,7 +404,7 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
         var paramSummaries = new Dictionary<string, string?>(StringComparer.Ordinal);
         if (!string.IsNullOrEmpty(docXml))
         {
-            foreach (var name in parameters.Select(p => p.Name))
+            foreach (var name in methodSymbol.Parameters.Select(p => p.Name))
             {
                 paramSummaries[name] = XmlDocParser.ExtractParam(docXml, name);
             }

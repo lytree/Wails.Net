@@ -1,7 +1,7 @@
 using System.Text.Json;
 using TUnit.Core;
 using Wails.Net.Application.Options;
-using Wails.Net.Application.Services;
+using Wails.Net.Plugins.Store.Services;
 
 namespace Wails.Net.Application.Tests;
 

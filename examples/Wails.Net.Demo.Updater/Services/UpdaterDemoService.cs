@@ -1,6 +1,6 @@
 using Wails.Net.Application.Bindings;
-using Wails.Net.Application.Services;
-using Wails.Net.Application.Services.Updater;
+using Wails.Net.Plugins.Updater;
+using Wails.Net.Plugins.Updater.Services;
 
 namespace Wails.Net.Demo.Updater.Services;
 

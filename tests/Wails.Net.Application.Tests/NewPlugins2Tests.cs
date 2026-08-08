@@ -1,3 +1,5 @@
+using Wails.Net.Plugins.Localization;
+using Wails.Net.Plugins.Upload;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

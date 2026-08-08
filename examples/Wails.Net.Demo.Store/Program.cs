@@ -1,3 +1,4 @@
+using Wails.Net.Plugins.Store;
 // Demo: Wails.Net.Demo.Store
 // 目的：演示内置 StorePlugin（键值存储）的命令调用。
 // StorePlugin 通过 MapCommand 注册以下命令（参见 StorePlugin.cs）：

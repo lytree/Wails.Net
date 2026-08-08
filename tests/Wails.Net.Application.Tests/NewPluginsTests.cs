@@ -1,3 +1,5 @@
+using Wails.Net.Plugins.Sql;
+using Wails.Net.Plugins.WebSocket;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

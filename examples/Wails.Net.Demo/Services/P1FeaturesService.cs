@@ -1,8 +1,8 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Wails.Net.Application.Bindings;
-using Wails.Net.Application.Services;
-using Wails.Net.Application.Services.Updater;
+using Wails.Net.Plugins.Updater;
+using Wails.Net.Plugins.Updater.Services;
 // 使用别名避免 Application 类型与 Wails.Net.Application 命名空间冲突（CS0118）
 using WailsApplication = Wails.Net.Application.Application;
 

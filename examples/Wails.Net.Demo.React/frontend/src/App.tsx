@@ -3,8 +3,9 @@ import Greeting from './components/Greeting'
 import Todo from './components/Todo'
 import Counter from './components/Counter'
 import SystemPanel from './components/SystemPanel'
+import UpdaterPanel from './components/UpdaterPanel'
 
-type TabKey = 'greeting' | 'todo' | 'counter' | 'system'
+type TabKey = 'greeting' | 'todo' | 'counter' | 'system' | 'updater'
 
 interface TabItem {
   key: TabKey
@@ -16,6 +17,7 @@ const tabs: TabItem[] = [
   { key: 'todo', label: '待办事项' },
   { key: 'counter', label: '计数器插件' },
   { key: 'system', label: '系统信息' },
+  { key: 'updater', label: '更新插件' },
 ]
 
 export default function App() {
@@ -44,6 +46,7 @@ export default function App() {
       {activeTab === 'todo' && <Todo />}
       {activeTab === 'counter' && <Counter />}
       {activeTab === 'system' && <SystemPanel />}
+      {activeTab === 'updater' && <UpdaterPanel />}
     </div>
   )
 }

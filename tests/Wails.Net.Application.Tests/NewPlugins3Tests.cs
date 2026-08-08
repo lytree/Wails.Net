@@ -1,3 +1,5 @@
+using Wails.Net.Plugins.Stronghold;
+using Wails.Net.Plugins.Localhost;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

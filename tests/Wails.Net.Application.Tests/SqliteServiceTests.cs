@@ -1,6 +1,6 @@
 using TUnit.Core;
 using Wails.Net.Application.Options;
-using Wails.Net.Application.Services;
+using Wails.Net.Plugins.Sql.Services;
 
 namespace Wails.Net.Application.Tests;
 

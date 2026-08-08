@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text;
-using Wails.Net.Application.Services.Updater;
 using Wails.Net.AssetServer;
+using Wails.Net.Plugins.Updater.Services;
 
 namespace Wails.Net.Demo;
 

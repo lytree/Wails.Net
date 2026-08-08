@@ -1,3 +1,5 @@
+using Wails.Net.Plugins.Store;
+using Wails.Net.Plugins.Process;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -404,50 +406,6 @@ public sealed class BuiltInPluginsExtendedTests
         await Assert.That(names.Contains("store.clear")).IsTrue();
         await Assert.That(names.Contains("store.watch")).IsTrue();
         await Assert.That(names.Contains("store.has")).IsTrue();
-    }
-
-    // ---------------------------------------------------------------------
-    // UpdaterPlugin
-    // ---------------------------------------------------------------------
-
-    [Test]
-    public async Task UpdaterPlugin_Name_ReturnsUpdater()
-    {
-        // 安排
-        var plugin = new UpdaterPlugin();
-
-        // 操作与断言
-        await Assert.That(plugin.Name).IsEqualTo("updater");
-    }
-
-    [Test]
-    public async Task UpdaterPlugin_ConfigureServices_DoesNotThrow()
-    {
-        // 安排
-        var plugin = new UpdaterPlugin();
-        var services = new ServiceCollection();
-
-        // 操作与断言
-        await Assert.That(() => plugin.ConfigureServices(services)).ThrowsNothing();
-    }
-
-    [Test]
-    public async Task UpdaterPlugin_Configure_RegistersCommands()
-    {
-        // 安排
-        var plugin = new UpdaterPlugin();
-        var context = CreatePluginContext();
-
-        // 操作
-        await Assert.That(() => plugin.Configure(context)).ThrowsNothing();
-
-        // 断言：应注册 4 个 updater.* 命令
-        await Assert.That(context.Commands.Count).IsEqualTo(4);
-        var names = context.Commands.GetCommandNames().ToList();
-        await Assert.That(names.Contains("updater.check")).IsTrue();
-        await Assert.That(names.Contains("updater.download")).IsTrue();
-        await Assert.That(names.Contains("updater.install")).IsTrue();
-        await Assert.That(names.Contains("updater.checkAndDownload")).IsTrue();
     }
 
     // ---------------------------------------------------------------------
