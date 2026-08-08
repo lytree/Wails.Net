@@ -59,8 +59,8 @@
   </ItemGroup>
   <ItemGroup>
     <!-- M3: OsInfo/AppInfo/Path 插件包 -->
-    <ProjectReference Include="....srcWails.Net.Plugins.Wails.Net.Plugins..csproj" />
-    <ProjectReference Include="....srcWails.Net.Plugins.Wails.Net.Plugins..csproj" />
-    <ProjectReference Include="....srcWails.Net.Plugins.Wails.Net.Plugins..csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Osinfo\Wails.Net.Plugins.Osinfo.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Appinfo\Wails.Net.Plugins.Appinfo.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Path\Wails.Net.Plugins.Path.csproj" />
   </ItemGroup>
 </Project>
