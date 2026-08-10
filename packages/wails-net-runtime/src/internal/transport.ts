@@ -70,6 +70,8 @@ export class Transport {
   private serverMode = false;
   private initialized = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  /** IPC handshake token（OPT-IPC-002）：HTTP 请求头 / WS 查询参数回传。 */
+  private ipcToken = "";
 
   /** 初始化通道检测与下行监听。幂等。 */
   init(): void {
@@ -80,6 +82,7 @@ export class Transport {
     this.serverMode = flags?.isServerMode === true || !!flags?.webSocketUrl;
     this.messageUrl = (flags?.assetServerUrl ?? "") + "/wails/message";
     this.wsUrl = flags?.webSocketUrl ?? DEFAULT_WS_URL;
+    this.ipcToken = flags?.ipcToken ?? "";
 
     if (typeof globalThis === "undefined" || typeof (globalThis as { window?: unknown }).window === "undefined") {
       // 非浏览器环境（如测试）：跳过通道初始化。
@@ -171,7 +174,9 @@ export class Transport {
   private connectWs(): void {
     if (typeof WebSocket === "undefined") return;
     try {
-      this.ws = new WebSocket(this.wsUrl);
+      // OPT-IPC-002：携带 handshake token（查询参数，WebSocket 无法自定义请求头）
+      const tokenQuery = this.ipcToken ? `?token=${encodeURIComponent(this.ipcToken)}` : "";
+      this.ws = new WebSocket(this.wsUrl + tokenQuery);
     } catch {
       return;
     }
@@ -311,7 +316,7 @@ export class Transport {
     if (byteLen <= CHUNK_THRESHOLD) {
       const resp = await fetch(this.messageUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: this.buildHeaders(),
         body,
       });
       await this.handleHttpResponse(resp);
@@ -324,7 +329,7 @@ export class Transport {
     for (let i = 0; i < total; i++) {
       const slice = bytes.subarray(i * CHUNK_SIZE, Math.min((i + 1) * CHUNK_SIZE, bytes.length));
       const headers: Record<string, string> = {
-        "Content-Type": "application/json",
+        ...this.buildHeaders(),
         "x-wails-chunk-id": chunkId,
         "x-wails-chunk-index": String(i),
         "x-wails-chunk-total": String(total),
@@ -344,11 +349,23 @@ export class Transport {
     }
   }
 
+  /**
+   * 构造 HTTP 请求头（OPT-IPC-002）。
+   * 当注入 ipcToken 时附带 `x-wails-token`，供后端校验 handshake token。
+   */
+  private buildHeaders(): Record<string, string> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (this.ipcToken) {
+      headers["x-wails-token"] = this.ipcToken;
+    }
+    return headers;
+  }
+
   private async sendCancelHttp(msg: WailsMessage): Promise<void> {
     try {
       await fetch(this.messageUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: this.buildHeaders(),
         body: JSON.stringify(msg),
       });
     } catch (err) {

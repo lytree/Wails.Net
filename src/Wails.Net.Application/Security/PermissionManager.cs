@@ -58,23 +58,62 @@ public sealed class PermissionManager
     private readonly PermissionOptions _options;
     private readonly ILogger<PermissionManager>? _logger;
 
-    /// <summary>是否启用权限检查</summary>
-    public bool Enabled => _options.Enabled;
+    /// <summary>
+    /// 是否启用权限检查（OPT-SEC-001）。
+    /// 严格模式（<see cref="PermissionMode.Strict"/>）下始终启用；
+    /// 兼容模式下由 <see cref="PermissionOptions.Enabled"/> 决定（默认 false，向后兼容）。
+    /// </summary>
+    public bool Enabled => _options.Mode == PermissionMode.Strict || _options.Enabled;
+
+    /// <summary>
+    /// 当前平台标识（OPT-SEC-002）。
+    /// 用于 <see cref="Capability.Platforms"/> 平台过滤；默认从宿主操作系统推断，
+    /// 可通过构造参数注入（测试模拟 Windows/Linux/Android/Server 平台）。
+    /// </summary>
+    public string CurrentPlatform { get; private set; }
+
+    /// <summary>
+    /// 设置当前平台标识（OPT-SEC-002）。
+    /// 由宿主（如 <see cref="Wails.Net.Application.Hosting.DesktopApplicationBuilder"/>）在检测到 Server 模式时调用，
+    /// 使 capability 平台过滤感知无 GUI 运行时。测试也可用于模拟各平台。
+    /// </summary>
+    /// <param name="platform">平台标识（大小写不敏感，内部统一小写）。</param>
+    public void SetCurrentPlatform(string platform)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(platform);
+        CurrentPlatform = WailsPlatform.Normalize(platform)!;
+    }
 
     /// <summary>
     /// 构造权限管理器。
     /// </summary>
     /// <param name="options">权限配置选项。</param>
     /// <param name="logger">日志记录器，可为 null。</param>
-    public PermissionManager(IOptions<PermissionOptions> options, ILogger<PermissionManager>? logger = null)
+    /// <param name="currentPlatform">当前平台标识；null 时从宿主操作系统推断。</param>
+    public PermissionManager(
+        IOptions<PermissionOptions> options,
+        ILogger<PermissionManager>? logger = null,
+        string? currentPlatform = null)
     {
         _options = options.Value;
         _logger = logger;
+        CurrentPlatform = WailsPlatform.Normalize(currentPlatform) ?? WailsPlatform.CurrentPlatform();
 
         // 从配置的 Permissions 列表授权初始权限（全局授权，Window=null）
         foreach (var perm in _options.Permissions)
         {
             Grant(perm);
+        }
+
+        // OPT-SEC-001：兼容模式且未启用权限检查时输出一次 warning，
+        // 引导用户迁移到 Strict 模式（生产环境最小权限）。
+        // 注意：日志模板禁止包含字面大括号（CA2023），此处用纯文字描述配置指引。
+        if (!_options.Enabled && _options.Mode == PermissionMode.Compatibility)
+        {
+            _logger?.LogWarning(
+                "权限检查未启用（Wails:Permissions:Enabled=false，Mode=Compatibility），" +
+                "所有命令默认放行。生产环境请启用 Strict 模式：" +
+                "配置 Wails:Permissions 为 Mode=Strict、Enabled=true、DenyByDefault=true。");
         }
     }
 
@@ -337,7 +376,7 @@ public sealed class PermissionManager
     public bool IsGranted(string permissionId, string? windowName)
     {
         // 未启用权限检查时全部放行
-        if (!_options.Enabled) return true;
+        if (!Enabled) return true;
 
         // deny 优先：显式拒绝的权限一律不可用（即使已授权）
         if (IsDenied(permissionId, windowName))
@@ -384,7 +423,7 @@ public sealed class PermissionManager
     public bool IsGranted(string permissionId, string? windowName, string? origin)
     {
         // 未启用权限检查时全部放行
-        if (!_options.Enabled) return true;
+        if (!Enabled) return true;
 
         // 先执行基础 IsGranted 校验（窗口级和全局授权）
         if (!IsGranted(permissionId, windowName)) return false;
@@ -472,7 +511,7 @@ public sealed class PermissionManager
     /// <returns>全部已授权返回 true；权限不足返回 false。</returns>
     public bool ValidateCapabilities(IEnumerable<string> requiredCapabilities, string? windowName)
     {
-        if (!_options.Enabled) return true;
+        if (!Enabled) return true;
 
         foreach (var capability in requiredCapabilities)
         {
@@ -496,7 +535,7 @@ public sealed class PermissionManager
     /// <returns>全部已授权且来源允许返回 true；否则返回 false。</returns>
     public bool ValidateCapabilities(IEnumerable<string> requiredCapabilities, string? windowName, string? origin)
     {
-        if (!_options.Enabled) return true;
+        if (!Enabled) return true;
 
         foreach (var capability in requiredCapabilities)
         {
@@ -520,7 +559,7 @@ public sealed class PermissionManager
     /// <returns>全部通过返回 true，任一不通过返回 false。</returns>
     public bool ValidateScopes(IEnumerable<(string PermissionId, string Value)> scopeValues)
     {
-        if (!_options.Enabled) return true;
+        if (!Enabled) return true;
 
         foreach (var (permissionId, value) in scopeValues)
         {
@@ -537,6 +576,39 @@ public sealed class PermissionManager
             }
         }
         return true;
+    }
+
+    /// <summary>
+    /// 检查能力是否适用于当前平台（OPT-SEC-002）。
+    /// <list type="bullet">
+    /// <item><see cref="Capability.Platforms"/> 为空：所有平台生效。</item>
+    /// <item>非空：仅当前平台匹配（大小写不敏感）时生效。</item>
+    /// </list>
+    /// </summary>
+    /// <param name="capability">能力声明。</param>
+    /// <returns>能力应用于当前平台返回 true。</returns>
+    public bool IsCapabilityApplicableToPlatform(Capability capability)
+    {
+        ArgumentNullException.ThrowIfNull(capability);
+
+        if (capability.Platforms.Count == 0)
+        {
+            return true;
+        }
+
+        return capability.Platforms.Contains(CurrentPlatform, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 记录因平台不匹配而跳过的能力（OPT-SEC-002）。
+    /// 供 <see cref="CapabilityFileLoader.RegisterToManager"/> 在平台过滤后调用。
+    /// </summary>
+    /// <param name="capability">被跳过的能力声明。</param>
+    internal void LogPlatformSkipped(Capability capability)
+    {
+        _logger?.LogDebug(
+            "能力 {Identifier} 的平台声明 [{Platforms}] 不匹配当前平台 {CurrentPlatform}，其权限未授权。",
+            capability.Identifier, string.Join(",", capability.Platforms), CurrentPlatform);
     }
 
     /// <summary>

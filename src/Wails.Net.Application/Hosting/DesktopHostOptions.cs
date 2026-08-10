@@ -12,7 +12,14 @@ public class DesktopHostOptions
     /// <summary>窗口配置</summary>
     public WindowOptions Window { get; set; } = new();
 
-    /// <summary>资源目录</summary>
+    /// <summary>
+    /// 资源目录（<b>兼容字段</b>，OPT-CONFIG-001）。
+    /// <para>
+    /// 推荐使用 <see cref="AssetsOptions.RootPath"/>（<c>Wails:Assets:RootPath</c>）替代。
+    /// 当 <see cref="AssetsOptions.RootPath"/> 为空时才回退到本字段；
+    /// 使用本字段时会在启动时输出一次迁移提示日志。未来主版本可能移除。
+    /// </para>
+    /// </summary>
     public string AssetsDirectory { get; set; } = "dist";
 
     /// <summary>开发服务器 URL</summary>
@@ -21,7 +28,16 @@ public class DesktopHostOptions
     /// <summary>是否启用单实例</summary>
     public bool SingleInstance { get; set; }
 
-    /// <summary>权限列表</summary>
+    /// <summary>
+    /// 简单权限标识列表（<b>兼容字段</b>，OPT-CONFIG-001）。
+    /// <para>
+    /// 推荐使用 <c>Wails:Permissions</c> 节的 <see cref="Wails.Net.Application.Security.PermissionOptions"/>
+    /// （<c>Enabled</c> / <c>DenyByDefault</c> / <c>CapabilitiesDirectory</c> / <c>Scopes</c>）
+    /// 与 capabilities 文件（Tauri v2 风格）进行完整权限治理。
+    /// 本字段仅用于向 <see cref="Wails.Net.Application.Security.PermissionManager"/> 提供初始全局授权列表，
+    /// 与 <see cref="Wails.Net.Application.Security.PermissionOptions.Permissions"/> 语义一致；未来主版本可能移除。
+    /// </para>
+    /// </summary>
     public List<string> Permissions { get; set; } = new();
 
     /// <summary>

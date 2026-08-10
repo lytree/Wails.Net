@@ -118,6 +118,27 @@ public class HttpTransport : ITransport, IWailsEventListener, ITransportHttpHand
     public IpcOriginValidator? OriginValidator { get; set; }
 
     /// <summary>
+    /// 获取或设置 IPC handshake token（OPT-IPC-002）。
+    /// 由框架装配时注入进程级随机 token（<see cref="Wails.Net.Application.Security.IpcHandshakeToken.Current"/>），
+    /// 前端通过 <c>x-wails-token</c> 请求头回传。当 <see cref="RequireHandshakeToken"/> 为 true
+    /// 且本值非空时，缺失或不匹配 token 的 IPC 请求被拒绝（403）。
+    /// </summary>
+    public string? HandshakeToken { get; set; }
+
+    /// <summary>
+    /// 获取或设置是否要求 handshake token 校验（默认 true）。
+    /// 裸构造传输层且 <see cref="HandshakeToken"/> 为 null 时不强制校验，保持低层 API 与测试兼容；
+    /// 框架装配路径会注入 token，从而默认启用校验。
+    /// </summary>
+    public bool RequireHandshakeToken { get; set; } = true;
+
+    /// <summary>
+    /// handshake token 请求头名称。
+    /// 与前端 <c>@wails-net/runtime</c> 的 <c>x-wails-token</c> 头保持一致。
+    /// </summary>
+    public const string HandshakeTokenHeader = "x-wails-token";
+
+    /// <summary>
     /// 使用指定的消息处理器和事件广播器构造 HttpTransport 实例。
     /// </summary>
     /// <param name="processor">消息处理器。</param>
@@ -302,6 +323,20 @@ public class HttpTransport : ITransport, IWailsEventListener, ITransportHttpHand
                     var forbiddenBody = System.Text.Encoding.UTF8.GetBytes("403 Forbidden: Origin not allowed");
                     response.ContentLength64 = forbiddenBody.Length;
                     await response.OutputStream.WriteAsync(forbiddenBody, cancellationToken);
+                    return;
+                }
+
+                // IPC handshake token 校验（OPT-IPC-002）：
+                // 当框架注入了 token（HandshakeToken 非空）且 RequireHandshakeToken=true 时，
+                // 请求必须携带匹配的 x-wails-token 头，否则拒绝。token 不写入日志。
+                if (RequireHandshakeToken && !string.IsNullOrEmpty(HandshakeToken) &&
+                    !string.Equals(request.Headers[HandshakeTokenHeader], HandshakeToken, StringComparison.Ordinal))
+                {
+                    response.StatusCode = 403;
+                    response.ContentType = "text/plain; charset=utf-8";
+                    var tokenForbidden = System.Text.Encoding.UTF8.GetBytes("403 Forbidden: Invalid or missing handshake token");
+                    response.ContentLength64 = tokenForbidden.Length;
+                    await response.OutputStream.WriteAsync(tokenForbidden, cancellationToken);
                     return;
                 }
 

@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Wails.Net.Application.Bindings;
 using Wails.Net.Application.Events;
+using Wails.Net.Application.Security;
 using Wails.Net.Application.Transport;
 
 namespace Wails.Net.Application.Hosting;
@@ -76,14 +77,28 @@ public static class ServerModeTransportExtensions
             });
         }
 
-        // 注册 WebSocketTransport 为单例
+        // 注册 WebSocketTransport 为单例。
+        // OPT-IPC-001/002：装配时注入进程级 handshake token 与 Origin/CORS 安全配置
+        //（来自 Wails:Ipc 节），使 Server 模式 WebSocket 通道默认要求 token 校验。
         if (!builder.Services.Any(d => d.ServiceType == typeof(WebSocketTransport)))
         {
             builder.Services.AddSingleton(sp =>
             {
                 var processor = sp.GetRequiredService<MessageProcessor>();
                 var broadcaster = sp.GetRequiredService<WebSocketBroadcaster>();
-                return new WebSocketTransport(processor, broadcaster);
+                var ipcOptions = sp.GetService<Microsoft.Extensions.Options.IOptions<Wails.Net.Application.Security.IpcOptions>>()?.Value;
+                var transport = new WebSocketTransport(processor, broadcaster);
+
+                // 注入进程级随机 handshake token（不写入日志）
+                transport.HandshakeToken = Wails.Net.Application.Security.IpcHandshakeToken.Current;
+                if (ipcOptions is not null)
+                {
+                    transport.RequireHandshakeToken = ipcOptions.RequireHandshakeToken;
+                    transport.OriginValidator = CreateOriginValidator(ipcOptions);
+                    transport.CorsOptions = CreateCorsOptions(ipcOptions);
+                }
+
+                return transport;
             });
         }
 
@@ -100,6 +115,41 @@ public static class ServerModeTransportExtensions
         builder.Services.AddHostedService<ServerModeTransportInitializer>();
 
         return builder;
+    }
+
+    /// <summary>
+    /// 根据 <see cref="IpcOptions"/> 创建 IPC 来源校验器（OPT-IPC-002）。
+    /// 白名单来自 <see cref="IpcOptions.AllowedOrigins"/>；本地源总是允许（校验器内建）。
+    /// </summary>
+    /// <param name="ipcOptions">IPC 安全配置。</param>
+    /// <returns>校验器实例。</returns>
+    private static IpcOriginValidator CreateOriginValidator(IpcOptions ipcOptions)
+    {
+        var whitelist = new UrlWhitelist();
+        foreach (var origin in ipcOptions.AllowedOrigins)
+        {
+            if (!string.IsNullOrWhiteSpace(origin))
+            {
+                whitelist.Add(origin);
+            }
+        }
+
+        return new IpcOriginValidator(whitelist);
+    }
+
+    /// <summary>
+    /// 根据 <see cref="IpcOptions"/> 创建 CORS 配置（OPT-IPC-002）。
+    /// 白名单回显而非通配符 <c>*</c>；<see cref="IpcOptions.RequireOriginValidation"/> 为 false 时禁用。
+    /// </summary>
+    /// <param name="ipcOptions">IPC 安全配置。</param>
+    /// <returns>CORS 配置实例。</returns>
+    private static CorsOptions CreateCorsOptions(IpcOptions ipcOptions)
+    {
+        return new CorsOptions
+        {
+            Enabled = ipcOptions.RequireOriginValidation,
+            AllowedOrigins = ipcOptions.AllowedOrigins.ToList(),
+        };
     }
 
     /// <summary>

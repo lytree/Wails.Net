@@ -101,6 +101,28 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
     public IpcOriginValidator? OriginValidator { get; set; }
 
     /// <summary>
+    /// 获取或设置 IPC handshake token（OPT-IPC-002）。
+    /// 由框架装配时注入进程级随机 token（<see cref="Wails.Net.Application.Security.IpcHandshakeToken.Current"/>），
+    /// 前端通过查询参数 <c>?token=</c> 或 <c>x-wails-token</c> 头回传。
+    /// 当 <see cref="RequireHandshakeToken"/> 为 true 且本值非空时，缺失或不匹配 token 的
+    /// WebSocket 连接被拒绝（403）。
+    /// </summary>
+    public string? HandshakeToken { get; set; }
+
+    /// <summary>
+    /// 获取或设置是否要求 handshake token 校验（默认 true）。
+    /// 裸构造传输层且 <see cref="HandshakeToken"/> 为 null 时不强制校验，保持低层 API 与测试兼容；
+    /// 框架装配路径会注入 token，从而默认启用校验。
+    /// </summary>
+    public bool RequireHandshakeToken { get; set; } = true;
+
+    /// <summary>
+    /// handshake token 查询参数 / 请求头名称。
+    /// 与前端 <c>@wails-net/runtime</c> 保持一致（WebSocket 用查询参数，HTTP 用同名头）。
+    /// </summary>
+    public const string HandshakeTokenQuery = "token";
+
+    /// <summary>
     /// 使用指定的消息处理器和事件广播器构造 WebSocketTransport 实例。
     /// </summary>
     /// <param name="processor">消息处理器。</param>
@@ -263,6 +285,20 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
                 response.StatusCode = 403;
                 response.Close();
                 return;
+            }
+
+            // IPC handshake token 校验（OPT-IPC-002）：
+            // 当框架注入了 token（HandshakeToken 非空）且 RequireHandshakeToken=true 时，
+            // 连接必须携带匹配的 token（查询参数 ?token= 或 x-wails-token 头），否则拒绝。
+            if (RequireHandshakeToken && !string.IsNullOrEmpty(HandshakeToken))
+            {
+                var suppliedToken = request.QueryString[HandshakeTokenQuery] ?? request.Headers[HttpTransport.HandshakeTokenHeader];
+                if (!string.Equals(suppliedToken, HandshakeToken, StringComparison.Ordinal))
+                {
+                    response.StatusCode = 403;
+                    response.Close();
+                    return;
+                }
             }
 
             await HandleWebSocketAsync(context, cancellationToken);

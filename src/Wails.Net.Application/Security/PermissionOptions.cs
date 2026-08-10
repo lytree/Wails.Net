@@ -13,7 +13,22 @@ public class PermissionOptions
     public List<string> Permissions { get; set; } = new();
 
     /// <summary>
+    /// 获取或设置权限检查模式（默认 <see cref="PermissionMode.Compatibility"/>，向后兼容）。
+    /// <para>
+    /// OPT-SEC-001（权限 strict 模式迁移）：
+    /// <list type="bullet">
+    /// <item><see cref="PermissionMode.Compatibility"/>：旧应用迁移期行为，
+    /// 未授权命令默认放行（等价于旧版 <see cref="Enabled"/>=false 语义）。</item>
+    /// <item><see cref="PermissionMode.Strict"/>：最小权限姿态，
+    /// 未授权命令一律拒绝；推荐生产模式。即使 <see cref="Enabled"/> 未显式置 true 也强制启用检查。</item>
+    /// </list>
+    /// </para>
+    /// </summary>
+    public PermissionMode Mode { get; set; } = PermissionMode.Compatibility;
+
+    /// <summary>
     /// 获取或设置是否启用权限检查（默认 false，向后兼容）。
+    /// 当 <see cref="Mode"/> 为 <see cref="PermissionMode.Strict"/> 时，权限检查始终启用。
     /// </summary>
     public bool Enabled { get; set; } = false;
 

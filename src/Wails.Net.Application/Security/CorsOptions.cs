@@ -26,9 +26,11 @@ public sealed class CorsOptions
     public string AllowedMethods { get; set; } = "GET, POST, PUT, DELETE, OPTIONS";
 
     /// <summary>
-    /// 获取或设置允许的请求头（默认 Content-Type, Authorization）。
+    /// 获取或设置允许的请求头（默认 Content-Type, Authorization, x-wails-token）。
+    /// 包含 <c>x-wails-token</c>（OPT-IPC-002 handshake token）与分块上传头，
+    /// 使 CORS 预检请求放行 IPC 相关自定义头。
     /// </summary>
-    public string AllowedHeaders { get; set; } = "Content-Type, Authorization";
+    public string AllowedHeaders { get; set; } = "Content-Type, Authorization, x-wails-token, x-wails-window-id, x-wails-window-name, x-wails-chunk-id, x-wails-chunk-index, x-wails-chunk-total";
 
     /// <summary>
     /// 获取或设置是否允许携带凭证（默认 false）。

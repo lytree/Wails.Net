@@ -55,6 +55,7 @@ public static class CapabilityFileLoader
                 {
                     capabilities.Add(capability);
                     logger?.LogDebug("已加载能力文件: {File}（{Identifier}）", file, capability.Identifier);
+                    LogUnknownPlatforms(capability, logger);
                 }
             }
             catch (Exception ex)
@@ -90,6 +91,7 @@ public static class CapabilityFileLoader
             if (capability is not null && !string.IsNullOrEmpty(capability.Identifier))
             {
                 logger?.LogDebug("已加载能力文件: {File}（{Identifier}）", filePath, capability.Identifier);
+                LogUnknownPlatforms(capability, logger);
                 return capability;
             }
         }
@@ -111,6 +113,9 @@ public static class CapabilityFileLoader
     /// <item>当 <see cref="Capability.Remote"/> 非空时，权限附带远程 URL 模式限制：
     /// 远程调用来源必须匹配其中一个模式才能放行；本地源始终放行。
     /// 对应 Tauri v2 Capability.remote 字段。</item>
+    /// <item>OPT-SEC-002：当 <see cref="Capability.Platforms"/> 非空且不匹配
+    /// <see cref="PermissionManager.CurrentPlatform"/> 时，跳过该能力的权限授权
+    /// （能力仍会声明，但其中权限不生效）。</item>
     /// </list>
     /// </summary>
     /// <param name="manager">权限管理器。</param>
@@ -123,6 +128,13 @@ public static class CapabilityFileLoader
         foreach (var capability in capabilities)
         {
             manager.DeclareCapability(capability);
+
+            // OPT-SEC-002：平台过滤——当前平台不匹配时，该能力的权限不授权。
+            if (!manager.IsCapabilityApplicableToPlatform(capability))
+            {
+                manager.LogPlatformSkipped(capability);
+                continue;
+            }
 
             // 提取远程 URL 模式集合（可能为空，表示不限制远程来源）
             var remotePatterns = capability.Remote is { Count: > 0 } remote
@@ -169,6 +181,31 @@ public static class CapabilityFileLoader
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 校验能力声明的平台标识（OPT-SEC-002）。
+    /// 未知平台名输出 warning（不阻断加载），便于发现拼写错误。
+    /// </summary>
+    /// <param name="capability">能力声明。</param>
+    /// <param name="logger">日志记录器，可为 null。</param>
+    private static void LogUnknownPlatforms(Capability capability, ILogger? logger)
+    {
+        if (capability.Platforms.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var platform in capability.Platforms)
+        {
+            if (!WailsPlatform.IsKnown(platform))
+            {
+                logger?.LogWarning(
+                    "能力 {Identifier} 声明了未知平台 '{Platform}'。" +
+                    "已知平台：windows / linux / android / macos / server。",
+                    capability.Identifier, platform);
             }
         }
     }

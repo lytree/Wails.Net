@@ -71,8 +71,12 @@ public sealed class DesktopApplicationBuilder
     {
         // 注册 DesktopHostOptions，绑定 appsettings.json 的 "Wails" 节。
         // 对应 AGENTS.md §1.1.1 统一配置节命名：根节为 "Wails"。
+        // OPT-CONFIG-002：注册 DesktopHostOptionsValidator 并启用 ValidateOnStart，
+        // 使核心配置错误（名称、窗口尺寸、资源路径、DevServerUrl）在 Host 启动期暴露。
         Services.AddOptions<DesktopHostOptions>()
-            .Bind(Configuration.GetSection("Wails"));
+            .Bind(Configuration.GetSection("Wails"))
+            .ValidateOnStart();
+        Services.AddSingleton<IValidateOptions<DesktopHostOptions>, DesktopHostOptionsValidator>();
 
         // 注册 Wails.Net 核心管理器（EventProcessor、BindingManager、WindowManager 等）和内置服务
         Services.AddWailsCore();
@@ -214,11 +218,14 @@ public sealed class DesktopApplicationBuilder
         // 自动创建 AssetServer（仿 Wails v3 静态资源处理）
         // 当配置了 Assets.RootPath 时，创建 FileAssetServer 并设置到 Application.AssetServer
         // 窗口将自动导航到 http://wails.localhost/ 加载前端资源
-        if (!string.IsNullOrWhiteSpace(desktopOpts.Assets.RootPath))
+        // OPT-CONFIG-001：Assets.RootPath 为推荐字段，AssetsDirectory 为兼容字段——
+        // RootPath 非空时优先使用，否则回退 AssetsDirectory（并输出一次迁移提示日志）。
+        var assetsRootPath = ResolveAssetsRootPath(desktopOpts, host.Services);
+        if (!string.IsNullOrWhiteSpace(assetsRootPath))
         {
-            var rootPath = Path.IsPathRooted(desktopOpts.Assets.RootPath)
-                ? desktopOpts.Assets.RootPath
-                : Path.Combine(AppContext.BaseDirectory, desktopOpts.Assets.RootPath);
+            var rootPath = Path.IsPathRooted(assetsRootPath)
+                ? assetsRootPath
+                : Path.Combine(AppContext.BaseDirectory, assetsRootPath);
 
             if (Directory.Exists(rootPath))
             {
@@ -241,6 +248,13 @@ public sealed class DesktopApplicationBuilder
 
         // 加载能力文件（Tauri v2 风格的 capabilities/*.json）
         // 必须在窗口创建前完成，确保权限已就绪
+        // OPT-SEC-002：Server 模式下将权限管理器的平台标识设置为 "server"，
+        // 使 Capability.Platforms 平台过滤感知无 GUI 运行时。
+        var permissionManager = host.Services.GetService<PermissionManager>();
+        if (permissionManager is not null && platformApp is Platform.ServerMode.ServerPlatformApp)
+        {
+            permissionManager.SetCurrentPlatform(WailsPlatform.Server);
+        }
         LoadCapabilities(desktopOpts, host.Services);
 
         // 将窗口配置传递给 Application，由 Application.Run() 在 UI 线程上按需创建。
@@ -249,6 +263,36 @@ public sealed class DesktopApplicationBuilder
         application.SetWindowConfigs(desktopOpts.App?.Windows, desktopOpts.Window);
 
         return new DesktopApplication(host, application, desktopOpts.ApplicationName);
+    }
+
+    /// <summary>
+    /// 解析静态资源根路径（OPT-CONFIG-001）。
+    /// <para>
+    /// 优先级：<c>Assets.RootPath</c>（推荐） → <c>AssetsDirectory</c>（兼容字段）。
+    /// 当回退到兼容字段时输出一次迁移提示日志，引导用户迁移到推荐字段。
+    /// </para>
+    /// </summary>
+    /// <param name="options">宿主配置选项。</param>
+    /// <param name="services">已构建的 DI 服务提供者，用于获取日志记录器。</param>
+    /// <returns>解析后的资源根路径；未配置时返回 null。</returns>
+    private static string? ResolveAssetsRootPath(DesktopHostOptions options, IServiceProvider services)
+    {
+        if (!string.IsNullOrWhiteSpace(options.Assets.RootPath))
+        {
+            return options.Assets.RootPath;
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.AssetsDirectory))
+        {
+            var logger = services.GetService<ILoggerFactory>()?.CreateLogger<DesktopApplicationBuilder>();
+            logger?.LogWarning(
+                "检测到使用兼容字段 'Wails:AssetsDirectory'（当前值 {Value}）。" +
+                "推荐迁移到 'Wails:Assets:RootPath'，该兼容字段将在未来主版本移除。",
+                options.AssetsDirectory);
+            return options.AssetsDirectory;
+        }
+
+        return null;
     }
 
     /// <summary>

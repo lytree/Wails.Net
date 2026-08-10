@@ -73,6 +73,8 @@ export interface WailsRuntimeFlags {
   assetServerUrl?: string;
   /** WebSocket URL（Server 模式通道）。 */
   webSocketUrl?: string;
+  /** IPC handshake token（OPT-IPC-002）：HTTP 请求头 / WebSocket 查询参数回传校验。 */
+  ipcToken?: string;
 }
 
 /** 读取 `window._wails` 运行时标志（若存在）。 */

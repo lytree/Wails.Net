@@ -127,4 +127,4 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 
 ---
 
-**最后更新**：2026-08-03（新增 `Wails.Net.Demo.DevRelease` 演示 + `docs/development/project-structure-and-modes.md` 指南；CLI `wails dev` 新增 `--open-devtools` / `--frontend-only` / `--backend-only` / `--platform`，`wails build` 新增 `--frontend-only` / `--backend-only`）
+**最后更新**：2026-08-10（架构优化路线图 `docs/architecture/optimization-roadmap.md` 新增；P0 批次落地：配置模型收敛 `OPT-CONFIG-001`、Options 启动期校验 `OPT-CONFIG-002`、IPC handshake token `OPT-IPC-001/002`、权限 Strict 模式 `OPT-SEC-001`、`Capability.platforms` `OPT-SEC-002`）

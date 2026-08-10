@@ -1,5 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Wails.Net.Application.Bindings;
 using Wails.Net.Application.Events;
 using Wails.Net.Application.Logging;
@@ -43,9 +45,21 @@ public static class ServiceCollectionExtensions
         // 注册权限管理器（默认从 Wails:Permissions 配置节绑定，Enabled 默认 false 向后兼容）。
         // 对应主题 C：将 PermissionManager 接入 DI，使 CommandDispatcher 可自动注入权限校验。
         // 用户可通过显式调用 AddPermissions(configure) 或 EnablePermissions() 覆盖默认配置。
+        // OPT-CONFIG-002：注册 PermissionOptionsValidator 并启用 ValidateOnStart，
+        // 使权限配置错误在 Host 启动期暴露。
         services.AddOptions<PermissionOptions>()
-            .BindConfiguration("Wails:Permissions");
+            .BindConfiguration("Wails:Permissions")
+            .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<PermissionOptions>, PermissionOptionsValidator>();
         services.AddSingleton<PermissionManager>();
+
+        // 注册 IPC 传输层安全配置（OPT-IPC-001：新增 IpcOptions）。
+        // 从 "Wails:Ipc" 节绑定，控制 HTTP/WebSocket fallback 的 token 校验、
+        // Origin 校验与端口分配。OPT-CONFIG-002：注册 IpcOptionsValidator 并启用 ValidateOnStart。
+        services.AddOptions<IpcOptions>()
+            .BindConfiguration("Wails:Ipc")
+            .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<IpcOptions>, IpcOptionsValidator>();
 
         // 注册 PluginManager 为单例（幂等：EnsurePluginManagerRegistered 会跳过已注册的实例）。
         // 默认注册确保无插件场景下 PluginHostedServiceAdapter 也能从 DI 构造。

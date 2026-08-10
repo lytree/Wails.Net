@@ -40,6 +40,18 @@ public sealed class Capability
     public List<string> Remote { get; set; } = new();
 
     /// <summary>
+    /// 获取或设置应用此能力的平台标识列表（OPT-SEC-002）。
+    /// <list type="bullet">
+    /// <item>空列表：所有平台生效（默认）。</item>
+    /// <item>非空列表：仅当当前平台匹配（大小写不敏感）时授权其中权限。</item>
+    /// </list>
+    /// 平台标识取值：<c>windows</c> / <c>linux</c> / <c>android</c> / <c>macos</c> / <c>server</c>。
+    /// 未知平台名在加载阶段输出 warning。
+    /// 对应 Tauri v2 Capability.platform 字段。
+    /// </summary>
+    public List<string> Platforms { get; set; } = new();
+
+    /// <summary>
     /// 获取或设置所属插件名称（运行时由插件声明时填充）。
     /// </summary>
     public string Plugin { get; set; } = string.Empty;

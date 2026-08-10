@@ -1532,18 +1532,23 @@ public class Application
         // P0-D：Server 模式事件 API 完善 — 将传输层 URL 注入标志对象，
         // 使前端 @wails-net/runtime 的 Transport.init() 能连接到正确的端点。
         // 对应 Wails v3 中通过 wails:// 将 transport 信息注入到前端 runtime 的机制。
+        // OPT-IPC-002：同时注入进程级 handshake token（ipcToken），
+        // 前端发起 HTTP/WebSocket IPC 请求时回传校验；token 不写入日志。
         string webSocketUrl = string.Empty;
         string assetServerUrl = string.Empty;
+        string ipcToken = string.Empty;
         if (isServerMode)
         {
             if (_transport is WebSocketTransport wsTransport)
             {
                 webSocketUrl = wsTransport.WebSocketUrl;
                 assetServerUrl = wsTransport.BaseUrl;
+                ipcToken = wsTransport.HandshakeToken ?? string.Empty;
             }
             else if (_transport is HttpTransport httpTransport)
             {
                 assetServerUrl = httpTransport.BaseUrl;
+                ipcToken = httpTransport.HandshakeToken ?? string.Empty;
             }
         }
 
@@ -1553,6 +1558,7 @@ public class Application
         var isServerModeJson = isServerMode ? "true" : "false";
         var webSocketUrlJson = JsonSerializer.Serialize(webSocketUrl);
         var assetServerUrlJson = JsonSerializer.Serialize(assetServerUrl);
+        var ipcTokenJson = JsonSerializer.Serialize(ipcToken);
 
         return $$"""
         // Wails.NET Runtime Flags - 由 Application.GenerateRuntimeJs() 自动生成，请勿手动修改。
@@ -1567,7 +1573,8 @@ public class Application
             isDebug: {{isDebugJson}},
             isServerMode: {{isServerModeJson}},
             webSocketUrl: {{webSocketUrlJson}},
-            assetServerUrl: {{assetServerUrlJson}}
+            assetServerUrl: {{assetServerUrlJson}},
+            ipcToken: {{ipcTokenJson}}
           };
           if (!window.__wailsRuntimeSkippedNotice && !window.__wailsRuntimeLoaded) {
             window.__wailsRuntimeSkippedNotice = true;
