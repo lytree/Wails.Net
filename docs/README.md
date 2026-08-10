@@ -22,6 +22,7 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 | 文档 | 内容 |
 |------|------|
 | [宿主层与应用生命周期](architecture/hosting-and-lifecycle.md) | `DesktopApplicationBuilder`、Generic Host 集成、`DesktopHostedService`、启动/关闭顺序 |
+| [架构优化修改路线图](architecture/optimization-roadmap.md) | 按 Host/DI、Runtime/IPC、Plugin/Security 三大融合维度梳理优化目标、任务拆解、风险与验收标准 |
 | [绑定系统与命令调度](architecture/binding-and-command-system.md) | `BindingManager`、`CommandDispatcher`、表达式树编译、FNV-1a 哈希、双轨调用路径 |
 | [插件框架](architecture/plugin-system.md) | `IPlugin` 契约、`IPluginContext`、命令注册、生命周期、42 个内置插件（37 桌面 + 5 移动端） |
 | [平台抽象层](architecture/platform-abstraction.md) | `IPlatformApp`、`IWebviewWindowImpl`、Server 模式降级、Windows/Linux/Android 实现 |
