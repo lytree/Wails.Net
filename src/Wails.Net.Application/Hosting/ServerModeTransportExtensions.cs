@@ -77,9 +77,18 @@ public static class ServerModeTransportExtensions
             });
         }
 
+        // 注册统一 IPC 传输策略（OPT-IPC-003）。
+        // 传输层选择与安全配置（token/Origin/CORS）集中在本策略中，
+        // 避免选择逻辑散落在平台实现中；平台窗口迁移见路线图 §5.2 后续批次。
+        if (!builder.Services.Any(d => d.ServiceType == typeof(IIpcTransportStrategy)))
+        {
+            builder.Services.AddSingleton<IIpcTransportStrategy, DefaultIpcTransportStrategy>();
+        }
+
         // 注册 WebSocketTransport 为单例。
-        // OPT-IPC-001/002：装配时注入进程级 handshake token 与 Origin/CORS 安全配置
-        //（来自 Wails:Ipc 节），使 Server 模式 WebSocket 通道默认要求 token 校验。
+        // OPT-IPC-001/002/003：由统一策略创建，装配时注入进程级 handshake token
+        // 与 Origin/CORS 安全配置（来自 Wails:Ipc 节），使 Server 模式 WebSocket
+        // 通道默认要求 token 校验。
         if (!builder.Services.Any(d => d.ServiceType == typeof(WebSocketTransport)))
         {
             builder.Services.AddSingleton(sp =>
@@ -87,18 +96,20 @@ public static class ServerModeTransportExtensions
                 var processor = sp.GetRequiredService<MessageProcessor>();
                 var broadcaster = sp.GetRequiredService<WebSocketBroadcaster>();
                 var ipcOptions = sp.GetService<Microsoft.Extensions.Options.IOptions<Wails.Net.Application.Security.IpcOptions>>()?.Value;
-                var transport = new WebSocketTransport(processor, broadcaster);
-
-                // 注入进程级随机 handshake token（不写入日志）
-                transport.HandshakeToken = Wails.Net.Application.Security.IpcHandshakeToken.Current;
-                if (ipcOptions is not null)
+                var strategy = sp.GetService<IIpcTransportStrategy>() ?? new DefaultIpcTransportStrategy();
+                var context = new IpcTransportContext
                 {
-                    transport.RequireHandshakeToken = ipcOptions.RequireHandshakeToken;
-                    transport.OriginValidator = CreateOriginValidator(ipcOptions);
-                    transport.CorsOptions = CreateCorsOptions(ipcOptions);
-                }
+                    Processor = processor,
+                    Broadcaster = broadcaster,
+                    IpcOptions = ipcOptions,
+                    HandshakeToken = Wails.Net.Application.Security.IpcHandshakeToken.Current,
+                    IsServerMode = true,
+                };
 
-                return transport;
+                // 策略返回首选传输；Server 模式下即 WebSocketTransport。
+                // 若策略未返回（异常场景），回退到直接构造。
+                return strategy.CreatePrimaryTransport(context) as WebSocketTransport
+                    ?? CreateServerWebSocketTransport(processor, broadcaster, ipcOptions);
             });
         }
 
@@ -138,18 +149,31 @@ public static class ServerModeTransportExtensions
     }
 
     /// <summary>
-    /// 根据 <see cref="IpcOptions"/> 创建 CORS 配置（OPT-IPC-002）。
-    /// 白名单回显而非通配符 <c>*</c>；<see cref="IpcOptions.RequireOriginValidation"/> 为 false 时禁用。
+    /// 回退构造 Server 模式 WebSocket 传输（策略未返回首选传输时的兜底）。
+    /// 保留原 OPT-IPC-001/002 的安全配置注入行为。
     /// </summary>
-    /// <param name="ipcOptions">IPC 安全配置。</param>
-    /// <returns>CORS 配置实例。</returns>
-    private static CorsOptions CreateCorsOptions(IpcOptions ipcOptions)
+    /// <param name="processor">消息处理器。</param>
+    /// <param name="broadcaster">事件广播器。</param>
+    /// <param name="ipcOptions">IPC 安全配置（可为 null）。</param>
+    /// <returns>配置完成的 WebSocketTransport 实例。</returns>
+    private static WebSocketTransport CreateServerWebSocketTransport(
+        MessageProcessor processor,
+        WebSocketBroadcaster broadcaster,
+        IpcOptions? ipcOptions)
     {
-        return new CorsOptions
+        var transport = new WebSocketTransport(processor, broadcaster);
+        transport.HandshakeToken = Wails.Net.Application.Security.IpcHandshakeToken.Current;
+        if (ipcOptions is not null)
         {
-            Enabled = ipcOptions.RequireOriginValidation,
-            AllowedOrigins = ipcOptions.AllowedOrigins.ToList(),
-        };
+            transport.RequireHandshakeToken = ipcOptions.RequireHandshakeToken;
+            transport.OriginValidator = CreateOriginValidator(ipcOptions);
+            transport.CorsOptions = new CorsOptions
+            {
+                Enabled = ipcOptions.RequireOriginValidation,
+                AllowedOrigins = ipcOptions.AllowedOrigins.ToList(),
+            };
+        }
+        return transport;
     }
 
     /// <summary>
@@ -167,9 +191,9 @@ public static class ServerModeTransportExtensions
         }
 
         /// <inheritdoc />
-        public void NotifyEvent(string eventName, object? data, uint? senderWindowId = null)
+        public void NotifyEvent(string eventName, object? data, uint? senderWindowId = null, uint? targetWindowId = null)
         {
-            _transport.NotifyEvent(eventName, data, senderWindowId);
+            _transport.NotifyEvent(eventName, data, senderWindowId, targetWindowId);
         }
     }
 

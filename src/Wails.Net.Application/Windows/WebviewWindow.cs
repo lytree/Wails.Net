@@ -879,4 +879,32 @@ public class WebviewWindow
         // 使用 KnownEvents.GetEventName 将事件类型数值转换为事件名称字符串。
         Application.Get()?.Events?.Emit(KnownEvents.GetEventName(eventType), data, ID);
     }
+
+    /// <summary>
+    /// 向本窗口派发一个自定义事件（OPT-EVENT-002，2026-08-15 新增）。
+    /// <para>
+    /// 对应 Wails v3 Go 版本 WebviewWindow 的 <c>DispatchWailsEvent</c>：
+    /// 通过 <see cref="Events.EventProcessor.EmitTo"/> 将事件定向派发到本窗口的前端
+    /// （<c>wails.events.on</c> 订阅者），其他窗口不收到。
+    /// </para>
+    /// <para>
+    /// 调用示例：
+    /// <code>
+    /// var window = app.GetWindowByName("main");
+    /// window?.DispatchWailsEvent("store.changed", new { key = "theme", value = "dark" });
+    /// </code>
+    /// 前端：
+    /// <code>
+    /// import { wails } from '@wails-net/runtime';
+    /// wails.events.on('store.changed', (data) => { ... });
+    /// </code>
+    /// </para>
+    /// </summary>
+    /// <param name="name">事件名称。</param>
+    /// <param name="data">事件数据，可为 null。</param>
+    public void DispatchWailsEvent(string name, object? data = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        Application.Get()?.Events?.EmitTo(ID, name, data);
+    }
 }

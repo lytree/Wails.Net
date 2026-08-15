@@ -145,7 +145,18 @@ public sealed class NativeIpcTransport : INativeIpcTransport
     /// <param name="senderWindowId">事件来源窗口 ID，可为 null（应用级事件）。
     /// 包含在事件载荷 <see cref="EventPayload.SenderWindowId"/> 中推送到前端，
     /// 使前端可识别事件发起方。</param>
-    public void NotifyEvent(string eventName, object? data, uint? senderWindowId = null)
+    /// <summary>
+    /// 通知事件：将事件通过原生 postMessage 推送到已注册窗口。
+    /// <para>
+    /// OPT-EVENT-002：<paramref name="targetWindowId"/> 非 null 时仅推送到目标窗口，
+    /// 其他窗口不收到（跨窗口定向事件）；null 时广播到所有已注册窗口。
+    /// </para>
+    /// </summary>
+    /// <param name="eventName">事件名称。</param>
+    /// <param name="data">事件数据，可为 null。</param>
+    /// <param name="senderWindowId">事件来源窗口 ID，可为 null（应用级事件）。</param>
+    /// <param name="targetWindowId">定向目标窗口 ID；null 表示广播。</param>
+    public void NotifyEvent(string eventName, object? data, uint? senderWindowId = null, uint? targetWindowId = null)
     {
         if (_windowImpls.IsEmpty)
         {
@@ -155,8 +166,19 @@ public sealed class NativeIpcTransport : INativeIpcTransport
         // 构造事件消息：{ type: "event", name, data, senderWindowId }
         // 前端通过 __wailsNative.onMessage 接收，按 type 分发到事件监听器
         // P1-2：包含 senderWindowId 使前端可识别事件来源窗口
-        var payload = new EventPayload(eventName, data, senderWindowId);
+        // OPT-EVENT-002：包含 targetWindowId 使前端可识别定向事件（前端不强制过滤，仅透传）
+        var payload = new EventPayload(eventName, data, senderWindowId, targetWindowId);
         var json = JsonSerializer.Serialize(payload, JsonOptions.DefaultSerializerOptions);
+
+        // OPT-EVENT-002：定向事件仅推送目标窗口；广播则推送所有已注册窗口
+        if (targetWindowId is not null)
+        {
+            if (_windowImpls.ContainsKey(targetWindowId.Value))
+            {
+                _ = PostToWindowAsync(targetWindowId.Value, json);
+            }
+            return;
+        }
 
         foreach (var windowId in _windowImpls.Keys)
         {
@@ -172,23 +194,30 @@ public sealed class NativeIpcTransport : INativeIpcTransport
         /// <summary>消息类型，固定为 "event"。</summary>
         public string Type => "event";
 
-        /// <summary>事件名称。</summary>
-        public string Name { get; }
+    /// <summary>事件名称。</summary>
+    public string Name { get; }
 
-        /// <summary>事件数据。</summary>
-        public object? Data { get; }
+    /// <summary>事件数据。</summary>
+    public object? Data { get; }
 
-        /// <summary>
-        /// 事件来源窗口 ID，可为 null（应用级事件）。
-        /// 对应 Wails v3 Go 版本 CustomEvent.Sender 字段语义。
-        /// </summary>
-        public uint? SenderWindowId { get; }
+    /// <summary>
+    /// 事件来源窗口 ID，可为 null（应用级事件）。
+    /// 对应 Wails v3 Go 版本 CustomEvent.Sender 字段语义。
+    /// </summary>
+    public uint? SenderWindowId { get; }
 
-        public EventPayload(string name, object? data, uint? senderWindowId)
-        {
-            Name = name;
-            Data = data;
-            SenderWindowId = senderWindowId;
-        }
+    /// <summary>
+    /// 定向目标窗口 ID（OPT-EVENT-002），可为 null（广播）。
+    /// 透传给前端供识别，前端对定向事件的过滤由发送方（后端）保证。
+    /// </summary>
+    public uint? TargetWindowId { get; }
+
+    public EventPayload(string name, object? data, uint? senderWindowId, uint? targetWindowId = null)
+    {
+        Name = name;
+        Data = data;
+        SenderWindowId = senderWindowId;
+        TargetWindowId = targetWindowId;
+    }
     }
 }

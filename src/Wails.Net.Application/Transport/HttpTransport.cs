@@ -11,6 +11,15 @@ namespace Wails.Net.Application.Transport;
 /// 对应 Wails v3 Go 版本中的 IPC HTTP 传输。
 /// 内嵌一个轻量级 HTTP 服务器，接收前端消息并通过 MessageProcessor 处理，
 /// 同时支持将资源请求转发给 AssetServer。
+/// <para>
+/// <b>生产装配决策（OPT-CLEANUP-001 / OPT-IPC-003，2026-08-15）</b>：
+/// 当前生产路径未装配本类——桌面模式的消息路径由平台 WebView 拦截承载
+/// （Windows <c>OnWebResourceRequested</c> / Linux <c>wails://</c> scheme），
+/// Server 模式走 <see cref="WebSocketTransport"/>。本类保留作为独立 HTTP 传输组件
+/// （HTTP POST /wails/message 端点 + 分块上传 + token 校验，已有测试覆盖）。
+/// 是否接入统一 IPC fallback 链由 OPT-IPC-003 决策，落地时需同步扩展前端 runtime
+/// flags（注入 HTTP 端点 URL），否则装配后前端不可达（见 optimization-roadmap.md §5.2）。
+/// </para>
 /// </summary>
 public class HttpTransport : ITransport, IWailsEventListener, ITransportHttpHandler, IAssetServerTransport
 {
@@ -232,9 +241,10 @@ public class HttpTransport : ITransport, IWailsEventListener, ITransportHttpHand
     /// <param name="eventName">事件名称。</param>
     /// <param name="data">事件数据。</param>
     /// <param name="senderWindowId">事件来源窗口 ID，可为 null（应用级事件）。</param>
-    public void NotifyEvent(string eventName, object? data, uint? senderWindowId = null)
+    /// <param name="targetWindowId">定向目标窗口 ID（OPT-EVENT-002）；null 表示广播。</param>
+    public void NotifyEvent(string eventName, object? data, uint? senderWindowId = null, uint? targetWindowId = null)
     {
-        _broadcaster.BroadcastEvent(eventName, data, senderWindowId);
+        _broadcaster.BroadcastEvent(eventName, data, senderWindowId, targetWindowId);
     }
 
     /// <summary>

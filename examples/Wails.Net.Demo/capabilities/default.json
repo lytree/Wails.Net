@@ -1,0 +1,17 @@
+{
+  // Wails.Net Demo 能力声明文件（capability）示例（Tauri v2 风格）。
+  // Demo 是跨平台参考实现，覆盖 windows / linux / android / macos / server 全部平台。
+  // 权限集与细粒度权限说明：
+  //   - "window:default"：窗口插件只读查询权限集（尺寸、位置、URL、缩放、可见性等）。
+  //   - "window:allow-dangerous"：窗口插件危险操作权限（修改属性、execJS、DevTools 等）。
+  // 注意：Demo 的插件命令当前均未声明 RequiredCapabilities，
+  // 因此该文件主要作为权限治理参考；新增命令时按需在此追加授权。
+  "identifier": "default",
+  "description": "Demo 主窗口能力声明（跨平台参考实现）",
+  "windows": ["main"],
+  "platforms": ["windows", "linux", "android", "macos", "server"],
+  "permissions": [
+    "window:default",
+    "window:allow-dangerous"
+  ]
+}

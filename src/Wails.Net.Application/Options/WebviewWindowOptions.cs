@@ -144,11 +144,6 @@ public class WebviewWindowOptions
     public string? CSS { get; set; }
 
     /// <summary>
-    /// 是否启用拖放功能。
-    /// </summary>
-    public bool EnableDragAndDrop { get; set; } = false;
-
-    /// <summary>
     /// 是否显示菜单栏。
     /// </summary>
     public bool ShowMenuBar { get; set; } = false;

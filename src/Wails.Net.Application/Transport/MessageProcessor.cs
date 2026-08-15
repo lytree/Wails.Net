@@ -649,6 +649,11 @@ public class MessageProcessor
     /// </summary>
     /// <param name="message">事件消息。</param>
     /// <returns>始终返回 null（事件无需响应）。</returns>
+    /// <summary>
+    /// 处理事件消息（event.emit / event.emitTo）。
+    /// OPT-EVENT-002：载荷携带 <see cref="EventPayload.TargetWindowID"/> 时，
+    /// 通过 <see cref="Events.EventProcessor.EmitTo"/> 派发跨窗口定向事件。
+    /// </summary>
     private ResponseMessage? ProcessEvent(Message message)
     {
         var eventPayload = message.Payload.Deserialize<EventPayload>(JsonOptions.DefaultSerializerOptions);
@@ -657,7 +662,14 @@ public class MessageProcessor
             return null;
         }
 
-        _events.Emit(eventPayload.Name, eventPayload.Data, eventPayload.SenderWindowID);
+        if (eventPayload.TargetWindowID is not null)
+        {
+            _events.EmitTo(eventPayload.TargetWindowID.Value, eventPayload.Name, eventPayload.Data, eventPayload.SenderWindowID);
+        }
+        else
+        {
+            _events.Emit(eventPayload.Name, eventPayload.Data, eventPayload.SenderWindowID);
+        }
         return null;
     }
 
@@ -1273,6 +1285,13 @@ public class EventPayload
     /// </summary>
     [JsonPropertyName("senderWindowId")]
     public uint? SenderWindowID { get; set; }
+
+    /// <summary>
+    /// 定向目标窗口 ID（OPT-EVENT-002，2026-08-15 新增）。
+    /// 非 null 时事件仅派发到该窗口的前端；null 表示广播。
+    /// </summary>
+    [JsonPropertyName("targetWindowId")]
+    public uint? TargetWindowID { get; set; }
 }
 
 /// <summary>

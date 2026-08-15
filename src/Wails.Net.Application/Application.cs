@@ -108,6 +108,20 @@ public class Application
     /// </summary>
     private volatile bool _isRunning;
 
+    /// <summary>
+    /// 平台启动就绪信号（OPT-RUNTIME-002，2026-08-15 新增）。
+    /// <see cref="Run"/> 在进入平台主循环前 SetResult，<see cref="WaitUntilPlatformStartedAsync"/>
+    /// 与 <see cref="Hosting.DesktopHostedService.StartAsync"/> 等待该信号。
+    /// 平台主循环抛异常时 SetException，使等待方快速失败。
+    /// </summary>
+    private readonly TaskCompletionSource _platformStartedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>
+    /// 当前生命周期状态（OPT-RUNTIME-002）。
+    /// 由 <see cref="Run"/> / <see cref="Shutdown"/> 推进，供诊断与测试等待。
+    /// </summary>
+    public Hosting.ApplicationLifecycleState LifecycleState { get; private set; } = Hosting.ApplicationLifecycleState.Created;
+
     private static Application? _globalApplication;
 
     /// <summary>
@@ -1002,6 +1016,7 @@ public class Application
         SetupSingleInstance();
 
         _isRunning = true;
+        LifecycleState = Hosting.ApplicationLifecycleState.Starting;
 
         // 触发启动回调
         _options.OnBeforeStart?.Invoke();
@@ -1062,9 +1077,33 @@ public class Application
         // 当 Application 独立运行（无 Host）时，_lifetime 为 null。
 
         // 进入平台主循环（阻塞直到退出）
+        // OPT-RUNTIME-002：进入主循环前设置 PlatformStarted 就绪信号——
+        // 所有启动准备（服务、资源服务器、传输层、窗口创建回调）均已完成，
+        // 使 Hosting.DesktopHostedService.StartAsync 的返回语义与 UI 就绪对齐。
         if (_platformApp is not null)
         {
-            _platformApp.Run();
+            LifecycleState = Hosting.ApplicationLifecycleState.PlatformStarted;
+            _platformStartedTcs.TrySetResult();
+            LifecycleState = Hosting.ApplicationLifecycleState.Running;
+
+            try
+            {
+                _platformApp.Run();
+            }
+            catch (Exception ex)
+            {
+                // 平台主循环异常：通知等待方（HostedService.StartAsync 可快速失败），
+                // 然后继续走 Shutdown 清理路径。
+                _platformStartedTcs.TrySetException(ex);
+                _logger?.LogError(ex, "平台主循环异常");
+            }
+        }
+        else
+        {
+            // 无平台实现（纯 Server 模式降级）：直接置为就绪。
+            LifecycleState = Hosting.ApplicationLifecycleState.PlatformStarted;
+            _platformStartedTcs.TrySetResult();
+            LifecycleState = Hosting.ApplicationLifecycleState.Running;
         }
 
         // 平台主循环退出后清理
@@ -1083,6 +1122,8 @@ public class Application
         {
             return;
         }
+
+        LifecycleState = Hosting.ApplicationLifecycleState.Stopping;
 
         // 触发 IHostApplicationLifetime.ApplicationStopping 事件。
         // 对应 ASP.NET Core 的优雅关闭钩子，让用户代码可以注册 Stopping 回调。
@@ -1150,6 +1191,7 @@ public class Application
 
         _platformApp?.Destroy();
         _isRunning = false;
+        LifecycleState = Hosting.ApplicationLifecycleState.Stopped;
 
         // 注：IHostApplicationLifetime.ApplicationStopped 事件由 StopApplication() 内部触发，
         // 此处不再手动调用。StopApplication() 会先触发 ApplicationStopping，
@@ -1605,5 +1647,73 @@ public class Application
     public void BroadcastEvent(string eventName, object? data = null)
     {
         _events.Emit(eventName, data, null);
+    }
+
+    /// <summary>
+    /// 向指定窗口派发跨窗口定向事件（OPT-EVENT-002，2026-08-15 新增）。
+    /// <para>
+    /// 对应 Wails v3 Go 版本 <c>Application.EmitEventTo(name, data, targetWindowId)</c>：
+    /// 事件仅派发到目标窗口的前端（<c>wails.events.on</c> 订阅者），其他窗口不收到；
+    /// 后端本地订阅者（<see cref="Events"/>）不受定向限制，仍会收到事件
+    /// （可在回调中通过 <see cref="Wails.Net.Application.Events.CustomEvent.TargetWindowID"/> 判断是否定向派发）。
+    /// </para>
+    /// </summary>
+    /// <param name="targetWindowId">目标窗口 ID。</param>
+    /// <param name="eventName">事件名称。</param>
+    /// <param name="data">事件数据，可为 null。</param>
+    public void EmitTo(uint targetWindowId, string eventName, object? data = null)
+    {
+        _events.EmitTo(targetWindowId, eventName, data);
+    }
+
+    /// <summary>
+    /// 等待平台启动就绪（OPT-RUNTIME-002，2026-08-15 新增）。
+    /// <para>
+    /// 等待 <see cref="LifecycleState"/> 至少到达 <see cref="Hosting.ApplicationLifecycleState.PlatformStarted"/>
+    /// （<see cref="Run"/> 已完成服务/资源服务器/传输层启动，即将进入平台主循环）。
+    /// 供 <see cref="Hosting.DesktopHostedService.StartAsync"/>、测试与初始化逻辑等待明确就绪阶段，
+    /// 避免依赖 sleep 或误用 Host lifecycle 返回语义。
+    /// </para>
+    /// </summary>
+    /// <param name="timeout">等待超时；null 表示无限等待。默认 30 秒。</param>
+    /// <returns>就绪返回 true；超时返回 false；平台主循环异常会抛出该异常。</returns>
+    public async Task<bool> WaitUntilPlatformStartedAsync(TimeSpan? timeout = null)
+    {
+        timeout ??= TimeSpan.FromSeconds(30);
+
+        // 已就绪则立即返回
+        if (LifecycleState is Hosting.ApplicationLifecycleState.PlatformStarted or
+            Hosting.ApplicationLifecycleState.Running)
+        {
+            return true;
+        }
+
+        // 未运行的应用（Run 从未被调用）快速返回
+        if (!_isRunning && LifecycleState is Hosting.ApplicationLifecycleState.Created)
+        {
+            return false;
+        }
+
+        try
+        {
+            await _platformStartedTcs.Task.WaitAsync(timeout.Value);
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            _logger?.LogWarning("等待平台启动就绪超时（{Timeout}），继续启动流程", timeout.Value);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 标记平台启动失败（OPT-RUNTIME-002）。
+    /// 由 <see cref="Hosting.DesktopHostedService"/> 在 <see cref="Run"/> 抛出异常时调用，
+    /// 使 <see cref="WaitUntilPlatformStartedAsync"/> 的等待快速失败（而非等待超时）。
+    /// </summary>
+    /// <param name="exception">启动异常。</param>
+    internal void MarkPlatformStartFailed(Exception exception)
+    {
+        _platformStartedTcs.TrySetException(exception);
     }
 }

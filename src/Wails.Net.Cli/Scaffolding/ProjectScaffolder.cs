@@ -114,6 +114,21 @@ public sealed class ProjectScaffolder
                 "wails.json",
                 GenerateWailsJsonContent(projectName, template)));
 
+            // appsettings.json（OPT-SEC-003：默认 Strict 权限模式 + CSP）
+            // 模板项目开箱即用最小权限姿态，与 Tauri v2 模板默认行为对齐。
+            createdFiles.Add(WriteFile(
+                projectDir,
+                "appsettings.json",
+                GenerateAppSettingsContent(projectName)));
+
+            // capabilities 目录（OPT-SEC-003：默认能力声明示例）
+            var capabilitiesDir = Path.Combine(projectDir, "capabilities");
+            Directory.CreateDirectory(capabilitiesDir);
+            createdFiles.Add(WriteFile(
+                capabilitiesDir,
+                "default.json",
+                GenerateDefaultCapabilityContent(projectName)));
+
             // .gitignore（忽略前端产物与依赖，保留 pnpm-lock.yaml）
             createdFiles.Add(WriteFile(
                 projectDir,
@@ -214,6 +229,15 @@ public sealed class ProjectScaffolder
             <PackageReference Include="Wails.Net.Application.Windows" Version="*" />
           </ItemGroup>
 
+          <ItemGroup>
+            <None Update="appsettings.json">
+              <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            </None>
+            <None Update="capabilities\**\*">
+              <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            </None>
+          </ItemGroup>
+
         </Project>
         """;
 
@@ -300,6 +324,64 @@ public sealed class ProjectScaffolder
         # 说明：pnpm-lock.yaml 应提交，保证依赖可复现
         """;
 
+    /// <summary>
+    /// 生成 appsettings.json（OPT-SEC-003 安全模板落地）。
+    /// <para>
+    /// 默认启用 Strict 权限模式（最小权限姿态，对齐 Tauri v2 模板）：
+    /// <list type="bullet">
+    /// <item><c>Wails:Permissions:Mode=Strict</c>：未授权命令一律拒绝。</item>
+    /// <item><c>Wails:Permissions:CapabilitiesDirectory=capabilities</c>：启动时自动加载能力文件。</item>
+    /// <item><c>Wails:App:Security:Csp</c>：默认内容安全策略（<c>default-src 'self'</c>）。
+    /// Debug 模式下 HMR 需要 <c>ws://localhost:*</c>，已一并放行；生产环境可收紧。</item>
+    /// </list>
+    /// </para>
+    /// </summary>
+    /// <param name="projectName">项目名称。</param>
+    /// <returns>appsettings.json 内容。</returns>
+    private static string GenerateAppSettingsContent(string projectName) => $$"""
+        {
+          "Logging": {
+            "LogLevel": {
+              "Default": "Information",
+              "Microsoft": "Warning",
+              "Microsoft.Hosting.Lifetime": "Information"
+            }
+          },
+          "Wails": {
+            "ApplicationName": "{{projectName}}",
+            "Permissions": {
+              "Mode": "Strict",
+              "Enabled": true,
+              "DenyByDefault": true,
+              "CapabilitiesDirectory": "capabilities"
+            },
+            "App": {
+              "Security": {
+                "Csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' ws://localhost:* http://localhost:*; frame-src 'none'; object-src 'none'"
+              }
+            }
+          }
+        }
+        """;
+
+    /// <summary>
+    /// 生成默认能力声明文件（OPT-SEC-003 安全模板落地）。
+    /// 新项目开箱即带 capabilities 目录，作为 Tauri v2 风格权限治理的参考实现。
+    /// </summary>
+    /// <param name="projectName">项目名称。</param>
+    /// <returns>capabilities/default.json 内容。</returns>
+    private static string GenerateDefaultCapabilityContent(string projectName) => $$"""
+        {
+          "identifier": "default",
+          "description": "主窗口最小权限集（{{projectName}} 模板默认，可自行增删）",
+          "windows": ["main"],
+          "platforms": ["windows"],
+          "permissions": [
+            "window:default"
+          ]
+        }
+        """;
+
     private static string GenerateReadmeContent(string projectName, string template) => $$"""
         # {{projectName}}
 
@@ -342,8 +424,20 @@ public sealed class ProjectScaffolder
         {{projectName}}/
         ├─ src/{{projectName}}/    .NET 后端（Program.cs、Bindings.cs）
         ├─ frontend/            Vite 前端（index.html、src/、vite.config.ts）
+        ├─ capabilities/        能力声明文件（capabilities/default.json）
+        ├─ appsettings.json     Host 配置（权限 Strict 模式 + CSP）
         └─ wails.json           Wails.Net 项目配置
         ```
+
+        ## 权限模型（OPT-SEC-003）
+
+        模板默认启用 **Strict 权限模式**（`Wails:Permissions:Mode=Strict`，对应 Tauri v2 最小权限姿态）：
+
+        - 未授权命令一律拒绝，前端调用会收到权限错误。
+        - 授权通过 `capabilities/default.json` 声明（如 `window:default` 只读权限集）。
+        - 需要更多能力时，按插件文档在 capabilities 文件中追加权限标识，或参考
+          `docs/architecture/security-and-permissions.md` 与迁移指南。
+        - 若需临时回退宽松模式，将 `Wails:Permissions:Mode` 改为 `Compatibility`（仅建议开发期）。
         """;
 
     private static string GeneratePackageJsonContent(string projectName, string template)

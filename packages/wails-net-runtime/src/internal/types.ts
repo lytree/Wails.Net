@@ -59,6 +59,8 @@ export interface WailsEventPayload<D = unknown> {
   data: D;
   /** 发送方窗口 ID（可选）。 */
   senderWindowId?: number;
+  /** 定向目标窗口 ID（OPT-EVENT-002，可选；缺省 = 广播）。 */
+  targetWindowId?: number;
 }
 
 /** 运行时配置标志。C# 端 `RuntimeGenerator` 会注入 `window._wails`，未注入时使用默认值。 */

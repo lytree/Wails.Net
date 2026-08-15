@@ -132,8 +132,12 @@ public class EventProcessor
 
     /// <summary>
     /// 订阅事件，每次发布都会触发回调。
+    /// <para>
+    /// OPT-EVENT-001：支持通配符模式订阅（<c>*</c> 后缀前缀匹配，与 Wails v3 语义一致），
+    /// 例如 <c>On("wails:window:*", cb)</c> 可收到所有窗口相关事件。
+    /// </para>
     /// </summary>
-    /// <param name="name">事件名称。</param>
+    /// <param name="name">事件名称或通配符模式（如 <c>wails:window:*</c>）。</param>
     /// <param name="callback">事件回调。</param>
     /// <returns>监听器 ID，可用于取消订阅。</returns>
     public int On(string name, Action<CustomEvent> callback)
@@ -143,13 +147,18 @@ public class EventProcessor
 
     /// <summary>
     /// 订阅事件，最多触发指定次数后自动取消。
+    /// <para>
+    /// OPT-EVENT-001：支持通配符模式订阅（<c>*</c> 后缀前缀匹配）。
+    /// </para>
     /// </summary>
-    /// <param name="name">事件名称。</param>
+    /// <param name="name">事件名称或通配符模式（如 <c>wails:window:*</c>）。</param>
     /// <param name="callback">事件回调。</param>
     /// <param name="maxCalls">最大触发次数，-1 表示无限制。</param>
     /// <returns>监听器 ID，可用于取消订阅。</returns>
     public int OnMultiple(string name, Action<CustomEvent> callback, int maxCalls)
     {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+
         var id = Interlocked.Increment(ref _nextListenerId);
         var listener = new EventListener(id, name, callback, maxCalls);
 
@@ -167,8 +176,11 @@ public class EventProcessor
 
     /// <summary>
     /// 订阅事件一次，触发后自动取消。
+    /// <para>
+    /// OPT-EVENT-001：支持通配符模式订阅（<c>*</c> 后缀前缀匹配）。
+    /// </para>
     /// </summary>
-    /// <param name="name">事件名称。</param>
+    /// <param name="name">事件名称或通配符模式（如 <c>wails:window:*</c>）。</param>
     /// <param name="callback">事件回调。</param>
     /// <returns>监听器 ID，可用于取消订阅。</returns>
     public int Once(string name, Action<CustomEvent> callback)
@@ -177,15 +189,66 @@ public class EventProcessor
     }
 
     /// <summary>
-    /// 发布事件到所有订阅者。
+    /// 判断事件名是否为通配符模式（以 <c>*</c> 结尾，OPT-EVENT-001）。
+    /// 匹配规则：事件名以模式去除尾部 <c>*</c> 后的前缀开头。
+    /// </summary>
+    /// <param name="name">订阅时使用的名称。</param>
+    /// <returns>是通配符模式返回 true。</returns>
+    public static bool IsWildcardPattern(string name)
+        => !string.IsNullOrEmpty(name) && name[^1] == '*';
+
+    /// <summary>
+    /// 判断事件名是否匹配指定订阅模式（精确匹配或通配符前缀匹配）。
+    /// </summary>
+    /// <param name="eventName">实际发布的事件名。</param>
+    /// <param name="pattern">订阅时使用的名称（可为通配符模式）。</param>
+    /// <returns>匹配返回 true。</returns>
+    public static bool MatchesPattern(string eventName, string pattern)
+    {
+        if (string.Equals(eventName, pattern, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return IsWildcardPattern(pattern) &&
+               eventName.StartsWith(pattern[..^1], StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 发布事件到所有订阅者（广播）。
     /// </summary>
     /// <param name="name">事件名称。</param>
     /// <param name="data">事件数据。</param>
     /// <param name="senderWindowID">发送窗口 ID，可为 null。</param>
     public void Emit(string name, object? data = null, uint? senderWindowID = null)
     {
-        var evt = new CustomEvent(name, data, senderWindowID);
+        EmitCore(new CustomEvent(name, data, senderWindowID));
+    }
 
+    /// <summary>
+    /// 发布定向事件到指定窗口（OPT-EVENT-002，2026-08-15 新增）。
+    /// <para>
+    /// 与 <see cref="Emit(string, object?, uint?)"/> 的区别：事件仅派发到
+    /// <paramref name="targetWindowID"/> 对应的窗口前端，其他窗口不收到；
+    /// 本地订阅者（后端 <see cref="On(string, Action{CustomEvent})"/>）不受定向限制，
+    /// 仍会收到事件（可在回调中通过 <see cref="CustomEvent.TargetWindowID"/> 判断）。
+    /// </para>
+    /// </summary>
+    /// <param name="targetWindowID">目标窗口 ID。</param>
+    /// <param name="name">事件名称。</param>
+    /// <param name="data">事件数据。</param>
+    /// <param name="senderWindowID">发送窗口 ID，可为 null。</param>
+    public void EmitTo(uint targetWindowID, string name, object? data = null, uint? senderWindowID = null)
+    {
+        EmitCore(new CustomEvent(name, data, senderWindowID, targetWindowID));
+    }
+
+    /// <summary>
+    /// 核心事件派发逻辑：pre-emit 钩子 → 传输层广播（含定向过滤）→ 本地订阅者（精确 + 通配符）。
+    /// </summary>
+    /// <param name="evt">事件实例。</param>
+    private void EmitCore(CustomEvent evt)
+    {
         // 执行 pre-emit 钩子
         foreach (var hook in _hooks)
         {
@@ -202,6 +265,7 @@ public class EventProcessor
         }
 
         // 通知传输层监听器（广播到前端）。
+        // OPT-EVENT-002：定向事件将 targetWindowID 传递给传输层，由各传输层按目标过滤分发。
         // 对应 Wails v3 Go 版本 application.go 中的并行 goroutine 派发：
         //   go dispatchEventToListeners(event)
         //   go dispatchEventToWindows(event)
@@ -227,8 +291,8 @@ public class EventProcessor
                 try
                 {
                     // P1-2：将 senderWindowID 传递给传输层监听器，使前端可识别事件来源窗口。
-                    // 对应 Wails v3 Go 版本 CustomEvent.Sender 字段的端到端传递语义。
-                    listener.NotifyEvent(name, data, senderWindowID);
+                    // OPT-EVENT-002：定向事件透传 targetWindowID，传输层按目标过滤。
+                    listener.NotifyEvent(evt.Name, evt.Data, evt.SenderWindowID, evt.TargetWindowID);
                 }
                 catch
                 {
@@ -238,36 +302,64 @@ public class EventProcessor
             }
         }
 
-        // 通知本地订阅者
-        if (_listeners.TryGetValue(name, out var listeners))
+        // 通知本地订阅者：先精确匹配，再匹配通配符模式（OPT-EVENT-001）。
+        // 定向事件（TargetWindowID 非空）不影响本地订阅者——本地订阅者始终收到事件，
+        // 可在回调中通过 evt.TargetWindowID 判断事件是否为定向派发。
+        if (_listeners.TryGetValue(evt.Name, out var listeners))
         {
-            List<EventListener>? toRemove = null;
+            InvokeLocalListeners(evt, listeners);
+        }
 
-            lock (listeners)
+        // 通配符模式匹配：遍历所有以 * 结尾的模式键，前缀匹配当前事件名。
+        // 事件名数量通常较小（数十级），O(n) 遍历可接受；且 ConcurrentDictionary
+        // 的 Keys 枚举是快照安全的（读取操作并发安全）。
+        foreach (var pair in _listeners)
+        {
+            if (pair.Key == evt.Name || !IsWildcardPattern(pair.Key))
             {
-                foreach (var listener in listeners)
+                continue;
+            }
+
+            if (evt.Name.StartsWith(pair.Key[..^1], StringComparison.Ordinal))
+            {
+                InvokeLocalListeners(evt, pair.Value);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 调用一组本地监听器，处理过期监听器清理。
+    /// </summary>
+    /// <param name="evt">事件实例。</param>
+    /// <param name="listeners">监听器列表。</param>
+    private static void InvokeLocalListeners(CustomEvent evt, List<EventListener> listeners)
+    {
+        List<EventListener>? toRemove = null;
+
+        lock (listeners)
+        {
+            foreach (var listener in listeners)
+            {
+                if (evt.IsCancelled)
                 {
-                    if (evt.IsCancelled)
-                    {
-                        break;
-                    }
-
-                    listener.Invoke(evt);
-
-                    // 检查是否达到最大调用次数
-                    if (listener.IsExpired)
-                    {
-                        (toRemove ??= []).Add(listener);
-                    }
+                    break;
                 }
 
-                // 移除已过期的监听器
-                if (toRemove is not null)
+                listener.Invoke(evt);
+
+                // 检查是否达到最大调用次数
+                if (listener.IsExpired)
                 {
-                    foreach (var item in toRemove)
-                    {
-                        listeners.Remove(item);
-                    }
+                    (toRemove ??= []).Add(listener);
+                }
+            }
+
+            // 移除已过期的监听器
+            if (toRemove is not null)
+            {
+                foreach (var item in toRemove)
+                {
+                    listeners.Remove(item);
                 }
             }
         }
@@ -295,8 +387,12 @@ public class EventProcessor
 
     /// <summary>
     /// 按事件名取消所有订阅。
+    /// <para>
+    /// 传入精确事件名时移除该事件的订阅；传入通配符模式名（如 <c>wails:window:*</c>）时
+    /// 移除该模式的订阅（OPT-EVENT-001）。不会移除其他不相关的订阅。
+    /// </para>
     /// </summary>
-    /// <param name="name">事件名称。</param>
+    /// <param name="name">事件名称或通配符模式。</param>
     public void Off(string name)
     {
         _listeners.TryRemove(name, out _);
@@ -491,12 +587,30 @@ public class EventProcessor
 
     /// <summary>
     /// 获取指定事件的订阅者数量。
+    /// <para>
+    /// OPT-EVENT-001：包含精确订阅与通配符模式（前缀匹配）的订阅者总数。
+    /// </para>
     /// </summary>
     /// <param name="name">事件名称。</param>
     /// <returns>订阅者数量。</returns>
     public int ListenerCount(string name)
     {
-        return _listeners.TryGetValue(name, out var list) ? list.Count : 0;
+        var count = _listeners.TryGetValue(name, out var list) ? list.Count : 0;
+
+        foreach (var pair in _listeners)
+        {
+            if (pair.Key == name || !IsWildcardPattern(pair.Key))
+            {
+                continue;
+            }
+
+            if (name.StartsWith(pair.Key[..^1], StringComparison.Ordinal))
+            {
+                count += pair.Value.Count;
+            }
+        }
+
+        return count;
     }
 
     /// <summary>

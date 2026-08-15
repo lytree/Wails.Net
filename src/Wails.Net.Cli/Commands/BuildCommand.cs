@@ -144,6 +144,28 @@ internal sealed class BuildCommand : CliCommandBase
             Info($"加载配置：{configPath}");
         }
 
+        // OPT-SEC-004：构建前置 capability 校验。
+        // 权限拼写错误 / 平台名错误在构建期暴露，而非运行时静默失败（对应 Tauri v2 构建期 ACL 校验）。
+        // 仅在校验失败时阻断构建；无 capabilities 目录仅输出提示（不阻断，兼容未启用权限的项目）。
+        var capabilityCheck = Wails.Net.Cli.Check.CapabilityChecker.CheckProject(projectPath.FullName);
+        if (!capabilityCheck.Success)
+        {
+            Error("capability 校验失败（wails-net check）：");
+            foreach (var error in capabilityCheck.Errors)
+            {
+                Error($"  - {error}");
+            }
+            return 5;
+        }
+        foreach (var warning in capabilityCheck.Warnings)
+        {
+            Warn($"[capability] {warning}");
+        }
+        if (capabilityCheck.FileCount > 0)
+        {
+            Info($"capability 校验通过：{capabilityCheck.FileCount} 个文件，{capabilityCheck.PermissionCount} 个权限标识");
+        }
+
         // 输出当前模式（参照 Tauri v2 / Wails v3 的 `tauri build` 行为）
         Info("================================================================");
         Info(" Wails.Net Release 模式（参照 Tauri v2 / Wails v3 的 build 命令）");

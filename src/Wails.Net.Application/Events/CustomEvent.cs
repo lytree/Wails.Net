@@ -24,6 +24,15 @@ public class CustomEvent
     public uint? SenderWindowID { get; }
 
     /// <summary>
+    /// 定向目标窗口 ID（OPT-EVENT-002，2026-08-15 新增）。
+    /// <para>
+    /// 非 null 表示跨窗口定向事件：仅派发到指定窗口的前端，其他窗口不收到。
+    /// null 表示广播到所有窗口（默认行为，与 Wails v3 Emit 语义一致）。
+    /// </para>
+    /// </summary>
+    public uint? TargetWindowID { get; }
+
+    /// <summary>
     /// 用于事件取消的 CancellationToken。
     /// </summary>
     public CancellationToken CancellationToken => _cts.Token;
@@ -39,11 +48,13 @@ public class CustomEvent
     /// <param name="name">事件名称。</param>
     /// <param name="data">事件数据。</param>
     /// <param name="senderWindowID">发送窗口 ID，可为 null。</param>
-    public CustomEvent(string name, object? data = null, uint? senderWindowID = null)
+    /// <param name="targetWindowID">定向目标窗口 ID（OPT-EVENT-002），可为 null（广播）。</param>
+    public CustomEvent(string name, object? data = null, uint? senderWindowID = null, uint? targetWindowID = null)
     {
         Name = name;
         Data = data;
         SenderWindowID = senderWindowID;
+        TargetWindowID = targetWindowID;
     }
 
     /// <summary>
@@ -64,7 +75,8 @@ public class CustomEvent
         {
             ["name"] = Name,
             ["data"] = Data,
-            ["senderWindowId"] = SenderWindowID
+            ["senderWindowId"] = SenderWindowID,
+            ["targetWindowId"] = TargetWindowID
         };
     }
 }

@@ -57,8 +57,10 @@ public class WebSocketBroadcaster
     /// <param name="senderWindowId">事件来源窗口 ID，可为 null（应用级事件）。
     /// 包含在前端载荷中使前端可识别事件发起方。
     /// 对应 Wails v3 Go 版本 CustomEvent.Sender 字段语义。</param>
+    /// <param name="targetWindowId">定向目标窗口 ID（OPT-EVENT-002）；null 表示广播。
+    /// Server 模式下 WS 客户端无窗口映射，事件仍广播，但载荷携带 targetWindowId 供前端识别。</param>
     /// <returns>表示广播操作的异步任务。</returns>
-    public async Task BroadcastEventAsync(string eventName, object? data, uint? senderWindowId = null)
+    public async Task BroadcastEventAsync(string eventName, object? data, uint? senderWindowId = null, uint? targetWindowId = null)
     {
         if (_clients.IsEmpty)
         {
@@ -70,7 +72,8 @@ public class WebSocketBroadcaster
             type = "event",
             name = eventName,
             data,
-            senderWindowId
+            senderWindowId,
+            targetWindowId
         };
 
         var json = JsonSerializer.Serialize(message, JsonOptions.DefaultSerializerOptions);
@@ -89,9 +92,10 @@ public class WebSocketBroadcaster
     /// <param name="eventName">事件名称。</param>
     /// <param name="data">事件数据。</param>
     /// <param name="senderWindowId">事件来源窗口 ID，可为 null（应用级事件）。</param>
-    public void BroadcastEvent(string eventName, object? data, uint? senderWindowId = null)
+    /// <param name="targetWindowId">定向目标窗口 ID（OPT-EVENT-002）；null 表示广播。</param>
+    public void BroadcastEvent(string eventName, object? data, uint? senderWindowId = null, uint? targetWindowId = null)
     {
-        _ = BroadcastEventAsync(eventName, data, senderWindowId);
+        _ = BroadcastEventAsync(eventName, data, senderWindowId, targetWindowId);
     }
 
     /// <summary>

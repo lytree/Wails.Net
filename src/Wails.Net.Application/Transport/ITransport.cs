@@ -46,7 +46,10 @@ public interface IWailsEventListener
     /// 对应 Wails v3 Go 版本 CustomEvent.Sender 字段语义：标识事件来源窗口，
     /// 传输层应将其包含在前端载荷中使前端可识别事件发起方。
     /// 默认 null 保持与既有调用方的兼容。</param>
-    void NotifyEvent(string eventName, object? data, uint? senderWindowId = null);
+    /// <param name="targetWindowId">定向目标窗口 ID（OPT-EVENT-002）。
+    /// 非 null 时事件仅派发到该窗口；null 表示广播到所有窗口。
+    /// 默认 null 保持与既有调用方的兼容。</param>
+    void NotifyEvent(string eventName, object? data, uint? senderWindowId = null, uint? targetWindowId = null);
 }
 
 /// <summary>

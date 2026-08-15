@@ -31,6 +31,7 @@ export const events = {
     once: (name, callback) => transport.once(name, callback),
     off: (name, callback) => transport.off(name, callback),
     emit: (name, data) => transport.emit(name, data),
+    emitTo: (targetWindowId, name, data) => transport.emit(name, data, targetWindowId),
 };
 /** 绑定子系统实现。 */
 export const bindings = {

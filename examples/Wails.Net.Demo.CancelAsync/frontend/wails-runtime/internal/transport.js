@@ -97,6 +97,13 @@ export class Transport {
             writable: true,
             value: void 0
         });
+        /** IPC handshake token（OPT-IPC-002）：HTTP 请求头 / WS 查询参数回传。 */
+        Object.defineProperty(this, "ipcToken", {
+            enumerable: true,
+            configurable: true,
+            writable: true,
+            value: ""
+        });
     }
     /** 初始化通道检测与下行监听。幂等。 */
     init() {
@@ -107,6 +114,7 @@ export class Transport {
         this.serverMode = flags?.isServerMode === true || !!flags?.webSocketUrl;
         this.messageUrl = (flags?.assetServerUrl ?? "") + "/wails/message";
         this.wsUrl = flags?.webSocketUrl ?? DEFAULT_WS_URL;
+        this.ipcToken = flags?.ipcToken ?? "";
         if (typeof globalThis === "undefined" || typeof globalThis.window === "undefined") {
             // 非浏览器环境（如测试）：跳过通道初始化。
             return;
@@ -177,16 +185,19 @@ export class Transport {
         w.__wailsNative = { onMessage: (json) => this.onNativeMessage(json) };
         // 桌面模式事件下行入口。
         // 后端 EventIPCTransport.DispatchWailsEvent 不走 postMessage 回传，而是对每个窗口执行
-        //   ExecuteScriptAsync("window._wailsEmitEvent && window._wailsEmitEvent(name, data, senderWindowId)")
+        //   ExecuteScriptAsync("window._wailsEmitEvent && window._wailsEmitEvent(name, data, senderWindowId, targetWindowId)")
         // 因为后端带 `&&` 短路保护，若此全局缺失，事件会被静默丢弃且不报错。
         // 必须挂载，否则桌面模式下 wails.events.on(...) 收不到任何后端事件。
-        w._wailsEmitEvent = (name, data, senderWindowId) => this._emitEvent(name, data, senderWindowId ?? null);
+        // OPT-EVENT-002：第四参数 targetWindowId 标识定向事件（null = 广播）。
+        w._wailsEmitEvent = (name, data, senderWindowId, targetWindowId) => this._emitEvent(name, data, senderWindowId ?? null, targetWindowId ?? null);
     }
     connectWs() {
         if (typeof WebSocket === "undefined")
             return;
         try {
-            this.ws = new WebSocket(this.wsUrl);
+            // OPT-IPC-002：携带 handshake token（查询参数，WebSocket 无法自定义请求头）
+            const tokenQuery = this.ipcToken ? `?token=${encodeURIComponent(this.ipcToken)}` : "";
+            this.ws = new WebSocket(this.wsUrl + tokenQuery);
         }
         catch {
             return;
@@ -195,7 +206,7 @@ export class Transport {
             try {
                 const data = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
                 if (data && data.type === "event" && typeof data.name === "string") {
-                    this._emitEvent(data.name, data.data);
+                    this._emitEvent(data.name, data.data, data.senderWindowId ?? null, data.targetWindowId ?? null);
                     return;
                 }
                 this.handleResponse(data);
@@ -256,6 +267,18 @@ export class Transport {
         }
     }
     // ----- 事件订阅 -----
+    /** 判断事件名是否为通配符模式（`*` 后缀，OPT-EVENT-001）。 */
+    static isWildcardPattern(name) {
+        return name.length > 0 && name.endsWith("*");
+    }
+    /** 判断事件名是否匹配订阅模式（精确或通配符前缀匹配，OPT-EVENT-001）。 */
+    static matchesPattern(eventName, pattern) {
+        if (eventName === pattern)
+            return true;
+        if (!Transport.isWildcardPattern(pattern))
+            return false;
+        return eventName.startsWith(pattern.slice(0, -1));
+    }
     on(name, cb) {
         // 必须初始化：纯订阅型前端（只订阅、从不主动调用后端）否则永远不会挂载
         // window._wailsEmitEvent，Server 模式下也不会建立 WebSocket，导致事件全部丢失。
@@ -269,9 +292,9 @@ export class Transport {
         return () => this.off(name, cb);
     }
     once(name, cb) {
-        const off = this.on(name, (data, senderWindowId) => {
+        const off = this.on(name, (data, senderWindowId, targetWindowId) => {
             off();
-            cb(data, senderWindowId);
+            cb(data, senderWindowId, targetWindowId);
         });
         return off;
     }
@@ -279,18 +302,28 @@ export class Transport {
         this.eventCallbacks.get(name)?.delete(cb);
     }
     /** 向后端发送事件（fire-and-forget，event.emit 永不返回响应）。 */
-    emit(name, data) {
-        const payload = { name, data };
+    emit(name, data, targetWindowId) {
+        const payload = targetWindowId != null
+            ? { name, data, targetWindowId }
+            : { name, data };
         this.send("event.emit", payload);
     }
-    _emitEvent(name, data, senderWindowId = null) {
-        const set = this.eventCallbacks.get(name);
-        if (!set)
-            return;
+    /**
+     * 派发下行事件到本地订阅者（OPT-EVENT-001/002）。
+     * 支持通配符模式匹配（`*` 后缀前缀匹配）与定向事件标识透传。
+     */
+    _emitEvent(name, data, senderWindowId = null, targetWindowId = null) {
+        const callbacks = [];
+        for (const [pattern, set] of this.eventCallbacks) {
+            if (!Transport.matchesPattern(name, pattern))
+                continue;
+            callbacks.push(...set);
+        }
         // 复制一份再遍历：回调内部调用 off()/once() 会改动原 Set，直接遍历会漏派发。
-        for (const cb of [...set]) {
+        // 同一回调不会重复触发：一个回调只属于一个订阅模式，此处按订阅集合聚合。
+        for (const cb of callbacks) {
             try {
-                cb(data, senderWindowId);
+                cb(data, senderWindowId, targetWindowId);
             }
             catch (err) {
                 // 单个订阅者异常不应影响其他订阅者
@@ -320,7 +353,7 @@ export class Transport {
         if (byteLen <= CHUNK_THRESHOLD) {
             const resp = await fetch(this.messageUrl, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: this.buildHeaders(),
                 body,
             });
             await this.handleHttpResponse(resp);
@@ -333,7 +366,7 @@ export class Transport {
         for (let i = 0; i < total; i++) {
             const slice = bytes.subarray(i * CHUNK_SIZE, Math.min((i + 1) * CHUNK_SIZE, bytes.length));
             const headers = {
-                "Content-Type": "application/json",
+                ...this.buildHeaders(),
                 "x-wails-chunk-id": chunkId,
                 "x-wails-chunk-index": String(i),
                 "x-wails-chunk-total": String(total),
@@ -352,11 +385,22 @@ export class Transport {
             await this.handleHttpResponse(resp);
         }
     }
+    /**
+     * 构造 HTTP 请求头（OPT-IPC-002）。
+     * 当注入 ipcToken 时附带 `x-wails-token`，供后端校验 handshake token。
+     */
+    buildHeaders() {
+        const headers = { "Content-Type": "application/json" };
+        if (this.ipcToken) {
+            headers["x-wails-token"] = this.ipcToken;
+        }
+        return headers;
+    }
     async sendCancelHttp(msg) {
         try {
             await fetch(this.messageUrl, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: this.buildHeaders(),
                 body: JSON.stringify(msg),
             });
         }
@@ -380,7 +424,8 @@ export class Transport {
         try {
             const data = JSON.parse(json);
             if (data && data.type === "event" && typeof data.name === "string") {
-                this._emitEvent(data.name, data.data);
+                const evt = data;
+                this._emitEvent(evt.name, evt.data, evt.senderWindowId ?? null, evt.targetWindowId ?? null);
                 return;
             }
             this.handleResponse(data);

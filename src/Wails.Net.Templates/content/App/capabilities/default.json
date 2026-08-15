@@ -1,0 +1,20 @@
+{
+  // Wails.Net 能力声明文件（capability）示例（Tauri v2 风格）。
+  // 应用启动时自动扫描 capabilities/ 目录并加载，无需其他配置。
+  // 说明：
+  //   - identifier：能力标识符，应用内唯一。
+  //   - windows：应用此能力的窗口名称列表；空数组表示所有窗口。
+  //   - platforms：平台过滤（OPT-SEC-002）；空数组表示所有平台生效。
+  //     取值：windows / linux / android / macos / server。
+  //   - permissions：权限标识列表。支持命名权限集（如 "window:default"）
+  //     与细粒度权限（如 "window:allow-readonly"）；"!" 前缀表示显式拒绝。
+  // 本项目模板默认仅启用窗口插件的只读查询权限集；需要更多能力时，
+  // 请按插件文档追加对应权限标识（如 "window:allow-dangerous"）。
+  "identifier": "default",
+  "description": "主窗口最小权限集（模板默认，可自行增删）",
+  "windows": ["main"],
+  "platforms": ["windows"],
+  "permissions": [
+    "window:default"
+  ]
+}

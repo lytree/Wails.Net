@@ -2,7 +2,7 @@
 
 > 本文档面向后续架构演进和实施排期，基于当前仓库静态代码结构梳理可优化内容，并将优化项拆解为可落地的修改任务。
 >
-> - 分析日期：2026-08-10
+> - 分析日期：2026-08-10（首轮）；2026-08-15（第二轮：落地进度基线 + 新增 OPT-EVENT/OPT-SEC-004~006/OPT-RUNTIME-003/OPT-CLEANUP-001）；2026-08-15（第三轮：OPT-SEC-003/004/006、OPT-EVENT-001/002、OPT-RUNTIME-002 核心、OPT-IPC-003 核心、OPT-CLEANUP-001 大部分已落地）
 > - 适用范围：`src/`、`tests/`、`docs/`、`examples/` 中与 Wails.Net 运行时、宿主、插件、安全、IPC 和测试治理相关的代码与文档
 > - 融合策略：
 >   - **Host/DI/Config/Logging** → 学 ASP.NET Core（Microsoft.Extensions.* 全栈）
@@ -110,6 +110,59 @@ Wails.Net 当前已经具备完整的 .NET Host 宿主、平台抽象、窗口�
 | P2 | 瘦身 `Application` 聚合根 | 提升可测试性和边界清晰度 | `Application`、Managers |
 | P2 | 生成插件命令权限清单 | 降低后端/前端/文档漂移 | `SourceGenerators`、插件 |
 | P2 | 补齐架构级测试 | 保障禁反射和 IPC 全链路 | `tests/`、前端 runtime |
+| P1 | 事件通配符与跨窗口定向事件 | 对齐 Wails v3 事件模型 | `Events`、前端 runtime |
+| P1 | capability 构建期校验 | 权限配置错误前置到构建期 | `Wails.Net.Cli`、`Security` |
+| P2 | asset protocol scope | 前端受控访问本地文件（对齐 Tauri v2） | `AssetServer`、平台抽象、前端 runtime |
+| P2 | Channels 对称加密 | 对齐 Wails v3 channel 加密 | `Channels`、前端 runtime |
+| P2 | 代码卫生清理 | 消除死选项与空壳包 | `Windows`、`Transport`、npm 包 |
+
+### 3.1 进度基线（2026-08-15 核实）
+
+P0 批次已随提交 `6ad3d2d`（2026-08-10）落地，状态如下：
+
+**已完成：**
+
+- ✅ OPT-DOC-001 刷新融合策略文档
+- ✅ OPT-CONFIG-001 收敛 `DesktopHostOptions` 配置入口
+- ✅ OPT-CONFIG-002 Options 启动期校验（3 个 validator + `ValidateOnStart`）
+- ✅ OPT-IPC-001 新增 `IpcOptions`
+- ✅ OPT-IPC-002 IPC handshake token（HTTP `x-wails-token` 头 / WS `?token=`）
+- ✅ OPT-SEC-001 权限 strict 模式（`PermissionMode`）
+- ✅ OPT-SEC-002 `Capability.platforms`（原 P1 项，已提前完成）
+
+**未完成（本轮代码核实确认）：**
+
+- ❌ OPT-SEC-003 安全模板与迁移指南：模板 `appsettings.json`（`src/Wails.Net.Templates/content/App/appsettings.json`）仍无 `Permissions` 节点，新项目默认落到 `PermissionOptions.cs` 的 `Compatibility` 模式；模板与 `examples/Wails.Net.Demo` 均无 capabilities 目录示例；`ProjectScaffolder.cs` 不生成 appsettings.json。**机制已建好，入口未接通，是当前性价比最高的遗留项。**
+- ❌ OPT-IPC-003 / OPT-RUNTIME-001 / OPT-RUNTIME-002 / OPT-PLUGIN-001~003 / OPT-TEST-001~003：全部未动，且第二轮分析核实出更具体的现状细节（见 §5.2、§5.3）。
+
+**第二轮分析新增发现（详见 §5.5、§5.6、§6.4~§6.6）：**
+
+- 事件总线无通配符订阅、无跨窗口定向事件（对标 Wails v3 缺口）。
+- 无 asset protocol scope / `convertFileSrc`（对标 Tauri v2 缺口）。
+- CSP 三层机制完整但纯 opt-in，模板不配置则不生效。
+- capability 文件无构建期 CLI 校验。
+- `HttpTransport` 生产路径无人装配（仅测试实例化）；`EnableDragAndDrop` 疑似死选项；`wails-net-plugin-log` TS 包为空壳。
+
+### 3.2 进度基线（2026-08-15 第二轮落地）
+
+第二轮落地批次已随本日提交完成，状态如下：
+
+**本轮已完成：**
+
+- ✅ OPT-SEC-003 安全模板与迁移指南（§4.6 全部清单）：模板/脚手架/Demo 默认 Strict + capabilities 示例 + CSP；`ProjectScaffolder` 生成 appsettings.json 与 capabilities 目录；新增 `docs/architecture/permission-migration-guide.md`。
+- ✅ OPT-SEC-004 capability 构建期校验：`wails-net check` 命令 + `build` 前置校验（JSON schema、平台名、权限标识格式与存在性）。
+- ✅ OPT-SEC-006 CSP 模板默认启用（并入 OPT-SEC-003 执行）。
+- ✅ OPT-EVENT-001 事件通配符订阅：后端 `EventProcessor`（`*` 后缀前缀匹配）+ 前端 `transport._emitEvent`。
+- ✅ OPT-EVENT-002 跨窗口定向事件：`CustomEvent.TargetWindowID`、`EventProcessor.EmitTo`、`Application.EmitTo`、`WebviewWindow.DispatchWailsEvent`、前端 `events.emitTo`，传输层（NativeIpc/EventIPC/WebSocket）按目标过滤。
+- ✅ OPT-RUNTIME-002（核心）：`ApplicationLifecycleState` + `PlatformStarted` 就绪信号 + `WaitUntilPlatformStartedAsync`；`DesktopHostedService.StartAsync` 等待就绪（移除从未 await 的 `_startedTcs`）；Linux `WindowRuntimeReady` 补齐。
+- ✅ OPT-IPC-003（核心）：`IIpcTransportStrategy` + `DefaultIpcTransportStrategy` + `IpcTransportContext`，Server 模式装配改走统一策略。
+- ✅ OPT-CLEANUP-001（大部分）：`EnableDragAndDrop` 死选项移除、`wails-net-plugin-log` TS 补齐、`_startedTcs` 语义修正、`HttpTransport` 生产装配决策记录、`Routes/` 空目录处置记录。
+
+**本轮部分完成 / 遗留（需后续批次）：**
+
+- ⚠️ OPT-RUNTIME-002 剩余：Android `WindowRuntimeReady` 派发（Android 无页面级 runtime 注入点，需在页面加载完成回调补派发）。
+- ⚠️ OPT-IPC-003 剩余：平台窗口（Win32/Linux/macOS）fallback 链集中化；`HttpTransport` 接入生产 fallback 链需同步扩展前端 runtime flags（注入 HTTP 端点 URL）。
+- ❌ OPT-RUNTIME-001 `Application` 职责拆分、OPT-PLUGIN-001~003 插件资产/清单、OPT-SEC-005 asset protocol scope、OPT-RUNTIME-003 Channels 对称加密、OPT-TEST-001~003 测试补齐：未动，列入后续批次。
 
 ---
 
@@ -348,6 +401,34 @@ public enum PermissionMode
 
 ---
 
+### 4.6 安全模板落地清单（OPT-SEC-003 遗留项，2026-08-15 核实）
+
+#### 现状
+
+Strict 模式、`Capability.platforms`、`IpcOptions` 等**机制**已随 P0 批次落地，但**入口**没有接通：
+
+1. 模板 `src/Wails.Net.Templates/content/App/appsettings.json` 全文仅 9 行，只有 `Logging` 与 `Wails:ApplicationName`，无 `Permissions` 节点——新项目默认落到 `PermissionOptions.cs:27` 的 `PermissionMode.Compatibility`（宽松放行）。
+2. 模板与 `examples/Wails.Net.Demo` 均无 `capabilities` 目录与示例文件（`CapabilitiesDirectory` 默认值 `"capabilities"` 存在，但用户看不到样例）。
+3. CLI 脚手架 `ProjectScaffolder.cs:86-155` 生成 slnx/csproj/Program.cs/Bindings.cs/wails.json 等，**不生成 appsettings.json**。
+4. CSP 三层机制（全局/per-window/nonce，`DesktopApplicationBuilder.cs:240-246`、`AssetServer.cs:104-260`）完整但纯 opt-in：模板不配置 `Wails:App:Security:Csp` 则不发送 CSP 头，与 Tauri v2 模板默认携带 CSP 的姿态有差距。
+
+#### 修改清单
+
+1. 模板 `appsettings.json` 增加 `Wails:Permissions` 节点，默认 `Mode: "Strict"`，并附 capabilities 目录约定。
+2. 模板携带 `capabilities/default.json` 示例（包含窗口、平台、最小权限集示例，如 `fs:default`）。
+3. `ProjectScaffolder` 生成 appsettings.json 与 capabilities 目录。
+4. 模板默认启用 CSP（至少 `default-src 'self'; script-src 'self'; frame-src 'none'`），并在文档中说明放开项的迁移指引。
+5. `examples/Wails.Net.Demo` 同步更新为 Strict + capabilities 示例，作为参考实现。
+6. 编写迁移指南文档：Compatibility → Strict 的配置差异、常见拒绝日志解读、capability 文件编写指引。
+
+#### 验收标准
+
+- `wails-net new` 生成的项目开箱即 Strict + capabilities 示例 + CSP。
+- 示例项目在 Strict 模式下可完整运行（含已授权插件命令）。
+- 迁移指南覆盖全部兼容字段与权限行为差异。
+
+---
+
 ## 5. P1 优化项：下一轮架构增强
 
 ### 5.1 实现 `Capability.platforms`
@@ -393,6 +474,17 @@ public List<string> Platforms { get; set; } = new();
 
 Native IPC、HTTP fallback、WebSocket fallback、AssetServer transport、EventIPC fallback 的选择逻辑分散在不同类型和平台实现中。能力丰富但治理复杂。
 
+2026-08-15 核实的具体分布：
+
+- **前端**：`packages/wails-net-runtime/src/internal/transport.ts` 三态策略（WS → 原生 postMessage ≤512KB → HTTP 分块）。
+- **Windows**：三级链分散在 `Win32WebviewWindow.cs:749-910`（`OnWebMessageReceived` 消息分流 + `OnWebResourceRequested` 的 `POST /wails/*` → IPC → AssetServer → SPA 回退），是唯一注册 `NativeIpcTransport` 的平台（`WindowsPlatformApp.cs:497-501`）。
+- **Linux**：`LinuxWebviewWindow.cs:409-529` 独立实现 `wails://` scheme + IPC + 资源 + SPA 回退，**无原生 postMessage 通道、无 NativeIpcTransport**。
+- **Android**：`WailsWebMessageListener.cs:43-67` 走 JS 同步桥，直接 `HandleMessageFromFrontend`。
+- **macOS**：`MacOSWebviewWindow.cs:1267-1362` 又一套 scheme + IPC 分流。
+- **Server 模式**：`Hosting/ServerModeTransportExtensions.cs:52-118` 是唯一集中装配点，但仅覆盖 Server 模式。
+- **事件下行**：`Application.cs:336-359` 硬编码"永远追加 EventIPCTransport 兜底 + NativeIpcTransport 抢占"。
+- ⚠️ **`HttpTransport.cs` 生产路径无人装配**：全库仅测试（`tests/.../IpcTransportTokenValidationTests.cs`）实例化过它。token 校验逻辑已实现但实际未接通，属死代码风险，落地本项时需一并决策：接入生产 fallback 链或显式移除。
+
 #### 修改建议
 
 新增：
@@ -437,6 +529,13 @@ public interface IIpcTransportStrategy
 
 `IHostedService.StartAsync` 的成功返回与 UI 主循环、首窗口创建、前端 runtime 注入、IPC 可用并不完全等价。建议显式建模多个 ready 阶段，避免调用方误用 Host lifecycle。
 
+2026-08-15 核实的问题比原判断更严重：
+
+- `DesktopHostedService.StartAsync`（`DesktopHostedService.cs:41-88`）启动 STA 线程后**立即返回 `Task.CompletedTask`，不等待任何就绪信号**。
+- `_startedTcs`（`:17`）在 `Run()` **返回或抛异常时**才 SetResult/SetException——它是"退出信号"而非"就绪信号"，且**从未被 await**，语义完全错位。
+- 前端 runtime 注入就绪仅有窗口级事件 `WindowRuntimeReady`，且**只有 Windows（`Win32WebviewWindow.cs:1115-1144`）与 macOS（`MacOSWebviewWindow.cs:1236-1252`）发出，Linux/Android 注入 runtime 但不派发该事件**。
+- IPC ready（`Application.Run` 中 `Application.cs:1030-1038` 同步启动 transport 与 NativeIpcTransport）与首窗口创建（`:846-878`）均无对外状态或事件。
+
 #### 修改建议
 
 定义生命周期阶段：
@@ -462,6 +561,8 @@ public interface IIpcTransportStrategy
 - Host 启动失败能正确传播异常。
 - 测试能等待明确 ready 阶段，而不是 sleep。
 - 用户可订阅生命周期事件做初始化。
+- 四个平台（Windows/Linux/Android/macOS）均派发 `WindowRuntimeReady`。
+- `_startedTcs` 语义修正为就绪信号或移除，消除"从未被 await 的退出信号"。
 
 ---
 
@@ -515,6 +616,52 @@ AssetServer 路由建议：
 - AssetServer 能正确隔离不同插件资源路径。
 - 插件名冲突会在启动期失败。
 - 前端 runtime 能按 manifest 加载或暴露插件 API。
+
+---
+
+### 5.5 事件通配符订阅与跨窗口定向事件（OPT-EVENT-001/002，2026-08-15 新增）
+
+#### 现状
+
+对标 Wails v3 事件模型，`EventProcessor` 已具备 On/OnMultiple/Once/Off/Clear、pre-emit 钩子与双总线（自定义事件 + 应用事件），但存在两处能力缺口：
+
+1. **无通配符/前缀订阅**：`_listeners` 为 `ConcurrentDictionary<string, List<EventListener>>`（`EventProcessor.cs:24`），`Emit` 仅做精确 `TryGetValue(name)`（`:242`），不支持 `wails:window:*` 这类模式；前端 `transport.ts:281-293` 的 `_emitEvent` 同样精确匹配。Wails v3 事件名支持通配符。
+2. **无跨窗口定向事件**：`Emit` 只有 `senderWindowID`（来源标识，非目标）；`EventIPCTransport.NotifyEvent`（`:79-154`）对所有窗口循环 ExecJS，`NativeIpcTransport` 推送所有已注册窗口，Server 模式广播所有 WS 客户端。`WebviewWindow` 上无 `EmitEvent`/`DispatchWailsEvent` 定向入口。前端 `WailsEvents`（`runtime.ts:14-23`）无 `emitTo(windowId)`。
+
+#### 修改建议
+
+1. `EventProcessor` 订阅侧支持通配符模式（建议 `*` 后缀前缀匹配，与 Wails v3 语义一致），`Emit` 匹配时同时命中精确监听器与模式监听器。
+2. `CustomEvent` 增加 `TargetWindowID`（可空，空 = 广播），各传输层（EventIPC/NativeIpc/WebSocketBroadcaster）按目标过滤分发。
+3. `WebviewWindow` 增加 `DispatchWailsEvent` API；前端 runtime `events` 增加 `emitTo(target, name, data)`。
+4. 定向事件与权限系统联动：目标窗口必须在 capability 授权范围内（可先做日志 warning，后续收紧）。
+
+#### 验收标准
+
+- `On("wails:window:*")` 能收到所有窗口事件；通配符订阅可 `Off`。
+- 定向事件只投递到目标窗口，其他窗口 JS 不收到。
+- 前端 `emitTo` 端到端可用（至少 Windows + Server 模式）。
+- 现有精确订阅行为与测试全部保持不变。
+
+---
+
+### 5.6 capability 构建期校验（OPT-SEC-004，2026-08-15 新增）
+
+#### 现状
+
+capability 文件仅启动期加载（`CapabilityFileLoader.cs:36-69` 目录扫描，`DesktopApplicationBuilder.cs:357-358` 一次性加载），无热重载；CLI（`src/Wails.Net.Cli`）对 capabilities **零感知**：平台名错误只给运行时 warning（`CapabilityFileLoader.cs:194-211`），权限标识符拼写错误要到运行时静默不生效。Tauri v2 在构建期即校验 ACL/capability 并报错。
+
+#### 修改建议
+
+1. CLI 新增 `wails-net check`（或并入 `build` 前置步骤）：扫描 capabilities 目录，校验 JSON schema、平台名（复用 `WailsPlatform` 常量）、权限标识符是否存在于已知插件的 `RegisterPermissionSet` 集合。
+2. 已知权限集合的来源：短期由各插件包随包发布权限清单 JSON（与 §6.2 OPT-PLUGIN-003 衔接）；长期由源生成器产出。
+3. 校验失败阻断构建并输出文件名 + 具体条目；校验通过输出授权摘要（权限数、涉及插件）。
+4. 可选：`watch`/开发模式下监听 capabilities 目录热重载（`FileSystemWatcher` → 重建 `PermissionManager` 授权表）。
+
+#### 验收标准
+
+- 拼错的权限标识符/平台名在 `wails-net build` 阶段报错，而非运行时静默失败。
+- 合法 capability 文件不阻塞构建。
+- 热重载模式下修改 capability 文件后新授权即时生效（如实现）。
 
 ---
 
@@ -613,30 +760,98 @@ AssetServer 路由建议：
 
 ---
 
+### 6.4 asset protocol scope（OPT-SEC-005，2026-08-15 新增）
+
+#### 现状
+
+对标 Tauri v2，前端访问本地文件目前只能通过 `FileSystem` 插件命令（后端 `FileSystemScope` 路径前缀校验），**没有受控的自定义资源协议**：全库无 `asset://` 协议、无 `convertFileSrc` 等价 API（仅 `docs/development/testing-strategy.md` mock 清单提及）。`docs/fusion-strategy-comparison.md:660` 亦自认此差距：Tauri 有 asset protocol scope，Wails.Net 仅有 `FileSystemScope`/`UrlScope`。
+
+#### 修改建议
+
+1. 定义 `wails-asset://`（或复用既有 `wails://`）协议路由，映射到受 scope 约束的本地路径。
+2. 新增 `AssetProtocolScope`（复用 `Scopes.cs` 的前缀匹配模型），capability 授权形如 `asset:allow-read-<path-pattern>`。
+3. AssetServer/平台 scheme handler 拦截该协议请求：scope 内放行并返回文件（带正确 MIME），scope 外 403。
+4. 前端 runtime 提供 `convertFileSrc(path)` 等价 API，生成协议 URL 供 `<img>`/`<video>` 等标签直接使用。
+5. 大文件考虑 Range 请求支持（视频拖动进度条场景）。
+
+#### 验收标准
+
+- scope 内文件可经协议 URL 在前端展示；scope 外返回 403。
+- scope 授权通过 capability 文件声明。
+- Windows/Linux/macOS 三个桌面平台行为一致（Android 可后置）。
+
+---
+
+### 6.5 Channels 对称加密（OPT-RUNTIME-003，2026-08-15 新增）
+
+#### 现状
+
+对标 Wails v3：`ChannelManager`/`Channel`/`IChannel` 与 channel:open/message/close 协议已完整，但 Wails v3 的 **symmetric crypto（对称加密）层未实现**——全库（含 `Channels/` 目录）无 symmetric/AES/ChaCha 命中，加密相关实现仅有 Minisign（非对称签名）与 IpcHandshakeToken。
+
+#### 修改建议
+
+1. 评估必要性：本地 WebView 场景下 channel 走 Native IPC/loopback，加密收益主要在 Server 模式（WS 跨网络）与 remote URL capability 场景。
+2. 若实现：建立时会话密钥（后端 CSPRNG 生成，随 runtime bootstrap 注入），channel 消息体对称加密（优先 AES-GCM，.NET 内置）。
+3. 作为 `IpcOptions` 的 opt-in 开关（默认关闭），仅 Server 模式模板建议开启。
+4. 前端 runtime 使用 WebCrypto 对应算法解密。
+
+#### 验收标准
+
+- 开启后 channel 消息在传输层不可明文读取。
+- 关闭时行为与现状完全一致（零开销路径）。
+- Server 模式端到端测试覆盖加解密往返。
+
+---
+
+### 6.6 代码卫生清理（OPT-CLEANUP-001，2026-08-15 新增）
+
+#### 现状
+
+第二轮分析发现的死代码与空壳项：
+
+| 项 | 位置 | 问题 |
+|---|---|---|
+| `HttpTransport` 生产装配 | `src/Wails.Net.Application/Transport/HttpTransport.cs` | 生产路径无人装配，仅测试实例化；与 §5.2 OPT-IPC-003 一并决策接入或移除 |
+| `EnableDragAndDrop` 死选项 | `src/Wails.Net.Application/Windows/IWebviewWindowImpl.cs`（`WebviewWindowOptions.cs:149`） | 平台层无消费者；实际拖放由 `ApplicationOptions.DragAndDrop`（`:151`）驱动 |
+| log 插件 TS 空壳 | `packages/wails-net-plugin-log/src/index.ts` | 仅 4 行 import，无实际 API；后端 `log.*` 命令已完整 |
+| `_startedTcs` 语义错位 | `Hosting/DesktopHostedService.cs:17` | 从未被 await 的"退出信号"，随 §5.3 OPT-RUNTIME-002 一并处理 |
+| `Routes\` 空目录 | `src/Wails.Net.AssetServer/Routes/` | 空目录，待 §5.4 插件资产路由落地时启用或移除 |
+
+#### 验收标准
+
+- 每一项要么修复（接通生产路径/补齐实现），要么显式移除并记录。
+- 模板与示例不引用任何已移除项。
+
+---
+
 ## 7. 建议实施顺序
 
-### 7.1 第一批：文档和配置治理
+> 进度说明（2026-08-15）：第一批已基本完成（文档刷新、配置收敛、Options 校验），第二批的 `IpcOptions`/token/权限模式已完成，剩余 OPT-SEC-003 模板落地与下述新增项。
 
-1. 刷新 `docs/fusion-strategy-comparison.md`。
-2. 增加本文档到 `docs/README.md` 导航。
-3. 收敛 `DesktopHostOptions` 字段优先级。
-4. 增加 Options validators。
-5. 更新模板和示例配置。
+### 7.1 第一批：文档和配置治理（✅ 已完成，仅余模板）
 
-### 7.2 第二批：安全默认值
+1. 刷新 `docs/fusion-strategy-comparison.md`。（✅）
+2. 增加本文档到 `docs/README.md` 导航。（✅）
+3. 收敛 `DesktopHostOptions` 字段优先级。（✅）
+4. 增加 Options validators。（✅）
+5. 更新模板和示例配置。（❌ 见 §4.6 OPT-SEC-003 清单，升为下一批首位）
 
-1. 新增 `IpcOptions`。
-2. HTTP/WebSocket fallback 接入 handshake token。
-3. Origin/CORS 默认 strict。
-4. 权限模式引入 `Compatibility` / `Strict`。
-5. 模板默认 strict。
+### 7.2 第二批：安全默认值（部分完成）
+
+1. 新增 `IpcOptions`。（✅）
+2. HTTP/WebSocket fallback 接入 handshake token。（✅）
+3. Origin/CORS 默认 strict。（✅）
+4. 权限模式引入 `Compatibility` / `Strict`。（✅）
+5. 模板默认 strict。（❌ §4.6）
 
 ### 7.3 第三批：Tauri Capability 对齐
 
-1. 实现 `Capability.platforms`。
-2. Capability 文件 loader 支持平台过滤。
-3. PermissionManager 授权展开时执行平台过滤。
-4. 插件权限文档更新。
+1. 实现 `Capability.platforms`。（✅）
+2. Capability 文件 loader 支持平台过滤。（✅）
+3. PermissionManager 授权展开时执行平台过滤。（✅）
+4. 插件权限文档更新。（部分：能力只能代码声明，无 capabilities 文件交付，随 §4.6 补齐）
+5. capability 构建期 CLI 校验（§5.6 OPT-SEC-004）。
+6. asset protocol scope（§6.4 OPT-SEC-005，可视进度排到后续批次）。
 
 ### 7.4 第四批：Wails v3 插件体验对齐
 
@@ -648,9 +863,12 @@ AssetServer 路由建议：
 ### 7.5 第五批：运行时模块化和测试闭环
 
 1. `Application` 内部职责拆分。
-2. 统一 IPC strategy。
-3. ready 生命周期建模。
-4. 源生成器和 IPC 全链路测试补齐。
+2. 统一 IPC strategy（含 `HttpTransport` 生产装配决策）。
+3. ready 生命周期建模（含 Linux/Android `WindowRuntimeReady` 补齐）。
+4. 事件通配符与跨窗口定向事件（§5.5 OPT-EVENT-001/002）。
+5. 源生成器和 IPC 全链路测试补齐。
+6. Channels 对称加密（§6.5，可视必要性后置）。
+7. 代码卫生清理（§6.6，随相关批次顺带处理）。
 
 ---
 
@@ -704,17 +922,22 @@ AssetServer 路由建议：
 
 完成全部优化后，项目应满足：
 
-- [ ] `docs/fusion-strategy-comparison.md` 与当前代码状态一致。
+- [ ] `docs/fusion-strategy-comparison.md` 与当前代码状态一致。（✅ 2026-08-10）
 - [ ] 模板项目使用推荐配置结构。
-- [ ] 核心 Options 在启动期校验。
-- [ ] IPC fallback 默认要求 Origin 校验和 handshake token。
-- [ ] 权限系统支持 strict 模式。
-- [ ] `Capability.platforms` 生效并有测试。
-- [ ] 插件可声明并承载前端资产。
-- [ ] 插件命令、权限和前端 API 有统一清单。
-- [ ] `Application` 内部职责进一步拆分。
-- [ ] Host/UI/Window/IPC ready 状态明确可等待。
-- [ ] 源生成器、前端 runtime、安全拒绝路径和 IPC 全链路有测试覆盖。
+- [ ] 核心 Options 在启动期校验。（✅ 2026-08-10）
+- [ ] IPC fallback 默认要求 Origin 校验和 handshake token。（✅ 2026-08-10）
+- [ ] 权限系统支持 strict 模式。（✅ 2026-08-10）
+- [ ] `Capability.platforms` 生效并有测试。（✅ 2026-08-10）
+- [ ] 模板/示例默认 Strict + capabilities 示例 + CSP（§4.6）。（✅ 2026-08-15）
+- [ ] capability 文件在构建期校验（§5.6）。（✅ 2026-08-15：`wails-net check` + build 前置）
+- [ ] 事件支持通配符订阅与跨窗口定向（§5.5）。（✅ 2026-08-15：后端 + 前端）
+- [ ] Host/UI/Window/IPC ready 状态明确可等待（含 Linux/Android `WindowRuntimeReady`）。（🟡 核心完成 2026-08-15；Android 待补）
+- [ ] asset protocol scope 生效并有测试（§6.4）。（❌ 后续批次）
+- [ ] 插件可声明并承载前端资产。（❌ 后续批次）
+- [ ] 插件命令、权限和前端 API 有统一清单。（❌ 后续批次）
+- [ ] `Application` 内部职责进一步拆分。（❌ 后续批次）
+- [ ] 源生成器、前端 runtime、安全拒绝路径和 IPC 全链路有测试覆盖。（❌ 后续批次）
+- [ ] 死代码与空壳项全部处置（§6.6）。（🟡 大部分 2026-08-15；`HttpTransport` 装配决策随 OPT-IPC-003）
 
 ---
 
@@ -722,22 +945,29 @@ AssetServer 路由建议：
 
 | 编号 | 任务 |
 |---|---|
-| OPT-DOC-001 | 刷新融合策略文档 |
-| OPT-CONFIG-001 | 收敛 `DesktopHostOptions` 配置入口 |
-| OPT-CONFIG-002 | 增加 Options validators |
-| OPT-IPC-001 | 新增 `IpcOptions` |
-| OPT-IPC-002 | IPC fallback handshake token |
-| OPT-IPC-003 | 统一 IPC strategy |
-| OPT-SEC-001 | 权限 strict 模式 |
-| OPT-SEC-002 | `Capability.platforms` |
-| OPT-SEC-003 | 安全模板与迁移指南 |
-| OPT-PLUGIN-001 | 插件资产 manifest |
-| OPT-PLUGIN-002 | AssetServer 插件资源路由 |
-| OPT-PLUGIN-003 | 插件命令权限清单生成 |
-| OPT-RUNTIME-001 | `Application` 职责拆分 |
-| OPT-RUNTIME-002 | 生命周期 ready 状态建模 |
-| OPT-TEST-001 | 源生成器测试补齐 |
-| OPT-TEST-002 | 前端 runtime 测试补齐 |
+| OPT-DOC-001 | 刷新融合策略文档（✅ 2026-08-10） |
+| OPT-CONFIG-001 | 收敛 `DesktopHostOptions` 配置入口（✅ 2026-08-10） |
+| OPT-CONFIG-002 | 增加 Options validators（✅ 2026-08-10） |
+| OPT-IPC-001 | 新增 `IpcOptions`（✅ 2026-08-10） |
+| OPT-IPC-002 | IPC fallback handshake token（✅ 2026-08-10） |
+| OPT-IPC-003 | 统一 IPC strategy（核心已落地 2026-08-15；平台窗口迁移 + `HttpTransport` 前端 URL 注入协议扩展待后续批次） |
+| OPT-SEC-001 | 权限 strict 模式（✅ 2026-08-10） |
+| OPT-SEC-002 | `Capability.platforms`（✅ 2026-08-10） |
+| OPT-SEC-003 | 安全模板与迁移指南（✅ 2026-08-15，见 §4.6 清单全部完成） |
+| OPT-SEC-004 | capability 构建期校验（✅ 2026-08-15：`wails-net check` + build 前置校验） |
+| OPT-SEC-005 | asset protocol scope / `convertFileSrc`（未动，后续批次） |
+| OPT-SEC-006 | CSP 模板默认启用（✅ 2026-08-15，并入 OPT-SEC-003） |
+| OPT-EVENT-001 | 事件通配符订阅（✅ 2026-08-15，后端 + 前端） |
+| OPT-EVENT-002 | 跨窗口定向事件（✅ 2026-08-15，后端 + 前端 + 传输层过滤） |
+| OPT-PLUGIN-001 | 插件资产 manifest（未动，后续批次） |
+| OPT-PLUGIN-002 | AssetServer 插件资源路由（未动，后续批次；`Routes/` 空目录待启用或移除） |
+| OPT-PLUGIN-003 | 插件命令权限清单生成（未动，后续批次；同时作为 OPT-SEC-004 的权限集合数据源） |
+| OPT-RUNTIME-001 | `Application` 职责拆分（未动，后续批次） |
+| OPT-RUNTIME-002 | 生命周期 ready 状态建模（核心 ✅ 2026-08-15：`ApplicationLifecycleState` + `PlatformStarted` + `_startedTcs` 移除 + Linux `WindowRuntimeReady`；Android `WindowRuntimeReady` 待补） |
+| OPT-RUNTIME-003 | Channels 对称加密（未动，后续批次，opt-in） |
+| OPT-CLEANUP-001 | 死代码与空壳清理（大部分 ✅ 2026-08-15：`EnableDragAndDrop` 移除、log 插件 TS 补齐、`_startedTcs` 修正、`HttpTransport` 决策记录、`Routes/` 空目录记录） |
+| OPT-TEST-001 | 源生成器测试补齐（含 EventMetadata/ScopeParameter 生成器） |
+| OPT-TEST-002 | 前端 runtime 测试补齐（invoke/cancel/events/channels/fallback） |
 | OPT-TEST-003 | IPC 全链路无头测试 |
 
 ---

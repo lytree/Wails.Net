@@ -36,7 +36,10 @@ interface Pending {
   cancelled: boolean;
 }
 
-type EventCallback = (data: unknown, senderWindowId?: number | null) => void;
+type EventCallback = (data: unknown, senderWindowId?: number | null, targetWindowId?: number | null) => void;
+
+/** 事件回调集合：精确事件名 / 通配符模式（`*` 后缀）→ 回调集合。 */
+type EventCallbackMap = Map<string, Set<EventCallback>>;
 
 const CHUNK_THRESHOLD = 512 * 1024; // 512KB：原生/HTTP 分界（按 JSON 字符串长度）
 const CHUNK_SIZE = 1_000_000; // 1MB：单 chunk 字节上限（后端限制 ≤ 1MB）
@@ -61,7 +64,7 @@ function randomId(len = 21): string {
 /** 传输层实现。 */
 export class Transport {
   private pending = new Map<string, Pending>();
-  private eventCallbacks = new Map<string, Set<EventCallback>>();
+  private eventCallbacks: EventCallbackMap = new Map();
   private counter = 0;
   private nativePost: ((s: string) => void) | undefined;
   private ws: WebSocket | undefined;
@@ -149,7 +152,7 @@ export class Transport {
       chrome?: { webview?: { addEventListener?: (t: string, cb: (e: { data: unknown }) => void) => void } };
       addEventListener?: (t: string, cb: (e: { data: unknown }) => void) => void;
       __wailsNative?: { onMessage?: (json: string) => void };
-      _wailsEmitEvent?: (name: string, data: unknown, senderWindowId?: number | null) => void;
+      _wailsEmitEvent?: (name: string, data: unknown, senderWindowId?: number | null, targetWindowId?: number | null) => void;
     };
     const onMsg = (e: { data: unknown }) => {
       if (typeof e.data === "string") this.onNativeMessage(e.data);
@@ -162,13 +165,14 @@ export class Transport {
     // 供原生 / Android 桥接调用
     w.__wailsNative = { onMessage: (json: string) => this.onNativeMessage(json) };
 
-    // 桌面模式事件下行入口。
-    // 后端 EventIPCTransport.DispatchWailsEvent 不走 postMessage 回传，而是对每个窗口执行
-    //   ExecuteScriptAsync("window._wailsEmitEvent && window._wailsEmitEvent(name, data, senderWindowId)")
-    // 因为后端带 `&&` 短路保护，若此全局缺失，事件会被静默丢弃且不报错。
-    // 必须挂载，否则桌面模式下 wails.events.on(...) 收不到任何后端事件。
-    w._wailsEmitEvent = (name: string, data: unknown, senderWindowId?: number | null) =>
-      this._emitEvent(name, data, senderWindowId ?? null);
+  // 桌面模式事件下行入口。
+  // 后端 EventIPCTransport.DispatchWailsEvent 不走 postMessage 回传，而是对每个窗口执行
+  //   ExecuteScriptAsync("window._wailsEmitEvent && window._wailsEmitEvent(name, data, senderWindowId, targetWindowId)")
+  // 因为后端带 `&&` 短路保护，若此全局缺失，事件会被静默丢弃且不报错。
+  // 必须挂载，否则桌面模式下 wails.events.on(...) 收不到任何后端事件。
+  // OPT-EVENT-002：第四参数 targetWindowId 标识定向事件（null = 广播）。
+  w._wailsEmitEvent = (name: string, data: unknown, senderWindowId?: number | null, targetWindowId?: number | null) =>
+    this._emitEvent(name, data, senderWindowId ?? null, targetWindowId ?? null);
   }
 
   private connectWs(): void {
@@ -184,7 +188,7 @@ export class Transport {
       try {
         const data = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
         if (data && data.type === "event" && typeof data.name === "string") {
-          this._emitEvent(data.name, data.data);
+          this._emitEvent(data.name, data.data, data.senderWindowId ?? null, data.targetWindowId ?? null);
           return;
         }
         this.handleResponse(data as WailsResponse);
@@ -247,6 +251,18 @@ export class Transport {
 
   // ----- 事件订阅 -----
 
+  /** 判断事件名是否为通配符模式（`*` 后缀，OPT-EVENT-001）。 */
+  private static isWildcardPattern(name: string): boolean {
+    return name.length > 0 && name.endsWith("*");
+  }
+
+  /** 判断事件名是否匹配订阅模式（精确或通配符前缀匹配，OPT-EVENT-001）。 */
+  private static matchesPattern(eventName: string, pattern: string): boolean {
+    if (eventName === pattern) return true;
+    if (!Transport.isWildcardPattern(pattern)) return false;
+    return eventName.startsWith(pattern.slice(0, -1));
+  }
+
   on(name: string, cb: EventCallback): () => void {
     // 必须初始化：纯订阅型前端（只订阅、从不主动调用后端）否则永远不会挂载
     // window._wailsEmitEvent，Server 模式下也不会建立 WebSocket，导致事件全部丢失。
@@ -261,9 +277,9 @@ export class Transport {
   }
 
   once(name: string, cb: EventCallback): () => void {
-    const off = this.on(name, (data, senderWindowId) => {
+    const off = this.on(name, (data, senderWindowId, targetWindowId) => {
       off();
-      cb(data, senderWindowId);
+      cb(data, senderWindowId, targetWindowId);
     });
     return off;
   }
@@ -273,18 +289,28 @@ export class Transport {
   }
 
   /** 向后端发送事件（fire-and-forget，event.emit 永不返回响应）。 */
-  emit<D>(name: string, data: D): void {
-    const payload: WailsEventPayload<D> = { name, data };
+  emit<D>(name: string, data: D, targetWindowId?: number | null): void {
+    const payload: WailsEventPayload<D> = targetWindowId != null
+      ? { name, data, targetWindowId }
+      : { name, data };
     this.send("event.emit", payload);
   }
 
-  private _emitEvent(name: string, data: unknown, senderWindowId: number | null = null): void {
-    const set = this.eventCallbacks.get(name);
-    if (!set) return;
+  /**
+   * 派发下行事件到本地订阅者（OPT-EVENT-001/002）。
+   * 支持通配符模式匹配（`*` 后缀前缀匹配）与定向事件标识透传。
+   */
+  private _emitEvent(name: string, data: unknown, senderWindowId: number | null = null, targetWindowId: number | null = null): void {
+    const callbacks: EventCallback[] = [];
+    for (const [pattern, set] of this.eventCallbacks) {
+      if (!Transport.matchesPattern(name, pattern)) continue;
+      callbacks.push(...set);
+    }
     // 复制一份再遍历：回调内部调用 off()/once() 会改动原 Set，直接遍历会漏派发。
-    for (const cb of [...set]) {
+    // 同一回调不会重复触发：一个回调只属于一个订阅模式，此处按订阅集合聚合。
+    for (const cb of callbacks) {
       try {
-        cb(data, senderWindowId);
+        cb(data, senderWindowId, targetWindowId);
       } catch (err) {
         // 单个订阅者异常不应影响其他订阅者
         console?.error?.(`[wails] event "${name}" callback threw:`, err);
@@ -386,9 +412,10 @@ export class Transport {
 
   private onNativeMessage(json: string): void {
     try {
-      const data = JSON.parse(json) as WailsResponse | { type: "event"; name: string; data: unknown };
+      const data = JSON.parse(json) as WailsResponse | { type: "event"; name: string; data: unknown; senderWindowId?: number | null; targetWindowId?: number | null };
       if (data && (data as { type: string }).type === "event" && typeof (data as { name: string }).name === "string") {
-        this._emitEvent((data as { name: string }).name, (data as { data: unknown }).data);
+        const evt = data as { name: string; data: unknown; senderWindowId?: number | null; targetWindowId?: number | null };
+        this._emitEvent(evt.name, evt.data, evt.senderWindowId ?? null, evt.targetWindowId ?? null);
         return;
       }
       this.handleResponse(data as WailsResponse);

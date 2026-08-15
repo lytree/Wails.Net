@@ -391,6 +391,10 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
                     null);
                 ucm.AddScript(script);
                 _runtimeInjected = true;
+
+                // OPT-RUNTIME-002（2026-08-15）：运行时注入完成后派发 WindowRuntimeReady，
+                // 对齐 Windows/macOS 行为，使生命周期 ready 状态四平台一致。
+                WailsApplication.Get()?.DispatchWindowEvent(_id, (uint)WindowEventType.WindowRuntimeReady);
             }
         }
         catch

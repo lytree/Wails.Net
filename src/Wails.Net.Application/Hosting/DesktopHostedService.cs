@@ -7,6 +7,11 @@ namespace Wails.Net.Application.Hosting;
 /// 桌面应用宿主服务，将现有 <see cref="Application"/> 生命周期适配为 <see cref="IHostedService"/>。
 /// 在 <see cref="StartAsync"/> 中后台启动 <see cref="Application.Run"/>（阻塞主循环），
 /// 在 <see cref="StopAsync"/> 中触发 <see cref="Application.Shutdown"/>。
+/// <para>
+/// OPT-RUNTIME-002（2026-08-15）：<see cref="StartAsync"/> 不再立即返回，
+/// 而是等待 <see cref="Application.WaitUntilPlatformStartedAsync"/>（平台消息循环就绪信号），
+/// 使 Host 启动语义与 UI 就绪对齐。原 <c>_startedTcs</c>（从未被 await 的"退出信号"）已移除。
+/// </para>
 /// </summary>
 internal sealed class DesktopHostedService : IHostedService, IDisposable
 {
@@ -14,7 +19,6 @@ internal sealed class DesktopHostedService : IHostedService, IDisposable
     private readonly Application _application;
     private readonly IHostApplicationLifetime _lifetime;
     private Thread? _uiThread;
-    private readonly TaskCompletionSource _startedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>
     /// 构造函数，由 DI 容器注入依赖。
@@ -33,12 +37,15 @@ internal sealed class DesktopHostedService : IHostedService, IDisposable
     }
 
     /// <summary>
-    /// 启动服务，在专用 STA 线程运行 <see cref="Application.Run"/>（阻塞调用）。
+    /// 启动服务，在专用 STA 线程运行 <see cref="Application.Run"/>（阻塞调用），
+    /// 并等待平台就绪信号后返回（OPT-RUNTIME-002）。
+    /// <para>
     /// Win32 消息循环和 WebView2 要求在 STA 线程上运行，因此不能使用线程池线程（MTA）。
+    /// </para>
     /// </summary>
     /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>表示启动初始化已完成的任务。</returns>
-    public Task StartAsync(CancellationToken cancellationToken)
+    /// <returns>表示平台启动就绪（或超时）的任务。</returns>
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("桌面应用启动中...");
 
@@ -56,11 +63,18 @@ internal sealed class DesktopHostedService : IHostedService, IDisposable
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Application.Run() 发生异常");
-                _startedTcs.TrySetException(ex);
+                // 平台就绪信号失败：使 StartAsync 的等待快速失败（而非超时 30s）
+                try
+                {
+                    _application.MarkPlatformStartFailed(ex);
+                }
+                catch
+                {
+                    // 标记失败不可用时忽略（信号可能已 SetResult，属竞态边界）
+                }
             }
             finally
             {
-                _startedTcs.TrySetResult();
                 // UI 线程退出后通知 Generic Host 停止，否则 Host 会一直等待导致进程不退出。
                 // 对应窗口关闭按钮触发 PostQuitMessage(0) → 消息循环退出 → Application.Run() 返回的场景。
                 try
@@ -84,7 +98,14 @@ internal sealed class DesktopHostedService : IHostedService, IDisposable
         }
         _uiThread.Start();
 
-        return Task.CompletedTask;
+        // OPT-RUNTIME-002：等待平台就绪（默认 30s 超时）。
+        // 使 Host.StartAsync 的返回语义与 UI 主循环就绪对齐，而非启动线程后立即返回。
+        // 平台主循环异常时此处直接抛出，Host 启动失败可正确传播。
+        var started = await _application.WaitUntilPlatformStartedAsync();
+        if (!started)
+        {
+            _logger.LogWarning("等待平台启动就绪超时，Host 继续启动（应用可能在无平台模式下运行）");
+        }
     }
 
     /// <summary>

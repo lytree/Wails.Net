@@ -65,7 +65,11 @@ public sealed class EventIPCTransport : IWailsEventListener
     }
 
     /// <summary>
-    /// 通知事件：将事件通过 ExecJS 注入到所有窗口的 webview。
+    /// 通知事件：将事件通过 ExecJS 注入到窗口的 webview。
+    /// <para>
+    /// OPT-EVENT-002：<paramref name="targetWindowId"/> 非 null 时仅注入到目标窗口，
+    /// 其他窗口不收到（跨窗口定向事件）；null 时广播到所有窗口。
+    /// </para>
     /// <para>
     /// 若 <see cref="Application.NativeIpcTransport"/> 已注册且至少有一个窗口，
     /// 则事件已通过原生 postMessage 推送，此方法跳过 ExecJS 注入以避免重复派发。
@@ -76,7 +80,8 @@ public sealed class EventIPCTransport : IWailsEventListener
     /// <param name="senderWindowId">事件来源窗口 ID，可为 null（应用级事件）。
     /// 将作为第三个参数传递给前端 <c>window._wailsEmitEvent(name, data, senderWindowId)</c>，
     /// 使前端可识别事件发起方并据此过滤或显示。</param>
-    public void NotifyEvent(string eventName, object? data, uint? senderWindowId = null)
+    /// <param name="targetWindowId">定向目标窗口 ID（OPT-EVENT-002）；null 表示广播。</param>
+    public void NotifyEvent(string eventName, object? data, uint? senderWindowId = null, uint? targetWindowId = null)
     {
         if (string.IsNullOrEmpty(eventName))
         {
@@ -123,20 +128,29 @@ public sealed class EventIPCTransport : IWailsEventListener
         // 构造注入脚本：window._wailsEmitEvent(name, data, senderWindowId);
         // 使用 JSON 序列化数据，避免拼接字符串时的转义问题。
         // P1-2：senderWindowId 作为第三个参数传递，前端可据此识别事件来源窗口。
+        // OPT-EVENT-002：targetWindowId 作为第四个参数传递（可空），前端可据此识别定向事件。
         var nameJson = JsonSerializer.Serialize(eventName, JsonOptions);
         var dataJson = data is null
             ? "null"
             : JsonSerializer.Serialize(data, data.GetType(), JsonOptions);
         var senderJson = senderWindowId is null ? "null" : senderWindowId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        var js = $"window._wailsEmitEvent && window._wailsEmitEvent({nameJson}, {dataJson}, {senderJson});";
+        var targetJson = targetWindowId is null ? "null" : targetWindowId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var js = $"window._wailsEmitEvent && window._wailsEmitEvent({nameJson}, {dataJson}, {senderJson}, {targetJson});";
 
         // 对应 Wails v3 EventIPCTransport.DispatchWailsEvent：
         //   for _, window := range windows {
         //       if event.IsCancelled() { return }
         //       window.DispatchWailsEvent(event)
         //   }
+        // OPT-EVENT-002：定向事件仅注入目标窗口，广播则遍历所有窗口。
         foreach (var window in windows)
         {
+            // 定向过滤：目标窗口 ID 非空时仅派发到该窗口
+            if (targetWindowId is not null && window.ID != targetWindowId.Value)
+            {
+                continue;
+            }
+
             try
             {
                 // WebviewWindow.ExecJS 内部会调用平台实现的 ExecuteScriptAsync。

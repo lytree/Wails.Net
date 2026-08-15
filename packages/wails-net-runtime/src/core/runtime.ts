@@ -8,18 +8,27 @@
 import { bindingId, transport, type CancellablePromise } from "../internal/transport.js";
 
 /** 事件订阅回调。 */
-export type EventCallback<D = unknown> = (data: D, senderWindowId?: number | null) => void;
+export type EventCallback<D = unknown> = (
+  data: D,
+  senderWindowId?: number | null,
+  targetWindowId?: number | null,
+) => void;
 
 /** 事件系统：纯前端订阅 + 向后端发射。 */
 export interface WailsEvents {
-  /** 订阅事件，返回取消订阅函数。 */
+  /** 订阅事件，返回取消订阅函数。支持通配符模式（`*` 后缀前缀匹配，如 `wails:window:*`）。 */
   on<D = unknown>(name: string, callback: EventCallback<D>): () => void;
-  /** 订阅一次，触发后自动取消。 */
+  /** 订阅一次，触发后自动取消。支持通配符模式。 */
   once<D = unknown>(name: string, callback: EventCallback<D>): () => void;
   /** 取消指定回调订阅。 */
   off<D = unknown>(name: string, callback: EventCallback<D>): void;
-  /** 向后端发射事件（fire-and-forget）。 */
+  /** 向后端发射事件（fire-and-forget），广播到所有窗口。 */
   emit<D = unknown>(name: string, data: D): void;
+  /**
+   * 向后端发射跨窗口定向事件（OPT-EVENT-002）：仅派发到目标窗口的前端，其他窗口不收到。
+   * 对应后端 <c>Application.EmitTo</c> / <c>WebviewWindow.DispatchWailsEvent</c>。
+   */
+  emitTo<D = unknown>(targetWindowId: number, name: string, data: D): void;
 }
 
 /** 绑定调用子系统。 */
@@ -83,10 +92,11 @@ export function cancel(callId: string): void {
 
 /** 事件子系统实现（委托给 transport）。 */
 export const events: WailsEvents = {
-  on: (name, callback) => transport.on(name, callback as (d: unknown) => void),
-  once: (name, callback) => transport.once(name, callback as (d: unknown) => void),
-  off: (name, callback) => transport.off(name, callback as (d: unknown) => void),
+  on: (name, callback) => transport.on(name, callback as (d: unknown, s?: number | null, t?: number | null) => void),
+  once: (name, callback) => transport.once(name, callback as (d: unknown, s?: number | null, t?: number | null) => void),
+  off: (name, callback) => transport.off(name, callback as (d: unknown, s?: number | null, t?: number | null) => void),
   emit: (name, data) => transport.emit(name, data),
+  emitTo: (targetWindowId, name, data) => transport.emit(name, data, targetWindowId),
 };
 
 /** 绑定子系统实现。 */
