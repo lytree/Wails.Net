@@ -262,6 +262,32 @@ public sealed class DesktopApplicationBuilderTests
         await Assert.That(resolved).IsTypeOf<TestCommandMiddleware>();
     }
 
+    [Test]
+    public async Task GenerateCommandsManifest_IncludesPluginCommands()
+    {
+        // 安排：通过插件注册命令
+        var builder = DesktopApplicationBuilder.CreateBuilder();
+        var plugin = Substitute.For<IPlugin>();
+        plugin.When(x => x.Configure(Arg.Any<IPluginContext>()))
+            .Do(callInfo => callInfo.Arg<IPluginContext>()
+                .Commands.MapCommand("test.manifest", (string value) => { /* noop */ }, "test:allow-manifest"));
+        var addPluginMethod = typeof(DesktopApplicationBuilder)
+            .GetMethod("AddPlugin", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        addPluginMethod!.Invoke(builder, new object[] { plugin });
+
+        var app = builder.Build();
+
+        // 操作：生成命令清单（P2-1 收尾：应用侧导出）
+        var manifest = app.GenerateCommandsManifest();
+
+        // 断言：插件命令与签名元数据进入清单
+        await Assert.That(manifest.Commands).Count().IsEqualTo(1);
+        var entry = manifest.Commands.Single(c => c.Name == "test.manifest");
+        await Assert.That(entry.Anonymous).IsFalse();
+        await Assert.That(entry.RequiredCapabilities).Contains("test:allow-manifest");
+        await Assert.That(entry.Parameters).Contains("arg0: string");
+    }
+
     /// <summary>
     /// 测试用命令中间件，记录调用次数。
     /// </summary>

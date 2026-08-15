@@ -70,6 +70,12 @@ public static class ManifestGenerator
     public const string ManifestVersion = "1";
 
     /// <summary>
+    /// 命令清单 JSON 文件名（<c>commands.manifest.json</c>）。
+    /// 应用侧导出与 CLI 生成统一使用此文件名（P2-1 收尾）。
+    /// </summary>
+    public const string ManifestFileName = "commands.manifest.json";
+
+    /// <summary>
     /// 从命令注册表生成命令清单。
     /// 命令按名称序排列；<see cref="CommandManifestEntry.Anonymous"/> 由
     /// <see cref="CommandRegistry.CommandEntry.RequiredCapabilities"/> 是否为空推导；
@@ -202,6 +208,16 @@ public static class ManifestGenerator
     /// <returns>缩进格式的 JSON 字符串。</returns>
     public static string GenerateCommandsManifestJson(CommandRegistry registry)
         => JsonSerializer.Serialize(GenerateCommandsManifest(registry), JsonOptions);
+
+    /// <summary>
+    /// 序列化已生成的命令清单为 JSON（commands.manifest.json 格式，P2-1 收尾）。
+    /// 与 <see cref="GenerateCommandsManifestJson(CommandRegistry)"/> 的序列化格式一致，
+    /// 用于应用侧导出已构建的清单（如 <see cref="Hosting.DesktopApplication.WriteCommandsManifestToDirectory"/>）。
+    /// </summary>
+    /// <param name="manifest">已生成的命令清单。</param>
+    /// <returns>缩进格式的 JSON 字符串。</returns>
+    public static string GenerateCommandsManifestJson(CommandsManifest manifest)
+        => JsonSerializer.Serialize(manifest, JsonOptions);
 
     /// <summary>
     /// 生成能力清单 JSON（capabilities.manifest.json 格式）。

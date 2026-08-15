@@ -2,6 +2,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Wails.Net.Application.Commands;
+using Wails.Net.Application.Manifests;
 
 namespace Wails.Net.Application.Hosting;
 
@@ -91,5 +93,39 @@ public sealed class DesktopApplication : IDesktopApplication
     {
         _cts.Dispose();
         await ((IAsyncDisposable)_host).DisposeAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 生成命令清单（P2-1 收尾：应用侧导出 commands.manifest.json）。
+    /// <para>
+    /// 从 DI 容器解析 <see cref="CommandRegistry"/>（由 <see cref="DesktopApplicationBuilder.Build"/>
+    /// 注册为单例，已包含全部插件注册的命令），经 <see cref="ManifestGenerator"/> 生成
+    /// 机器可读命令清单，供 <c>wails generate --commands-manifest</c> 生成前端
+    /// TypeScript wrapper（commands.ts），以清单为唯一来源消除前后端 API 漂移。
+    /// </para>
+    /// </summary>
+    /// <returns>命令清单。</returns>
+    /// <exception cref="InvalidOperationException">DI 容器中未注册 <see cref="CommandRegistry"/> 时抛出
+    /// （正常通过 <see cref="DesktopApplicationBuilder.Build"/> 构建时不会发生）。</exception>
+    public CommandsManifest GenerateCommandsManifest()
+    {
+        var registry = Services.GetRequiredService<CommandRegistry>();
+        return ManifestGenerator.GenerateCommandsManifest(registry);
+    }
+
+    /// <summary>
+    /// 将命令清单写入磁盘（P2-1 收尾）。
+    /// 写入 <see cref="ManifestGenerator.ManifestFileName"/>（commands.manifest.json）。
+    /// </summary>
+    /// <param name="directory">输出目录；不存在时自动创建。</param>
+    /// <returns>生成的清单文件完整路径。</returns>
+    public string WriteCommandsManifestToDirectory(string directory)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(directory);
+        Directory.CreateDirectory(directory);
+        var manifest = GenerateCommandsManifest();
+        var filePath = Path.Combine(directory, ManifestGenerator.ManifestFileName);
+        File.WriteAllText(filePath, ManifestGenerator.GenerateCommandsManifestJson(manifest));
+        return filePath;
     }
 }

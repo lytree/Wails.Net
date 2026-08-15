@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Wails.Net.Application.Manifests;
 
 namespace Wails.Net.Generator;
@@ -97,4 +98,63 @@ public class CommandTypeScriptGenerator
 
         return sb.ToString();
     }
+
+    /// <summary>
+    /// 生成命令清单 JSON 文件名（<c>commands.manifest.json</c>）。
+    /// 引用 <see cref="ManifestGenerator.ManifestFileName"/> 保证前后端一致。
+    /// </summary>
+    public const string ManifestFileName = ManifestGenerator.ManifestFileName;
+
+    /// <summary>
+    /// 生成命令 TypeScript 封装文件名（<c>commands.ts</c>）。
+    /// </summary>
+    public const string TypeScriptFileName = "commands.ts";
+
+    /// <summary>
+    /// 从 JSON 文件加载命令清单（P2-1 收尾：CLI 消费已落盘的 manifest）。
+    /// 兼容 <see cref="ManifestGenerator.GenerateCommandsManifestJson"/> 输出的 camelCase 格式。
+    /// </summary>
+    /// <param name="manifestPath">commands.manifest.json 文件路径。</param>
+    /// <returns>反序列化后的命令清单。</returns>
+    /// <exception cref="FileNotFoundException">文件不存在时抛出。</exception>
+    /// <exception cref="JsonException">JSON 解析失败时抛出。</exception>
+    public static CommandsManifest LoadManifest(string manifestPath)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(manifestPath);
+        if (!File.Exists(manifestPath))
+        {
+            throw new FileNotFoundException($"命令清单文件不存在: {manifestPath}");
+        }
+
+        var json = File.ReadAllText(manifestPath);
+        return JsonSerializer.Deserialize<CommandsManifest>(json, ManifestJsonOptions)
+            ?? throw new JsonException($"命令清单解析失败: {manifestPath}");
+    }
+
+    /// <summary>
+    /// 将命令清单生成 TypeScript 封装并写入磁盘（P2-1 收尾）。
+    /// 输出文件名为 <see cref="TypeScriptFileName"/>（commands.ts）。
+    /// </summary>
+    /// <param name="manifest">命令清单。</param>
+    /// <param name="outputDirectory">输出目录；不存在时自动创建。</param>
+    /// <returns>生成的文件完整路径。</returns>
+    public static string GenerateToDisk(CommandsManifest manifest, string outputDirectory)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        ArgumentException.ThrowIfNullOrEmpty(outputDirectory);
+
+        Directory.CreateDirectory(outputDirectory);
+        var content = new CommandTypeScriptGenerator().Generate(manifest);
+        var filePath = Path.Combine(outputDirectory, TypeScriptFileName);
+        File.WriteAllText(filePath, content, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        return filePath;
+    }
+
+    /// <summary>
+    /// 清单反序列化选项：属性名不区分大小写（兼容 camelCase / PascalCase 两种序列化输出）。
+    /// </summary>
+    private static readonly JsonSerializerOptions ManifestJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
 }
