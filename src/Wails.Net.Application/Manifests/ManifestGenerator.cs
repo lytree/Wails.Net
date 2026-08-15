@@ -1,0 +1,195 @@
+using System.Text.Json;
+using Wails.Net.Application.Commands;
+using Wails.Net.Application.Security;
+
+namespace Wails.Net.Application.Manifests;
+
+/// <summary>
+/// 命令清单条目，记录单个命令的元数据。
+/// 对应审计 P1-2：以命令 manifest 为机器可读的单一来源，统一驱动前端 TypeScript
+/// wrapper 生成、插件文档命令表与 capability 默认权限清单，消除前后端 API 漂移。
+/// </summary>
+/// <param name="Name">命令名称（前端调用名，如 <c>fs.readFile</c>）。</param>
+/// <param name="RequiredCapabilities">命令所需能力标识列表；空表示无权限要求（匿名命令）。</param>
+/// <param name="Anonymous">是否为匿名命令（无需 capability 覆盖）。<see cref="RequiredCapabilities"/> 为空时为 true。</param>
+public sealed record CommandManifestEntry(
+    string Name,
+    IReadOnlyList<string> RequiredCapabilities,
+    bool Anonymous);
+
+/// <summary>
+/// 能力清单条目，记录单个 capability 声明的元数据。
+/// </summary>
+/// <param name="Identifier">能力标识符（如 <c>main-capability</c>）。</param>
+/// <param name="Permissions">能力包含的权限标识列表（含可能的 <c>!</c> 前缀显式拒绝）。</param>
+/// <param name="Windows">应用此能力的窗口名称列表。</param>
+/// <param name="Remote">远程来源 URL 模式列表。</param>
+/// <param name="Platforms">平台过滤列表。</param>
+public sealed record CapabilityManifestEntry(
+    string Identifier,
+    IReadOnlyList<string> Permissions,
+    IReadOnlyList<string> Windows,
+    IReadOnlyList<string> Remote,
+    IReadOnlyList<string> Platforms);
+
+/// <summary>
+/// 命令清单（commands.manifest.json）。
+/// </summary>
+/// <param name="Version">清单版本号。</param>
+/// <param name="GeneratedAt">生成时间（UTC）。</param>
+/// <param name="Commands">命令条目列表。</param>
+public sealed record CommandsManifest(
+    string Version,
+    DateTimeOffset GeneratedAt,
+    IReadOnlyList<CommandManifestEntry> Commands);
+
+/// <summary>
+/// 能力清单（capabilities.manifest.json）。
+/// </summary>
+/// <param name="Version">清单版本号。</param>
+/// <param name="GeneratedAt">生成时间（UTC）。</param>
+/// <param name="Capabilities">能力条目列表。</param>
+public sealed record CapabilitiesManifest(
+    string Version,
+    DateTimeOffset GeneratedAt,
+    IReadOnlyList<CapabilityManifestEntry> Capabilities);
+
+/// <summary>
+/// 清单生成器（审计 P1-2 落地）。
+/// <para>
+/// 从 <see cref="CommandRegistry"/>（命令注册结果）与 capability 声明生成机器可读清单，
+/// 并支持"敏感命令必须被 capability 覆盖"的一致性校验，供测试、文档与前端 API
+/// 生成统一消费。纯数据序列化，零反射（遵循 AGENTS.md §3.4）。
+/// </para>
+/// </summary>
+public static class ManifestGenerator
+{
+    /// <summary>清单版本号。</summary>
+    public const string ManifestVersion = "1";
+
+    /// <summary>
+    /// 从命令注册表生成命令清单。
+    /// 命令按名称序排列；<see cref="CommandManifestEntry.Anonymous"/> 由
+    /// <see cref="CommandRegistry.CommandEntry.RequiredCapabilities"/> 是否为空推导。
+    /// </summary>
+    /// <param name="registry">命令注册表（已由插件填充）。</param>
+    /// <returns>命令清单。</returns>
+    public static CommandsManifest GenerateCommandsManifest(CommandRegistry registry)
+    {
+        ArgumentNullException.ThrowIfNull(registry);
+
+        var entries = registry.GetCommandNames()
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .Select(name =>
+            {
+                var required = registry.Find(name)?.RequiredCapabilities ?? [];
+                return new CommandManifestEntry(name, required, Anonymous: required.Count == 0);
+            })
+            .ToArray();
+
+        return new CommandsManifest(ManifestVersion, DateTimeOffset.UtcNow, entries);
+    }
+
+    /// <summary>
+    /// 从 capability 声明列表生成能力清单。
+    /// 能力按标识符序排列。
+    /// </summary>
+    /// <param name="capabilities">能力声明列表（可来自 <see cref="CapabilityFileLoader.LoadFromDirectory"/>）。</param>
+    /// <returns>能力清单。</returns>
+    public static CapabilitiesManifest GenerateCapabilitiesManifest(IEnumerable<Capability> capabilities)
+    {
+        ArgumentNullException.ThrowIfNull(capabilities);
+
+        var entries = capabilities
+            .OrderBy(c => c.Identifier, StringComparer.Ordinal)
+            .Select(c => new CapabilityManifestEntry(
+                c.Identifier,
+                c.Permissions.ToArray(),
+                c.Windows.ToArray(),
+                c.Remote.ToArray(),
+                c.Platforms.ToArray()))
+            .ToArray();
+
+        return new CapabilitiesManifest(ManifestVersion, DateTimeOffset.UtcNow, entries);
+    }
+
+    /// <summary>
+    /// 生成命令清单 JSON（commands.manifest.json 格式）。
+    /// </summary>
+    /// <param name="registry">命令注册表。</param>
+    /// <returns>缩进格式的 JSON 字符串。</returns>
+    public static string GenerateCommandsManifestJson(CommandRegistry registry)
+        => JsonSerializer.Serialize(GenerateCommandsManifest(registry), JsonOptions);
+
+    /// <summary>
+    /// 生成能力清单 JSON（capabilities.manifest.json 格式）。
+    /// </summary>
+    /// <param name="capabilities">能力声明列表。</param>
+    /// <returns>缩进格式的 JSON 字符串。</returns>
+    public static string GenerateCapabilitiesManifestJson(IEnumerable<Capability> capabilities)
+        => JsonSerializer.Serialize(GenerateCapabilitiesManifest(capabilities), JsonOptions);
+
+    /// <summary>
+    /// 校验命令所需能力是否被 capability 声明覆盖（P1-2 一致性检查）。
+    /// <para>
+    /// 规则：
+    /// <list type="bullet">
+    /// <item>所有注册命令的 <see cref="CommandRegistry.CommandEntry.RequiredCapabilities"/>
+    /// 必须出现在至少一个 capability 的 permissions 集合中；</item>
+    /// <item>带 <c>!</c> 前缀的权限是显式拒绝，<b>不计入</b>覆盖集合；</item>
+    /// <item>匿名命令（RequiredCapabilities 为空）不参与校验。</item>
+    /// </list>
+    /// 注意：permission set（如 <c>fs:default</c>）的字面展开由
+    /// <see cref="PermissionManager"/> 在运行时处理，本校验只做字面匹配；
+    /// 需要集合展开时由调用方在生成前先解析。
+    /// </para>
+    /// </summary>
+    /// <param name="registry">命令注册表。</param>
+    /// <param name="capabilities">能力声明列表。</param>
+    /// <returns>未覆盖的命令与缺失能力描述列表；全部覆盖时返回空列表。</returns>
+    public static IReadOnlyList<string> FindUncoveredCapabilities(
+        CommandRegistry registry, IEnumerable<Capability> capabilities)
+    {
+        ArgumentNullException.ThrowIfNull(registry);
+        ArgumentNullException.ThrowIfNull(capabilities);
+
+        var granted = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var capability in capabilities)
+        {
+            foreach (var permission in capability.Permissions)
+            {
+                // 剥离 "!" 前缀：显式拒绝不计入覆盖集合
+                granted.Add(permission.StartsWith('!') ? permission[1..] : permission);
+            }
+        }
+
+        var uncovered = new List<string>();
+        foreach (var name in registry.GetCommandNames().OrderBy(n => n, StringComparer.Ordinal))
+        {
+            var required = registry.Find(name)?.RequiredCapabilities ?? [];
+            if (required.Count == 0)
+            {
+                continue; // 匿名命令，跳过
+            }
+
+            foreach (var capabilityId in required)
+            {
+                if (!granted.Contains(capabilityId))
+                {
+                    uncovered.Add($"命令 '{name}' 需要能力 '{capabilityId}'，但未被任何 capability 覆盖");
+                }
+            }
+        }
+
+        return uncovered;
+    }
+
+    /// <summary>
+    /// 清单序列化选项：缩进 + camelCase 属性名（与前端 TypeScript 命名习惯一致）。
+    /// </summary>
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+}

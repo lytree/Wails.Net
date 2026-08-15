@@ -38,6 +38,21 @@ Wails.Net 在前端 IPC 调用与后端 C# 方法之间采用**双轨调用架�
 2. **权限要求**：需要 capability / permission / scope 保护的能力**必须**走命令通路——只有 `CommandDispatcher` 会执行 `PermissionManager` 权限链与 Scope 校验；`[Binding]` 绑定通路不参与权限校验。
 3. **前端调用透明**：两条通路对前端完全透明（`MessageProcessor` 先查绑定、未命中再回退命令），但**建议前端按语义调用**：业务 API 用 `wails.call("XxxService.Method")`，插件能力用对应插件包的 TS wrapper。
 
+### 1.2 机器可读清单（P1-2 审计项）
+
+命令与 capability 的一致性由 [`ManifestGenerator`](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Manifests/ManifestGenerator.cs) 提供机器可读校验：
+
+- `GenerateCommandsManifest(registry)` → `commands.manifest.json`（命令名 + `requiredCapabilities` + `anonymous` 标记）
+- `GenerateCapabilitiesManifest(capabilities)` → `capabilities.manifest.json`（identifier + permissions + windows/remote/platforms）
+- `FindUncoveredCapabilities(registry, capabilities)` → 未覆盖清单（**敏感命令的能力必须被至少一个 capability 覆盖**；`!` 前缀显式拒绝不计入覆盖；匿名命令即 `requiredCapabilities` 为空，不参与校验）
+
+该清单是后续 TypeScript runtime wrapper 生成、插件文档命令表、CLI `plugin inspect` 的统一数据源（P2-1 长期目标）。测试示例：
+
+```csharp
+var uncovered = ManifestGenerator.FindUncoveredCapabilities(registry, capabilities);
+Assert.That(uncovered, Is.Empty); // 所有敏感命令必须被 capability 覆盖
+```
+
 ## 2. 绑定系统
 
 ### 2.1 BindingManager — 反射扫描与注册
