@@ -133,6 +133,38 @@ public sealed class WailsWebViewClientTests
     }
 
     [Test]
+    public async Task Constructor_WithWindowId_StoresReference()
+    {
+        // 安排：传入窗口 ID（P0-2：页面加载完成后用于派发 WindowRuntimeReady）
+        var client = new WailsWebViewClient(null, windowId: 42);
+
+        // 操作：通过反射读取私有 _windowId 字段
+        var field = typeof(WailsWebViewClient).GetField(
+            "_windowId",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+        var storedValue = field?.GetValue(client);
+
+        // 断言：存储的窗口 ID 应与传入值相同
+        await Assert.That(storedValue).IsEqualTo(42u);
+    }
+
+    [Test]
+    public async Task Constructor_WithoutWindowId_DefaultsToZero()
+    {
+        // 安排：未传入窗口 ID
+        var client = new WailsWebViewClient(null);
+
+        // 操作：通过反射读取私有 _windowId 字段
+        var field = typeof(WailsWebViewClient).GetField(
+            "_windowId",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+        var storedValue = field?.GetValue(client);
+
+        // 断言：默认窗口 ID 应为 0（不派发窗口事件）
+        await Assert.That(storedValue).IsEqualTo(0u);
+    }
+
+    [Test]
     public async Task ShouldInterceptRequest_ReturnsNull_WhenViewIsNull_ButAssetServerExists()
     {
         // 安排：配置了 AssetServer，传入 null view（view 参数不参与 null 检查逻辑）

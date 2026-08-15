@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Wails.Net.Application.Commands;
+using Wails.Net.Application.Plugins;
 using Wails.Net.Application.Security;
 
 namespace Wails.Net.Application.Manifests;
@@ -57,6 +58,30 @@ public sealed record CapabilitiesManifest(
     IReadOnlyList<CapabilityManifestEntry> Capabilities);
 
 /// <summary>
+/// 插件清单条目，记录单个插件包的元数据。
+/// </summary>
+/// <param name="Name">插件名称（如 <c>Wails.Net.Plugins.Fs</c> 对应 <c>fs</c>）。</param>
+/// <param name="TypeName">插件类型全名（如 <c>Wails.Net.Plugins.Fs.FsPlugin</c>）。</param>
+/// <param name="Commands">该插件注册的命令名列表。</param>
+/// <param name="PermissionSets">该插件声明的权限集标识列表。</param>
+public sealed record PluginManifestEntry(
+    string Name,
+    string TypeName,
+    IReadOnlyList<string> Commands,
+    IReadOnlyList<string> PermissionSets);
+
+/// <summary>
+/// 插件清单（plugins.manifest.json）。
+/// </summary>
+/// <param name="Version">清单版本号。</param>
+/// <param name="GeneratedAt">生成时间（UTC）。</param>
+/// <param name="Plugins">插件条目列表。</param>
+public sealed record PluginsManifest(
+    string Version,
+    DateTimeOffset GeneratedAt,
+    IReadOnlyList<PluginManifestEntry> Plugins);
+
+/// <summary>
 /// 清单生成器（审计 P1-2 落地）。
 /// <para>
 /// 从 <see cref="CommandRegistry"/>（命令注册结果）与 capability 声明生成机器可读清单，
@@ -74,6 +99,12 @@ public static class ManifestGenerator
     /// 应用侧导出与 CLI 生成统一使用此文件名（P2-1 收尾）。
     /// </summary>
     public const string ManifestFileName = "commands.manifest.json";
+
+    /// <summary>
+    /// 插件清单 JSON 文件名（<c>plugins.manifest.json</c>，C-1 审计项）。
+    /// 应用侧导出与 CLI 消费统一使用此文件名。
+    /// </summary>
+    public const string PluginsManifestFileName = "plugins.manifest.json";
 
     /// <summary>
     /// 从命令注册表生成命令清单。
@@ -231,6 +262,53 @@ public static class ManifestGenerator
         => JsonSerializer.Serialize(GenerateCapabilitiesManifest(capabilities), ManifestsJsonSerializerContext.Default.CapabilitiesManifest);
 
     /// <summary>
+    /// 从已注册插件列表生成插件清单。
+    /// 插件按名称序排列；记录插件名称与类型全名（C-1 审计项：插件包元数据机器可读化）。
+    /// <para>
+    /// 命令归属（commands.manifest.json）与权限集归属（capabilities.manifest.json）已分别由
+    /// <see cref="GenerateCommandsManifest"/> 与 <see cref="GenerateCapabilitiesManifest"/> 承载，
+    /// 本清单聚焦插件包自身元数据，供 CLI <c>plugin inspect</c> 与文档命令表消费。
+    /// </para>
+    /// </summary>
+    /// <param name="plugins">已注册的插件实例列表（可由 <see cref="PluginManager.Plugins"/> 提供）。</param>
+    /// <returns>插件清单。</returns>
+    public static PluginsManifest GeneratePluginsManifest(IEnumerable<IPlugin> plugins)
+    {
+        ArgumentNullException.ThrowIfNull(plugins);
+
+        var entries = plugins
+            .OrderBy(p => p.Name, StringComparer.Ordinal)
+            .Select(p => new PluginManifestEntry(
+                p.Name,
+                p.GetType().FullName ?? p.GetType().Name,
+                Commands: [],
+                PermissionSets: []))
+            .ToArray();
+
+        return new PluginsManifest(ManifestVersion, DateTimeOffset.UtcNow, entries);
+    }
+
+    /// <summary>
+    /// 生成插件清单 JSON（plugins.manifest.json 格式）。
+    /// 使用源生成序列化器（NativeAOT 兼容，P2-4）。
+    /// </summary>
+    /// <param name="plugins">已注册的插件实例列表。</param>
+    /// <returns>缩进格式的 JSON 字符串。</returns>
+    public static string GeneratePluginsManifestJson(IEnumerable<IPlugin> plugins)
+        => JsonSerializer.Serialize(GeneratePluginsManifest(plugins), ManifestsJsonSerializerContext.Default.PluginsManifest);
+
+    /// <summary>
+    /// 序列化已生成的插件清单为 JSON（plugins.manifest.json 格式，C-1 收尾）。
+    /// 与 <see cref="GeneratePluginsManifestJson(IEnumerable{IPlugin})"/> 的序列化格式一致，
+    /// 用于应用侧导出已构建的清单（如 <see cref="Hosting.DesktopApplication.WritePluginsManifestToDirectory"/>）。
+    /// 使用源生成序列化器（NativeAOT 兼容，P2-4）。
+    /// </summary>
+    /// <param name="manifest">已生成的插件清单。</param>
+    /// <returns>缩进格式的 JSON 字符串。</returns>
+    public static string GeneratePluginsManifestJson(PluginsManifest manifest)
+        => JsonSerializer.Serialize(manifest, ManifestsJsonSerializerContext.Default.PluginsManifest);
+
+    /// <summary>
     /// 校验命令所需能力是否被 capability 声明覆盖（P1-2 一致性检查）。
     /// <para>
     /// 规则：
@@ -259,8 +337,14 @@ public static class ManifestGenerator
         {
             foreach (var permission in capability.Permissions)
             {
-                // 剥离 "!" 前缀：显式拒绝不计入覆盖集合
-                granted.Add(permission.StartsWith('!') ? permission[1..] : permission);
+                // 显式拒绝（"!" 前缀）不计入覆盖集合——拒绝不是授权，
+                // 需要该权限的命令仍视为未覆盖（与 deny 优先语义一致）。
+                if (permission.Length > 0 && permission[0] == '!')
+                {
+                    continue;
+                }
+
+                granted.Add(permission);
             }
         }
 

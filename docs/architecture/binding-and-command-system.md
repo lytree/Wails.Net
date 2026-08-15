@@ -38,6 +38,33 @@ Wails.Net 在前端 IPC 调用与后端 C# 方法之间采用**双轨调用架�
 2. **权限要求**：需要 capability / permission / scope 保护的能力**必须**走命令通路——只有 `CommandDispatcher` 会执行 `PermissionManager` 权限链与 Scope 校验；`[Binding]` 绑定通路不参与权限校验。
 3. **前端调用透明**：两条通路对前端完全透明（`MessageProcessor` 先查绑定、未命中再回退命令），但**建议前端按语义调用**：业务 API 用 `wails.call("XxxService.Method")`，插件能力用对应插件包的 TS wrapper。
 
+### 1.1.1 命令命名与 capability 约定（B-4 审计项增补）
+
+**命令别名命名规范**：
+
+- 命令名采用 `plugin.action` 点分命名空间，如 `fs.readFile`、`window.setTitle`、`notification.show`；`MessageProcessor` 按首段路由，未识别命名空间统一走 `CommandDispatcher` 兜底。
+- 插件命令必须以插件名（或能力前缀）开头，避免与业务 `[Binding]` 全限定名（`XxxService.Method`）混淆；同一插件内禁止注册重名命令。
+- 新命令默认使用 `MapCommand` 的强类型重载（编译期构建调用器）；`[Command]` 特性 + 源生成器是等价的编译期路径，运行时禁止 `Type.GetMethod` / `MethodInfo.Invoke` 发现调用。
+
+**capability 与 `[RequireCapability]` 来源优先级**：
+
+| 声明来源 | 位置 | 优先级 |
+|---------|------|--------|
+| `[RequireCapability]` / `[Command]` 特性 | 命令容器类或方法上 | 注册期硬编码，最高 |
+| `MapCommand(..., params string[] requiredCapabilities)` | 插件 `Configure` 中 | 与特性同源，编译期确定 |
+| capabilities/*.json 声明 | 运行时加载 | 授权时与注册要求取交集（都必须满足） |
+| `PermissionManager.Grant/Deny` | 运行时 | deny 始终优先于 grant |
+
+命令调度时 `CommandDispatcher` 会同时校验注册要求与 capability 授权；manifest 一致性检查（`FindUncoveredCapabilities`）保证注册要求**至少被一个 capability 覆盖**，未覆盖的命令必须显式声明匿名（`requiredCapabilities` 为空）。
+
+**禁止新增生产反射绑定路径的检查清单**：
+
+- [ ] 新命令是否通过 `MapCommand` 强类型重载 / `[Command]` + 源生成器注册，而非 `Type.GetMethods` 扫描？
+- [ ] 是否引入 `Activator.CreateInstance` / `MethodInfo.Invoke` / `Delegate.CreateDelegate`（生产代码）？
+- [ ] 敏感能力是否绕过 `CommandDispatcher` 直接暴露原生操作？
+- [ ] `using System.Reflection;` 是否仅出现在白名单场景（§3.4.3）或测试代码？
+- [ ] 新增命令是否同步更新 manifest / 插件文档命令表 / 前端 TS wrapper？
+
 ### 1.2 机器可读清单（P1-2 审计项）
 
 命令与 capability 的一致性由 [`ManifestGenerator`](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Manifests/ManifestGenerator.cs) 提供机器可读校验：

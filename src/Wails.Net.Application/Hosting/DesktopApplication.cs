@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Wails.Net.Application.Commands;
 using Wails.Net.Application.Manifests;
+using Wails.Net.Application.Plugins;
 
 namespace Wails.Net.Application.Hosting;
 
@@ -126,6 +127,40 @@ public sealed class DesktopApplication : IDesktopApplication
         var manifest = GenerateCommandsManifest();
         var filePath = Path.Combine(directory, ManifestGenerator.ManifestFileName);
         File.WriteAllText(filePath, ManifestGenerator.GenerateCommandsManifestJson(manifest));
+        return filePath;
+    }
+
+    /// <summary>
+    /// 生成插件清单（C-1 审计项：plugins.manifest.json）。
+    /// <para>
+    /// 从 DI 容器解析 <see cref="PluginManager"/>（已注册全部 <see cref="UsePlugin{T}"/>
+    /// 插件实例），经 <see cref="ManifestGenerator"/> 生成机器可读插件清单，
+    /// 供 CLI <c>plugin inspect</c>、插件文档命令表与前端 API 一致性校验消费，
+    /// 消除"插件包有哪些、注册了哪些命令"的人工核对成本。
+    /// </para>
+    /// </summary>
+    /// <returns>插件清单。</returns>
+    /// <exception cref="InvalidOperationException">DI 容器中未注册 <see cref="PluginManager"/> 时抛出
+    /// （正常通过 <see cref="DesktopApplicationBuilder.Build"/> 构建时不会发生）。</exception>
+    public PluginsManifest GeneratePluginsManifest()
+    {
+        var pluginManager = Services.GetRequiredService<PluginManager>();
+        return ManifestGenerator.GeneratePluginsManifest(pluginManager.Plugins);
+    }
+
+    /// <summary>
+    /// 将插件清单写入磁盘（C-1 审计项）。
+    /// 写入 <c>plugins.manifest.json</c>（<see cref="ManifestGenerator.PluginsManifestFileName"/>）。
+    /// </summary>
+    /// <param name="directory">输出目录；不存在时自动创建。</param>
+    /// <returns>生成的清单文件完整路径。</returns>
+    public string WritePluginsManifestToDirectory(string directory)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(directory);
+        Directory.CreateDirectory(directory);
+        var manifest = GeneratePluginsManifest();
+        var filePath = Path.Combine(directory, ManifestGenerator.PluginsManifestFileName);
+        File.WriteAllText(filePath, ManifestGenerator.GeneratePluginsManifestJson(manifest));
         return filePath;
     }
 }

@@ -15,7 +15,7 @@
 1. **Host/DI/Config/Logging 主线已基本闭环**：`DesktopApplicationBuilder` 封装 `HostApplicationBuilder`，默认注册 Options、Validator、核心管理器、插件生命周期适配器和日志 Provider；`CommandDispatcher` 也已经从 DI 收集 `ICommandMiddleware`，补齐了 ASP.NET Core 风格命令管道扩展入口。
 2. **Runtime/Window/IPC 主线具备 Wails v3 风格核心且开始模块化**：`Application` 仍作为用户友好的 facade，但生命周期 ready 语义、事件通配符、定向窗口事件和 `IIpcTransportStrategy` 已经补上，运行时逐步从“大聚合根”向 coordinator/strategy 过渡。
 3. **Plugin/Security/Capability 主线已从功能插件推进到最小权限模型**：插件显式启用、命令统一进入 `CommandDispatcher`，`PermissionManager` 支持 Strict/Compatibility、deny、permission set、window、remote、scope、platform 过滤，模板与脚手架也开始默认生成 Strict + capabilities 示例。
-4. **主要剩余优化空间从“抽象缺失”转为“清单化、平台一致性、可运维性”**：后续重点应放在插件命令/权限/前端 API manifest、平台窗口 fallback 链集中化、Android runtime ready 补齐、asset protocol scope、Channel 加密、架构边界测试与 NativeAOT/裁剪专项验证。
+4. **主要剩余优化空间从“抽象缺失”转为“清单化、平台一致性、可运维性”**：本轮（2026-08-15）已补齐 Android `WindowRuntimeReady` 派发（P0-2）、移除插件初始化临时 ServiceProvider（A-2/P1-5）、建立 Options/模板 drift check（P0-5/A-3）并补齐 `plugins.manifest.json`（C-1）；后续重点应放在平台窗口 fallback 链集中化、`Application` coordinator 化、asset protocol scope、Channel 加密与 NativeAOT/裁剪专项验证。
 
 ## 2. 当前架构快照
 
@@ -103,6 +103,8 @@ Options 已统一绑定 `Wails` 根节及其子节，并通过 Validators + `Val
 - **可运行时刷新配置**：日志级别、部分插件选项、可安全重建的业务配置。
 - **不保证热刷新配置**：平台 runtime 参数、已创建窗口的 WebView 环境、Strict/Compatibility 模式切换、capabilities 目录切换。
 
+> ✅ **已落地（2026-08-15）**：热重载边界已写入 `docs/architecture/hosting-and-lifecycle.md` §A-4（启动期快照 / 可运行时刷新 / 不保证热刷新 三分类，并约定 `IOptionsMonitor.OnChange` 显式订阅）。
+
 #### A-2：临时 ServiceProvider 仍是插件初始化的风险点
 
 `InitializePlugins()` 为了在 Host 构建前获得 `LoggerFactory` 和 `PermissionManager` 会构建临时 ServiceProvider，并在拿到 `PermissionManager` 后重新注册实例。该设计可工作，但属于维护风险点：
@@ -111,6 +113,8 @@ Options 已统一绑定 `Wails` 根节及其子节，并通过 Validators + `Val
 - `PermissionManager` 通过重注册实例保持一致，但其它服务不具备这种保护。
 
 **建议**：中期引入专用 `PluginBuildContext`，将 LoggerFactory 替换为构建期 logger abstraction 或 NullLogger，权限声明先写入轻量收集器，Host 构建后再统一 materialize 到 `PermissionManager`，从而移除临时容器。
+
+> ✅ **已落地（2026-08-15）**：新增 `DeferredPermissionRegistrar`（`src/Wails.Net.Application/Plugins/DeferredPermissionRegistrar.cs`）轻量权限声明收集器；`InitializePlugins()` 不再构建临时 ServiceProvider，改用 `NullLoggerFactory.Instance` 作为构建期 logger abstraction，权限集/作用域声明先写入收集器；`Build()` 在 Host 构建后、`LoadCapabilities` 之前统一 `ReplayInto(permissionManager)` materialize，Scope 初始化同步移至最终容器执行，消除双实例风险。
 
 #### A-3：Options 与模板需要持续做 drift check
 
@@ -122,6 +126,8 @@ Options 已统一绑定 `Wails` 根节及其子节，并通过 Validators + `Val
 4. Demo 示例。
 5. 配置文档。
 6. CLI `check` 或测试中的示例配置验证。
+
+> ✅ **已落地（2026-08-15）**：新增 `tests/Wails.Net.Cli.Tests/AppSettingsTemplateDriftTests.cs`——解析脚手架模板与 Demo 的 `appsettings.json`，校验 `Wails` 节全部配置键都能绑定到 `DesktopHostOptions` / `PermissionOptions` / `IpcOptions` 的公共属性路径，模板键漂移（模板改了 Options 未改，或反之）会直接测试失败。
 
 ## 4. 主线 B：Runtime / Window / IPC → Wails v3
 
@@ -188,8 +194,10 @@ Options 已统一绑定 `Wails` 根节及其子节，并通过 Validators + `Val
 |------|------|------|----------|------------|------|
 | Windows WebView2 | Native IPC | EventIPC / HTTP / WebSocket | 支持 | EventIPC/WebSocket | fallback 链待集中化 |
 | Linux WebKitGTK | Native IPC | EventIPC / HTTP / WebSocket | 支持 | EventIPC/WebSocket | fallback 链待集中化 |
-| Android WebView | WebMessageListener | HTTP | 支持 | Android event bridge | ready 派发待补齐 |
+| Android WebView | WebMessageListener | HTTP | 支持 | Android event bridge | ✅ ready 派发已补齐（2026-08-15） |
 | Server Mode | HTTP | WebSocket | 部分支持 | WebSocket | strategy 已接入 |
+
+> ✅ **已落地（2026-08-15）**：选择矩阵已写入 `docs/architecture/transport-and-ipc.md` §1.1。Android 端 `WailsWebViewClient.OnPageFinished` 新增 `WindowRuntimeReady` 派发（对齐 Windows `NavigationCompleted` / Linux runtime 注入 / macOS 的 `emit(WindowRuntimeReady)`），三平台 ready 语义一致。
 
 #### B-4：绑定系统“双轨”需继续文档化与测试化
 
@@ -200,6 +208,8 @@ Options 已统一绑定 `Wails` 根节及其子节，并通过 Validators + `Val
 - 命令别名命名规范。
 - capability 与 `[RequireCapability]` 的来源优先级。
 - 禁止新增生产反射绑定路径的检查清单。
+
+> ✅ **已落地（2026-08-15）**：`docs/architecture/binding-and-command-system.md` §1.1 已含双轨职责边界与推荐路径表；本次增补 §1.1.1（命令命名规范、capability 来源优先级表、禁止反射绑定路径检查清单），并同步 P1-2 机器可读清单（commands/capabilities/plugins manifest）说明。
 
 ## 5. 主线 C：Plugin / Security / Capability → Tauri v2
 
@@ -250,6 +260,8 @@ Options 已统一绑定 `Wails` 根节及其子节，并通过 Validators + `Val
 4. 测试断言：敏感内置命令必须被 capability 覆盖；未覆盖命令必须显式标注 `AllowAnonymous` 或 `NoCapabilityRequired`。
 5. 前端 TypeScript wrapper、插件文档命令表和 CLI `plugin inspect` 从 manifest 生成。
 
+> ✅ **已落地（2026-08-15）**：commands/capabilities manifest 此前已由 `ManifestGenerator` 提供；本次补齐 `plugins.manifest.json`（`GeneratePluginsManifest` / `GeneratePluginsManifestJson` + `PluginsManifestFileName` 常量 + `DesktopApplication.GeneratePluginsManifest` / `WritePluginsManifestToDirectory` 导出），并修复 `FindUncoveredCapabilities` 中 `!` 前缀显式拒绝被误计入覆盖集合的 bug（拒绝不是授权）。三份清单统一由 `ManifestsJsonSerializerContext` 源生成序列化（NativeAOT 兼容）。
+
 #### C-2：插件包拆分后需要架构边界测试
 
 应建立分层约束并用测试保护：
@@ -278,24 +290,24 @@ Options 已统一绑定 `Wails` 根节及其子节，并通过 Validators + `Val
 
 ### P0：短期必须收敛（建议 1~2 个迭代）
 
-| 编号 | 优化项 | 收益 | 风险 |
-|------|--------|------|------|
-| P0-1 | 将 transport 选择矩阵写入 `docs/architecture/transport-and-ipc.md` | 降低三平台调试成本 | 低 |
-| P0-2 | Android `WindowRuntimeReady` / runtime ready 派发补齐 | 消除移动端生命周期缺口 | 中 |
-| P0-3 | 平台自动加载失败消息补充可复制修复指令 | 降低首跑失败成本 | 低 |
-| P0-4 | 配置热重载边界文档化 | 避免用户误以为所有配置可热刷新 | 低 |
-| P0-5 | 建立 Options/模板/文档 drift check | 防止配置示例漂移 | 中 |
+| 编号 | 优化项 | 收益 | 风险 | 状态 |
+|------|--------|------|------|------|
+| P0-1 | 将 transport 选择矩阵写入 `docs/architecture/transport-and-ipc.md` | 降低三平台调试成本 | 低 | ✅ 已落地 |
+| P0-2 | Android `WindowRuntimeReady` / runtime ready 派发补齐 | 消除移动端生命周期缺口 | 中 | ✅ 已落地（2026-08-15） |
+| P0-3 | 平台自动加载失败消息补充可复制修复指令 | 降低首跑失败成本 | 低 | ✅ 已落地 |
+| P0-4 | 配置热重载边界文档化 | 避免用户误以为所有配置可热刷新 | 低 | ✅ 已落地 |
+| P0-5 | 建立 Options/模板/文档 drift check | 防止配置示例漂移 | 中 | ✅ 已落地（2026-08-15） |
 
 ### P1：中期结构优化（建议 3~5 个迭代）
 
-| 编号 | 优化项 | 收益 | 风险 |
-|------|--------|------|------|
-| P1-1 | 拆出 `Application` 内部 coordinator | 防止聚合根继续膨胀 | 中 |
-| P1-2 | 插件 commands/capabilities/plugins manifest | 支撑文档、测试、前端 API 统一 | 中 |
-| P1-3 | CLI `doctor` 增加安全/平台/原生依赖诊断 | 提升用户可运维性 | 低 |
-| P1-4 | 平台窗口 fallback 链集中到 `IIpcTransportStrategy` | 降低传输层维护成本 | 中 |
-| P1-5 | 移除插件初始化临时 ServiceProvider | 消除双 singleton 风险 | 中 |
-| P1-6 | 架构边界测试（Application 不依赖 Plugins.*） | 防止分层腐化 | 低 |
+| 编号 | 优化项 | 收益 | 风险 | 状态 |
+|------|--------|------|------|------|
+| P1-1 | 拆出 `Application` 内部 coordinator | 防止聚合根继续膨胀 | 中 | 待实施 |
+| P1-2 | 插件 commands/capabilities/plugins manifest | 支撑文档、测试、前端 API 统一 | 中 | ✅ 已落地（plugins.manifest 2026-08-15 补齐） |
+| P1-3 | CLI `doctor` 增加安全/平台/原生依赖诊断 | 提升用户可运维性 | 低 | ✅ 已落地 |
+| P1-4 | 平台窗口 fallback 链集中到 `IIpcTransportStrategy` | 降低传输层维护成本 | 中 | 待实施 |
+| P1-5 | 移除插件初始化临时 ServiceProvider | 消除双 singleton 风险 | 中 | ✅ 已落地（2026-08-15） |
+| P1-6 | 架构边界测试（Application 不依赖 Plugins.*） | 防止分层腐化 | 低 | ✅ 已落地 |
 
 ### P2：长期演进（版本边界内规划）
 

@@ -1,5 +1,7 @@
 using Android.Webkit;
 using Wails.Net.Application.Platform;
+using Wails.Net.Events;
+using WailsApplication = Wails.Net.Application.Application;
 
 namespace Wails.Net.Application.Android;
 
@@ -35,14 +37,22 @@ public sealed class WailsWebViewClient : WebViewClient
     private readonly string? _windowName;
 
     /// <summary>
+    /// 所属窗口 ID，用于页面加载完成后派发 <see cref="WindowEventType.WindowRuntimeReady"/>。
+    /// 对应 Wails v3 Go 版本 WebView 导航完成后的 emit(WindowRuntimeReady) 行为（P0-2 审计项）。
+    /// </summary>
+    private readonly uint _windowId;
+
+    /// <summary>
     /// 构造 WailsWebViewClient 实例。
     /// </summary>
     /// <param name="assetServer">静态资源服务器引用，可为 null。</param>
     /// <param name="windowName">关联的窗口名称，用于 per-window CSP 注入；可为 null。</param>
-    public WailsWebViewClient(Wails.Net.AssetServer.AssetServer? assetServer, string? windowName = null)
+    /// <param name="windowId">所属窗口 ID，页面加载完成后用于派发 WindowRuntimeReady。</param>
+    public WailsWebViewClient(Wails.Net.AssetServer.AssetServer? assetServer, string? windowName = null, uint windowId = 0)
     {
         _assetServer = assetServer;
         _windowName = windowName;
+        _windowId = windowId;
     }
 
     /// <summary>
@@ -108,6 +118,30 @@ public sealed class WailsWebViewClient : WebViewClient
 
         // 无匹配资源：返回 404
         return new WebResourceResponse("text/plain", "utf-8", 404, "Not Found", new Dictionary<string, string>(), Stream.Null);
+    }
+
+    /// <summary>
+    /// 页面加载完成后触发 <see cref="WindowEventType.WindowRuntimeReady"/> 窗口事件（P0-2 审计项）。
+    /// <para>
+    /// 对应 Wails v3 Go 版本 WebView 导航完成后的 emit(WindowRuntimeReady) 调用：
+    /// Windows 平台在 <c>CoreWebView2.NavigationCompleted</c> 中派发，
+    /// Linux 平台在 runtime 注入完成后派发，Android 在此处通过 <c>OnPageFinished</c> 派发，
+    /// 使 <see cref="WailsApplication"/> 的事件总线与生命周期等待（如
+    /// <c>WaitUntilPlatformStartedAsync</c>）在三平台行为一致。
+    /// </para>
+    /// </summary>
+    /// <param name="view">加载完成的 WebView。</param>
+    /// <param name="url">完成加载的页面 URL。</param>
+    public override void OnPageFinished(WebView? view, string? url)
+    {
+        base.OnPageFinished(view, url);
+
+        if (_windowId == 0)
+        {
+            return; // 未绑定窗口（纯资源拦截场景），不派发窗口事件
+        }
+
+        WailsApplication.Get()?.DispatchWindowEvent(_windowId, (uint)WindowEventType.WindowRuntimeReady);
     }
 
     /// <summary>

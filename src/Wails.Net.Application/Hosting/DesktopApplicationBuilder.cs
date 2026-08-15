@@ -33,6 +33,17 @@ public sealed class DesktopApplicationBuilder
     /// </summary>
     private readonly CommandRegistry _commandRegistry = new();
 
+    /// <summary>
+    /// 插件在 <see cref="Build"/> 前声明的权限收集器（A-2 / P1-5 审计项）。
+    /// <para>
+    /// 取代「构建临时 ServiceProvider 解析 <see cref="PermissionManager"/>」的旧方案：
+    /// 插件 <c>Configure</c> 阶段的权限集/作用域声明先写入此轻量收集器，
+    /// Host 构建完成后由 <see cref="Build"/> 统一 materialize 到真实
+    /// <see cref="PermissionManager"/>，消除临时容器双实例风险。
+    /// </para>
+    /// </summary>
+    private DeferredPermissionRegistrar? _deferredPermissions;
+
     /// <summary>DI 服务集合</summary>
     public IServiceCollection Services => _hostBuilder.Services;
 
@@ -272,6 +283,28 @@ public sealed class DesktopApplicationBuilder
         {
             permissionManager.SetCurrentPlatform(WailsPlatform.Server);
         }
+
+        // A-2 / P1-5：将插件在 Configure 阶段声明的权限集/作用域 materialize 到真实 PermissionManager。
+        // 必须在 LoadCapabilities 之前执行，使能力文件中的权限集标识可被展开。
+        if (permissionManager is not null && _deferredPermissions is not null && _deferredPermissions.HasDeclarations)
+        {
+            _deferredPermissions.ReplayInto(permissionManager);
+        }
+
+        // 初始化 Scope 绑定：从 PermissionOptions.Scopes 配置创建 IScope 实例并绑定到权限。
+        // 对应 Tauri v2 的 Scope 配置加载：appsettings.json 中的路径/URL 白名单转换为运行时约束。
+        // 原本在 InitializePlugins 中基于临时 ServiceProvider 执行，现移至 Host 构建后，
+        // 使用最终容器的 IOptions&lt;PermissionOptions&gt; 与 LoggerFactory（A-2 审计项）。
+        if (permissionManager is not null)
+        {
+            var permOptions = host.Services.GetService<IOptions<PermissionOptions>>()?.Value;
+            if (permOptions is not null)
+            {
+                var scopeLogger = host.Services.GetService<ILoggerFactory>()?.CreateLogger("ScopeInitializer");
+                ScopeInitializer.Initialize(permissionManager, permOptions, scopeLogger);
+            }
+        }
+
         LoadCapabilities(desktopOpts, host.Services);
 
         // 将窗口配置传递给 Application，由 Application.Run() 在 UI 线程上按需创建。
@@ -387,6 +420,22 @@ public sealed class DesktopApplicationBuilder
     /// 使插件可以通过 <see cref="IPluginContext.Commands"/> 注册命令，
     /// 通过 <see cref="IPluginContext.Permissions"/> 声明权限集和作用域。
     /// </summary>
+    /// <remarks>
+    /// A-2 审计项（2026-08-15）：此方法不再构建临时 ServiceProvider。
+    /// <para>
+    /// 旧实现通过 <c>_hostBuilder.Services.BuildServiceProvider()</c> 获取 LoggerFactory 与
+    /// PermissionManager，存在两个风险：
+    /// <list type="bullet">
+    /// <item>插件若在 <c>ConfigureServices</c> 注册有状态 singleton，临时容器会提前实例化，
+    /// 与最终 Host 容器产生双实例；</item>
+    /// <item>PermissionManager 通过重注册实例保持一致，但其它服务不具备这种保护。</item>
+    /// </list>
+    /// 新实现使用 <see cref="Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory"/> 作为
+    /// 构建期 logger abstraction（插件 Configure 阶段通常不需要真实日志），权限声明先写入
+    /// <see cref="DeferredPermissionRegistrar"/> 轻量收集器，Host 构建后由 <see cref="Build"/>
+    /// 统一 materialize 到真实 <see cref="PermissionManager"/>，从而移除临时容器。
+    /// </para>
+    /// </remarks>
     private void InitializePlugins()
     {
         if (_plugins.Count == 0)
@@ -394,43 +443,23 @@ public sealed class DesktopApplicationBuilder
             return;
         }
 
-        // 注意：此时尚未构建 Host，无法从 IServiceProvider 获取 LoggerFactory。
-        // 构建临时 ServiceProvider 仅用于获取已注册的 LoggerFactory 和 PermissionManager，
-        // 不影响后续 Host 构建。使用 NullLoggerFactory.Instance 作为兜底。
-        var tempProvider = _hostBuilder.Services.BuildServiceProvider();
-        var loggerFactory = tempProvider.GetService<ILoggerFactory>()
-            ?? Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance;
-        var permissionManager = tempProvider.GetService<PermissionManager>();
-
-        // 将 PermissionManager 实例重新注册为单例实例（替换类型注册），
-        // 确保后续 Host 构建时复用同一实例，使插件注册的权限在运行时可见。
-        if (permissionManager is not null)
-        {
-            Services.AddSingleton(permissionManager);
-        }
+        // A-2 审计项：构建期使用 NullLogger 作为 logger abstraction，权限声明写入轻量收集器。
+        // Host 构建后（Build 方法内）统一 materialize 到真实 PermissionManager。
+        var deferredPermissions = new DeferredPermissionRegistrar();
 
         var context = new PluginContext(
             _hostBuilder.Services,
             _commandRegistry,
             _hostBuilder.Configuration,
-            loggerFactory,
-            permissionManager);
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance,
+            permissionRegistrar: deferredPermissions);
 
         foreach (var plugin in _plugins)
         {
             plugin.Configure(context);
         }
 
-        // 初始化 Scope 绑定：从 PermissionOptions.Scopes 配置创建 IScope 实例并绑定到权限。
-        // 对应 Tauri v2 的 Scope 配置加载：appsettings.json 中的路径/URL 白名单转换为运行时约束。
-        if (permissionManager is not null)
-        {
-            var permOptions = tempProvider.GetService<IOptions<PermissionOptions>>()?.Value;
-            if (permOptions is not null)
-            {
-                ScopeInitializer.Initialize(permissionManager, permOptions, loggerFactory.CreateLogger("ScopeInitializer"));
-            }
-        }
+        _deferredPermissions = deferredPermissions;
     }
 
     /// <summary>
