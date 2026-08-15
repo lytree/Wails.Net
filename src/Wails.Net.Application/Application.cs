@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Wails.Net.Application.Bindings;
 using Wails.Net.Application.Commands;
+using Wails.Net.Application.Coordinators;
 using Wails.Net.Application.Events;
 using Wails.Net.Application.Hosting;
 using Wails.Net.Application.Managers;
@@ -239,6 +240,14 @@ public class Application
     /// 对应 Wails v3 Go 版本 application.go 中的 context 取消机制。
     /// </summary>
     private readonly CancellationTokenSource _cts = new();
+
+    /// <summary>
+    /// 运行时服务协调器（P1-1 审计项落地）。
+    /// 负责注册服务生命周期顺序管理（IServiceStartup / IServiceShutdown），
+    /// 从 <see cref="Run"/> / <see cref="Shutdown"/> 中抽取，防止 Application 聚合根继续膨胀。
+    /// 新增运行时职责应优先进入 coordinator（<see cref="IRuntimeCoordinator"/>），而不是堆到 Application。
+    /// </summary>
+    private readonly RuntimeServicesCoordinator _runtimeServices;
 
     /// <summary>
     /// 获取应用选项。
@@ -740,6 +749,7 @@ public class Application
         _options = options;
         _globalApplication = this;
         _shutdownTasks.AddRange(options.ShutdownTasks);
+        _runtimeServices = new RuntimeServicesCoordinator(_serviceRegistry);
     }
 
     /// <summary>
@@ -1027,14 +1037,8 @@ public class Application
             hook(this);
         }
 
-        // 按注册顺序启动服务
-        foreach (var service in _serviceRegistry.Services)
-        {
-            if (service is IServiceStartup startup)
-            {
-                startup.ServiceStartup(_options, _cts.Token).GetAwaiter().GetResult();
-            }
-        }
+        // 按注册顺序启动服务（P1-1：委托给 RuntimeServicesCoordinator 管理顺序）
+        _runtimeServices.StartAsync(_options, _cts.Token).GetAwaiter().GetResult();
 
         // 启动资源服务器（若实现了 IServiceStartup）
         if (_assetServer is IServiceStartup assetStartup)
@@ -1179,15 +1183,8 @@ public class Application
         // 在服务逆序关闭之前调用，确保插件能在服务仍然可用时释放资源。
         _pluginManager?.ShutdownPluginsAsync(CancellationToken.None).GetAwaiter().GetResult();
 
-        // 逆序关闭服务
-        var services = _serviceRegistry.Services.ToList();
-        for (var i = services.Count - 1; i >= 0; i--)
-        {
-            if (services[i] is IServiceShutdown shutdown)
-            {
-                shutdown.ServiceShutdown(CancellationToken.None).GetAwaiter().GetResult();
-            }
-        }
+        // 逆序关闭服务（P1-1：委托给 RuntimeServicesCoordinator 管理顺序）
+        _runtimeServices.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
 
         _platformApp?.Destroy();
         _isRunning = false;

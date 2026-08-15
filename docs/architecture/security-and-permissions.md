@@ -399,11 +399,13 @@ private string GetSafePath(string path)
 
 无沙箱模式（`_sandboxRoot = null`）下 `GetSafePath` 仍执行路径规范化（阶段1），可消除 `..` 等冗余，但不阻止访问任意路径——仅适用于完全受信任的应用。
 
-### 7.3 PersistedScopePlugin — 文件系统范围持久化
+### 7.3 PersistedScopePlugin — 文件系统范围持久化（P2-2 深度整合）
 
-[PersistedScopePlugin.cs](../src/Wails.Net.Application/Plugins/BuiltIn/PersistedScopePlugin.cs) 对应 Tauri v2 的 `@tauri-apps/plugin-persisted-scope`，允许运行时动态添加/移除允许访问的路径，并将范围变更持久化到 JSON 文件，应用重启后恢复之前的 scope 配置。
+[PersistedScopePlugin.cs](../src/Wails.Net.Plugins.PersistedScope/PersistedScopePlugin.cs) 对应 Tauri v2 的 `@tauri-apps/plugin-persisted-scope`，允许运行时动态添加/移除允许访问的路径，并将范围变更持久化到 JSON 文件，应用重启后恢复之前的 scope 配置。
 
-`FileSystemScope` 内部维护 `_allowedPaths`（`HashSet<string>`，大小写不敏感），支持通配符匹配：
+**与权限模型的深度整合（P2-2 审计项）**：插件通过 `IPermissionRegistrar.BindScope` 将 [`PersistedScopeManager`](../src/Wails.Net.Plugins.PersistedScope/PersistedScopeManager.cs)（实现 `IScope`）绑定到受管权限（默认 `fs:allow-read` / `fs:allow-write`，可通过构造函数自定义）。绑定后，`scope.addPath` 运行时授权的路径**立即参与 `PermissionManager.ValidateScopes` 的参数级 Scope 校验**——fs 插件的 `[ScopeParameter("fs:allow-read")]` 路径参数会同时受静态配置（appsettings.json `Scopes`）与运行时持久化授权的约束，接近 Tauri v2 的 fs scope 体验。`PersistedScopeManager` 同时注册为 DI 单例（`IPersistedScope`），供其他服务注入。
+
+`PersistedScopeManager` 维护多个命名作用域（默认作用域持久化到 `persisted-scope.json`），`IScope.Allows` 合并所有命名作用域校验。支持通配符匹配：
 
 | 通配符 | 含义 | 示例 |
 |--------|------|------|
@@ -413,13 +415,13 @@ private string GetSafePath(string path)
 `IsAllowed` 采用**精确匹配优先 + 通配符回退**策略，先检查路径是否直接在允许集合中，再遍历所有模式做正则匹配。`MatchPattern` 将 `**` 转为 `.*`、`*` 转为 `[^/\\]*`，避免跨目录匹配意外放行。
 
 ```csharp
-// 前端调用示例
+// 前端调用示例（第二个参数为作用域名/持久化文件，null 使用默认作用域）
 await wails.call("scope.addPath", ["/data/user1/**", null]);
 await wails.call("scope.isAllowed", ["/data/user1/docs/file.txt", null]);  // true
 await wails.call("scope.isAllowed", ["/data/user2/docs/file.txt", null]); // false
 ```
 
-`PersistedScopePlugin` 与 `FileSystemPlugin` 沙箱是**互补关系**：沙箱提供静态边界（启动时固定），scope 提供动态边界（运行时可调整）。生产环境建议两者结合——沙箱限制最大可达范围，scope 在沙箱内进一步细分。
+`PersistedScopePlugin` 与 `FileSystemPlugin` 沙箱是**互补关系**：沙箱提供静态边界（启动时固定），scope 提供动态边界（运行时可调整，且经 `IScope` 桥接进入统一权限链）。生产环境建议两者结合——沙箱限制最大可达范围，scope 在沙箱内进一步细分。
 
 ## 8. 加密存储
 

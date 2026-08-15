@@ -404,3 +404,15 @@ UI 线程内 `Application.Run()` 抛出的异常也会被 `catch` 块捕获，�
 - **服务容器**：`Application` 同时持有自己的 `ServiceRegistry`（`List<object>`）和 DI 注入的 `IServiceProvider`，`InitializeFromServiceProvider` 在 Host 构建后将 DI 中的实例同步到 `Application` 字段
 
 这种"双层生命周期"设计使 Wails.Net 既能复用 Wails v3 的对象模型，又能享受 Generic Host 提供的标准化配置、日志和 DI 体验。
+
+## 运行时协调器（P1-1 审计项）
+
+为防止 `Application` 聚合根继续膨胀为"上帝对象"，运行时段职责逐步收敛到独立的协调器（`IRuntimeCoordinator`，见 [`Coordinators`](../src/Wails.Net.Application/Coordinators)）：
+
+| 协调器 | 职责 | 状态 |
+|--------|------|------|
+| `RuntimeServicesCoordinator` | 注册服务生命周期顺序管理：启动按注册顺序调用 `IServiceStartup`，关闭按注册逆序调用 `IServiceShutdown`（`Application.Run`/`Shutdown` 已委托） | ✅ 已落地 |
+| `FrontendRuntimeCoordinator` | runtime JS、AssetServer、IPC transport 绑定 | ⏳ 规划 |
+| `PlatformLifecycleCoordinator` | `IPlatformApp`、窗口主循环、Server 模式生命周期 | ⏳ 规划 |
+
+**约束（新增职责优先进入 coordinator）**：后续为 `Application` 增加运行时职责时，应优先放入协调器或 DI 服务，而不是直接堆到 `Application` 类。服务生命周期相关逻辑（重试、超时、依赖顺序、指标）一律进入 `RuntimeServicesCoordinator`。
