@@ -3,9 +3,11 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using TUnit.Core;
+using Wails.Net.Application.Commands;
 using Wails.Net.Application.Hosting;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform;
+using Wails.Net.Application.Plugins;
 
 namespace Wails.Net.Application.Tests.Hosting;
 
@@ -215,6 +217,68 @@ public sealed class DesktopApplicationBuilderTests
         // 操作与断言：未初始化 ServiceProvider 时应抛出 InvalidOperationException
         await Assert.That(() => app.RegisterBindings<TestBindableService>())
             .ThrowsExactly<InvalidOperationException>();
+    }
+
+    [Test]
+    public async Task Build_CollectsCommandMiddlewares_FromDI()
+    {
+        // 安排：通过插件注册一条命令，并在 DI 注册中间件实例
+        var builder = DesktopApplicationBuilder.CreateBuilder();
+        var plugin = Substitute.For<IPlugin>();
+        plugin.When(x => x.Configure(Arg.Any<IPluginContext>()))
+            .Do(callInfo => callInfo.Arg<IPluginContext>()
+                .Commands.MapCommand("test.middleware", () => "ok"));
+        var addPluginMethod = typeof(DesktopApplicationBuilder)
+            .GetMethod("AddPlugin", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        addPluginMethod!.Invoke(builder, new object[] { plugin });
+
+        var middleware = new TestCommandMiddleware();
+        builder.Services.AddSingleton<ICommandMiddleware>(middleware);
+
+        // 操作：Build 后通过 CommandDispatcher 调度命令
+        var app = builder.Build();
+        var dispatcher = app.Application.CommandDispatcher!;
+        var response = await dispatcher.DispatchAsync(
+            new InvokeRequest(Guid.NewGuid(), "test.middleware", default));
+
+        // 断言：中间件从 DI 被收集并实际执行，命令成功返回
+        await Assert.That(response.Success).IsTrue();
+        await Assert.That(middleware.InvocationCount).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task UseCommandMiddleware_RegistersToDI()
+    {
+        // 安排
+        var builder = DesktopApplicationBuilder.CreateBuilder();
+
+        // 操作
+        builder.UseCommandMiddleware<TestCommandMiddleware>();
+        var app = builder.Build();
+
+        // 断言：中间件已注册到 DI，且 Build 收集到的实例为注册类型
+        var resolved = app.Services.GetService<ICommandMiddleware>();
+        await Assert.That(resolved).IsNotNull();
+        await Assert.That(resolved).IsTypeOf<TestCommandMiddleware>();
+    }
+
+    /// <summary>
+    /// 测试用命令中间件，记录调用次数。
+    /// </summary>
+    private sealed class TestCommandMiddleware : ICommandMiddleware
+    {
+        private int _count;
+
+        /// <summary>中间件被调用的次数。</summary>
+        public int InvocationCount => Volatile.Read(ref _count);
+
+        /// <inheritdoc/>
+        public Task<InvokeResponse> InvokeAsync(
+            ICommandContext context, InvokeRequest request, Func<Task<InvokeResponse>> next)
+        {
+            Interlocked.Increment(ref _count);
+            return next();
+        }
     }
 
     /// <summary>

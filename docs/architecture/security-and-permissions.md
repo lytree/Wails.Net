@@ -336,7 +336,7 @@ builder.Services.AddPermissions(opts =>
 builder.Services.EnablePermissions();
 ```
 
-`AddPermissions` 通过 `BindConfiguration("Desktop:Permissions")` 绑定配置节，再调用可选的 `configure` 回调覆盖配置，最后注册 `PermissionManager` 为单例。`EnablePermissions` 是便捷方法，等价于 `Configure<PermissionOptions>(o => o.Enabled = true)`。
+`AddPermissions` 通过 `BindConfiguration("Wails:Permissions")` 绑定配置节（**配置根节统一为 `Wails`**），再调用可选的 `configure` 回调覆盖配置，最后注册 `PermissionManager` 为单例。`EnablePermissions` 是便捷方法，等价于 `Configure<PermissionOptions>(o => o.Enabled = true)`。
 
 ## 7. 文件系统安全
 
@@ -517,8 +517,9 @@ builder.UsePlugin(new FileSystemPlugin(appDataPath));
 
 ```json
 {
-  "Desktop": {
+  "Wails": {
     "Permissions": {
+      "Mode": "Strict",
       "Enabled": true,
       "DenyByDefault": true,
       "Permissions": [ "filesystem.read", "filesystem.write", "opener.openUrl" ]

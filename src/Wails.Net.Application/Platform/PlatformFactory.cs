@@ -166,7 +166,8 @@ public static class PlatformFactory
         throw new InvalidOperationException(
             $"平台 '{platform}' 未注册创建委托。请通过 PlatformFactory.RegisterPlatformApp(\"{platform}\", ...) 注册，" +
             $"通常在 {GetProviderPackageName(platform)} 项目中通过 [ModuleInitializer] 自动调用。" +
-            $"已尝试自动加载程序集 {GetProviderPackageName(platform)} 但未找到委托，请确认项目已引用该平台包。");
+            $"已尝试自动加载程序集 {GetProviderPackageName(platform)} 但未找到委托，请确认项目已引用该平台包。" +
+            BuildFixInstruction(platform));
     }
 
     /// <summary>
@@ -235,7 +236,8 @@ public static class PlatformFactory
         throw new InvalidOperationException(
             $"平台 '{platform}' 未注册剪贴板创建委托。请通过 PlatformFactory.RegisterClipboard(\"{platform}\", ...) 注册，" +
             $"通常在 {GetProviderPackageName(platform)} 项目中通过 [ModuleInitializer] 自动调用。" +
-            $"已尝试自动加载程序集 {GetProviderPackageName(platform)} 但未找到委托，请确认项目已引用该平台包。");
+            $"已尝试自动加载程序集 {GetProviderPackageName(platform)} 但未找到委托，请确认项目已引用该平台包。" +
+            BuildFixInstruction(platform));
     }
 
     /// <summary>
@@ -395,6 +397,31 @@ public static class PlatformFactory
             ? "Wails.Net.Testing"
             : $"Wails.Net.Application.{Capitalize(platform)}";
     }
+
+    /// <summary>
+    /// 生成平台包缺失时的可复制修复指令（B-2 审计项）。
+    /// <para>
+    /// 面向普通用户的异常消息补充，给出包引用与扩展方法调用的明确建议，
+    /// 避免用户只知道"委托未注册"而不知道如何修复。
+    /// </para>
+    /// </summary>
+    /// <param name="platform">平台名称。</param>
+    /// <returns>以" 修复方法："开头的建议文本；无法给出建议时返回空字符串。</returns>
+    private static string BuildFixInstruction(string platform) => platform switch
+    {
+        PlatformWindows =>
+            " 修复方法：在 csproj 中引用 Wails.Net.Application.Windows，" +
+            "并在 Program.cs 调用 builder.UseWindows()；或保持项目引用，让 UseAutoPlatform() 自动加载。",
+        PlatformLinux =>
+            " 修复方法：在 csproj 中引用 Wails.Net.Application.Linux 并调用 builder.UseLinux()，" +
+            "同时确保系统已安装 GTK4 / WebKitGTK 原生依赖（参考 wails doctor）。",
+        PlatformAndroid =>
+            " 修复方法：将目标框架切换为 net10.0-android36.0（SupportedOSPlatformVersion=24）" +
+            "并引用 Wails.Net.Application.Android，在 Application 上调用 UseAndroid()。",
+        PlatformMacOS =>
+            " 修复方法：在 csproj 中引用 Wails.Net.Application.MacOS 并调用 builder.UseMacOS()。",
+        _ => string.Empty
+    };
 
     /// <summary>
     /// 尝试按平台名称加载对应的平台程序集，并显式触发其 <c>[ModuleInitializer]</c> 完成委托注册。

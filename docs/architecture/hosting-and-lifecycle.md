@@ -9,7 +9,7 @@ Wails.Net 的宿主层（Hosting）基于 [Microsoft.Extensions.Hosting](https:/
 - [DesktopApplicationBuilder](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Hosting/DesktopApplicationBuilder.cs) — Fluent API 构建器，封装 `HostApplicationBuilder`
 - [DesktopApplication](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Hosting/DesktopApplication.cs) — 应用实例，封装 `IHost`，对外暴露 `RunAsync`/`Stop`
 - [DesktopHostedService](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Hosting/DesktopHostedService.cs) — `IHostedService` 适配器，将 `Application` 桥接到 Host 生命周期
-- [DesktopHostOptions](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Hosting/DesktopHostOptions.cs) — 强类型配置选项，绑定 `appsettings.json` 的 `Desktop` 节
+- [DesktopHostOptions](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Hosting/DesktopHostOptions.cs) — 强类型配置选项，绑定 `appsettings.json` 的 `Wails` 根节
 
 ## 架构图
 
@@ -73,7 +73,7 @@ var builder = DesktopApplicationBuilder.CreateBuilder(args);
 
 构造函数立即调用 `ConfigureServices()`，完成以下注册：
 
-1. **`DesktopHostOptions` 绑定** — 通过 `Services.AddOptions<DesktopHostOptions>().Bind(Configuration.GetSection("Desktop"))` 绑定到配置节
+1. **`DesktopHostOptions` 绑定** — 通过 `Services.AddOptions<DesktopHostOptions>().Bind(Configuration.GetSection("Wails"))` 绑定到配置根节（统一为 `Wails`）
 2. **核心管理器与服务** — 调用 `Services.AddWailsCore()`（详见 [ServiceCollectionExtensions.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Hosting/ServiceCollectionExtensions.cs)），注册 `EventProcessor`、`BindingManager`、`WindowManager`、`DialogManager`、`ScreenManager` 以及内置服务（`FileServerService`、`KvStoreService`、`LogService`、`NotificationService`、`SqliteService`、`UpdaterService`）
 3. **`ApplicationOptions` 工厂单例** — 从 `DesktopHostOptions` 映射 `Name`、`SingleInstance`、`Frameless` 字段
 4. **`Application` 工厂单例** — 复用已注册的 `ApplicationOptions` 创建实例
@@ -287,11 +287,11 @@ for (var i = services.Count - 1; i >= 0; i--)
 
 ## 配置选项
 
-[DesktopHostOptions.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Hosting/DesktopHostOptions.cs) 对应 `appsettings.json` 的 `Desktop` 节，使用标准 `IOptions<T>` 模式绑定：
+[DesktopHostOptions.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Hosting/DesktopHostOptions.cs) 对应 `appsettings.json` 的 `Wails` 根节（**配置根节统一为 `Wails`，`Desktop` 节为旧文档残留，请勿使用**），使用标准 `IOptions<T>` 模式绑定：
 
 ```json
 {
-  "Desktop": {
+  "Wails": {
     "ApplicationName": "MyApp",
     "SingleInstance": true,
     "Window": {
@@ -305,7 +305,11 @@ for (var i = services.Count - 1; i >= 0; i--)
       "DefaultDocument": "index.html",
       "EnableSpaFallback": true
     },
-    "Permissions": [ "fs:read", "shell:open" ]
+    "Permissions": {
+      "Mode": "Strict",
+      "Enabled": true,
+      "DenyByDefault": true
+    }
   }
 }
 ```
@@ -333,6 +337,18 @@ var desktopOpts = host.Services.GetRequiredService<IOptions<DesktopHostOptions>>
 ```
 
 `Build()` 中根据 `Assets.RootPath` 自动创建 `FileAssetServer` 并赋值给 `Application.AssetServer`，前端窗口自动导航到 `http://wails.localhost/`。
+
+### 配置热重载边界（A-4 审计项）
+
+`ApplicationOptions` 工厂使用 `IOptionsMonitor<DesktopHostOptions>.CurrentValue` 读取最新配置，**但并非所有配置都适合运行时热重载**。桌面运行时的大量状态（已创建窗口、平台主循环、WebView 环境）在 `Build()` 时一次性固化，修改后需重启生效。按类别划分：
+
+| 类别 | 示例 | 热重载支持 |
+|------|------|-----------|
+| **启动期配置** | 窗口初始尺寸/标题、平台选择、`Assets.RootPath` 资源路径、权限模式 | ❌ 仅启动时读取，修改需重启 |
+| **可运行时刷新** | 日志级别（`Logging:LogLevel`）、部分插件选项（经 `IOptionsMonitor` 订阅） | ✅ 支持（`IOptionsMonitor.OnChange` 通知） |
+| **禁止 / 不保证热刷新** | 主窗口 WebView 初始化参数（`DevServerUrl` 注入时机）、平台 runtime 参数、权限 Strict ↔ Compatibility 模式切换 | ❌ 不保证生效，修改需重启 |
+
+**约定**：需要运行时动态调整的配置（如日志级别）应通过 `IOptionsMonitor<T>.OnChange` 显式订阅；其余配置一律视为**启动期快照**，在 `DesktopApplicationBuilder.Build()` 阶段固化。
 
 ## 全局异常处理
 
@@ -368,7 +384,7 @@ UI 线程内 `Application.Run()` 抛出的异常也会被 `catch` 块捕获，�
 | 入口 | `app.RunAsync()` | `app.RunAsync()` | 都返回 `int` 退出码 |
 | IHostedService | Kestrel / 后台服务 | `DesktopHostedService` | Wails.Net 仅有一个，桥接 `Application` |
 | 主线程 | 线程池 | 专用 STA 线程 | Win32 消息循环和 WebView2 要求 STA |
-| 配置 | `appsettings.json` + `IOptions<T>` | 相同 | Wails.Net 绑定 `Desktop` 节 |
+| 配置 | `appsettings.json` + `IOptions<T>` | 相同 | Wails.Net 绑定 `Wails` 根节 |
 | 关闭信号 | `IC Lifetime.ApplicationStopping` | `IHostApplicationLifetime.StopApplication()` | UI 线程退出后反向通知 Host |
 | 异常处理 | 中间件管道 | `AppDomain` + `TaskScheduler` 全局处理器 | 桌面应用无 HTTP 管道 |
 | 平台抽象 | IServer（Kestrel / IIS / HTTP.sys） | `IPlatformApp`（Windows / Linux） | 共用接口驱动模式 |

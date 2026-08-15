@@ -145,6 +145,19 @@ public sealed class DesktopApplicationBuilder
     }
 
     /// <summary>
+    /// 注册命令中间件到 DI 容器，<see cref="Build"/> 时自动注入 <see cref="CommandDispatcher"/>。
+    /// 对应 ASP.NET Core 的 <c>app.UseMiddleware&lt;T&gt;()</c> 中间件管道体验（A-2 审计项闭环）。
+    /// 中间件按注册顺序组成管道，先注册的先执行。
+    /// </summary>
+    /// <typeparam name="TMiddleware">中间件类型，需实现 <see cref="ICommandMiddleware"/>。</typeparam>
+    /// <returns>当前构建器实例，用于链式调用。</returns>
+    public DesktopApplicationBuilder UseCommandMiddleware<TMiddleware>() where TMiddleware : class, ICommandMiddleware
+    {
+        Services.AddSingleton<ICommandMiddleware, TMiddleware>();
+        return this;
+    }
+
+    /// <summary>
     /// 使用平台工厂自动检测并注册平台实现。
     /// 基于 <see cref="PlatformFactory.CreatePlatformApp"/> 的 6 级检测链，
     /// 在 Windows 上注册 WindowsPlatformApp，Linux 上注册 LinuxPlatformApp，
@@ -208,11 +221,15 @@ public sealed class DesktopApplicationBuilder
         // CommandDispatcher 需要 CommandRegistry（已由插件填充）和 IServiceProvider（已构建）
         // 自动从 DI 获取 PermissionManager（已由 AddWailsManagers 默认注册，Enabled 默认 false）
         // 对应主题 C：将权限校验接入命令调度链。
+        // A-2 审计项闭环：从 DI 收集全部 ICommandMiddleware 注入命令管道，
+        // 使应用侧可通过 UseCommandMiddleware<T>() / AddSingleton<ICommandMiddleware, T>()
+        // 以 ASP.NET Core 风格扩展命令处理管道（日志、审计、限流、指标等）。
         var commandDispatcher = new CommandDispatcher(
             _commandRegistry,
             host.Services,
             host.Services.GetService<ILogger<CommandDispatcher>>(),
-            host.Services.GetService<PermissionManager>());
+            host.Services.GetService<PermissionManager>(),
+            host.Services.GetServices<ICommandMiddleware>().ToArray());
         application.CommandDispatcher = commandDispatcher;
 
         // 自动创建 AssetServer（仿 Wails v3 静态资源处理）

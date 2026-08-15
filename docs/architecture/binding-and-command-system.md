@@ -22,6 +22,22 @@ Wails.Net 在前端 IPC 调用与后端 C# 方法之间采用**双轨调用架�
 //                  ↑ 命中 CommandDispatcher（[Command] 注册）
 ```
 
+### 1.1 职责边界与推荐路径（B-4 审计项）
+
+两条调用通路可以并存，但**新代码必须按职责选择**，避免贡献者误用：
+
+| 场景 | 推荐路径 | 说明 |
+|------|---------|------|
+| **应用业务 API**（登录、订单、业务查询等） | `[Binding]` + 源生成器 | 接近 Wails v3 的绑定体验，`ClassName.MethodName` 全限定名，TypeScript 类型由生成器输出 |
+| **系统/插件能力**（文件、窗口、剪贴板、通知等） | `IPlugin` + `MapCommand` + capability | 接近 Tauri v2 的能力模型，命令名（如 `fs.readFile`），必须声明权限 |
+| **新增内置能力** | 一律通过 `CommandDispatcher` 注册 | 禁止绕过 `CommandDispatcher` 权限链直接暴露敏感原生操作 |
+
+判定要点：
+
+1. **方法归属**：业务方法属于"应用自身的服务"，放在 `[Binding]` 服务类；系统能力属于"框架/插件提供的通用能力"，走 `IPlugin.MapCommand`。
+2. **权限要求**：需要 capability / permission / scope 保护的能力**必须**走命令通路——只有 `CommandDispatcher` 会执行 `PermissionManager` 权限链与 Scope 校验；`[Binding]` 绑定通路不参与权限校验。
+3. **前端调用透明**：两条通路对前端完全透明（`MessageProcessor` 先查绑定、未命中再回退命令），但**建议前端按语义调用**：业务 API 用 `wails.call("XxxService.Method")`，插件能力用对应插件包的 TS wrapper。
+
 ## 2. 绑定系统
 
 ### 2.1 BindingManager — 反射扫描与注册
@@ -197,7 +213,20 @@ public interface ICommandMiddleware
 }
 ```
 
-中间件按注册顺序组成管道：第一个中间件最先执行，可短路管道（不调用 `next` 直接返回响应）。典型应用场景包括日志记录、审计、限流、指标收集。`CommandDispatcher` 接收 `IReadOnlyList<ICommandMiddleware>` 在构造时一次性注入；`_middlewares ?? []` 保证未配置时为空列表。
+中间件按注册顺序组成管道：第一个中间件最先执行，可短路管道（不调用 `next` 直接返回响应）。典型应用场景包括日志记录、审计、限流、指标收集。
+
+**DI 注入闭环（A-2 审计项）**：`DesktopApplicationBuilder.Build()` 会从 DI 容器收集全部 `ICommandMiddleware` 一次性注入 `CommandDispatcher`（未注册时为 `[]`）。应用侧以 ASP.NET Core 风格注册中间件：
+
+```csharp
+var builder = DesktopApplicationBuilder.CreateBuilder(args);
+
+// Fluent API（推荐）
+builder.UseCommandMiddleware<AuditLogMiddleware>();
+builder.UseCommandMiddleware<RateLimitMiddleware>();
+
+// 或直接注册到 DI
+builder.Services.AddSingleton<ICommandMiddleware, AuditLogMiddleware>();
+```
 
 ### 3.6 命令超时机制
 

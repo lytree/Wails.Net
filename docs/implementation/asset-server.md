@@ -440,7 +440,7 @@ public class AssetsOptions
 
 ```json
 {
-  "Desktop": {
+  "Wails": {
     "Assets": {
       "RootPath": "dist",
       "DefaultDocument": "index.html",

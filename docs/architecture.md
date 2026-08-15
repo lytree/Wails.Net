@@ -272,9 +272,9 @@ IServiceShutdown → 关闭顺序（逆序）
 使用 `IOptions<T>` 强类型配置：
 
 ```csharp
-// appsettings.json → DesktopHostOptions
+// appsettings.json → DesktopHostOptions（配置根节统一为 "Wails"）
 Services.AddOptions<DesktopHostOptions>()
-    .Bind(Configuration.GetSection("Desktop"));
+    .Bind(Configuration.GetSection("Wails"));
 ```
 
 ## 命名空间结构

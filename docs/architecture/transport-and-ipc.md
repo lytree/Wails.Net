@@ -18,6 +18,31 @@ Wails.Net 的传输层是连接前端 WebView 与后端 .NET 运行时的**唯�
 
 三者都遵循同一份 [`ITransport`](../src/Wails.Net.Application/Transport/ITransport.cs) 契约，由 [`MessageProcessor`](../src/Wails.Net.Application/Transport/MessageProcessor.cs) 统一处理消息，由 [`AssetServer`](../src/Wails.Net.AssetServer/AssetServer.cs) 统一服务静态资源，从而把"传输介质差异"与"业务处理逻辑"完全解耦。
 
+### 1.1 Transport 选择矩阵（B-3 审计项）
+
+不同运行场景应选择不同的传输方式。下表固化"首选 / 回退 / 取消调用 / 多窗口广播"四个决策维度，供用户与维护者快速定位：
+
+| 场景 | 首选 | 回退 | 取消调用 | 多窗口广播 |
+|------|------|------|----------|------------|
+| Windows WebView2 桌面 | Native IPC（`WebResourceRequested` 拦截 + postMessage） | HTTP / EventIPC | 支持（超时/取消令牌） | WebSocket / EventIPC |
+| Linux WebKitGTK 桌面 | Native IPC（`wails://` 自定义协议） | HTTP / EventIPC | 支持（超时/取消令牌） | WebSocket / EventIPC |
+| Android WebView | WebMessageListener（`window.__wailsNative.onMessage`） | HTTP | 支持（超时/取消令牌） | Event bridge |
+| Server 模式（无 GUI / 容器化） | HTTP（`HttpTransport` 轮询） | WebSocket | 部分支持（HTTP 无服务端取消，WebSocket 可取消） | WebSocket（`WebSocketBroadcaster`） |
+
+**Fallback 顺序约定**（由 [`Application`](../src/Wails.Net.Application/Application.cs) 装配）：
+
+```text
+桌面模式：Native IPC →（失败）HTTP / EventIPC
+Server 模式：HTTP →（升级）WebSocket（全双工 / 多窗口广播）
+```
+
+**决策要点**：
+
+1. **桌面模式优先 Native IPC**：与 WebView 生命周期绑定、延迟最低、无需端口监听；`EventIPCTransport` 仅在原生通道不可用时作为事件桥回退。
+2. **Server 模式默认 HTTP 轮询**：`HttpTransport` 占用端口最少、穿透性最好；需要双向实时推送（多浏览器会话、远程调试）时切换 `WebSocketTransport`。
+3. **取消调用差异**：HTTP 轮询请求发出后无法服务端取消（只能丢弃响应）；WebSocket 与 Native IPC 支持取消令牌传播，超时命令可被真正中止（见 [`CommandDispatcher`](../src/Wails.Net.Application/Commands/CommandDispatcher.cs) 的 `_defaultTimeout` 机制）。
+4. **多窗口广播**：所有桌面/Server 场景的跨窗口事件广播统一由 `WebSocketBroadcaster` 或 `EventIPCTransport` 承担；单窗口应用无需关注。
+
 ## 2. 传输接口 — ITransport 契约
 
 [`ITransport`](../src/Wails.Net.Application/Transport/ITransport.cs) 定义了所有传输层必须满足的最小契约，对应 Wails v3 Go 版本 `Transport` 接口：

@@ -1,6 +1,7 @@
 using System.CommandLine;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 
 namespace Wails.Net.Cli.Commands;
 
@@ -80,6 +81,13 @@ internal sealed class DoctorCommand : CliCommandBase
             CheckGit(),
             CheckOsPlatform(),
         };
+
+        // P1-3 安全诊断：仅当当前目录存在 Wails.Net 项目配置（appsettings.json）时加入，
+        // 避免在非项目目录执行 doctor 时输出无关建议。
+        if (CheckProjectPermissions() is { } securityCheck)
+        {
+            checks.Add(securityCheck);
+        }
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
@@ -487,6 +495,88 @@ internal sealed class DoctorCommand : CliCommandBase
             "D-Bus",
             DiagnosticStatus.Warn,
             "未检测到 D-Bus 工具，系统托盘和通知功能可能不可用");
+    }
+
+    /// <summary>
+    /// 检测当前项目（appsettings.json）的安全权限配置（P1-3 审计项）。
+    /// <para>
+    /// 仅当当前目录存在 <c>appsettings.json</c>（Wails.Net 项目）时执行：
+    /// 解析 <c>Wails:Permissions</c> 节，评估是否达到生产推荐配置
+    /// （<c>Mode=Strict</c> + <c>Enabled=true</c> + <c>DenyByDefault=true</c>，
+    /// 对应 Tauri v2 最小权限姿态）。权限未启用或未达 Strict 时给出 warning 安全建议。
+    /// </para>
+    /// </summary>
+    /// <returns>诊断结果；当前目录非 Wails.Net 项目时返回 null（调用方跳过该检查）。</returns>
+    private static DiagnosticResult? CheckProjectPermissions()
+    {
+        var appSettingsPath = LocateAppSettingsJson();
+        if (appSettingsPath is null)
+        {
+            return null; // 非项目目录，跳过安全检查
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(appSettingsPath));
+            if (!doc.RootElement.TryGetProperty("Wails", out var wails) ||
+                !wails.TryGetProperty("Permissions", out var perms))
+            {
+                return new DiagnosticResult(
+                    "项目安全配置",
+                    DiagnosticStatus.Warn,
+                    $"未找到 Wails:Permissions 配置节，权限校验未启用。生产构建建议配置 Mode=Strict、Enabled=true、DenyByDefault=true");
+            }
+
+            var enabled = perms.TryGetProperty("Enabled", out var enabledEl) && enabledEl.ValueKind == JsonValueKind.True;
+            var mode = perms.TryGetProperty("Mode", out var modeEl) ? modeEl.GetString() : null;
+            var denyByDefault = perms.TryGetProperty("DenyByDefault", out var denyEl) && denyEl.ValueKind == JsonValueKind.True;
+
+            if (enabled &&
+                string.Equals(mode, "Strict", StringComparison.OrdinalIgnoreCase) &&
+                denyByDefault)
+            {
+                return new DiagnosticResult(
+                    "项目安全配置",
+                    DiagnosticStatus.Pass,
+                    $"已启用 Strict 权限模式（Mode=Strict + DenyByDefault=true，{Path.GetFileName(appSettingsPath)}）");
+            }
+
+            return new DiagnosticResult(
+                "项目安全配置",
+                DiagnosticStatus.Warn,
+                $"权限模式未达到生产推荐（Mode={mode ?? "(未设置)"}, Enabled={enabled}, DenyByDefault={denyByDefault}）。" +
+                "生产构建建议配置 Wails:Permissions:Mode=Strict 并启用 DenyByDefault，同时通过 capabilities/ 目录声明命令权限");
+        }
+        catch (Exception ex) when (ex is JsonException or IOException)
+        {
+            return new DiagnosticResult(
+                "项目安全配置",
+                DiagnosticStatus.Warn,
+                $"appsettings.json 解析失败，无法检查权限配置：{ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 定位当前目录下的 <c>appsettings.json</c>（Wails.Net 项目配置文件）。
+    /// </summary>
+    /// <returns>文件完整路径；未找到时返回 null。</returns>
+    private static string? LocateAppSettingsJson()
+    {
+        var candidates = new[]
+        {
+            Path.Combine(Environment.CurrentDirectory, "appsettings.json"),
+            Path.Combine(Environment.CurrentDirectory, "Properties", "appsettings.json"),
+        };
+
+        foreach (var candidate in candidates)
+        {
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
     private static string? LocateExecutable(string name)

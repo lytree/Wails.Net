@@ -24,6 +24,12 @@ public interface IPlugin
     /// 注册插件依赖的服务到 DI 容器。
     /// 在 Host 构建前调用，对应 ASP.NET Core 的 <c>ConfigureServices</c>。
     /// </summary>
+    /// <remarks>
+    /// <para><b>约束（A-1 审计项）</b>：此阶段<b>必须只做 DI 注册</b>，不应依赖已构建的 <see cref="IServiceProvider"/>——
+    /// 此时 Host 尚未构建，从容器解析服务会触发临时容器构建，产生与最终 Host 不同的实例。</para>
+    /// <para>也不应在此阶段读取 <c>IConfiguration</c> 之外的运行时状态；配置读取应使用
+    /// <see cref="Microsoft.Extensions.Options.IOptions{T}"/>（Host 构建后生效）。</para>
+    /// </remarks>
     /// <param name="services">DI 服务集合。</param>
     void ConfigureServices(IServiceCollection services);
 
@@ -31,6 +37,13 @@ public interface IPlugin
     /// 配置插件（注册命令、事件等）。
     /// 在 Host 构建前调用，对应 Tauri v2 的 <c>init</c>。
     /// </summary>
+    /// <remarks>
+    /// <para><b>约束（A-1 审计项）</b>：此阶段可以注册命令（<c>context.Commands</c>）、
+    /// 声明权限集（<c>context.Permissions</c>）、读取配置，但<b>不应再追加必须参与 Host 构造的服务</b>——
+    /// 需要注册服务请放在 <see cref="ConfigureServices"/>；本阶段的 DI 注册可能晚于依赖方解析。</para>
+    /// <para>生命周期总览：<c>ConfigureServices</c>（仅服务注册）→ <c>Configure</c>（命令/权限/配置）→
+    /// Host 构建 → <see cref="StartupAsync"/>（启动后）→ <see cref="ShutdownAsync"/>（关闭时）。</para>
+    /// </remarks>
     /// <param name="context">插件上下文。</param>
     void Configure(IPluginContext context);
 

@@ -10,7 +10,20 @@ Wails.Net 的插件框架借鉴 **Tauri v2 的"核心即插件"哲学**：系统
 2. **强类型 + DI 集成**：插件利用 `Microsoft.Extensions.DependencyInjection` 注册服务，命令参数通过 `System.Text.Json` 反序列化为强类型 Options 对象，避免运行时反射。
 3. **可裁剪可扩展**：内置 42 个插件（37 桌面 + 5 移动端）按需通过 `UsePlugin<T>()` 启用，第三方插件遵循同一 `IPlugin` 契约即可热接入。
 
-核心代码位于 `src/Wails.Net.Application/Plugins/`，内置插件位于 `BuiltIn/` 子目录。
+核心代码位于 `src/Wails.Net.Application/Plugins/`；具体插件已随插件包拆分迁移到独立的 `src/Wails.Net.Plugins.*` 程序集（基座仅保留插件抽象与 FileServer/Log 等基础服务）。
+
+### 1.1 分层约束（C-3 审计项）
+
+插件包拆分后，各程序集职责边界必须保持稳定，防止分层腐化：
+
+| 程序集 | 允许 | 禁止 |
+|--------|------|------|
+| `Wails.Net.Application`（核心） | 插件抽象（`IPlugin`）、命令调度、安全模型（permission/capability/scope）、平台基础接口 | 依赖具体 `Wails.Net.Plugins.*` 实现包；新增运行时反射发现/调用业务方法 |
+| `Wails.Net.Plugins.*`（各插件包） | 依赖 `Wails.Net.Application`；注册命令、服务、权限集、capability | 自建独立 IPC 协议绕过 `CommandDispatcher` 权限链；将 `CancellationToken` 作为前端业务参数 |
+| `Wails.Net.Bundle.*`（组合包） | 聚合平台包与推荐插件包，面向模板一站式引用 | 承载核心运行时逻辑 |
+| `Wails.Net.Application.{Windows,Linux,Android,MacOS}` | 实现 `IPlatformApp` / `IWebviewWindowImpl`，通过 `[ModuleInitializer]` 注册平台委托 | 被核心层反向引用；引入非选型 GUI 框架 |
+
+**约束落地方式**：核心层只依赖插件抽象与接口，不引用任何具体插件包；新增插件一律创建独立 `src/Wails.Net.Plugins.{Name}` 包并注册到 `CommandDispatcher`；模板通过 bundle 聚合引用，避免用户逐个引用全部插件。后续可用架构边界测试（`Application` 不依赖 `Plugins.*`）守护该约束。
 
 ## 2. 插件接口
 
