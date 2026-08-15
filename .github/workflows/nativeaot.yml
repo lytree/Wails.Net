@@ -1,0 +1,111 @@
+# ============================================================================
+# Wails.Net NativeAOT 裁剪发布专项 CI（审计 P2-4）
+# ----------------------------------------------------------------------------
+# 目标：验证 Wails.Net 核心链（Application / Commands / Manifests / Generator / Cli）
+# 在 NativeAOT 裁剪发布下的可编译性与可运行性，守护 AGENTS.md §3.4
+# "生产代码禁止运行时反射发现/调用" 的收益：
+#   - 绑定/命令调用走源生成器编译期生成的强类型调用器（零反射）；
+#   - 平台注册走 [ModuleInitializer] + 显式委托注册；
+#   - 因此核心库不依赖反射元数据，可被 NativeAOT 静态裁剪。
+#
+# 验证对象：Wails.Net.Cli（控制台程序，无 GUI，引用 Application/Generator 全部核心库）。
+# 触发：push / PR（与主 CI 一致）。
+# ============================================================================
+
+name: NativeAOT
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - main
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  CI: "true"
+  AOT_OUTPUT: "artifacts/nativeaot"
+
+jobs:
+  nativeaot-cli:
+    name: NativeAOT 裁剪发布 (CLI)
+    runs-on: windows-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 设置 .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: 缓存 NuGet 包
+        uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-aot-${{ hashFiles('Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      # NativeAOT 裁剪发布 CLI（win-x64）。
+      # 说明：通过 -p:WailsAot=true 启用（项目级条件属性，避免命令行全局属性沿
+      # ProjectReference 传播到 netstandard2.1 分析器项目导致 NETSDK1207）。
+      # PublishAot=true 会触发 IL 裁剪与 AOT 编译；若核心库存在未注解的运行时反射，
+      # 编译期会产生 IL2xxx 警告并在 TreatWarningsAsErrors 下失败——这正是本 job 的守护目标。
+      - name: NativeAOT 裁剪发布 CLI
+        shell: pwsh
+        run: |
+          dotnet publish src/Wails.Net.Cli/Wails.Net.Cli.csproj `
+            -c Release -r win-x64 `
+            -p:WailsAot=true `
+            -o ${{ env.AOT_OUTPUT }}
+          if ($LASTEXITCODE -ne 0) { Write-Host "NativeAOT 发布失败"; exit 1 }
+
+      # 冒烟测试（--version）。注意：publish 输出的 exe 名为项目名（Wails.Net.Cli.exe），
+      # ToolCommandName=wails-net 仅对 dotnet tool 安装生效。
+      - name: 冒烟测试（--version）
+        shell: pwsh
+        run: |
+          $exe = Join-Path ${{ env.AOT_OUTPUT }} "Wails.Net.Cli.exe"
+          if (-not (Test-Path $exe)) { Write-Host "错误：AOT 可执行文件未生成"; exit 1 }
+          & $exe --version
+          if ($LASTEXITCODE -ne 0) { Write-Host "--version 执行失败"; exit 1 }
+
+      - name: 冒烟测试（doctor）
+        shell: pwsh
+        run: |
+          $exe = Join-Path ${{ env.AOT_OUTPUT }} "Wails.Net.Cli.exe"
+          & $exe doctor
+          if ($LASTEXITCODE -ne 0) { Write-Host "doctor 执行失败"; exit 1 }
+
+      - name: 冒烟测试（generate --commands-manifest）
+        shell: pwsh
+        run: |
+          $exe = Join-Path ${{ env.AOT_OUTPUT }} "Wails.Net.Cli.exe"
+          $manifest = Join-Path ${{ runner.temp }} "commands.manifest.json"
+          @'
+          {"version":"1","generatedAt":"2026-08-15T00:00:00Z","commands":[{"name":"app.greet","requiredCapabilities":[],"anonymous":true,"parameters":[]}]}
+          '@ | Set-Content $manifest -Encoding UTF8
+          & $exe generate --commands-manifest $manifest --output ${{ runner.temp }}/aot-gen-out
+          if ($LASTEXITCODE -ne 0) { Write-Host "generate 执行失败"; exit 1 }
+          if (-not (Test-Path (Join-Path ${{ runner.temp }} "aot-gen-out/commands.ts"))) { Write-Host "commands.ts 未生成"; exit 1 }
+          Write-Host "generate 冒烟测试通过：commands.ts 已生成"
+
+      - name: 校验 AOT 输出（无托管运行时依赖）
+        shell: pwsh
+        run: |
+          $exe = Join-Path ${{ env.AOT_OUTPUT }} "Wails.Net.Cli.exe"
+          $dlls = Get-ChildItem ${{ env.AOT_OUTPUT }} -Filter "*.dll" -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch '^(libSkiaSharp|e_sqlite3|libsodium)' }
+          $info = Get-Item $exe
+          Write-Host "AOT 可执行文件大小: $([math]::Round($info.Length / 1MB, 1)) MB"
+          if ($dlls) { Write-Host "注意：输出目录存在非原生 DLL: $($dlls.Name -join ', ')"; exit 1 }
+          else { Write-Host "输出目录无托管 DLL（除原生依赖库）——完整 AOT 裁剪，禁反射收益验证通过" }
+
+      - name: 上传 AOT 产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: nativeaot-cli
+          path: ${{ env.AOT_OUTPUT }}/
+          retention-days: 7

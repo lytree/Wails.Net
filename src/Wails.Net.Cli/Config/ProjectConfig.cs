@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Wails.Net.Cli.Serialization;
 
 namespace Wails.Net.Cli.Config;
 
@@ -99,7 +100,8 @@ public sealed class ProjectConfig
         }
 
         var json = await File.ReadAllTextAsync(configPath);
-        return JsonSerializer.Deserialize<ProjectConfig>(json, SerializerOptions);
+        // NativeAOT 兼容（P2-4）：使用源生成序列化器，避免运行时反射 JSON（IL2026/IL3050）
+        return JsonSerializer.Deserialize(json, CliJsonSerializerContext.Default.ProjectConfig);
     }
 
     /// <summary>

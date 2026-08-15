@@ -15,6 +15,11 @@
     <PackageId>Wails.Net.SourceGenerators</PackageId>
     <Description>Wails.Net 源代码生成器：编译期扫描 [Binding]/[Command] 特性，生成强类型调用器替代反射，支持 AOT 裁剪。</Description>
     <DevelopmentDependency>true</DevelopmentDependency>
+    <!-- 分析器项目（netstandard2.1）不参与运行时发布，显式禁用 AOT 属性传递（NETSDK1207 防护）。
+         PublishAot 是 MSBuild 传递属性，会沿 ProjectReference 传播到本分析器项目；
+         本项防止消费者以 PublishAot=true 发布时（如 NativeAOT 专项 CI）评估失败。 -->
+    <PublishAot>false</PublishAot>
+    <IsAotCompatible>false</IsAotCompatible>
   </PropertyGroup>
 
   <ItemGroup>

@@ -113,6 +113,7 @@ public class CommandTypeScriptGenerator
     /// <summary>
     /// 从 JSON 文件加载命令清单（P2-1 收尾：CLI 消费已落盘的 manifest）。
     /// 兼容 <see cref="ManifestGenerator.GenerateCommandsManifestJson"/> 输出的 camelCase 格式。
+    /// 使用源生成序列化器（NativeAOT 兼容，P2-4，避免 IL2026/IL3050）。
     /// </summary>
     /// <param name="manifestPath">commands.manifest.json 文件路径。</param>
     /// <returns>反序列化后的命令清单。</returns>
@@ -127,7 +128,7 @@ public class CommandTypeScriptGenerator
         }
 
         var json = File.ReadAllText(manifestPath);
-        return JsonSerializer.Deserialize<CommandsManifest>(json, ManifestJsonOptions)
+        return JsonSerializer.Deserialize(json, ManifestsJsonSerializerContext.Default.CommandsManifest)
             ?? throw new JsonException($"命令清单解析失败: {manifestPath}");
     }
 
@@ -149,12 +150,4 @@ public class CommandTypeScriptGenerator
         File.WriteAllText(filePath, content, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         return filePath;
     }
-
-    /// <summary>
-    /// 清单反序列化选项：属性名不区分大小写（兼容 camelCase / PascalCase 两种序列化输出）。
-    /// </summary>
-    private static readonly JsonSerializerOptions ManifestJsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-    };
 }

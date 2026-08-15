@@ -8,6 +8,13 @@
     <PackageId>Wails.Net.Cli</PackageId>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>Wails.Net CLI 工具：脚手架、构建、生成 TypeScript 绑定、环境诊断。</Description>
+    <!-- NativeAOT（审计 P2-4）：通过 WailsAot=true 显式启用 PublishAot。
+         采用项目级条件属性而非命令行 -p:PublishAot=true：
+         命令行属性是 MSBuild 全局属性，会沿 ProjectReference 传播到 netstandard2.1
+         分析器项目（Wails.Net.SourceGenerators），导致 NETSDK1207 评估失败；
+         项目级属性可被子项目覆盖（分析器项目已显式 PublishAot=false）。 -->
+    <PublishAot Condition="'$(WailsAot)' == 'true'">true</PublishAot>
+    <StripSymbols Condition="'$(WailsAot)' == 'true'">false</StripSymbols>
   </PropertyGroup>
 
   <ItemGroup>

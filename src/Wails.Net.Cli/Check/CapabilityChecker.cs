@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Wails.Net.Application.Security;
+using Wails.Net.Cli.Serialization;
 
 namespace Wails.Net.Cli.Check;
 
@@ -132,7 +133,8 @@ public static class CapabilityChecker
             try
             {
                 var json = File.ReadAllText(file);
-                capability = JsonSerializer.Deserialize<Capability>(json, JsonOptions);
+                // NativeAOT 兼容（P2-4）：使用源生成序列化器，避免运行时反射 JSON（IL2026/IL3050）
+                capability = JsonSerializer.Deserialize(json, CliJsonSerializerContext.Default.Capability);
             }
             catch (JsonException ex)
             {

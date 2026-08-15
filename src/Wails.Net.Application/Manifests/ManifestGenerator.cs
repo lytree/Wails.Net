@@ -203,29 +203,32 @@ public static class ManifestGenerator
 
     /// <summary>
     /// 生成命令清单 JSON（commands.manifest.json 格式）。
+    /// 使用源生成序列化器（NativeAOT 兼容，P2-4）。
     /// </summary>
     /// <param name="registry">命令注册表。</param>
     /// <returns>缩进格式的 JSON 字符串。</returns>
     public static string GenerateCommandsManifestJson(CommandRegistry registry)
-        => JsonSerializer.Serialize(GenerateCommandsManifest(registry), JsonOptions);
+        => JsonSerializer.Serialize(GenerateCommandsManifest(registry), ManifestsJsonSerializerContext.Default.CommandsManifest);
 
     /// <summary>
     /// 序列化已生成的命令清单为 JSON（commands.manifest.json 格式，P2-1 收尾）。
     /// 与 <see cref="GenerateCommandsManifestJson(CommandRegistry)"/> 的序列化格式一致，
     /// 用于应用侧导出已构建的清单（如 <see cref="Hosting.DesktopApplication.WriteCommandsManifestToDirectory"/>）。
+    /// 使用源生成序列化器（NativeAOT 兼容，P2-4）。
     /// </summary>
     /// <param name="manifest">已生成的命令清单。</param>
     /// <returns>缩进格式的 JSON 字符串。</returns>
     public static string GenerateCommandsManifestJson(CommandsManifest manifest)
-        => JsonSerializer.Serialize(manifest, JsonOptions);
+        => JsonSerializer.Serialize(manifest, ManifestsJsonSerializerContext.Default.CommandsManifest);
 
     /// <summary>
     /// 生成能力清单 JSON（capabilities.manifest.json 格式）。
+    /// 使用源生成序列化器（NativeAOT 兼容，P2-4）。
     /// </summary>
     /// <param name="capabilities">能力声明列表。</param>
     /// <returns>缩进格式的 JSON 字符串。</returns>
     public static string GenerateCapabilitiesManifestJson(IEnumerable<Capability> capabilities)
-        => JsonSerializer.Serialize(GenerateCapabilitiesManifest(capabilities), JsonOptions);
+        => JsonSerializer.Serialize(GenerateCapabilitiesManifest(capabilities), ManifestsJsonSerializerContext.Default.CapabilitiesManifest);
 
     /// <summary>
     /// 校验命令所需能力是否被 capability 声明覆盖（P1-2 一致性检查）。
@@ -281,13 +284,4 @@ public static class ManifestGenerator
 
         return uncovered;
     }
-
-    /// <summary>
-    /// 清单序列化选项：缩进 + camelCase 属性名（与前端 TypeScript 命名习惯一致）。
-    /// </summary>
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
 }
