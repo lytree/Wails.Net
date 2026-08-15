@@ -33,7 +33,7 @@ public sealed class CommandRegistry
     public CommandRegistry Register(string name, CompiledCommandInvoker invoker)
     {
         ArgumentNullException.ThrowIfNull(invoker);
-        _commands[name] = new CommandEntry(name, Instance: null, invoker, RequiredCapabilities: []);
+        _commands[name] = new CommandEntry(name, Instance: null, invoker, RequiredCapabilities: [], ParameterTypes: []);
         return this;
     }
 
@@ -48,7 +48,33 @@ public sealed class CommandRegistry
     public CommandRegistry Register(string name, CompiledCommandInvoker invoker, params string[] requiredCapabilities)
     {
         ArgumentNullException.ThrowIfNull(invoker);
-        _commands[name] = new CommandEntry(name, Instance: null, invoker, requiredCapabilities);
+        _commands[name] = new CommandEntry(name, Instance: null, invoker, requiredCapabilities, ParameterTypes: []);
+        return this;
+    }
+
+    /// <summary>
+    /// 注册命令并指定业务参数类型与所需能力列表（P2-1 命令签名元数据）。
+    /// <para>
+    /// <paramref name="parameterTypes"/> 记录命令的业务参数类型（已排除
+    /// <see cref="ICommandContext"/> / <see cref="CancellationToken"/> / <see cref="IServiceProvider"/>
+    /// 等运行时注入的特殊参数），供 <see cref="Manifests.ManifestGenerator"/> 生成
+    /// commands.manifest.json 时输出参数 TS 类型，驱动前端 TypeScript wrapper 生成。
+    /// </para>
+    /// </summary>
+    /// <param name="name">命令名称。</param>
+    /// <param name="invoker">编译期构建的强类型调用器委托（由 <see cref="MapCommandExtensions"/> 创建）。</param>
+    /// <param name="parameterTypes">业务参数类型列表；无业务参数时传空数组。</param>
+    /// <param name="requiredCapabilities">所需能力标识列表（如 <c>fs:allow-read</c>）。</param>
+    /// <returns>当前注册表实例，用于链式调用。</returns>
+    public CommandRegistry Register(
+        string name,
+        CompiledCommandInvoker invoker,
+        IReadOnlyList<Type> parameterTypes,
+        params string[] requiredCapabilities)
+    {
+        ArgumentNullException.ThrowIfNull(invoker);
+        ArgumentNullException.ThrowIfNull(parameterTypes);
+        _commands[name] = new CommandEntry(name, Instance: null, invoker, requiredCapabilities, parameterTypes);
         return this;
     }
 
@@ -109,9 +135,11 @@ public sealed class CommandRegistry
     public IEnumerable<string> GetCommandNames() => _commands.Keys;
 
     /// <summary>
-    /// 命令条目，记录命令名、调用器委托和所需能力列表。
+    /// 命令条目，记录命令名、调用器委托、业务参数类型和所需能力列表。
     /// <see cref="Invoker"/> 为编译期构建的强类型委托（由 <see cref="MapCommandExtensions"/> 闭包捕获目标实例），
     /// 运行时零反射调用。
+    /// <see cref="ParameterTypes"/> 记录业务参数类型（排除运行时注入的特殊参数），
+    /// 供 manifest 生成与 TypeScript wrapper 生成使用（P2-1）。
     /// <see cref="RequiredCapabilities"/> 记录命令所需的能力标识列表，
     /// 调度时由 <see cref="CommandDispatcher"/> 校验是否已授权。
     /// </summary>
@@ -119,9 +147,17 @@ public sealed class CommandRegistry
     /// <param name="Instance">命令所属实例。为 null 表示委托已闭包捕获目标实例（默认场景）。</param>
     /// <param name="Invoker">编译期构建的强类型调用器委托。</param>
     /// <param name="RequiredCapabilities">所需能力标识列表（如 <c>fs:allow-read</c>），为空表示无特殊要求。</param>
+    /// <param name="ParameterTypes">业务参数类型列表；为空表示无业务参数。</param>
     public sealed record CommandEntry(
         string Name,
         object? Instance,
         CompiledCommandInvoker? Invoker,
-        IReadOnlyList<string> RequiredCapabilities);
+        IReadOnlyList<string> RequiredCapabilities,
+        IReadOnlyList<Type>? ParameterTypes = null)
+    {
+        /// <summary>
+        /// 业务参数类型列表；<see cref="ParameterTypes"/> 为 null 时返回空列表。
+        /// </summary>
+        public IReadOnlyList<Type> EffectiveParameterTypes => ParameterTypes ?? [];
+    }
 }

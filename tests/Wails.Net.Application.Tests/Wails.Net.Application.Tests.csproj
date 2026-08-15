@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Wails.Net.Application\Wails.Net.Application.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Generator\Wails.Net.Generator.csproj" />
     <!-- M3：L1 纯托管插件已拆分为独立包，测试引用插件包（混合测试文件保留在本项目） -->
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Http\Wails.Net.Plugins.Http.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.WebSocket\Wails.Net.Plugins.WebSocket.csproj" />

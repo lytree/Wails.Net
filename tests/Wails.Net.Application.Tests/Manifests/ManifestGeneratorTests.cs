@@ -143,4 +143,32 @@ public sealed class ManifestGeneratorTests
         // 断言：全部覆盖（匿名命令不参与）
         await Assert.That(uncovered).IsEmpty();
     }
+
+    [Test]
+    public async Task TypeToTypeScript_MapsPrimitiveTypes()
+    {
+        await Assert.That(ManifestGenerator.TypeToTypeScript(typeof(string))).IsEqualTo("string");
+        await Assert.That(ManifestGenerator.TypeToTypeScript(typeof(char))).IsEqualTo("string");
+        await Assert.That(ManifestGenerator.TypeToTypeScript(typeof(int))).IsEqualTo("number");
+        await Assert.That(ManifestGenerator.TypeToTypeScript(typeof(long))).IsEqualTo("number");
+        await Assert.That(ManifestGenerator.TypeToTypeScript(typeof(double))).IsEqualTo("number");
+        await Assert.That(ManifestGenerator.TypeToTypeScript(typeof(bool))).IsEqualTo("boolean");
+        await Assert.That(ManifestGenerator.TypeToTypeScript(typeof(Guid))).IsEqualTo("string");
+        await Assert.That(ManifestGenerator.TypeToTypeScript(typeof(DateTime))).IsEqualTo("string");
+    }
+
+    [Test]
+    public async Task TypeToTypeScript_MapsEnumNullableAndCollections()
+    {
+        // 枚举 → string（前端以语义化字符串传参）
+        await Assert.That(ManifestGenerator.TypeToTypeScript(typeof(DayOfWeek))).IsEqualTo("string");
+
+        // 可空值类型剥壳
+        await Assert.That(ManifestGenerator.TypeToTypeScript(typeof(int?))).IsEqualTo("number");
+
+        // 数组与常见集合 → 数组
+        await Assert.That(ManifestGenerator.TypeToTypeScript(typeof(string[]))).IsEqualTo("string[]");
+        await Assert.That(ManifestGenerator.TypeToTypeScript(typeof(List<int>))).IsEqualTo("number[]");
+        await Assert.That(ManifestGenerator.TypeToTypeScript(typeof(IReadOnlyList<string>))).IsEqualTo("string[]");
+    }
 }

@@ -42,11 +42,13 @@ Wails.Net 在前端 IPC 调用与后端 C# 方法之间采用**双轨调用架�
 
 命令与 capability 的一致性由 [`ManifestGenerator`](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Manifests/ManifestGenerator.cs) 提供机器可读校验：
 
-- `GenerateCommandsManifest(registry)` → `commands.manifest.json`（命令名 + `requiredCapabilities` + `anonymous` 标记）
+- `GenerateCommandsManifest(registry)` → `commands.manifest.json`（命令名 + `requiredCapabilities` + `anonymous` 标记 + `parameters` 参数 TS 类型声明）
 - `GenerateCapabilitiesManifest(capabilities)` → `capabilities.manifest.json`（identifier + permissions + windows/remote/platforms）
 - `FindUncoveredCapabilities(registry, capabilities)` → 未覆盖清单（**敏感命令的能力必须被至少一个 capability 覆盖**；`!` 前缀显式拒绝不计入覆盖；匿名命令即 `requiredCapabilities` 为空，不参与校验）
 
-该清单是后续 TypeScript runtime wrapper 生成、插件文档命令表、CLI `plugin inspect` 的统一数据源（P2-1 长期目标）。测试示例：
+**命令签名元数据（P2-1）**：`CommandRegistry` 的命令条目携带业务参数类型（由 `MapCommand` 重载在注册时通过 `ExtractBusinessParameterTypes` 提取，排除 `ICommandContext`/`CancellationToken`/`IServiceProvider` 等运行时注入参数），manifest 将其映射为 TypeScript 类型声明（`TypeToTypeScript`：string→`string`、数值→`number`、bool→`boolean`、枚举/Guid/DateTime→`string`、集合→数组、可空剥壳）。
+
+**TypeScript wrapper 生成（P2-1）**：[`CommandTypeScriptGenerator`](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Generator/CommandTypeScriptGenerator.cs) 消费命令清单生成 `commands.ts` 强类型调用封装（每个命令一个函数，基于 `@wails-net/runtime` 的 `wails.call`），以清单为唯一来源消除前后端 API 漂移。该清单与生成器同时是插件文档命令表、CLI `plugin inspect` 的统一数据源。测试示例：
 
 ```csharp
 var uncovered = ManifestGenerator.FindUncoveredCapabilities(registry, capabilities);
