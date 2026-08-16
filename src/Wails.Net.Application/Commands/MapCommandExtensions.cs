@@ -1004,4 +1004,179 @@ public static class MapCommandExtensions
 
         return default!;
     }
-}
+
+    // ============================================================
+    // 带命令安全声明的重载（SEC-H-001：MapCommand 路径的 capability / scope 接线）
+    // ============================================================
+
+    /// <summary>
+    /// 注册无参数无返回值命令并指定命令安全声明（capability / IsPublic）。
+    /// <para>仅设置 <see cref="CommandSecurity.IsPublic"/> 等价于 <c>CommandSecurity.Public()</c>；
+    /// 仅设置 <see cref="CommandSecurity.RequiredCapabilities"/> 等价于 <c>CommandSecurity.Require(...)</c>。</para>
+    /// </summary>
+    /// <param name="registry">命令注册表。</param>
+    /// <param name="name">命令名称。</param>
+    /// <param name="handler">命令处理委托。</param>
+    /// <param name="security">命令安全声明；为 null 时不附加任何安全元数据，行为同无 security 重载。</param>
+    /// <returns>命令注册表，用于链式调用。</returns>
+    public static CommandRegistry MapCommand(
+        this CommandRegistry registry,
+        string name,
+        Action handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        return registry.Register(name, (instance, parameters, ctx) =>
+        {
+            handler();
+            return Task.FromResult<object?>(null);
+        }, System.Array.Empty<Type>(), security);
+    }
+
+    /// <summary>
+    /// 注册单参数有返回值的命令并指定命令安全声明。
+    /// <para>对应 FileSystemPlugin 等"参数即 scope 路径"的命令：通过 <see cref="CommandSecurity.WithScope"/>
+    /// 声明参数 → 权限映射后，<see cref="CommandDispatcher"/> 直接从 JSON 参数按名取值做 Scope 校验（零反射）。</para>
+    /// </summary>
+    /// <typeparam name="T">参数类型。</typeparam>
+    /// <typeparam name="TResult">返回值类型。</typeparam>
+    /// <param name="registry">命令注册表。</param>
+    /// <param name="name">命令名称。</param>
+    /// <param name="handler">命令处理委托。</param>
+    /// <param name="security">命令安全声明；为 null 时不附加任何安全元数据。</param>
+    /// <returns>命令注册表，用于链式调用。</returns>
+    public static CommandRegistry MapCommand<T, TResult>(
+        this CommandRegistry registry,
+        string name,
+        Func<T, TResult> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        var options = _jsonOptions;
+        return registry.Register(name, (instance, parameters, ctx) =>
+        {
+            var arg = Deserialize<T>(parameters, options);
+            var result = handler(arg);
+            return Task.FromResult<object?>(result);
+        }, new[] { typeof(T) }, security);
+    }
+
+    /// <summary>
+    /// 注册无参数有返回值的命令并指定命令安全声明。
+    /// </summary>
+    /// <typeparam name="TResult">返回值类型。</typeparam>
+    /// <param name="registry">命令注册表。</param>
+    /// <param name="name">命令名称。</param>
+    /// <param name="handler">命令处理委托。</param>
+    /// <param name="security">命令安全声明；为 null 时不附加任何安全元数据。</param>
+    /// <returns>命令注册表，用于链式调用。</returns>
+    public static CommandRegistry MapCommand<TResult>(
+        this CommandRegistry registry,
+        string name,
+        Func<TResult> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        return registry.Register(name, (instance, parameters, ctx) =>
+        {
+            var result = handler();
+            return Task.FromResult<object?>(result);
+        }, System.Array.Empty<Type>(), security);
+    }
+
+    /// <summary>
+    /// 注册注入 <see cref="ICommandContext"/> 的无返回值命令并指定命令安全声明。
+    /// </summary>
+    /// <param name="registry">命令注册表。</param>
+    /// <param name="name">命令名称。</param>
+    /// <param name="handler">命令处理委托。</param>
+    /// <param name="security">命令安全声明；为 null 时不附加任何安全元数据。</param>
+    /// <returns>命令注册表，用于链式调用。</returns>
+    public static CommandRegistry MapCommand(
+        this CommandRegistry registry,
+        string name,
+        Action<ICommandContext> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        return registry.Register(name, (instance, parameters, ctx) =>
+        {
+            handler(ctx!);
+            return Task.FromResult<object?>(null);
+        }, System.Array.Empty<Type>(), security);
+    }
+
+    /// <summary>
+    /// 注册注入 <see cref="ICommandContext"/> 的单参数有返回值的命令并指定命令安全声明。
+    /// <para>对应 StorePlugin 等"从 ctx 取服务"的命令模式。</para>
+    /// </summary>
+    /// <typeparam name="T">参数类型。</typeparam>
+    /// <typeparam name="TResult">返回值类型。</typeparam>
+    /// <param name="registry">命令注册表。</param>
+    /// <param name="name">命令名称。</param>
+    /// <param name="handler">命令处理委托。</param>
+    /// <param name="security">命令安全声明；为 null 时不附加任何安全元数据。</param>
+    /// <returns>命令注册表，用于链式调用。</returns>
+    public static CommandRegistry MapCommand<T, TResult>(
+        this CommandRegistry registry,
+        string name,
+        Func<ICommandContext, T, TResult> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        var options = _jsonOptions;
+        return registry.Register(name, (instance, parameters, ctx) =>
+        {
+            var arg = Deserialize<T>(parameters, options);
+            var result = handler(ctx!, arg);
+            return Task.FromResult<object?>(result);
+        }, new[] { typeof(T) }, security);
+    }
+
+    /// <summary>
+    /// 注册异步命令（无业务参数）并指定命令安全声明。
+    /// </summary>
+    /// <typeparam name="TResult">返回值类型。</typeparam>
+    /// <param name="registry">命令注册表。</param>
+    /// <param name="name">命令名称。</param>
+    /// <param name="handler">异步命令处理委托。</param>
+    /// <param name="security">命令安全声明；为 null 时不附加任何安全元数据。</param>
+    /// <returns>命令注册表，用于链式调用。</returns>
+    public static CommandRegistry MapCommandAsync<TResult>(
+        this CommandRegistry registry,
+        string name,
+        Func<Task<TResult>> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        return registry.Register(name, async (instance, parameters, ctx) =>
+        {
+            var result = await handler().ConfigureAwait(false);
+            return (object?)result;
+        }, System.Array.Empty<Type>(), security);
+    }
+
+    /// <summary>
+    /// 注册注入 <see cref="ICommandContext"/> 的单参数异步命令并指定命令安全声明。
+    /// </summary>
+    /// <typeparam name="T">参数类型。</typeparam>
+    /// <param name="registry">命令注册表。</param>
+    /// <param name="name">命令名称。</param>
+    /// <param name="handler">异步命令处理委托。</param>
+    /// <param name="security">命令安全声明；为 null 时不附加任何安全元数据。</param>
+    /// <returns>命令注册表，用于链式调用。</returns>
+    public static CommandRegistry MapCommandAsync<T>(
+        this CommandRegistry registry,
+        string name,
+        Func<ICommandContext, T, Task> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        var options = _jsonOptions;
+        return registry.Register(name, async (instance, parameters, ctx) =>
+        {
+            var arg = Deserialize<T>(parameters, options);
+            await handler(ctx!, arg).ConfigureAwait(false);
+            return (object?)null;
+        }, new[] { typeof(T) }, security);
+    }}

@@ -79,6 +79,38 @@ public sealed class CommandRegistry
     }
 
     /// <summary>
+    /// 注册命令并指定业务参数类型与命令安全声明（SEC-H-001 MapCommand 路径的 capability / scope 接线）。
+    /// <para>
+    /// <paramref name="security"/> 为 null 时与 <see cref="Register(string, CompiledCommandInvoker, IReadOnlyList{Type}, string[])"/>
+    /// 等价，行为兼容。设置后 <see cref="CommandDispatcher"/> 会从 <c>security.RequiredCapabilities</c>
+    /// 收集能力、从 <c>security.ScopeMappings</c> 提取 Scope 值，覆盖 SEC-H-001 阶段一所修复的"声明与执行两张皮"。
+    /// </para>
+    /// </summary>
+    /// <param name="name">命令名称。</param>
+    /// <param name="invoker">编译期构建的强类型调用器委托。</param>
+    /// <param name="parameterTypes">业务参数类型列表；无业务参数时传空数组。</param>
+    /// <param name="security">命令安全声明；为 null 时完全走旧路径。</param>
+    /// <returns>当前注册表实例，用于链式调用。</returns>
+    public CommandRegistry Register(
+        string name,
+        CompiledCommandInvoker invoker,
+        IReadOnlyList<Type> parameterTypes,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(invoker);
+        ArgumentNullException.ThrowIfNull(parameterTypes);
+        var mergedCaps = security?.RequiredCapabilities ?? System.Array.Empty<string>();
+        _commands[name] = new CommandEntry(
+            name,
+            Instance: null,
+            invoker,
+            mergedCaps,
+            parameterTypes,
+            security);
+        return this;
+    }
+
+    /// <summary>
     /// 注册命令容器（标记了 <see cref="DesktopCommandAttribute"/> 的类）。
     /// </summary>
     /// <param name="instance">命令容器实例。</param>
@@ -153,7 +185,8 @@ public sealed class CommandRegistry
         object? Instance,
         CompiledCommandInvoker? Invoker,
         IReadOnlyList<string> RequiredCapabilities,
-        IReadOnlyList<Type>? ParameterTypes = null)
+        IReadOnlyList<Type>? ParameterTypes = null,
+        CommandSecurity? Security = null)
     {
         /// <summary>
         /// 业务参数类型列表；<see cref="ParameterTypes"/> 为 null 时返回空列表。

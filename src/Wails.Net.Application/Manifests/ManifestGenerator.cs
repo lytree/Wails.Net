@@ -351,10 +351,29 @@ public static class ManifestGenerator
         var uncovered = new List<string>();
         foreach (var name in registry.GetCommandNames().OrderBy(n => n, StringComparer.Ordinal))
         {
-            var required = registry.Find(name)?.RequiredCapabilities ?? [];
+            var entry = registry.Find(name);
+            if (entry is null)
+            {
+                continue;
+            }
+            // SEC-H-001 阶段一对"声明与执行两张皮"的修复（与 CommandDispatcher.CollectRequiredCapabilities 三来源合并一致）：
+            //   1) Security.IsPublic=true  → 显式公开命令，跳过覆盖检查；
+            //   2) Security 已声明但 RequiredCapabilities.Count==0 且 !IsPublic → 报告未覆盖（fail-closed for new paths）；
+            //   3) Security 为 null 且 entry.RequiredCapabilities.Count==0 → 保持旧行为（跳过），
+            //      这是为了不破坏存量 builtin 插件注册路径（B2 阶段统一迁移到 CommandSecurity 后再 flip）。
+            if (entry.Security is { IsPublic: true })
+            {
+                continue;
+            }
+            var required = entry.RequiredCapabilities;
             if (required.Count == 0)
             {
-                continue; // 匿名命令，跳过
+                // Security 已声明但未声明能力且非公开 → 未覆盖（SEC-H-001 阶段一 守门）
+                if (entry.Security is not null)
+                {
+                    uncovered.Add($"命令 '{name}' 设置了命令安全声明但未声明所需 capability，请补充 Require(...) 或显式标记 Public()");
+                }
+                continue;
             }
 
             foreach (var capabilityId in required)

@@ -141,7 +141,7 @@ public sealed class CommandDispatcher
             if (_permissionManager is not null)
             {
                 // 收集所需能力：entry.RequiredCapabilities + 源生成器编译期生成列表
-                var requiredCapabilities = CollectRequiredCapabilities(request.Method, entry.RequiredCapabilities);
+                var requiredCapabilities = CollectRequiredCapabilities(request.Method, entry.RequiredCapabilities, entry.Security);
                 if (requiredCapabilities.Count > 0 && !_permissionManager.ValidateCapabilities(requiredCapabilities, ctx.WindowName, ctx.Origin))
                 {
                     _logger?.LogWarning("权限拒绝: 命令 {Method} 需要能力 {Capabilities}（窗口={Window}，来源={Origin}）",
@@ -154,7 +154,7 @@ public sealed class CommandDispatcher
                 // 适配 [ScopeParameter] 标记的 string 参数。
                 // 实现 IScopeParameter 的 Options 类的 Scope 提取应由源生成器扩展生成 ScopeExtractor，
                 // 不再通过运行时反射枚举参数（遵循 AGENTS.md §3.4）。
-                var scopeValues = ExtractScopeValues(request.Method, request.Parameters);
+                var scopeValues = ExtractScopeValues(entry, request.Parameters);
                 if (scopeValues.Count > 0 && !_permissionManager.ValidateScopes(scopeValues))
                 {
                     _logger?.LogWarning("Scope 拒绝: 命令 {Method}", request.Method);
@@ -199,30 +199,43 @@ public sealed class CommandDispatcher
 
     /// <summary>
     /// 收集命令所需的能力列表。
-    /// 合并两个来源：
+    /// 合并三个来源：
     /// <list type="bullet">
-    /// <item><see cref="CommandRegistry.CommandEntry.RequiredCapabilities"/>：在 <see cref="CommandRegistry.Register"/> 注册时显式传入的能力列表。</item>
+    /// <item><see cref="CommandRegistry.CommandEntry.RequiredCapabilities"/>：在 <see cref="CommandRegistry.Register"/> 注册时显式传入的能力列表（来自旧 fields-only API）；</item>
+    /// <item><see cref="CommandRegistry.CommandEntry.Security"/>?.RequiredCapabilities：SEC-H-001 新路径，由 MapCommand(name, handler, <see cref="CommandSecurity"/>) 传入；</item>
     /// <item><see cref="GeneratedBindingRegistry"/>：源生成器在编译期从 <see cref="RequireCapabilityAttribute"/> 特性提取的能力列表。</item>
     /// </list>
-    /// 两来源去重后返回。无任何能力时返回空列表。
+    /// 三来源去重后返回。无任何能力时返回空列表。
     /// </summary>
     /// <param name="methodName">命令名（与 <see cref="GeneratedBindingRegistry"/> 注册时的键一致）。</param>
-    /// <param name="declaredCapabilities">注册时显式声明的能力列表。</param>
+    /// <param name="declaredCapabilities">注册时显式声明的能力列表（来自旧 fields-only API）。</param>
+    /// <param name="security">命令安全声明（SEC-H-001 新路径）；为 null 时不附加任何能力。</param>
     /// <returns>去重后的能力列表，可能为空。</returns>
     private static IReadOnlyList<string> CollectRequiredCapabilities(
         string methodName,
-        IReadOnlyList<string> declaredCapabilities)
+        IReadOnlyList<string> declaredCapabilities,
+        CommandSecurity? security)
     {
-        // 若源生成器未生成能力列表（或生成空列表），直接返回注册时显式声明的能力
+        var declared = new List<string>(declaredCapabilities);
+        if (security is not null)
+        {
+            declared.AddRange(security.RequiredCapabilities);
+        }
+        // 若源生成器未生成能力列表（或生成空列表），直接返回合并后的注册时声明能力（去重）
         if (!GeneratedBindingRegistry.TryGetCapabilities(methodName, out var generated) ||
             generated is null or { Count: 0 })
         {
-            return declaredCapabilities;
+            var seenLocal = new HashSet<string>(StringComparer.Ordinal);
+            var unique = new List<string>(declared.Count);
+            foreach (var c in declared)
+            {
+                if (seenLocal.Add(c)) unique.Add(c);
+            }
+            return unique;
         }
-
-        // 合并两来源并去重
-        var merged = new List<string>(declaredCapabilities);
-        var seen = new HashSet<string>(declaredCapabilities, StringComparer.Ordinal);
+        // 合并三来源并去重
+        var merged = new List<string>(declared);
+        var seen = new HashSet<string>(declared, StringComparer.Ordinal);
         foreach (var cap in generated)
         {
             if (seen.Add(cap))
@@ -235,15 +248,24 @@ public sealed class CommandDispatcher
 
     /// <summary>
     /// 从命令参数中提取 Scope 校验值。
-    /// 仅使用源生成器编译期生成的 <see cref="ScopeExtractor"/> 委托，
-    /// 由源生成器从标记 <see cref="ScopeParameterAttribute"/> 的参数生成，运行时零反射。
-    /// 对应 Tauri v2 的参数级 Scope 校验。
+    /// <para>
+    /// 优先级：
+    /// <list type="number">
+    /// <item><see cref="CommandRegistry.CommandEntry.Security"/>?.ScopeMappings：SEC-H-001 显式声明，
+    /// 由 MapCommand(name, handler, <see cref="CommandSecurity"/>.WithScope(...)) 传入。
+    /// 按 camelCase 参数名从 <see cref="JsonElement"/> 取值（零反射），与 MapCommandExtensions 的命名策略一致。</item>
+    /// <item><see cref="GeneratedBindingRegistry"/> 编译期生成的 <see cref="ScopeExtractor"/> 委托（来自 <see cref="ScopeParameterAttribute"/> 参数），
+    /// 覆盖 [Binding]/[Command] 特性方法的场景。</item>
+    /// </list>
+    /// 显式声明优先：插件作者显式 WithScope 的语义不被源生成器静默覆盖。
+    /// </para>
     /// </summary>
-    /// <param name="methodName">命令名（与 <see cref="GeneratedBindingRegistry"/> 注册时的键一致）。</param>
+    /// <param name="entry">命令条目，包含 Security 等运行时安全元数据。</param>
     /// <param name="parameters">前端传入的 JSON 参数。</param>
     /// <returns>需要 Scope 校验的 (权限标识, 值) 对列表，可能为空。</returns>
     private static List<(string PermissionId, string Value)> ExtractScopeValues(
-        string methodName, JsonElement parameters)
+        CommandRegistry.CommandEntry entry,
+        JsonElement parameters)
     {
         var result = new List<(string PermissionId, string Value)>();
 
@@ -253,8 +275,23 @@ public sealed class CommandDispatcher
             return result;
         }
 
+        var explicitMappings = entry.Security?.ScopeMappings;
+        if (explicitMappings is { Count: > 0 })
+        {
+            foreach (var mapping in explicitMappings)
+            {
+                if (parameters.TryGetProperty(ToCamelCase(mapping.ParameterName), out var value)
+                    && value.ValueKind == JsonValueKind.String
+                    && !string.IsNullOrEmpty(value.GetString()))
+                {
+                    result.Add((mapping.PermissionId, value.GetString()!));
+                }
+            }
+            return result;
+        }
+
         // 源生成器编译期生成的 ScopeExtractor 委托（来自 [ScopeParameter] 参数）
-        if (GeneratedBindingRegistry.TryGetScopeExtractors(methodName, out var extractors) &&
+        if (GeneratedBindingRegistry.TryGetScopeExtractors(entry.Name, out var extractors) &&
             extractors is { Count: > 0 })
         {
             foreach (var extractor in extractors)
