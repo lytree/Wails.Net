@@ -426,9 +426,10 @@ internal sealed class FakePlatformApp : IPlatformApp
     public string GetAccentColor() => "#000000";
     public void DispatchOnMainThread(Action action) => action();
 
-    public void CreateWebviewWindow(uint id, WebviewWindowOptions options)
+    public IWebviewWindowImpl? CreateWebviewWindow(uint id, WebviewWindowOptions options)
     {
         CreateWebviewWindowCalls.Enqueue((id, options));
+        return null;
     }
 
     public Task<int> ShowMessageDialog(string title, string message, DialogStyle style, string[] buttons)

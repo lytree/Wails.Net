@@ -2,6 +2,7 @@ using Wails.Net.Application.Dialogs;
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Screens;
+using Wails.Net.Application.Windows;
 
 namespace Wails.Net.Application.Platform;
 
@@ -160,7 +161,8 @@ public interface IPlatformApp
     /// </summary>
     /// <param name="id">窗口 ID。</param>
     /// <param name="options">窗口选项。</param>
-    void CreateWebviewWindow(uint id, WebviewWindowOptions options);
+    /// <returns>创建的平台窗口实现；无法创建时返回 null（如 Server 模式）。</returns>
+    IWebviewWindowImpl? CreateWebviewWindow(uint id, WebviewWindowOptions options);
 
     /// <summary>
     /// 异步显示消息对话框。

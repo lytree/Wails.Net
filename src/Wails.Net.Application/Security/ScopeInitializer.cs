@@ -27,6 +27,16 @@ public static class ScopeInitializer
 
         foreach (var (permissionId, scopeConfig) in options.Scopes)
         {
+            // 同一 permissionId 同时配置 Paths 与 Urls 会产生静默覆盖（UrlScope 覆盖 FileSystemScope）。
+            // 本卫生项选择"启动期报错"而非组合 scope：组合需新增 CompositeScope 类型，
+            // 且两种约束语义（路径 vs URL）通常不会同时出现在同一权限上，报错更能暴露配置错误
+            // （见 §2.5 卫生项）。
+            if (scopeConfig.Paths.Count > 0 && scopeConfig.Urls.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    $"权限 {permissionId} 同时配置了 Paths 与 Urls Scope，二者互斥，请拆分到不同权限或移除其一。");
+            }
+
             if (scopeConfig.Paths.Count > 0)
             {
                 var fsScope = new FileSystemScope();

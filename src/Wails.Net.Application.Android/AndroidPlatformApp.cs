@@ -10,6 +10,7 @@ using Wails.Net.Application.Dialogs;
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Screens;
+using Wails.Net.Application.Windows;
 using Action = System.Action;
 using Array = System.Array;
 using Environment = System.Environment;
@@ -519,11 +520,12 @@ public sealed class AndroidPlatformApp : IPlatformApp
     }
 
     /// <inheritdoc />
-    public void CreateWebviewWindow(uint id, WebviewWindowOptions options)
+    public IWebviewWindowImpl? CreateWebviewWindow(uint id, WebviewWindowOptions options)
     {
         var window = new AndroidWebviewWindow(id, options, this, _assetServer);
         _windows[id] = window;
         window.Show();
+        return window;
     }
 
     /// <inheritdoc />

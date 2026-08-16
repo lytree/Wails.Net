@@ -26,6 +26,13 @@ public sealed class PermissionManager
     private readonly ConcurrentDictionary<string, Capability> _declaredCapabilities = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
+    /// 已声明的细粒度权限字典（线程安全），键为权限标识，值为权限描述。
+    /// 由插件经 <see cref="Plugins.IPermissionRegistrar.DeclarePermission"/> 声明，
+    /// 作为运行时权限清单数据源供文档生成与审计查询（见 §2.5 卫生项）。
+    /// </summary>
+    private readonly ConcurrentDictionary<string, string> _declaredPermissions = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
     /// 已注册的权限集字典（线程安全），键为权限集标识（如 "core:default"）。
     /// </summary>
     private readonly ConcurrentDictionary<string, PermissionSet> _permissionSets = new(StringComparer.OrdinalIgnoreCase);
@@ -143,6 +150,27 @@ public sealed class PermissionManager
     }
 
     /// <summary>
+    /// 登记已声明的细粒度权限（运行时权限清单数据源）。
+    /// 由 <see cref="Plugins.IPermissionRegistrar.DeclarePermission"/> 或其延迟物化器
+    /// （<see cref="Plugins.DeferredPermissionRegistrar.ReplayInto"/>）调用，供文档生成与审计查询。
+    /// </summary>
+    /// <param name="permissionId">权限标识。</param>
+    /// <param name="description">权限描述。</param>
+    public void RegisterDeclaredPermission(string permissionId, string description)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(permissionId);
+        _declaredPermissions[permissionId] = description;
+    }
+
+    /// <summary>
+    /// 获取所有已声明的细粒度权限（权限标识 → 描述）。
+    /// 作为运行时权限清单数据源，供文档生成与审计查询（见 §2.5 卫生项）。
+    /// </summary>
+    /// <returns>已声明权限的只读字典。</returns>
+    public IReadOnlyDictionary<string, string> GetDeclaredPermissions()
+        => new Dictionary<string, string>(_declaredPermissions, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
     /// 为权限绑定作用域。
     /// </summary>
     /// <param name="permissionId">权限标识。</param>
@@ -182,7 +210,11 @@ public sealed class PermissionManager
     /// 目标窗口名称。传入 <c>null</c> 表示全局授权（应用于所有窗口）；
     /// 传入具体窗口名表示仅授权给该窗口（窗口级隔离）。
     /// </param>
-    public void Grant(string permissionId, string? windowName)
+    /// <remarks>
+    /// 该两参重载为便捷入口，生产代码仅使用三参版本（含远程 URL 限制），故 internal 化
+    /// （见 §2.5 卫生项）。测试经 <c>InternalsVisibleTo</c> 访问。
+    /// </remarks>
+    internal void Grant(string permissionId, string? windowName)
         => Grant(permissionId, windowName, remotePatterns: null);
 
     /// <summary>
@@ -375,8 +407,14 @@ public sealed class PermissionManager
     /// <returns>已授权返回 true；未启用权限检查时全部放行。</returns>
     public bool IsGranted(string permissionId, string? windowName)
     {
-        // 未启用权限检查时全部放行
-        if (!Enabled) return true;
+        // 未启用权限检查时：
+        // - DenyByDefault=false（默认）：全部放行，保持向后兼容（原有行为）；
+        // - DenyByDefault=true：继续走下方授权检查，使"默认拒绝"在关闭总开关时依然生效，
+        //   修复 Compatibility + Enabled=false 下 DenyByDefault 完全无效的矛盾（缺陷 B，见 §2.2）。
+        if (!Enabled && !_options.DenyByDefault)
+        {
+            return true;
+        }
 
         // deny 优先：显式拒绝的权限一律不可用（即使已授权）
         if (IsDenied(permissionId, windowName))
@@ -422,8 +460,14 @@ public sealed class PermissionManager
     /// <returns>已授权且来源允许返回 true；否则返回 false。</returns>
     public bool IsGranted(string permissionId, string? windowName, string? origin)
     {
-        // 未启用权限检查时全部放行
-        if (!Enabled) return true;
+        // 未启用权限检查时：
+        // - DenyByDefault=false（默认）：全部放行，保持向后兼容（原有行为）；
+        // - DenyByDefault=true：继续走下方授权检查，使"默认拒绝"在关闭总开关时依然生效，
+        //   修复 Compatibility + Enabled=false 下 DenyByDefault 完全无效的矛盾（缺陷 B，见 §2.2）。
+        if (!Enabled && !_options.DenyByDefault)
+        {
+            return true;
+        }
 
         // 先执行基础 IsGranted 校验（窗口级和全局授权）
         if (!IsGranted(permissionId, windowName)) return false;

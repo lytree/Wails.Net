@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
@@ -101,7 +100,7 @@ public static class MapCommandExtensions
             var arg = Deserialize<T>(parameters, options);
             handler(arg);
             return Task.FromResult<object?>(null);
-        }, ExtractBusinessParameterTypes(handler.Method));
+        }, new[] { typeof(T) });
     }
 
     /// <summary>
@@ -121,7 +120,7 @@ public static class MapCommandExtensions
             var arg = Deserialize<T>(parameters, options);
             handler(ctx!, arg);
             return Task.FromResult<object?>(null);
-        }, ExtractBusinessParameterTypes(handler.Method));
+        }, new[] { typeof(T) });
     }
 
     /// <summary>
@@ -145,7 +144,7 @@ public static class MapCommandExtensions
             var (a1, a2) = ParseArgs2<T1, T2>(parameters, options);
             handler(ctx!, a1, a2);
             return Task.FromResult<object?>(null);
-        }, ExtractBusinessParameterTypes(handler.Method));
+        }, new[] { typeof(T1), typeof(T2) });
     }
 
     /// <summary>
@@ -169,7 +168,7 @@ public static class MapCommandExtensions
             var (a1, a2) = ParseArgs2<T1, T2>(parameters, options);
             handler(a1, a2);
             return Task.FromResult<object?>(null);
-        }, ExtractBusinessParameterTypes(handler.Method));
+        }, new[] { typeof(T1), typeof(T2) });
     }
 
     /// <summary>
@@ -195,7 +194,7 @@ public static class MapCommandExtensions
             var (a1, b2) = ParseArgs2<T1, bool>(parameters, options);
             handler(a1, b2);
             return Task.FromResult<object?>(null);
-        }, ExtractBusinessParameterTypes(handler.Method));
+        }, new[] { typeof(T1), typeof(bool) });
     }
 
     // ============================================================
@@ -262,7 +261,7 @@ public static class MapCommandExtensions
             var arg = Deserialize<T>(parameters, options);
             var result = handler(arg);
             return Task.FromResult<object?>(result);
-        }, ExtractBusinessParameterTypes(handler.Method));
+        }, new[] { typeof(T) });
     }
 
     /// <summary>
@@ -286,7 +285,7 @@ public static class MapCommandExtensions
             var arg = Deserialize<T>(parameters, options);
             var result = handler(ctx!, arg);
             return Task.FromResult<object?>(result);
-        }, ExtractBusinessParameterTypes(handler.Method));
+        }, new[] { typeof(T) });
     }
 
     // ============================================================
@@ -328,7 +327,7 @@ public static class MapCommandExtensions
             var arg = Deserialize<T>(parameters, options);
             await handler(arg).ConfigureAwait(false);
             return null;
-        }, ExtractBusinessParameterTypes(handler.Method));
+        }, new[] { typeof(T) });
     }
 
     /// <summary>
@@ -352,7 +351,7 @@ public static class MapCommandExtensions
             var arg = Deserialize<T>(parameters, options);
             await handler(ctx!, arg).ConfigureAwait(false);
             return null;
-        }, ExtractBusinessParameterTypes(handler.Method));
+        }, new[] { typeof(T) });
     }
 
     /// <summary>
@@ -377,7 +376,7 @@ public static class MapCommandExtensions
             var (a1, a2) = ParseArgs2<T1, T2>(parameters, options);
             await handler(a1, a2).ConfigureAwait(false);
             return null;
-        }, ExtractBusinessParameterTypes(handler.Method));
+        }, new[] { typeof(T1), typeof(T2) });
     }
 
     /// <summary>
@@ -401,7 +400,7 @@ public static class MapCommandExtensions
             var (a1, a2) = ParseArgs2<T1, T2>(parameters, options);
             await handler(ctx!, a1, a2).ConfigureAwait(false);
             return null;
-        }, ExtractBusinessParameterTypes(handler.Method));
+        }, new[] { typeof(T1), typeof(T2) });
     }
 
     /// <summary>
@@ -446,7 +445,7 @@ public static class MapCommandExtensions
             var arg = Deserialize<T>(parameters, options);
             var result = await handler(arg).ConfigureAwait(false);
             return result;
-        }, ExtractBusinessParameterTypes(handler.Method));
+        }, new[] { typeof(T) });
     }
 
     /// <summary>
@@ -511,7 +510,7 @@ public static class MapCommandExtensions
             var arg = Deserialize<T>(parameters, options);
             var result = await handler(ctx!, arg).ConfigureAwait(false);
             return result;
-        }, ExtractBusinessParameterTypes(handler.Method));
+        }, new[] { typeof(T) });
     }
 
     /// <summary>
@@ -536,7 +535,7 @@ public static class MapCommandExtensions
             var (a1, a2) = ParseArgs2<T1, T2>(parameters, options);
             var result = await handler(ctx!, a1, a2).ConfigureAwait(false);
             return result;
-        }, ExtractBusinessParameterTypes(handler.Method));
+        }, new[] { typeof(T1), typeof(T2) });
     }
 
     /// <summary>
@@ -554,7 +553,7 @@ public static class MapCommandExtensions
             var (a1, a2) = ParseArgs2<T1, T2>(parameters, options);
             var result = await handler(a1, a2).ConfigureAwait(false);
             return result;
-        }, ExtractBusinessParameterTypes(handler.Method));
+        }, new[] { typeof(T1), typeof(T2) });
     }
 
     /// <summary>
@@ -572,7 +571,7 @@ public static class MapCommandExtensions
             var (a1, a2, a3) = ParseArgs3<T1, T2, T3>(parameters, options);
             var result = await handler(ctx!, a1, a2, a3).ConfigureAwait(false);
             return result;
-        }, ExtractBusinessParameterTypes(handler.Method));
+        }, new[] { typeof(T1), typeof(T2), typeof(T3) });
     }
 
     /// <summary>
@@ -590,7 +589,7 @@ public static class MapCommandExtensions
             var (a1, a2, a3, a4) = ParseArgs4<T1, T2, T3, T4>(parameters, options);
             var result = await handler(ctx!, a1, a2, a3, a4).ConfigureAwait(false);
             return result;
-        }, ExtractBusinessParameterTypes(handler.Method));
+        }, new[] { typeof(T1), typeof(T2), typeof(T3), typeof(T4) });
     }
 
     /// <summary>
@@ -609,7 +608,7 @@ public static class MapCommandExtensions
             var (a1, a2, a3, a4, a5, a6, a7) = ParseArgs7<T1, T2, T3, T4, T5, T6, T7>(parameters, options);
             var result = await handler(ctx!, a1, a2, a3, a4, a5, a6, a7).ConfigureAwait(false);
             return result;
-        }, ExtractBusinessParameterTypes(handler.Method));
+        }, new[] { typeof(T1), typeof(T2), typeof(T3), typeof(T4), typeof(T5), typeof(T6), typeof(T7) });
     }
 
     // ============================================================
@@ -631,7 +630,7 @@ public static class MapCommandExtensions
             var (a1, a2, a3) = ParseArgs3<T1, T2, T3>(parameters, options);
             handler(ctx!, a1, a2, a3);
             return Task.FromResult<object?>(null);
-        }, ExtractBusinessParameterTypes(handler.Method));
+        }, new[] { typeof(T1), typeof(T2), typeof(T3) });
     }
 
     /// <summary>
@@ -649,7 +648,7 @@ public static class MapCommandExtensions
             var (a1, a2, a3) = ParseArgs3<T1, T2, T3>(parameters, options);
             handler(a1, a2, a3);
             return Task.FromResult<object?>(null);
-        }, ExtractBusinessParameterTypes(handler.Method));
+        }, new[] { typeof(T1), typeof(T2), typeof(T3) });
     }
 
     /// <summary>
@@ -667,7 +666,7 @@ public static class MapCommandExtensions
             var (a1, a2) = ParseArgs2<T1, T2>(parameters, options);
             var result = handler(ctx!, a1, a2);
             return Task.FromResult<object?>(result);
-        }, ExtractBusinessParameterTypes(handler.Method));
+        }, new[] { typeof(T1), typeof(T2) });
     }
 
     /// <summary>
@@ -685,7 +684,7 @@ public static class MapCommandExtensions
             var (a1, a2, a3) = ParseArgs3<T1, T2, T3>(parameters, options);
             var result = handler(ctx!, a1, a2, a3);
             return Task.FromResult<object?>(result);
-        }, ExtractBusinessParameterTypes(handler.Method));
+        }, new[] { typeof(T1), typeof(T2), typeof(T3) });
     }
 
     /// <summary>
@@ -703,7 +702,7 @@ public static class MapCommandExtensions
             var (a1, a2, a3) = ParseArgs3<T1, T2, T3>(parameters, options);
             var result = handler(a1, a2, a3);
             return Task.FromResult<object?>(result);
-        }, ExtractBusinessParameterTypes(handler.Method));
+        }, new[] { typeof(T1), typeof(T2), typeof(T3) });
     }
 
     /// <summary>
@@ -721,7 +720,7 @@ public static class MapCommandExtensions
             var (a1, a2) = ParseArgs2<T1, T2>(parameters, options);
             var result = handler(a1, a2);
             return Task.FromResult<object?>(result);
-        }, ExtractBusinessParameterTypes(handler.Method));
+        }, new[] { typeof(T1), typeof(T2) });
     }
 
     // ============================================================
@@ -794,7 +793,7 @@ public static class MapCommandExtensions
             var arg = Deserialize<T>(parameters, options);
             handler(arg);
             return Task.FromResult<object?>(null);
-        }, ExtractBusinessParameterTypes(handler.Method), requiredCapabilities);
+        }, new[] { typeof(T) }, requiredCapabilities);
     }
 
     /// <summary>
@@ -819,7 +818,7 @@ public static class MapCommandExtensions
             var arg = Deserialize<T>(parameters, options);
             handler(ctx!, arg);
             return Task.FromResult<object?>(null);
-        }, ExtractBusinessParameterTypes(handler.Method), requiredCapabilities);
+        }, new[] { typeof(T) }, requiredCapabilities);
     }
 
     /// <summary>
@@ -871,36 +870,6 @@ public static class MapCommandExtensions
     // ============================================================
     // 内部参数解析辅助方法
     // ============================================================
-
-    /// <summary>
-    /// 提取委托中的业务参数类型列表（P2-1 命令签名元数据）。
-    /// <para>
-    /// 从 <paramref name="method"/> 的参数列表中排除运行时注入的特殊参数类型
-    /// （<see cref="ICommandContext"/>、<see cref="CancellationToken"/>、<see cref="IServiceProvider"/>），
-    /// 剩余即为前端需提供的业务参数类型，供 manifest 生成与 TypeScript wrapper 生成使用。
-    /// 此方法仅读取 <see cref="MethodInfo"/> 的元数据，不属于 AGENTS.md §3.4 禁止的反射调用。
-    /// </para>
-    /// </summary>
-    /// <param name="method">命令处理委托的方法元数据。</param>
-    /// <returns>业务参数类型列表；无业务参数时返回空列表。</returns>
-    private static IReadOnlyList<Type> ExtractBusinessParameterTypes(MethodInfo method)
-    {
-        var result = new List<Type>();
-        foreach (var parameter in method.GetParameters())
-        {
-            var type = parameter.ParameterType;
-            if (type == typeof(ICommandContext) ||
-                type == typeof(CancellationToken) ||
-                type == typeof(IServiceProvider))
-            {
-                continue;
-            }
-
-            result.Add(type);
-        }
-
-        return result;
-    }
 
     /// <summary>
     /// 反序列化单个参数。对 default JsonElement 返回 default(T)。
@@ -1201,7 +1170,7 @@ public static class MapCommandExtensions
             var arg = Deserialize<T>(parameters, options);
             handler(arg);
             return Task.FromResult<object?>(null);
-        }, ExtractBusinessParameterTypes(handler.Method), security);
+        }, new[] { typeof(T) }, security);
     }
 
     /// <summary>
@@ -1220,7 +1189,7 @@ public static class MapCommandExtensions
             var (a1, a2) = ParseArgs2<T1, T2>(parameters, options);
             handler(a1, a2);
             return Task.FromResult<object?>(null);
-        }, ExtractBusinessParameterTypes(handler.Method), security);
+        }, new[] { typeof(T1), typeof(T2) }, security);
     }
 
     /// <summary>
@@ -1241,7 +1210,7 @@ public static class MapCommandExtensions
             var (a1, b2) = ParseArgs2<T1, bool>(parameters, options);
             handler(a1, b2);
             return Task.FromResult<object?>(null);
-        }, ExtractBusinessParameterTypes(handler.Method), security);
+        }, new[] { typeof(T1), typeof(bool) }, security);
     }
 
     /// <summary>
@@ -1261,7 +1230,7 @@ public static class MapCommandExtensions
             var (a1, a2) = ParseArgs2<T1, T2>(parameters, options);
             var result = handler(a1, a2);
             return Task.FromResult<object?>(result);
-        }, ExtractBusinessParameterTypes(handler.Method), security);
+        }, new[] { typeof(T1), typeof(T2) }, security);
     }
 
     /// <summary>

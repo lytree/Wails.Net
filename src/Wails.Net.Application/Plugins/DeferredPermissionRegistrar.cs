@@ -28,6 +28,13 @@ internal sealed class DeferredPermissionRegistrar : IPermissionRegistrar
     public bool HasDeclarations =>
         _permissionSets.Count > 0 || _scopes.Count > 0 || _declaredPermissions.Count > 0;
 
+    /// <summary>
+    /// 已声明的细粒度权限只读快照（权限标识 → 描述）。
+    /// 供文档生成与审计在物化前查询（见 §2.5 卫生项）。
+    /// </summary>
+    public IReadOnlyDictionary<string, string> DeclaredPermissions
+        => new Dictionary<string, string>(_declaredPermissions, StringComparer.OrdinalIgnoreCase);
+
     /// <inheritdoc />
     public void RegisterPermissionSet(string identifier, string description, params string[] permissions)
     {
@@ -72,6 +79,13 @@ internal sealed class DeferredPermissionRegistrar : IPermissionRegistrar
         foreach (var (permissionId, scope) in _scopes)
         {
             permissionManager.SetScope(permissionId, scope);
+        }
+
+        // 将延迟收集的细粒度权限登记到运行时权限清单数据源（见 §2.5 卫生项：
+        // 此前仅收集不重放，导致 DeclarePermission 的声明在物化后丢失）。
+        foreach (var (identifier, description) in _declaredPermissions)
+        {
+            permissionManager.RegisterDeclaredPermission(identifier, description);
         }
     }
 }

@@ -2,6 +2,7 @@ using Wails.Net.Application.Dialogs;
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Screens;
+using Wails.Net.Application.Windows;
 
 namespace Wails.Net.Application.Platform.ServerMode;
 
@@ -140,9 +141,10 @@ public class ServerPlatformApp : IPlatformApp
     }
 
     /// <inheritdoc />
-    public void CreateWebviewWindow(uint id, WebviewWindowOptions options)
+    public IWebviewWindowImpl? CreateWebviewWindow(uint id, WebviewWindowOptions options)
     {
         // Server 模式下不支持创建窗口。
+        return null;
     }
 
     /// <inheritdoc />

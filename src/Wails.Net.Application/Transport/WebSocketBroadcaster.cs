@@ -19,6 +19,13 @@ public class WebSocketBroadcaster
     private readonly ConcurrentDictionary<string, WebSocket> _clients = new();
 
     /// <summary>
+    /// 客户端 → 窗口 ID 映射（§2.5 卫生项）。
+    /// 由握手首消息携带的 windowId 建立，用于实现事件真定向（OPT-EVENT-002）。
+    /// 值为 null 表示尚未建立窗口映射（客户端为全局/未绑定）。
+    /// </summary>
+    private readonly ConcurrentDictionary<string, uint?> _clientWindowIds = new(StringComparer.Ordinal);
+
+    /// <summary>
     /// 客户端 ID 生成器（线程安全递增）。
     /// </summary>
     private int _nextClientId = 1;
@@ -37,7 +44,22 @@ public class WebSocketBroadcaster
     {
         var clientId = Interlocked.Increment(ref _nextClientId).ToString();
         _clients[clientId] = webSocket;
+        _clientWindowIds[clientId] = null;
         return clientId;
+    }
+
+    /// <summary>
+    /// 为客户端建立窗口映射（§2.5 卫生项）。
+    /// 由接收循环在首条消息携带 windowId 时调用；重复调用以最新值为准。
+    /// </summary>
+    /// <param name="clientId">客户端 ID。</param>
+    /// <param name="windowId">窗口 ID；null 表示未绑定。</param>
+    public void SetClientWindow(string clientId, uint? windowId)
+    {
+        if (_clients.ContainsKey(clientId))
+        {
+            _clientWindowIds[clientId] = windowId;
+        }
     }
 
     /// <summary>
@@ -47,6 +69,7 @@ public class WebSocketBroadcaster
     public void RemoveClient(string clientId)
     {
         _clients.TryRemove(clientId, out _);
+        _clientWindowIds.TryRemove(clientId, out _);
     }
 
     /// <summary>
@@ -79,9 +102,16 @@ public class WebSocketBroadcaster
         var json = JsonSerializer.Serialize(message, JsonOptions.DefaultSerializerOptions);
         var bytes = System.Text.Encoding.UTF8.GetBytes(json);
 
-        var tasks = _clients.Values
-            .Where(ws => ws.State == WebSocketState.Open)
-            .Select(ws => SendAsync(ws, bytes));
+        // OPT-EVENT-002 真定向：底层的 targetWindowId 同时过滤发送目标（§2.5 卫生项）。
+        // 仅向与目标窗口匹配的客户端发送；未建立窗口映射的客户端（全局）不接收定向事件。
+        var targets = targetWindowId is { } windowTarget
+            ? _clients.Where(kvp =>
+                kvp.Value.State == WebSocketState.Open &&
+                _clientWindowIds.TryGetValue(kvp.Key, out var mapped) &&
+                mapped == windowTarget)
+            : _clients.Where(kvp => kvp.Value.State == WebSocketState.Open);
+
+        var tasks = targets.Select(kvp => SendAsync(kvp.Value, bytes));
 
         await Task.WhenAll(tasks);
     }

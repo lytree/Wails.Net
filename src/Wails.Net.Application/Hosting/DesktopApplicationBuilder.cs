@@ -187,6 +187,18 @@ public sealed class DesktopApplicationBuilder
     }
 
     /// <summary>
+    /// 使用统一平台入口（<see cref="UseAutoPlatform"/> 的别名，SDK-3 统一入口）。
+    /// 基于 <see cref="PlatformFactory.CreatePlatformApp"/> 的 6 级检测链自动选择平台实现，
+    /// 编译期无需引用具体平台类型（Windows/Linux/Android），运行时经模块初始化器自动加载。
+    /// 对应 Tauri 单 crate + <c>cfg(target_os)</c> 的跨平台体验：模板 / 用户代码只需一行平台入口。
+    /// </summary>
+    /// <returns>当前构建器实例，用于链式调用。</returns>
+    public DesktopApplicationBuilder UseWailsPlatform()
+    {
+        return UseAutoPlatform();
+    }
+
+    /// <summary>
     /// 构建桌面应用实例。
     /// 在构建 Host 之前初始化所有插件（调用 <see cref="IPlugin.Configure"/>），
     /// 在构建 Host 之后创建 <see cref="CommandDispatcher"/> 并注入到 <see cref="Application"/>。
@@ -365,12 +377,12 @@ public sealed class DesktopApplicationBuilder
         }
 
         // 读取权限配置（对齐 Tauri v2 默认行为）。
-        // 仅在 PermissionOptions.Enabled=true 时触发自动加载，
-        // 保持 Enabled=false 默认的向后兼容，避免现有应用升级后命令被意外拒绝。
+        // 加载条件与权限检查生效条件（PermissionManager.Enabled = Mode==Strict || Enabled）对齐，
+        // 修复 Strict + Enabled=false 时"检查生效但授权永远为空"的脱节（缺陷 A，见 §2.2）。
         var permissionOptions = services.GetService<IOptions<PermissionOptions>>()?.Value;
-        if (permissionOptions is null || !permissionOptions.Enabled)
+        if (permissionOptions is null || !permissionManager.Enabled)
         {
-            logger?.LogDebug("权限未启用（PermissionOptions.Enabled=false），跳过能力文件自动加载。");
+            logger?.LogDebug("权限未启用（PermissionManager.Enabled=false），跳过能力文件自动加载。");
             return;
         }
 

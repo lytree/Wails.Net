@@ -52,12 +52,14 @@ internal sealed class PermissionRegistrar : IPermissionRegistrar
 
     /// <summary>
     /// 声明细粒度权限。
-    /// 记录到内部字典，便于文档生成和运行时权限标识查询。
+    /// 记录到内部字典并登记到 <see cref="PermissionManager"/> 运行时权限清单数据源，
+    /// 便于文档生成和运行时权限标识查询。
     /// </summary>
     public void DeclarePermission(string identifier, string description)
     {
         ArgumentException.ThrowIfNullOrEmpty(identifier);
         _declaredPermissions[identifier] = description;
+        _permissionManager.RegisterDeclaredPermission(identifier, description);
         _logger?.LogDebug("权限已声明: {Identifier} - {Description}", identifier, description);
     }
 

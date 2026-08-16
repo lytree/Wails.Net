@@ -106,7 +106,7 @@ builder.Logging.AddFilter("Microsoft", isDebugMode ? LogLevel.Information : LogL
 // Windows 上注册 WindowsPlatformApp，Linux 上注册 LinuxPlatformApp。
 // PlatformFactory.TryLoadPlatformAssembly 会通过 Assembly.Load + RuntimeHelpers.RunModuleConstructor
 // 显式触发对应平台程序集的 [ModuleInitializer] 注册委托，无需显式调用 UseWindows()/UseLinux()。
-builder.UseAutoPlatform();
+builder.UseWailsPlatform();
 
 // 构建应用实例
 var desktopApp = builder.Build();

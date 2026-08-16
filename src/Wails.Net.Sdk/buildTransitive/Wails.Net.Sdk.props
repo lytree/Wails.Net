@@ -3,7 +3,8 @@
   Wails.Net.Sdk.props
   在消费者项目评估早期自动导入，设置 Wails.Net 所需的 MSBuild 属性。
 
-  此文件由 NuGet 自动导入（位于 build/ 目录），无需消费者手动 Import。
+  此文件由 NuGet 自动导入（位于 buildTransitive/ 目录，可穿透多项目传递引用），
+  无需消费者手动 Import。
 -->
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
@@ -23,31 +24,58 @@
   </PropertyGroup>
 
   <!--
+    RID → WailsNetPlatform 映射表（SDK-1，跨平台编译关键）。
+    消费者可通过显式设置 WailsNetPlatform 覆盖此推断。
+
+    | RID 前缀 | 平台     |
+    |----------|---------|
+    | win-*    | windows |
+    | linux-*  | linux   |
+    | android-*| android |
+    | osx-*    | macos   |
+
+    效果：`dotnet build -r linux-x64`（TFM 不变，如 net10.0-windows10.0.19041.0）即可切换平台引用，
+    无需修改 TFM。未识别的 RID 不设置 FromRid，回退到 TFM / OS 推断。
+  -->
+  <PropertyGroup Condition="'$(WailsNetPlatform)' == ''">
+    <!-- 优先级 2：RID 前缀映射（跨平台打包优先于 TFM，因为 RID 是打包维度的权威标识） -->
+    <WailsNetPlatformFromRid Condition="$(RuntimeIdentifier.StartsWith('win-'))">windows</WailsNetPlatformFromRid>
+    <WailsNetPlatformFromRid Condition="$(RuntimeIdentifier.StartsWith('linux-'))">linux</WailsNetPlatformFromRid>
+    <WailsNetPlatformFromRid Condition="$(RuntimeIdentifier.StartsWith('android-'))">android</WailsNetPlatformFromRid>
+    <WailsNetPlatformFromRid Condition="$(RuntimeIdentifier.StartsWith('osx-'))">macos</WailsNetPlatformFromRid>
+    <WailsNetPlatform Condition="'$(WailsNetPlatformFromRid)' != ''">$(WailsNetPlatformFromRid)</WailsNetPlatform>
+  </PropertyGroup>
+
+  <!--
     根据 TargetFramework 推断 WailsNetPlatform 属性。
     消费者可通过显式设置 WailsNetPlatform 覆盖此推断。
 
     推断优先级：
     1. 显式 WailsNetPlatform（消费者已设置则跳过）
-    2. TFM 包含平台后缀（windows/android）→ 对应平台
-    3. Debug 模式 + 无平台后缀 TFM → 按当前 OS 自动选择（WailsNetDetectedPlatform）
-    4. Release 模式 + 无平台后缀 TFM → linux（默认部署目标）
+    2. RID 前缀映射（SDK-1）
+    3. TFM 包含平台后缀（windows/android/macos）→ 对应平台
+    4. Debug 模式 + 无平台后缀 TFM → 按当前 OS 自动选择（WailsNetDetectedPlatform）
+    5. Release 模式 + 无平台后缀 TFM → linux（默认部署目标）
   -->
   <PropertyGroup Condition="'$(WailsNetPlatform)' == ''">
-    <!-- 优先级 2：TFM 显式指定平台 -->
+    <!-- 优先级 3：TFM 显式指定平台 -->
     <WailsNetPlatform Condition="$(TargetFramework.Contains('windows'))">windows</WailsNetPlatform>
     <WailsNetPlatform Condition="$(TargetFramework.Contains('android'))">android</WailsNetPlatform>
+    <WailsNetPlatform Condition="$(TargetFramework.Contains('macos'))">macos</WailsNetPlatform>
 
-    <!-- 优先级 3：Debug + 无平台后缀 TFM → OS 自动检测 -->
+    <!-- 优先级 4：Debug + 无平台后缀 TFM → OS 自动检测 -->
     <WailsNetPlatform Condition="'$(WailsNetPlatform)' == ''
         AND '$(Configuration)' == 'Debug'
         AND !$(TargetFramework.Contains('windows'))
         AND !$(TargetFramework.Contains('android'))
+        AND !$(TargetFramework.Contains('macos'))
         AND '$(WailsNetAutoDetectPlatform)' != 'false'">$(WailsNetDetectedPlatform)</WailsNetPlatform>
 
-    <!-- 优先级 4：Release 或未检测到 → linux（默认） -->
+    <!-- 优先级 5：Release 或未检测到 → linux（默认） -->
     <WailsNetPlatform Condition="'$(WailsNetPlatform)' == ''
         AND !$(TargetFramework.Contains('windows'))
-        AND !$(TargetFramework.Contains('android'))">linux</WailsNetPlatform>
+        AND !$(TargetFramework.Contains('android'))
+        AND !$(TargetFramework.Contains('macos'))">linux</WailsNetPlatform>
   </PropertyGroup>
 
   <!--
@@ -88,7 +116,8 @@
       AND '$(Configuration)' == 'Debug'
       AND '$(WailsNetAutoDetectPlatform)' != 'false'
       AND !$(TargetFramework.Contains('windows'))
-      AND !$(TargetFramework.Contains('android'))">
+      AND !$(TargetFramework.Contains('android'))
+      AND !$(TargetFramework.Contains('macos'))">
     <WailsNetAutoDetectMessage>Wails.Net SDK: Debug 模式自动选择平台 $(WailsNetPlatform)（检测到 OS=$(OS)，TFM=$(TargetFramework)）</WailsNetAutoDetectMessage>
   </PropertyGroup>
 
@@ -97,7 +126,7 @@
     可通过设置 WailsNetVerbose=true 启用详细输出。
   -->
   <Target Name="WailsNetReportPlatform" BeforeTargets="BeforeBuild" Condition="'$(WailsNetVerbose)' == 'true'">
-    <Message Importance="High" Text="Wails.Net SDK: WailsNetPlatform=$(WailsNetPlatform), TargetFramework=$(TargetFramework), Configuration=$(Configuration), OS=$(OS)" />
+    <Message Importance="High" Text="Wails.Net SDK: WailsNetPlatform=$(WailsNetPlatform), RuntimeIdentifier=$(RuntimeIdentifier), TargetFramework=$(TargetFramework), Configuration=$(Configuration), OS=$(OS)" />
   </Target>
 
   <Target Name="WailsNetWarnPlatformMismatch" BeforeTargets="BeforeBuild" Condition="'$(WailsNetPlatformMismatchWarning)' != ''">

@@ -225,8 +225,8 @@ public sealed class ProjectScaffolder
           </PropertyGroup>
 
           <ItemGroup>
-            <PackageReference Include="Wails.Net.Application" Version="*" />
-            <PackageReference Include="Wails.Net.Application.Windows" Version="*" />
+            <!-- SDK-3：统一 SDK 单包引用，按 TFM 自动解析对应平台 Bundle 包 -->
+            <PackageReference Include="Wails.Net.Sdk" Version="*" />
           </ItemGroup>
 
           <ItemGroup>

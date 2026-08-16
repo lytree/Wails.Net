@@ -553,8 +553,9 @@ public class AssetServer
         // M12：请求到达日志（Debug）
         _logger?.LogDebug("HTTP {Method} {Path}", request.HttpMethod, request.Url?.AbsolutePath ?? "/");
 
-        // 添加 CORS 响应头
-        response.Headers[Headers.AccessControlAllowOrigin] = "*";
+        // 添加 CORS 响应头（值可经 AssetOptions.CorsOrigin 配置，默认 "*"，
+        // 对应 §2.5 卫生项：静态资源 CORS 与 IPC 层白名单回显策略双轨并存）。
+        response.Headers[Headers.AccessControlAllowOrigin] = _options.CorsOrigin;
 
         var path = request.Url?.AbsolutePath ?? "/";
         // 去除查询参数，仅保留路径部分

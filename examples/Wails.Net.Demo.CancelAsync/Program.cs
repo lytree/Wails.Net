@@ -35,7 +35,7 @@ builder.Logging.SetMinimumLevel(isDebugMode ? LogLevel.Debug : LogLevel.Informat
 builder.Logging.AddFilter("Microsoft", isDebugMode ? LogLevel.Information : LogLevel.Warning);
 
 // 使用平台工厂自动检测并注册平台实现
-builder.UseAutoPlatform();
+builder.UseWailsPlatform();
 
 // 构建应用实例
 var desktopApp = builder.Build();

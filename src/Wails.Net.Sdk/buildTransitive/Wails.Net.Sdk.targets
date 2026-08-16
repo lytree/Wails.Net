@@ -3,7 +3,8 @@
   Wails.Net.Sdk.targets
   在消费者项目评估后期自动导入，处理 Wails.Net 相关的构建目标。
 
-  此文件由 NuGet 自动导入（位于 build/ 目录），无需消费者手动 Import。
+  此文件由 NuGet 自动导入（位于 buildTransitive/ 目录，可穿透多项目传递引用），
+  无需消费者手动 Import。
 
   前端自动构建（vite + pnpm）：
   - 约定消费者项目在 $(MSBuildProjectDirectory)\frontend 下提供 vite 项目。

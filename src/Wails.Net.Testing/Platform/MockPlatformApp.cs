@@ -4,6 +4,7 @@ using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform;
 using Wails.Net.Application.Screens;
+using Wails.Net.Application.Windows;
 using Wails.Net.Testing.Recording;
 using WailsApplication = Wails.Net.Application.Application;
 
@@ -416,7 +417,7 @@ public sealed class MockPlatformApp : IPlatformApp, IDisposable
     }
 
     /// <inheritdoc />
-    public void CreateWebviewWindow(uint id, WebviewWindowOptions options)
+    public IWebviewWindowImpl? CreateWebviewWindow(uint id, WebviewWindowOptions options)
     {
         _recorder.Record(nameof(CreateWebviewWindow), id, options.Title);
 
@@ -432,6 +433,7 @@ public sealed class MockPlatformApp : IPlatformApp, IDisposable
         }
 
         window.Show();
+        return window;
     }
 
     /// <summary>

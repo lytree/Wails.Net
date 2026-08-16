@@ -52,23 +52,49 @@
     <NoWarn>$(NoWarn);NU5128</NoWarn>
   </PropertyGroup>
 
-  <!-- Windows TFM：引用 Windows 平台 Bundle 包 -->
-  <ItemGroup Condition="$(TargetFramework.Contains('windows'))">
+  <!--
+    SDK 自身构建 / 仓库内 ProjectReference 消费路径的 WailsNetPlatform 兜底。
+    打包后的 NuGet 消费者通过 buildTransitive/Wails.Net.Sdk.props 自动计算 WailsNetPlatform；
+    但 SDK 自身构建与仓库内 ProjectReference（examples/）不会导入该 props，需在此兜底。
+    优先级：显式 WailsNetPlatform > RID 前缀 > TFM 后缀 > linux 默认。
+    注意：RID 与 TFM 必须拆成两个 PropertyGroup（且都受 '$(WailsNetPlatform)' == '' 守卫），
+    否则同一 PropertyGroup 内顺序求值会让 TFM 条件覆盖 RID 映射。
+  -->
+  <PropertyGroup Condition="'$(WailsNetPlatform)' == ''">
+    <WailsNetPlatformFromRid Condition="$(RuntimeIdentifier.StartsWith('win-'))">windows</WailsNetPlatformFromRid>
+    <WailsNetPlatformFromRid Condition="$(RuntimeIdentifier.StartsWith('linux-'))">linux</WailsNetPlatformFromRid>
+    <WailsNetPlatformFromRid Condition="$(RuntimeIdentifier.StartsWith('android-'))">android</WailsNetPlatformFromRid>
+    <WailsNetPlatformFromRid Condition="$(RuntimeIdentifier.StartsWith('osx-'))">macos</WailsNetPlatformFromRid>
+    <WailsNetPlatform Condition="'$(WailsNetPlatformFromRid)' != ''">$(WailsNetPlatformFromRid)</WailsNetPlatform>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(WailsNetPlatform)' == ''">
+    <WailsNetPlatform Condition="$(TargetFramework.Contains('windows'))">windows</WailsNetPlatform>
+    <WailsNetPlatform Condition="$(TargetFramework.Contains('android'))">android</WailsNetPlatform>
+    <WailsNetPlatform Condition="$(TargetFramework.Contains('macos'))">macos</WailsNetPlatform>
+    <WailsNetPlatform Condition="'$(WailsNetPlatform)' == ''">linux</WailsNetPlatform>
+  </PropertyGroup>
+
+  <!--
+    WailsNetPlatform 条件引用各平台 Bundle 包（SDK-1/2）。
+    使用 WailsNetPlatform 而非 TFM 条件，确保 RID 映射（SDK-1）也能驱动平台切换：
+    - `dotnet build -r linux-x64`（TFM 为 net10.0-windows10.0.19041.0）→ 引用 Linux Bundle
+    - `dotnet build -r win-x64`（TFM 为 net10.0）→ 引用 Windows Bundle
+    - 无 RID 时按 props 优先级链（TFM/OS 自动检测）回退。
+  -->
+  <ItemGroup Condition="'$(WailsNetPlatform)' == 'windows'">
     <ProjectReference Include="..\Wails.Net.Bundle.Windows\Wails.Net.Bundle.Windows.csproj" />
   </ItemGroup>
 
-  <!-- Linux TFM（net10.0 无平台后缀）：引用 Linux 平台 Bundle 包 -->
-  <ItemGroup Condition="!$(TargetFramework.Contains('windows')) AND !$(TargetFramework.Contains('android')) AND !$(TargetFramework.Contains('macos'))">
+  <ItemGroup Condition="'$(WailsNetPlatform)' == 'linux'">
     <ProjectReference Include="..\Wails.Net.Bundle.Linux\Wails.Net.Bundle.Linux.csproj" />
   </ItemGroup>
 
-  <!-- Android TFM：引用 Android 平台 Bundle 包 -->
-  <ItemGroup Condition="$(TargetFramework.Contains('android'))">
+  <ItemGroup Condition="'$(WailsNetPlatform)' == 'android'">
     <ProjectReference Include="..\Wails.Net.Bundle.Android\Wails.Net.Bundle.Android.csproj" />
   </ItemGroup>
 
-  <!-- macOS TFM：引用 macOS 平台 Bundle 包 -->
-  <ItemGroup Condition="$(TargetFramework.Contains('macos'))">
+  <ItemGroup Condition="'$(WailsNetPlatform)' == 'macos'">
     <ProjectReference Include="..\Wails.Net.Bundle.MacOS\Wails.Net.Bundle.MacOS.csproj" />
   </ItemGroup>
 
@@ -79,9 +105,9 @@
     自动获得 SG 引用；NuGet 消费者通过 Bundle 包的 analyzer 文件夹获得。
   -->
 
-  <!-- 将 build/ 目录下的 props/targets 打包到 NuGet 包中，消费者会自动导入 -->
+  <!-- 将 buildTransitive/ 目录下的 props/targets 打包到 NuGet 包中，消费者会自动导入（并可穿透多项目传递引用） -->
   <ItemGroup>
-    <None Include="build\**" Pack="true" PackagePath="build\" />
+    <None Include="buildTransitive\**" Pack="true" PackagePath="buildTransitive\" />
   </ItemGroup>
 
 </Project>

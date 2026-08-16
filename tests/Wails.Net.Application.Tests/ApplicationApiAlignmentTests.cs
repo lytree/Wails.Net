@@ -6,6 +6,7 @@ using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform;
 using Wails.Net.Application.Platform.ServerMode;
 using Wails.Net.Application.Screens;
+using Wails.Net.Application.Windows;
 using Wails.Net.Events;
 
 namespace Wails.Net.Application.Tests;
@@ -56,7 +57,7 @@ public sealed class ApplicationApiAlignmentTests
         public bool IsDarkMode() => false;
         public string GetAccentColor() => "#000000";
         public void DispatchOnMainThread(Action action) => action();
-        public void CreateWebviewWindow(uint id, WebviewWindowOptions options) { }
+        public IWebviewWindowImpl? CreateWebviewWindow(uint id, WebviewWindowOptions options) => null;
         public Task<int> ShowMessageDialog(string title, string message, Dialogs.DialogStyle style, string[] buttons)
             => Task.FromResult(0);
         public Task<string?> OpenFileDialog(Dialogs.OpenFileDialogOptions options) => Task.FromResult<string?>(null);

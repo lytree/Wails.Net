@@ -24,12 +24,15 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 | [宿主层与应用生命周期](architecture/hosting-and-lifecycle.md) | `DesktopApplicationBuilder`、Generic Host 集成、`DesktopHostedService`、启动/关闭顺序 |
 | [架构融合审计与优化清单](architecture/fusion-architecture-audit.md) | 基于当前代码审计 Host/DI、Runtime/IPC、Plugin/Security 三条融合主线，确认已落地调整并沉淀可执行优化项 |
 | [架构优化修改路线图](architecture/optimization-roadmap.md) | 按 Host/DI、Runtime/IPC、Plugin/Security 三大融合维度梳理优化目标、任务拆解、风险与验收标准 |
+| [架构对标分析与统一 SDK 优化方案](architecture/benchmark-audit-and-unified-sdk-plan.md) | Wails v3 / Tauri v2 / ASP.NET Core 逐项 API 与功能对标矩阵；统一 SDK 方案（调试自动选平台、打包多平台编译）；可破坏性重构任务总表 |
 | [绑定系统与命令调度](architecture/binding-and-command-system.md) | `BindingManager`、`CommandDispatcher`、表达式树编译、FNV-1a 哈希、双轨调用路径 |
 | [插件框架](architecture/plugin-system.md) | `IPlugin` 契约、`IPluginContext`、命令注册、生命周期、42 个内置插件（37 桌面 + 5 移动端） |
 | [平台抽象层](architecture/platform-abstraction.md) | `IPlatformApp`、`IWebviewWindowImpl`、Server 模式降级、Windows/Linux/Android 实现 |
 | [传输层与 IPC 通信](architecture/transport-and-ipc.md) | `ITransport`、AssetServerTransport、原生 IPC、WebSocket 广播、`EventIPCTransport` 回退、消息格式 |
 | [安全与权限模型](architecture/security-and-permissions.md) | CSP、URL 白名单、IPC 来源验证、`Capability` 自动加载、`PermissionManager`、Scope 校验 |
 | [权限模式迁移指南](architecture/permission-migration-guide.md) | Compatibility → Strict 迁移步骤、capability 文件编写、CSP 默认值、常见问题 |
+| [深度对比与重构加固方案](architecture/refactor-and-hardening-plan.md) | 对标 Wails v3 beta.4 / Tauri v2 的深度差距分析、SEC-H 安全加固路线、允许破坏性更改的重构清单与实施批次 |
+| [重构执行命令语言（RHCL）](architecture/refactor-command-language.md) | 驱动重构方案的 AI 执行命令语言：语法、状态文件、命令目录、守护规则、响应协议与提示词速查表 |
 
 ### 实现文档（`implementation/`）
 
@@ -47,7 +50,7 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 
 | 文档 | 内容 |
 |------|------|
-| [前端 JavaScript API 参考](api/frontend-api.md) | `window.wails` 全局对象、46 个命名空间、`call`/`events`/`window`/`app` 等模块 |
+| [前端 JavaScript API 参考](api/frontend-api.md) | `@wails-net/runtime` 命名导出（`import { wails }`）、44 个命名空间、`call`/`events`/`window`/`app` 等模块 |
 
 ### 开发指南（`development/`）
 
@@ -129,4 +132,4 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 
 ---
 
-**最后更新**：2026-08-10（架构优化路线图 `docs/architecture/optimization-roadmap.md` 新增；P0 批次落地：配置模型收敛 `OPT-CONFIG-001`、Options 启动期校验 `OPT-CONFIG-002`、IPC handshake token `OPT-IPC-001/002`、权限 Strict 模式 `OPT-SEC-001`、`Capability.platforms` `OPT-SEC-002`）
+**最后更新**：2026-08-16（新增深度对比与重构加固方案 `docs/architecture/refactor-and-hardening-plan.md`：SEC-H 安全加固路线 + 允许破坏性更改的重构清单，并补齐 `CommandSecurityEnforcementTests` 引用的缺失文档）

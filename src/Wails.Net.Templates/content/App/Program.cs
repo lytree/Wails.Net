@@ -4,7 +4,6 @@ using Microsoft.Extensions.Logging;
 using Wails.Net.Application;
 using Wails.Net.Application.Hosting;
 using Wails.Net.Application.Options;
-using Wails.Net.Application.Platform;
 using Wails.Net.Application.Plugins;
 using Wails.Net.Plugins.OsInfo;
 using Wails.Net.Plugins.Log;
@@ -94,25 +93,10 @@ builder.UsePlugin<LogPlugin>();           // 日志记录
 builder.UsePlugin<OsInfoPlugin>();        // 操作系统信息
 
 // ---------- 平台实现 ----------
-// 显式注册平台实现，确保 [ModuleInitializer] 触发委托注册。
+// 统一平台入口（SDK-3）：运行时经 PlatformFactory 自动选择 Windows/Linux/Android，
+// 编译期无需引用具体平台类型，无需条件编译块。
 // 生产代码严禁使用反射（参见 AGENTS.md §3.4）。
-if (OperatingSystem.IsWindows())
-{
-    builder.UsePlatform<Wails.Net.Application.Platform.WindowsPlatformApp>();
-}
-else if (OperatingSystem.IsLinux())
-{
-    builder.UsePlatform<Wails.Net.Application.Platform.LinuxPlatformApp>();
-}
-else if (OperatingSystem.IsAndroid())
-{
-    builder.UsePlatform<Wails.Net.Application.Platform.AndroidPlatformApp>();
-}
-else
-{
-    // 未知平台：降级到 Server 模式（无 GUI，可用于 CI / 容器）
-    builder.UseAutoPlatform();
-}
+builder.UseWailsPlatform();
 
 // ---------- 构建应用 ----------
 var desktopApp = builder.Build();

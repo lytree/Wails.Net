@@ -916,7 +916,9 @@ public class Application
         // P0-4：注册窗口级 CSP 到 AssetServer（在平台创建窗口前完成，确保资源请求拦截时 CSP 已就绪）
         RegisterWindowCsp(options.Name, options.Csp);
 
-        _platformApp?.CreateWebviewWindow(id, options);
+        // 创建平台实现并回填，使 facade 全部方法可用（RH-WIN-01）。
+        var impl = _platformApp?.CreateWebviewWindow(id, options);
+        window.Impl = impl;
 
         return window;
     }

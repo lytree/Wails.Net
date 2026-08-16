@@ -86,7 +86,7 @@ builder.UsePlugin<AppInfoPlugin>();       // 应用信息
 builder.UsePlugin<PathPlugin>();          // 路径操作
 
 // ---- 6. 平台实现（自动检测） ----
-builder.UseAutoPlatform();
+builder.UseWailsPlatform();
 
 // ---- 7. 构建应用 ----
 var desktopApp = builder.Build();

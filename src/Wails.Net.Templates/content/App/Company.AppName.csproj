@@ -12,8 +12,14 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- 引用 Wails.Net.Bundle.Windows 聚合包即可获得全部 Windows 平台依赖 -->
-    <PackageReference Include="Wails.Net.Bundle.Windows" />
+    <!--
+      SDK-3：统一 SDK 单包引用。
+      仅引用 Wails.Net.Sdk，NuGet 依据 TargetFramework 自动解析对应平台 Bundle 包
+      （net10.0-windows10.0.19041.0 → Wails.Net.Bundle.Windows）。
+      Wails.Net.Sdk 的 buildTransitive props 依据 RuntimeIdentifier / WailsNetPlatform
+      自动选择平台实现，Program.cs 无需条件编译（统一 UseWailsPlatform()）。
+    -->
+    <PackageReference Include="Wails.Net.Sdk" />
     <!-- M3：内置插件已拆分为独立包，模板按需引用 -->
     <PackageReference Include="Wails.Net.Plugins.OsInfo" />
     <PackageReference Include="Wails.Net.Plugins.Log" />

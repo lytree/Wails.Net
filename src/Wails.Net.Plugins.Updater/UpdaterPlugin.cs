@@ -39,13 +39,13 @@ public class UpdaterPlugin : IPlugin
         context.Permissions.DeclarePermission("updater:allow-install", "允许安装更新");
 
         // 检查更新，返回包含版本和是否可用的 JSON 字符串。
-        // 服务未注册或检查失败时返回 "{}"。
+        // 服务未注册或检查失败时抛出异常，由调度器包装为结构化 CallError（§2.5 卫生项：不再返回 "{}" 吞错）。
         context.Commands.MapCommandAsync("updater.check", (Func<ICommandContext, Task<string>>)(async ctx =>
         {
             var service = ctx.Services.GetService<UpdaterService>();
             if (service is null)
             {
-                return "{}";
+                throw new InvalidOperationException("更新器服务未注册");
             }
 
             try
@@ -57,21 +57,26 @@ public class UpdaterPlugin : IPlugin
                     available = !string.IsNullOrEmpty(manifest.Version)
                 });
             }
-            catch
+            catch (OperationCanceledException)
             {
-                // UpdateURL 未配置或网络请求失败时返回空对象
-                return "{}";
+                // 取消异常直接重抛，由 MessageProcessor 统一处理为 "调用已被取消"
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // UpdateURL 未配置或网络请求失败时，抛出异常而非返回空对象
+                throw new InvalidOperationException($"更新检查失败: {ex.Message}", ex);
             }
         }));
 
         // 下载更新包，返回下载文件的本地路径。
-        // 服务未注册、无可用下载地址或下载失败时返回空字符串。
+        // 服务未注册、无可用下载地址或下载失败时抛出异常，由调度器包装为结构化 CallError（§2.5 卫生项：不再返回空字符串吞错）。
         context.Commands.MapCommandAsync("updater.download", (Func<ICommandContext, Task<string>>)(async ctx =>
         {
             var service = ctx.Services.GetService<UpdaterService>();
             if (service is null)
             {
-                return string.Empty;
+                throw new InvalidOperationException("更新器服务未注册");
             }
 
             try
@@ -79,45 +84,59 @@ public class UpdaterPlugin : IPlugin
                 var manifest = await service.CheckForUpdatesAsync(ctx.CancellationToken);
                 if (string.IsNullOrWhiteSpace(manifest.DownloadURL))
                 {
-                    return string.Empty;
+                    throw new InvalidOperationException("更新清单未提供下载地址");
                 }
 
                 return await service.DownloadUpdateAsync(manifest, ctx.CancellationToken);
             }
-            catch
+            catch (OperationCanceledException)
             {
-                return string.Empty;
+                // 取消异常直接重抛，由 MessageProcessor 统一处理为 "调用已被取消"
+                throw;
+            }
+            catch (InvalidOperationException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"更新下载失败: {ex.Message}", ex);
             }
         }));
 
         // 安装指定路径的更新包。
-        // 服务未注册或安装失败时静默忽略，避免中断命令调用链。
+        // 服务未注册或安装失败时抛出异常，由调度器包装为结构化 CallError（§2.5 卫生项：不再静默忽略吞错）。
         context.Commands.MapCommandAsync("updater.install", (Func<ICommandContext, string, Task>)(async (ctx, archivePath) =>
         {
             var service = ctx.Services.GetService<UpdaterService>();
             if (service is null)
             {
-                return;
+                throw new InvalidOperationException("更新器服务未注册");
             }
 
             try
             {
                 await service.InstallUpdateAsync(archivePath, cancellationToken: ctx.CancellationToken);
             }
-            catch
+            catch (OperationCanceledException)
             {
-                // 安装失败时静默忽略
+                // 取消异常直接重抛，由 MessageProcessor 统一处理为 "调用已被取消"
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"更新安装失败: {ex.Message}", ex);
             }
         }));
 
         // 检查并下载更新，返回包含版本、可用性和下载路径的 JSON 字符串。
-        // 服务未注册或操作失败时返回 "{}"。
+        // 服务未注册或操作失败时抛出异常，由调度器包装为结构化 CallError（§2.5 卫生项：不再返回 "{}" 吞错）。
         context.Commands.MapCommandAsync("updater.checkAndDownload", (Func<ICommandContext, Task<string>>)(async ctx =>
         {
             var service = ctx.Services.GetService<UpdaterService>();
             if (service is null)
             {
-                return "{}";
+                throw new InvalidOperationException("更新器服务未注册");
             }
 
             try
@@ -136,9 +155,14 @@ public class UpdaterPlugin : IPlugin
                     path = downloadPath
                 });
             }
-            catch
+            catch (OperationCanceledException)
             {
-                return "{}";
+                // 取消异常直接重抛，由 MessageProcessor 统一处理为 "调用已被取消"
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"检查并下载更新失败: {ex.Message}", ex);
             }
         }));
     }

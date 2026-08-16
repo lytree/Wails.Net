@@ -103,8 +103,9 @@ public class WindowManager : IWindowManager
             }
         });
 
-        // 通知平台应用创建窗口
-        _platformApp?.CreateWebviewWindow(id, options);
+        // 通知平台应用创建窗口，并回填平台实现，使 facade 全部方法可用（RH-WIN-01）。
+        var impl = _platformApp?.CreateWebviewWindow(id, options);
+        window.Impl = impl;
 
         // P1-3-4：触发窗口创建事件，让外部组件可以订阅新窗口的控制台消息等
         WindowCreated?.Invoke(window);

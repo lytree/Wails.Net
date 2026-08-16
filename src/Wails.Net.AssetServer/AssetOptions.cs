@@ -77,4 +77,13 @@ public class AssetOptions
     /// 对应 Tauri v2 的安全配置。
     /// </summary>
     public SecurityOptions Security { get; set; } = new();
+
+    /// <summary>
+    /// 获取或设置静态资源响应的 <c>Access-Control-Allow-Origin</c> 头值（CORS）。
+    /// 默认 <c>*</c>（允许任意来源加载静态资源），与 IPC 层的白名单回显策略双轨并存：
+    /// IPC 严（仅白名单来源）、静态资源宽（默认 <c>*</c>）。
+    /// 若需收紧静态资源跨域边界，可设为具体来源（如 <c>https://app.example.com</c>）。
+    /// 对应 Tauri v2 的 asset CORS 配置（见 §2.5 卫生项）。
+    /// </summary>
+    public string CorsOrigin { get; set; } = "*";
 }

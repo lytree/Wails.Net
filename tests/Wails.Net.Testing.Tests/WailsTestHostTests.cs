@@ -177,4 +177,48 @@ public sealed class WailsTestHostTests
         await Assert.That(received).IsNotNull();
         await Assert.That(received!.Name).IsEqualTo("wails.test.event");
     }
+
+    /// <summary>
+    /// RH-WIN-01 回归：<c>Application.CreateWebviewWindow</c> 返回的 facade 必须已回填
+    /// <see cref="WebviewWindow.Impl"/>（此前全仓库无赋值点，facade 全部方法抛异常）。
+    /// 断言 Impl 非空且 <see cref="MockWebviewWindow"/> 与 facade 为同一窗口实例。
+    /// </summary>
+    [Test]
+    public async Task CreateWindow_FacadeImpl_IsBackfilled()
+    {
+        await using var host = WailsTestHostBuilder.Create("WailsTestHostTests").Build();
+
+        var facade = host.Application.CreateWebviewWindow(new WebviewWindowOptions
+        {
+            Name = "main",
+            Title = "Facade Window"
+        });
+
+        await Assert.That(facade.Impl).IsNotNull();
+        await Assert.That(facade.Impl).IsTypeOf<MockWebviewWindow>();
+        await Assert.That(facade.Impl!.Id).IsEqualTo(facade.ID);
+    }
+
+    /// <summary>
+    /// RH-WIN-01 回归：facade 方法不再抛 <see cref="InvalidOperationException"/>（"窗口平台实现尚未设置"）。
+    /// 经 <c>host.CreateWindow</c> 拿到的 Mock 窗口与 Application 注册表共享同一实现时，
+    /// facade 的 ExecJS 等操作应落到底层 <see cref="MockWebviewWindow"/>。
+    /// </summary>
+    [Test]
+    public async Task CreateWindow_FacadeExecJS_ReachesMockImplementation()
+    {
+        await using var host = WailsTestHostBuilder.Create("WailsTestHostTests").Build();
+
+        var mock = host.CreateWindow("main", "Facade Window");
+        var facade = host.Application.GetWindow(mock.Id);
+
+        await Assert.That(facade).IsNotNull();
+        // 断言 facade.Impl 已回填为底层 Mock 实现（此前为 null，ExecJS 会抛异常）。
+        await Assert.That(facade!.Impl).IsNotNull();
+        // 此调用此前会因 Impl 为 null 抛 InvalidOperationException（"窗口平台实现尚未设置"）。
+        facade.ExecJS("window.__test = 1");
+
+        // 确认 JS 已注入到 Mock 窗口（验证 facade → impl 的调用确实到达实现层）。
+        await Assert.That(mock.ExecutedJavaScript.Contains("window.__test = 1")).IsTrue();
+    }
 }

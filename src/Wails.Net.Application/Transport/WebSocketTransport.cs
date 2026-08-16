@@ -430,6 +430,13 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
             return;
         }
 
+        // 建立客户端 → 窗口映射（§2.5 卫生项）：首条携带 windowId 的消息即握手，
+        // 供事件真定向（OPT-EVENT-002）过滤发送目标。
+        if (message.WindowId is { } windowId)
+        {
+            _broadcaster.SetClientWindow(clientId, windowId);
+        }
+
         var result = await _processor.ProcessAsync(message);
 
         if (result is not null)

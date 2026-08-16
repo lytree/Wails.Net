@@ -3,6 +3,7 @@ using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform.ServerMode;
 using Wails.Net.Application.Screens;
+using Wails.Net.Application.Windows;
 using Menu = Wails.Net.Application.Menus.Menu;
 using WailsApplication = Wails.Net.Application.Application;
 
@@ -428,14 +429,15 @@ public sealed class MacOSPlatformApp : IPlatformApp
     }
 
     /// <inheritdoc />
-    public void CreateWebviewWindow(uint id, WebviewWindowOptions options)
+    public IWebviewWindowImpl? CreateWebviewWindow(uint id, WebviewWindowOptions options)
     {
 #if MACOS
         var window = new MacOSWebviewWindow(id, options, _options.Mac);
         _windows[id] = window;
         window.Create();
+        return window;
 #else
-        _stub.CreateWebviewWindow(id, options);
+        return _stub.CreateWebviewWindow(id, options);
 #endif
     }
 

@@ -10,6 +10,7 @@ using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform;
 using Wails.Net.Application.Screens;
+using Wails.Net.Application.Windows;
 using WebKit;
 using Action = System.Action;
 using Array = System.Array;
@@ -714,11 +715,11 @@ public sealed class LinuxPlatformApp : IPlatformApp
     }
 
     /// <inheritdoc />
-    public void CreateWebviewWindow(uint id, WebviewWindowOptions options)
+    public IWebviewWindowImpl? CreateWebviewWindow(uint id, WebviewWindowOptions options)
     {
         if (!OperatingSystem.IsLinux())
         {
-            return;
+            return null;
         }
 
         // 将应用级 LinuxOptions 传入窗口，用于配置 WebKitGTK 环境（用户数据目录、附加参数等）。
@@ -734,6 +735,8 @@ public sealed class LinuxPlatformApp : IPlatformApp
         // 显示窗口。GTK 窗口创建后默认不可见，必须显式调用 Present() 才能显示。
         // 对应 Wails v3 Go 版本中窗口创建后立即显示的行为。
         window.Show();
+
+        return window;
     }
 
     /// <inheritdoc />

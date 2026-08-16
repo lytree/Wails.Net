@@ -10,7 +10,7 @@
 - **项目**：Wails.Net — Wails v3 (Go) 的 .NET 10 移植实现
 - **参考版本**：`wails v3.0.0-beta.4`（2026-08-05 发布；2026-08-02 alpha → beta 升级，桌面 API 已稳定）
 - **对比基线**：Tauri v2 GA `2.11.5`（2026-07-01；Tauri 2.0 于 2024-10-02 正式发布，**无 beta 阶段**；Tauri 3 仅有 CLI-CEF alpha 预览，不作为参考）
-- **目标平台**：Windows、Linux、Android（macOS 已提供骨架实现 `Wails.Net.Application.MacOS`，iOS 暂不实现）
+- **目标平台**：Windows、Linux、Android（macOS 已实现 `Wails.Net.Application.MacOS`：`#if MACOS` 分支为完整 AppKit + WKWebView 实现，`#else` 分支降级到 ServerMode；iOS 暂不实现）
 - **实施计划**：详见 `.trae/documents/wails-net-dotnet10-implementation-plan.md`
 
 ### 1.1 技术选型（已确定，不可更改）
@@ -467,8 +467,9 @@ Wails.Net.Application.Platform # 平台抽象
 Wails.Net.Application.Windows  # Windows 实现
 Wails.Net.Application.Linux    # Linux 实现
 Wails.Net.Application.Android  # Android 实现
-Wails.Net.Application.MacOS    # macOS 骨架实现（G7：当前降级到 ServerMode，后续集成 WKWebView）
+Wails.Net.Application.MacOS    # macOS 实现（#if MACOS 为完整 AppKit+WKWebView 实现，#else 降级到 ServerMode）
 Wails.Net.Application.Plugins  # 插件框架（BuiltIn 内置 + Mobile 移动端）
+Wails.Net.Sdk                  # 统一 SDK 聚合包
 Wails.Net.Errors               # 错误类型
 Wails.Net.Events               # 事件类型定义
 ```
@@ -481,6 +482,31 @@ Wails.Net.Events               # 事件类型定义
 const uint offsetBasis = 2166136261u;
 const uint prime = 16777619u;
 ```
+
+### 6.4 统一 SDK 模型（SDK-1/2/3）
+
+对标 Tauri 单包 + 单命令多目标体验，用户项目只引用一个 `Wails.Net.Sdk` 包，
+`Program.cs` 仅一行平台入口 `builder.UseWailsPlatform()`（`UseAutoPlatform()` 的别名），
+编译期无需引用具体平台类型，无需条件编译块。
+
+**平台选择维度是 RuntimeIdentifier 而非 TFM**（SDK-1）：
+`Wails.Net.Sdk` 的 buildTransitive props 依据 `RuntimeIdentifier` 前缀映射 `WailsNetPlatform`：
+
+| RID 前缀 | 平台 |
+|---------|------|
+| `win-*` | windows |
+| `linux-*` | linux |
+| `android-*` | android |
+| `osx-*` | macos |
+
+优先级：显式 `WailsNetPlatform` > RID 前缀 > TFM 后缀 > 无平台后缀时按 OS/Configuration 推断。
+
+`buildTransitive/`（SDK-2）保证 props/targets 穿透多项目传递引用；Sdk.csproj 按
+`WailsNetPlatform` 条件 ProjectReference 各平台 Bundle 包，RID 切换即可跨平台编译
+（已验证：Windows 上 `net10.0-windows` TFM + `-r linux-x64` 正确引用 Linux Bundle）。
+
+**模板/示例统一入口**（SDK-3）：新项目仅引用 `Wails.Net.Sdk` + `UseWailsPlatform()`；
+`Wails.Net.Bundle.*` 包保留但降级为"高级/显式"路径（文档非推荐）。
 
 ---
 

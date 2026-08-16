@@ -9,6 +9,7 @@ using Wails.Net.Application.Dialogs;
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform;
+using Wails.Net.Application.Windows;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Dwm;
@@ -468,7 +469,7 @@ public sealed class WindowsPlatformApp : IPlatformApp
     }
 
     /// <inheritdoc />
-    public void CreateWebviewWindow(uint id, WebviewWindowOptions options)
+    public IWebviewWindowImpl? CreateWebviewWindow(uint id, WebviewWindowOptions options)
     {
         // 创建 Win32WebviewWindow 实例并加入窗口字典。
         // 将应用级 WindowsOptions 传入窗口，用于配置 WebView2 环境（用户数据目录、浏览器路径等）。
@@ -504,6 +505,8 @@ public sealed class WindowsPlatformApp : IPlatformApp
         // 必须显式调用 ShowWindow 才能显示。对应 Wails v3 Go 版本中
         // window.Show() 的调用。
         window.Show();
+
+        return window;
     }
 
     /// <inheritdoc />
