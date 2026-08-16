@@ -58,6 +58,15 @@ public interface IPersistedScope
     bool IsAllowed(string path);
 
     /// <summary>
+    /// 校验指定路径是否在单个命名作用域的允许范围内（支持通配符匹配）。
+    /// 供前端 <c>scope.isAllowed</c> 指定 scopeName 时使用。
+    /// </summary>
+    /// <param name="path">要校验的路径。</param>
+    /// <param name="scopeName">作用域名称；null 时使用默认作用域。</param>
+    /// <returns>允许返回 true；作用域不存在返回 false。</returns>
+    bool IsAllowed(string path, string? scopeName);
+
+    /// <summary>
     /// 从磁盘加载指定作用域的持久化配置。
     /// </summary>
     /// <param name="scopeName">作用域名称；null 时使用默认作用域。</param>
@@ -129,6 +138,10 @@ public sealed class PersistedScopeManager : IPersistedScope, IScope
 
         return false;
     }
+
+    /// <inheritdoc/>
+    public bool IsAllowed(string path, string? scopeName)
+        => _scopes.TryGetValue(NormalizeScopeName(scopeName), out var scope) && scope.IsAllowed(path);
 
     /// <inheritdoc/>
     public bool Load(string? scopeName = null)

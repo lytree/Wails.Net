@@ -191,6 +191,36 @@ public static class GeneratedBindingRegistry
     public static int Count => _invokers.Count;
 
     /// <summary>
+    /// 移除指定方法名的全部注册状态（调用器、类型映射、能力、Scope 提取器）。
+    /// 仅用于测试清理：定向移除单条注册，避免 <see cref="Clear"/> 清空源生成器
+    /// 在进程启动时注册的其他调用器。
+    /// </summary>
+    /// <param name="fullName">方法全名或命令名。</param>
+    public static void Remove(string fullName)
+    {
+        _invokers.Remove(fullName);
+        _methodToTypeName.Remove(fullName);
+        _methodCapabilities.Remove(fullName);
+        _methodScopeExtractors.Remove(fullName);
+
+        // 若该 fullName 以 "Type.Method" 形式登记过 _typeMethods，则同步移除对应方法名
+        var lastDot = fullName.LastIndexOf('.');
+        if (lastDot > 0)
+        {
+            var possibleTypeName = fullName[..lastDot];
+            var methodName = fullName[(lastDot + 1)..];
+            if (_typeMethods.TryGetValue(possibleTypeName, out var methods))
+            {
+                methods.Remove(methodName);
+                if (methods.Count == 0)
+                {
+                    _typeMethods.Remove(possibleTypeName);
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// 清除所有已注册的调用器（仅用于测试）。
     /// </summary>
     internal static void Clear()

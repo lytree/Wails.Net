@@ -41,7 +41,7 @@ public sealed class OptionsValidatorsTests
         var result = validator.Validate(Microsoft.Extensions.Options.Options.DefaultName, options);
 
         await Assert.That(result.Failed).IsTrue();
-        await Assert.That(result.Failures).Contains("Wails:ApplicationName");
+        await Assert.That(result.Failures).Contains(f => f.Contains("Wails:ApplicationName"));
     }
 
     [Test]
@@ -53,7 +53,7 @@ public sealed class OptionsValidatorsTests
         var result = validator.Validate(Microsoft.Extensions.Options.Options.DefaultName, options);
 
         await Assert.That(result.Failed).IsTrue();
-        await Assert.That(result.Failures).Contains("Wails:Window:Width");
+        await Assert.That(result.Failures).Contains(f => f.Contains("Wails:Window:Width"));
     }
 
     [Test]
@@ -65,7 +65,7 @@ public sealed class OptionsValidatorsTests
         var result = validator.Validate(Microsoft.Extensions.Options.Options.DefaultName, options);
 
         await Assert.That(result.Failed).IsTrue();
-        await Assert.That(result.Failures).Contains("Wails:Window:Height");
+        await Assert.That(result.Failures).Contains(f => f.Contains("Wails:Window:Height"));
     }
 
     [Test]
@@ -77,7 +77,7 @@ public sealed class OptionsValidatorsTests
         var result = validator.Validate(Microsoft.Extensions.Options.Options.DefaultName, options);
 
         await Assert.That(result.Failed).IsTrue();
-        await Assert.That(result.Failures).Contains("Wails:Assets:DefaultDocument");
+        await Assert.That(result.Failures).Contains(f => f.Contains("Wails:Assets:DefaultDocument"));
     }
 
     [Test]
@@ -89,7 +89,7 @@ public sealed class OptionsValidatorsTests
         var result = validator.Validate(Microsoft.Extensions.Options.Options.DefaultName, options);
 
         await Assert.That(result.Failed).IsTrue();
-        await Assert.That(result.Failures).Contains("Wails:DevServerUrl");
+        await Assert.That(result.Failures).Contains(f => f.Contains("Wails:DevServerUrl"));
     }
 
     [Test]
@@ -101,7 +101,7 @@ public sealed class OptionsValidatorsTests
         var result = validator.Validate(Microsoft.Extensions.Options.Options.DefaultName, options);
 
         await Assert.That(result.Failed).IsTrue();
-        await Assert.That(result.Failures).Contains("Wails:DevServerUrl");
+        await Assert.That(result.Failures).Contains(f => f.Contains("Wails:DevServerUrl"));
     }
 
     // ---------- PermissionOptionsValidator ----------
@@ -131,19 +131,22 @@ public sealed class OptionsValidatorsTests
         var result = validator.Validate(Microsoft.Extensions.Options.Options.DefaultName, options);
 
         await Assert.That(result.Failed).IsTrue();
-        await Assert.That(result.Failures).Contains("Permissions:1");
+        await Assert.That(result.Failures).Contains(f => f.Contains("Permissions:1"));
     }
 
     [Test]
     public async Task PermissionOptions_InvalidCapabilitiesDirectory_Fails()
     {
         var validator = new PermissionOptionsValidator();
-        var options = new PermissionOptions { CapabilitiesDirectory = "cap\x00abilities" };
+        // 注意：不能使用 "\x00abilities"，因为 C# 的 \x 转义会贪婪消费后续十六进制数字
+        // （'a'、'b' 均为十六进制），导致实际字面量为字符 0xAB 而非 NUL，无法被验证器捕获。
+        // 必须使用 "\0"（明确的 NUL 转义）才能命中 Path.GetInvalidPathChars()。
+        var options = new PermissionOptions { CapabilitiesDirectory = "cap\0abilities" };
 
         var result = validator.Validate(Microsoft.Extensions.Options.Options.DefaultName, options);
 
         await Assert.That(result.Failed).IsTrue();
-        await Assert.That(result.Failures).Contains("CapabilitiesDirectory");
+        await Assert.That(result.Failures).Contains(f => f.Contains("CapabilitiesDirectory"));
     }
 
     [Test]
@@ -155,7 +158,7 @@ public sealed class OptionsValidatorsTests
         var result = validator.Validate(Microsoft.Extensions.Options.Options.DefaultName, options);
 
         await Assert.That(result.Failed).IsTrue();
-        await Assert.That(result.Failures).Contains("Scopes");
+        await Assert.That(result.Failures).Contains(f => f.Contains("Scopes"));
     }
 
     // ---------- IpcOptionsValidator ----------
@@ -180,12 +183,12 @@ public sealed class OptionsValidatorsTests
     public async Task IpcOptions_PortStartBelow1024_Fails()
     {
         var validator = new IpcOptionsValidator();
-        var options = new IpcOptions { PortStart = 8080, PortEnd = 9090 };
+        var options = new IpcOptions { PortStart = 808, PortEnd = 9090 };
 
         var result = validator.Validate(Microsoft.Extensions.Options.Options.DefaultName, options);
 
         await Assert.That(result.Failed).IsTrue();
-        await Assert.That(result.Failures).Contains("PortStart");
+        await Assert.That(result.Failures).Contains(f => f.Contains("PortStart"));
     }
 
     [Test]
@@ -197,7 +200,7 @@ public sealed class OptionsValidatorsTests
         var result = validator.Validate(Microsoft.Extensions.Options.Options.DefaultName, options);
 
         await Assert.That(result.Failed).IsTrue();
-        await Assert.That(result.Failures).Contains("PortEnd");
+        await Assert.That(result.Failures).Contains(f => f.Contains("PortEnd"));
     }
 
     [Test]
@@ -209,7 +212,7 @@ public sealed class OptionsValidatorsTests
         var result = validator.Validate(Microsoft.Extensions.Options.Options.DefaultName, options);
 
         await Assert.That(result.Failed).IsTrue();
-        await Assert.That(result.Failures).Contains("AllowedOrigins");
+        await Assert.That(result.Failures).Contains(f => f.Contains("AllowedOrigins"));
     }
 
     [Test]
@@ -221,6 +224,6 @@ public sealed class OptionsValidatorsTests
         var result = validator.Validate(Microsoft.Extensions.Options.Options.DefaultName, options);
 
         await Assert.That(result.Failed).IsTrue();
-        await Assert.That(result.Failures).Contains("AllowedOrigins:0");
+        await Assert.That(result.Failures).Contains(f => f.Contains("AllowedOrigins:0"));
     }
 }

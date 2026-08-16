@@ -120,6 +120,7 @@ public sealed class PersistedScopeIntegrationTests
         var context = Substitute.For<IPluginContext>();
         var registrar = Substitute.For<IPermissionRegistrar>();
         context.Permissions.Returns(registrar);
+        context.Commands.Returns(new Wails.Net.Application.Commands.CommandRegistry());
 
         // 操作：配置插件（默认受管权限）
         var plugin = new PersistedScopePlugin();

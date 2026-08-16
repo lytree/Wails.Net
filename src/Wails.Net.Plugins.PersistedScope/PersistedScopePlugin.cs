@@ -94,13 +94,9 @@ public class PersistedScopePlugin : IPlugin
         // 检查路径是否在允许范围内
         context.Commands.MapCommand("scope.isAllowed", (Func<string, string?, bool>)((path, scopeName) =>
         {
-            // 兼容旧签名（scopeName 指定单作用域）：指定时仅查该作用域，未指定时合并所有作用域
-            if (string.IsNullOrWhiteSpace(scopeName))
-            {
-                return _manager.IsAllowed(path);
-            }
-            return _manager.ListPaths(scopeName).Any(allowed =>
-                string.Equals(allowed, path, StringComparison.OrdinalIgnoreCase));
+            // 兼容旧签名（scopeName 指定单作用域）：指定时仅查该作用域，未指定时合并所有作用域。
+            // 两种路径均复用 PersistedScopeManager 的规范化 + 通配符匹配逻辑。
+            return _manager.IsAllowed(path, scopeName);
         }));
 
         // 手动保存范围到磁盘

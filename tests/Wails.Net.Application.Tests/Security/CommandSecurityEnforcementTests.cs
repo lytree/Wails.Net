@@ -158,21 +158,31 @@ public sealed class CommandSecurityEnforcementTests
             requiredCapabilities: null,
             scopeExtractors: new[] { generatedExtractor });
 
-        var manager = CreateManager(enabled: true, denyByDefault: true, "fs:allow-read");
-        var fsScope = new FileSystemScope();
-        fsScope.AddPath("/tmp");
-        manager.SetScope("fs:allow-read", fsScope);
-        // 不注册 fs:WRONG-permission → 如果 dispatcher 用了生成的 extractor，会因为权限未授予而失败；
-        // 但因为显式 WithScope 优先，dispatcher 会用 fs:allow-read（在 scope 内）放行。
-        var dispatcher = new CommandDispatcher(registry, EmptyServices(),
-            NullLogger<CommandDispatcher>.Instance, manager);
+        try
+        {
+            var manager = CreateManager(enabled: true, denyByDefault: true, "fs:allow-read");
+            var fsScope = new FileSystemScope();
+            fsScope.AddPath("/tmp");
+            manager.SetScope("fs:allow-read", fsScope);
+            // 不注册 fs:WRONG-permission → 如果 dispatcher 用了生成的 extractor，会因为权限未授予而失败；
+            // 但因为显式 WithScope 优先，dispatcher 会用 fs:allow-read（在 scope 内）放行。
+            var dispatcher = new CommandDispatcher(registry, EmptyServices(),
+                NullLogger<CommandDispatcher>.Instance, manager);
 
-        var request = new InvokeRequest(Guid.NewGuid(), "fs.read",
-            JsonDocument.Parse(@"{""path"":""/tmp/file.txt""}").RootElement);
-        var response = await dispatcher.DispatchAsync(request);
+            var request = new InvokeRequest(Guid.NewGuid(), "fs.read",
+                JsonDocument.Parse(@"{""path"":""/tmp/file.txt""}").RootElement);
+            var response = await dispatcher.DispatchAsync(request);
 
-        await Assert.That(response.Success).IsTrue();
-        await Assert.That(response.Result).IsEqualTo("read:/tmp/file.txt");
+            await Assert.That(response.Success).IsTrue();
+            await Assert.That(response.Result).IsEqualTo("read:/tmp/file.txt");
+        }
+        finally
+        {
+            // 定向移除本测试注册的 "fs.read"，避免污染随后执行的
+            // Require_Capability_WithPermission_IsAllowed 等依赖无 scope extractor 的测试。
+            // 不能使用 Clear()（会清空源生成器在进程启动时注册的其他调用器）。
+            Wails.Net.Application.Bindings.GeneratedBindingRegistry.Remove("fs.read");
+        }
     }
 
     /// <summary>

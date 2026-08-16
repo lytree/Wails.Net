@@ -402,8 +402,8 @@ public sealed class BuiltInPluginsExtendedTests
         // 操作
         await Assert.That(() => plugin.Configure(context)).ThrowsNothing();
 
-        // 断言：应注册 7 个 store.* 命令（含 store.has 前端 API 别名）
-        await Assert.That(context.Commands.Count).IsEqualTo(7);
+        // 断言：应注册 8 个 store.* 命令（含 store.has 前端 API 别名与 store.unwatch 事件泄漏修复）
+        await Assert.That(context.Commands.Count).IsEqualTo(8);
         var names = context.Commands.GetCommandNames().ToList();
         await Assert.That(names.Contains("store.get")).IsTrue();
         await Assert.That(names.Contains("store.set")).IsTrue();
@@ -411,6 +411,7 @@ public sealed class BuiltInPluginsExtendedTests
         await Assert.That(names.Contains("store.keys")).IsTrue();
         await Assert.That(names.Contains("store.clear")).IsTrue();
         await Assert.That(names.Contains("store.watch")).IsTrue();
+        await Assert.That(names.Contains("store.unwatch")).IsTrue();
         await Assert.That(names.Contains("store.has")).IsTrue();
     }
 
