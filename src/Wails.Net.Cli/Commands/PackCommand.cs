@@ -25,8 +25,11 @@ internal sealed class PackCommand : CliCommandBase
         configurationOption.Description = "构建配置（Debug 或 Release）";
         configurationOption.DefaultValueFactory = _ => "Release";
 
-        var runtimeOption = new Option<string?>("--runtime");
-        runtimeOption.Description = "目标运行时标识（如 win-x64、linux-x64）";
+        // SDK-4：--target 为统一入口（替代/兼容 --runtime），二者为同一选项的别名。
+        // RID 经 Wails.Net.Sdk 的 RID→平台映射（SDK-1）自动切换平台引用。
+        var runtimeOption = new Option<string?>("--target");
+        runtimeOption.Description = "目标运行时标识（RID，如 win-x64、linux-x64、android-arm64）。SDK 依据 RID 前缀自动选择平台引用。兼容别名：--runtime";
+        runtimeOption.Aliases.Add("--runtime");
 
         var selfContainedOption = new Option<bool>("--self-contained");
         selfContainedOption.Description = "是否发布为自包含应用（包含 .NET 运行时）";
@@ -38,6 +41,11 @@ internal sealed class PackCommand : CliCommandBase
 
         var outputOption = new Option<DirectoryInfo?>("--output");
         outputOption.Description = "打包输出目录（默认为 bin/packages）";
+
+        // SDK-4：--all-targets 基于 RID 的多目标打包。
+        var allTargetsOption = new Option<bool>("--all-targets");
+        allTargetsOption.Description = "打包所有目标 RID（win-x64、linux-x64、android-arm64；macOS 主机额外加入 osx-*）。每 RID 先发布后打包，产物按 RID 分目录输出";
+        allTargetsOption.DefaultValueFactory = _ => false;
 
         var appNameOption = new Option<string?>("--app-name");
         appNameOption.Description = "应用名称（默认取 wails.json 的 name 字段）";
@@ -60,6 +68,7 @@ internal sealed class PackCommand : CliCommandBase
         command.Options.Add(selfContainedOption);
         command.Options.Add(formatOption);
         command.Options.Add(outputOption);
+        command.Options.Add(allTargetsOption);
         command.Options.Add(appNameOption);
         command.Options.Add(versionOption);
         command.Options.Add(skipHooksOption);
@@ -73,13 +82,14 @@ internal sealed class PackCommand : CliCommandBase
             var selfContained = parseResult.GetValue(selfContainedOption);
             var format = parseResult.GetValue(formatOption) ?? (OperatingSystem.IsWindows() ? "zip" : "targz");
             var output = parseResult.GetValue(outputOption);
+            var allTargets = parseResult.GetValue(allTargetsOption);
             var appName = parseResult.GetValue(appNameOption);
             var version = parseResult.GetValue(versionOption);
             var skipHooks = parseResult.GetValue(skipHooksOption);
             var skipFrontend = parseResult.GetValue(skipFrontendOption);
 
             var cmd = new PackCommand();
-            return await cmd.ExecuteAsync(project, configuration, runtime, selfContained, format, output, appName, version, skipHooks, skipFrontend);
+            return await cmd.ExecuteAsync(project, configuration, runtime, selfContained, format, output, allTargets, appName, version, skipHooks, skipFrontend);
         });
 
         return command;
@@ -94,6 +104,7 @@ internal sealed class PackCommand : CliCommandBase
     /// <param name="selfContained">是否自包含。</param>
     /// <param name="format">打包格式字符串。</param>
     /// <param name="output">输出目录。</param>
+    /// <param name="allTargets">是否打包所有目标 RID（SDK-4）。</param>
     /// <param name="appName">应用名称（若为 null，则从 wails.json 读取）。</param>
     /// <param name="version">版本号（若为 null，则从 wails.json 读取）。</param>
     /// <param name="skipHooks">是否跳过构建钩子。</param>
@@ -106,8 +117,9 @@ internal sealed class PackCommand : CliCommandBase
         bool selfContained,
         string format,
         DirectoryInfo? output,
-        string? appName,
-        string? version,
+        bool allTargets = false,
+        string? appName = null,
+        string? version = null,
         bool skipHooks = false,
         bool skipFrontend = false)
     {
@@ -146,6 +158,10 @@ internal sealed class PackCommand : CliCommandBase
         Info($"打包格式：{packageFormat}");
         Info($"应用名称：{appName}");
         Info($"版本号：{version}");
+        if (allTargets)
+        {
+            Info($"全目标打包（RID）：{string.Join(", ", TargetDefinitions.GetAllTargets())}");
+        }
 
         // 执行前端构建（install + build）
         if (!skipFrontend && config?.Frontend is { } frontend)
@@ -238,23 +254,80 @@ internal sealed class PackCommand : CliCommandBase
 
         // 第一步：发布项目
         var builder = new ProjectBuilder();
-        var publishResult = await builder.PublishAsync(
-            projectPath,
-            configuration,
-            runtime,
-            selfContained);
+        var packager = new Packager();
 
-        if (!publishResult.Success)
+        // SDK-4：--all-targets 多目标打包。每 RID 先发布再打包，产物按 RID 分目录输出。
+        if (allTargets)
         {
-            Error($"发布失败：{publishResult.ErrorMessage}");
-            if (!string.IsNullOrEmpty(publishResult.BuildLog))
+            var targets = TargetDefinitions.GetAllTargets();
+            var outBase = output?.FullName ?? Path.Combine(workingDir, "bin", "packages-all");
+            Info($"--all-targets：打包 {targets.Length} 个目标 RID：{string.Join(", ", targets)}");
+
+            var published = new List<(string Rid, string PublishDir)>();
+            foreach (var rid in targets)
             {
-                Info(publishResult.BuildLog);
+                Info($"----- 发布 {rid} -----");
+                var publishOut = Path.Combine(outBase, "publish", rid);
+                var publishResult = await builder.PublishAsync(
+                    projectPath, configuration, rid, selfContained, publishOut);
+                if (!publishResult.Success)
+                {
+                    Error($"发布失败（{rid}）：{publishResult.ErrorMessage}");
+                    if (!string.IsNullOrEmpty(publishResult.BuildLog))
+                    {
+                        Info(publishResult.BuildLog);
+                    }
+                    return 2;
+                }
+                published.Add((rid, publishResult.OutputPath!));
+            }
+
+            // 执行 afterBuildCommand 钩子（仅一次）
+            if (!skipHooks && !string.IsNullOrWhiteSpace(config?.AfterBuildCommand))
+            {
+                Info($"执行 afterBuildCommand：{config!.AfterBuildCommand}");
+                var afterResult = await BuildHooks.ExecuteAsync(config.AfterBuildCommand, workingDir);
+                if (!afterResult.Success)
+                {
+                    Warn($"afterBuildCommand 失败：{afterResult.ErrorMessage}");
+                    if (!string.IsNullOrEmpty(afterResult.Output))
+                    {
+                        Info(afterResult.Output);
+                    }
+                }
+            }
+
+            foreach (var (rid, publishDir) in published)
+            {
+                Info($"----- 打包 {rid} -----");
+                var packageOut = Path.Combine(outBase, rid);
+                var exitCode = await PackageAsync(
+                    projectPath, packageFormat, packageOut, appName, version, publishDir, config,
+                    prefix: $"[{rid}] ");
+                if (exitCode != 0)
+                {
+                    return exitCode;
+                }
+            }
+
+            Success($"全目标打包完成：{outBase}");
+            return 0;
+        }
+
+        // 单目标（默认或 --target/--runtime 指定）
+        var singlePublish = await builder.PublishAsync(
+            projectPath, configuration, runtime, selfContained);
+        if (!singlePublish.Success)
+        {
+            Error($"发布失败：{singlePublish.ErrorMessage}");
+            if (!string.IsNullOrEmpty(singlePublish.BuildLog))
+            {
+                Info(singlePublish.BuildLog);
             }
             return 2;
         }
 
-        Success($"发布成功：{publishResult.OutputPath}");
+        Success($"发布成功：{singlePublish.OutputPath}");
 
         // 执行 afterBuildCommand 钩子
         if (!skipHooks && !string.IsNullOrWhiteSpace(config?.AfterBuildCommand))
@@ -273,10 +346,37 @@ internal sealed class PackCommand : CliCommandBase
         }
 
         // 第二步：打包发布产物
+        return await PackageAsync(
+            projectPath, packageFormat, output?.FullName ?? "bin/packages", appName, version,
+            singlePublish.OutputPath!, config);
+    }
+
+    /// <summary>
+    /// 打包单个发布产物目录。
+    /// </summary>
+    /// <param name="projectPath">项目文件（用于解析 bundle 配置）。</param>
+    /// <param name="packageFormat">打包格式。</param>
+    /// <param name="packageOutputDir">打包输出目录。</param>
+    /// <param name="appName">应用名称。</param>
+    /// <param name="version">版本号。</param>
+    /// <param name="publishDir">发布产物目录。</param>
+    /// <param name="config">已加载的 wails.json 配置（可空）。</param>
+    /// <param name="prefix">输出消息前缀（多目标打包时用于标注 RID）。</param>
+    /// <returns>退出码：0 成功；3 打包失败。</returns>
+    private async Task<int> PackageAsync(
+        FileInfo projectPath,
+        PackageFormat packageFormat,
+        string packageOutputDir,
+        string appName,
+        string version,
+        string publishDir,
+        ProjectConfig? config,
+        string prefix = "")
+    {
         var options = new PackageOptions
         {
             Format = packageFormat,
-            OutputDirectory = output?.FullName ?? "bin/packages",
+            OutputDirectory = packageOutputDir,
             AppName = appName,
             Version = version,
         };
@@ -288,18 +388,18 @@ internal sealed class PackCommand : CliCommandBase
         }
 
         var packager = new Packager();
-        var packageResult = await packager.PackageAsync(publishResult.OutputPath!, options);
+        var packageResult = await packager.PackageAsync(publishDir, options);
 
         if (!packageResult.Success)
         {
-            Error($"打包失败：{packageResult.ErrorMessage}");
+            Error($"{prefix}打包失败：{packageResult.ErrorMessage}");
             return 3;
         }
 
-        Success($"打包成功：{packageResult.OutputPath}");
+        Success($"{prefix}打包成功：{packageResult.OutputPath}");
         if (!string.IsNullOrEmpty(packageResult.ChecksumPath))
         {
-            Info($"校验和文件：{packageResult.ChecksumPath}");
+            Info($"{prefix}校验和文件：{packageResult.ChecksumPath}");
         }
 
         return 0;

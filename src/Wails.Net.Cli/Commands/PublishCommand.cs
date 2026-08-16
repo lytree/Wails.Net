@@ -25,8 +25,11 @@ internal sealed class PublishCommand : CliCommandBase
         configurationOption.Description = "构建配置（Debug 或 Release）";
         configurationOption.DefaultValueFactory = _ => "Release";
 
-        var runtimeOption = new Option<string?>("--runtime");
-        runtimeOption.Description = "目标运行时标识（如 win-x64、linux-x64）";
+        // SDK-4：--target 为统一入口（替代/兼容 --runtime），二者为同一选项的别名。
+        // RID 经 Wails.Net.Sdk 的 RID→平台映射（SDK-1）自动切换平台引用。
+        var runtimeOption = new Option<string?>("--target");
+        runtimeOption.Description = "目标运行时标识（RID，如 win-x64、linux-x64、android-arm64）。SDK 依据 RID 前缀自动选择平台引用。兼容别名：--runtime";
+        runtimeOption.Aliases.Add("--runtime");
 
         var selfContainedOption = new Option<bool>("--self-contained");
         selfContainedOption.Description = "是否发布为自包含应用（包含 .NET 运行时）";
@@ -34,6 +37,11 @@ internal sealed class PublishCommand : CliCommandBase
 
         var outputOption = new Option<DirectoryInfo?>("--output");
         outputOption.Description = "输出目录（默认为项目 bin/Release/publish）";
+
+        // SDK-4：--all-targets 基于 RID 的多目标发布。
+        var allTargetsOption = new Option<bool>("--all-targets");
+        allTargetsOption.Description = "发布所有目标 RID（win-x64、linux-x64、android-arm64；macOS 主机额外加入 osx-*）。产物按 RID 分目录输出";
+        allTargetsOption.DefaultValueFactory = _ => false;
 
         var skipHooksOption = new Option<bool>("--skip-hooks");
         skipHooksOption.Description = "跳过 wails.json 中的 beforeBuildCommand / afterBuildCommand 钩子";
@@ -49,6 +57,7 @@ internal sealed class PublishCommand : CliCommandBase
         command.Options.Add(runtimeOption);
         command.Options.Add(selfContainedOption);
         command.Options.Add(outputOption);
+        command.Options.Add(allTargetsOption);
         command.Options.Add(skipHooksOption);
         command.Options.Add(skipFrontendOption);
 
@@ -59,11 +68,12 @@ internal sealed class PublishCommand : CliCommandBase
             var runtime = parseResult.GetValue(runtimeOption);
             var selfContained = parseResult.GetValue(selfContainedOption);
             var output = parseResult.GetValue(outputOption);
+            var allTargets = parseResult.GetValue(allTargetsOption);
             var skipHooks = parseResult.GetValue(skipHooksOption);
             var skipFrontend = parseResult.GetValue(skipFrontendOption);
 
             var cmd = new PublishCommand();
-            return await cmd.ExecuteAsync(project, configuration, runtime, selfContained, output, skipHooks, skipFrontend);
+            return await cmd.ExecuteAsync(project, configuration, runtime, selfContained, output, allTargets, skipHooks, skipFrontend);
         });
 
         return command;
@@ -77,6 +87,7 @@ internal sealed class PublishCommand : CliCommandBase
     /// <param name="runtime">运行时标识。</param>
     /// <param name="selfContained">是否自包含。</param>
     /// <param name="output">输出目录。</param>
+    /// <param name="allTargets">是否发布所有目标 RID（SDK-4）。</param>
     /// <param name="skipHooks">是否跳过构建钩子。</param>
     /// <param name="skipFrontend">是否跳过前端构建。</param>
     /// <returns>退出码。</returns>
@@ -86,6 +97,7 @@ internal sealed class PublishCommand : CliCommandBase
         string? runtime,
         bool selfContained,
         DirectoryInfo? output,
+        bool allTargets = false,
         bool skipHooks = false,
         bool skipFrontend = false)
     {
@@ -112,6 +124,10 @@ internal sealed class PublishCommand : CliCommandBase
             Info($"运行时：{runtime}");
         }
         Info($"自包含：{(selfContained ? "是" : "否")}");
+        if (allTargets)
+        {
+            Info($"全目标发布（RID）：{string.Join(", ", TargetDefinitions.GetAllTargets())}");
+        }
 
         // 执行前端构建（install + build）
         if (!skipFrontend && config?.Frontend is { } frontend)
@@ -168,12 +184,22 @@ internal sealed class PublishCommand : CliCommandBase
         }
 
         var builder = new ProjectBuilder();
-        var result = await builder.PublishAsync(
-            projectPath,
-            configuration,
-            runtime,
-            selfContained,
-            output?.FullName);
+        BuildResult result;
+        if (allTargets)
+        {
+            var outputBase = output?.FullName
+                ?? Path.Combine(Path.GetDirectoryName(projectPath.FullName) ?? string.Empty, "bin", configuration, "publish-all");
+            result = await PublishAllTargetsAsync(builder, projectPath, configuration, selfContained, outputBase);
+        }
+        else
+        {
+            result = await builder.PublishAsync(
+                projectPath,
+                configuration,
+                runtime,
+                selfContained,
+                output?.FullName);
+        }
 
         if (!result.Success)
         {
@@ -203,6 +229,49 @@ internal sealed class PublishCommand : CliCommandBase
 
         Success($"发布成功：{result.OutputPath}");
         return 0;
+    }
+
+    /// <summary>
+    /// 全目标 RID 发布（SDK-4）：循环 <see cref="TargetDefinitions.GetAllTargets"/>，
+    /// 每 RID 作为运行时标识传给 dotnet publish，产物按 RID 分目录输出到 <paramref name="outputBase"/>/{rid}。
+    /// </summary>
+    /// <param name="builder">项目构建器。</param>
+    /// <param name="projectPath">项目文件。</param>
+    /// <param name="configuration">发布配置。</param>
+    /// <param name="selfContained">是否自包含。</param>
+    /// <param name="outputBase">输出根目录，每 RID 产物输出到其下级子目录。</param>
+    /// <returns>聚合发布结果（任一失败则整体失败）。</returns>
+    private async Task<BuildResult> PublishAllTargetsAsync(
+        ProjectBuilder builder,
+        FileInfo projectPath,
+        string configuration,
+        bool selfContained,
+        string outputBase)
+    {
+        var targets = TargetDefinitions.GetAllTargets();
+        Info($"--all-targets：发布 {targets.Length} 个目标 RID：{string.Join(", ", targets)}");
+        var outputs = new List<string>();
+
+        foreach (var rid in targets)
+        {
+            Info($"----- 发布 {rid} -----");
+            var ridOut = Path.Combine(outputBase, rid);
+            var r = await builder.PublishAsync(projectPath, configuration, rid, selfContained, ridOut);
+            if (!r.Success)
+            {
+                return r;
+            }
+            if (!string.IsNullOrEmpty(r.OutputPath))
+            {
+                outputs.Add($"[{rid}] {r.OutputPath}");
+            }
+        }
+
+        return new BuildResult
+        {
+            Success = true,
+            OutputPath = string.Join("; ", outputs),
+        };
     }
 
     /// <summary>

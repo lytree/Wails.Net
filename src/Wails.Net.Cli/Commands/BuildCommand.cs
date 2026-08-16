@@ -30,8 +30,11 @@ internal sealed class BuildCommand : CliCommandBase
         configurationOption.Description = "构建配置（Debug 或 Release）";
         configurationOption.DefaultValueFactory = _ => "Release";
 
-        var runtimeOption = new Option<string?>("--runtime");
-        runtimeOption.Description = "目标运行时标识（如 win-x64、linux-x64）";
+        // SDK-4：--target 为统一入口（替代/兼容 --runtime），二者为同一选项的别名。
+        // RID 经 Wails.Net.Sdk 的 RID→平台映射（SDK-1）自动切换平台引用。
+        var runtimeOption = new Option<string?>("--target");
+        runtimeOption.Description = "目标运行时标识（RID，如 win-x64、linux-x64、android-arm64）。SDK 依据 RID 前缀自动选择平台引用。兼容别名：--runtime";
+        runtimeOption.Aliases.Add("--runtime");
 
         var selfContainedOption = new Option<bool>("--self-contained");
         selfContainedOption.Description = "是否发布为自包含应用";
@@ -48,6 +51,13 @@ internal sealed class BuildCommand : CliCommandBase
         var allPlatformsOption = new Option<bool>("--all-platforms");
         allPlatformsOption.Description = "构建所有支持的平台（Windows/Linux/Android）。多 TFM 项目单次构建，单 TFM 项目分平台依次构建";
         allPlatformsOption.DefaultValueFactory = _ => false;
+
+        // SDK-4：--all-targets 基于 RID 的多目标构建。
+        // 与 --all-platforms（基于 WailsNetPlatform 平台名）不同，--all-targets 循环目标 RID 集合，
+        // 每 RID 经 Wails.Net.Sdk 的 RID→平台映射自动切换平台引用，产物按 RID 分目录输出。
+        var allTargetsOption = new Option<bool>("--all-targets");
+        allTargetsOption.Description = "构建所有目标 RID（win-x64、linux-x64、android-arm64；macOS 主机额外加入 osx-*）。产物按 RID 分目录输出";
+        allTargetsOption.DefaultValueFactory = _ => false;
 
         // 显式模式开关（参照 Tauri v2 / Wails v3 的 `tauri build` 行为）
         //   --frontend-only：仅构建前端（pnpm build），跳过 dotnet build
@@ -68,6 +78,7 @@ internal sealed class BuildCommand : CliCommandBase
         command.Options.Add(skipHooksOption);
         command.Options.Add(skipFrontendOption);
         command.Options.Add(allPlatformsOption);
+        command.Options.Add(allTargetsOption);
         command.Options.Add(frontendOnlyOption);
         command.Options.Add(backendOnlyOption);
 
@@ -80,6 +91,7 @@ internal sealed class BuildCommand : CliCommandBase
             var skipHooks = parseResult.GetValue(skipHooksOption);
             var skipFrontend = parseResult.GetValue(skipFrontendOption);
             var allPlatforms = parseResult.GetValue(allPlatformsOption);
+            var allTargets = parseResult.GetValue(allTargetsOption);
             var frontendOnly = parseResult.GetValue(frontendOnlyOption);
             var backendOnly = parseResult.GetValue(backendOnlyOption);
 
@@ -94,11 +106,22 @@ internal sealed class BuildCommand : CliCommandBase
                 Error("--frontend-only 与 --all-platforms 互斥（前端构建与平台无关）");
                 return 1;
             }
+            // SDK-4：--all-targets 与 --all-platforms 互斥（RID 维度 vs 平台名维度）
+            if (allTargets && allPlatforms)
+            {
+                Error("--all-targets 与 --all-platforms 互斥，请仅指定其中一个");
+                return 1;
+            }
+            if (allTargets && frontendOnly)
+            {
+                Error("--frontend-only 与 --all-targets 互斥（前端构建与平台无关）");
+                return 1;
+            }
 
             var cmd = new BuildCommand();
             return await cmd.ExecuteAsync(
                 project, configuration, runtime, selfContained,
-                skipHooks, skipFrontend, allPlatforms, frontendOnly, backendOnly);
+                skipHooks, skipFrontend, allPlatforms, allTargets, frontendOnly, backendOnly);
         });
 
         return command;
@@ -113,7 +136,8 @@ internal sealed class BuildCommand : CliCommandBase
     /// <param name="selfContained">是否自包含。</param>
     /// <param name="skipHooks">是否跳过构建钩子。</param>
     /// <param name="skipFrontend">是否跳过前端构建。</param>
-    /// <param name="allPlatforms">是否构建所有平台。</param>
+    /// <param name="allPlatforms">是否构建所有平台（WailsNetPlatform 维度）。</param>
+    /// <param name="allTargets">是否构建所有目标 RID（SDK-4，RID 维度）。</param>
     /// <param name="frontendOnly">仅构建前端。</param>
     /// <param name="backendOnly">仅构建后端。</param>
     /// <returns>退出码。</returns>
@@ -125,6 +149,7 @@ internal sealed class BuildCommand : CliCommandBase
         bool skipHooks = false,
         bool skipFrontend = false,
         bool allPlatforms = false,
+        bool allTargets = false,
         bool frontendOnly = false,
         bool backendOnly = false)
     {
@@ -177,7 +202,11 @@ internal sealed class BuildCommand : CliCommandBase
         Info($"模式：{(backendOnly ? "仅后端" : frontendOnly ? "仅前端" : "前端 + 后端")}");
         if (allPlatforms)
         {
-            Info("全平台构建：Windows / Linux / Android");
+            Info("全平台构建（WailsNetPlatform）：Windows / Linux / Android");
+        }
+        if (allTargets)
+        {
+            Info($"全目标构建（RID）：{string.Join(", ", TargetDefinitions.GetAllTargets())}");
         }
         Info("================================================================");
 
@@ -260,7 +289,11 @@ internal sealed class BuildCommand : CliCommandBase
         var builder = new ProjectBuilder();
         BuildResult? result;
 
-        if (allPlatforms)
+        if (allTargets)
+        {
+            result = await BuildAllTargetsAsync(builder, projectPath, configuration, selfContained);
+        }
+        else if (allPlatforms)
         {
             result = await BuildAllPlatformsAsync(builder, projectPath, configuration, runtime, selfContained);
         }
@@ -436,6 +469,47 @@ internal sealed class BuildCommand : CliCommandBase
             if (!string.IsNullOrEmpty(r.OutputPath))
             {
                 outputs.Add($"[{platform}] {r.OutputPath}");
+            }
+        }
+
+        return new BuildResult
+        {
+            Success = true,
+            OutputPath = string.Join("; ", outputs),
+        };
+    }
+
+    /// <summary>
+    /// 全目标 RID 构建（SDK-4）：循环 <see cref="TargetDefinitions.GetAllTargets"/>，
+    /// 每 RID 作为运行时标识传给 dotnet build，经 Wails.Net.Sdk 的 RID→平台映射自动切换平台引用，
+    /// 产物按 RID 分目录输出（dotnet build -r 自动输出到 <c>bin/{config}/{tfm}/{rid}/</c>）。
+    /// </summary>
+    /// <param name="builder">项目构建器。</param>
+    /// <param name="projectPath">项目文件。</param>
+    /// <param name="configuration">构建配置。</param>
+    /// <param name="selfContained">是否自包含。</param>
+    /// <returns>聚合构建结果（任一失败则整体失败）。</returns>
+    private async Task<BuildResult> BuildAllTargetsAsync(
+        ProjectBuilder builder,
+        FileInfo projectPath,
+        string configuration,
+        bool selfContained)
+    {
+        var targets = TargetDefinitions.GetAllTargets();
+        Info($"--all-targets：构建 {targets.Length} 个目标 RID：{string.Join(", ", targets)}");
+        var outputs = new List<string>();
+
+        foreach (var rid in targets)
+        {
+            Info($"----- 构建 {rid} -----");
+            var r = await builder.BuildAsync(projectPath, configuration, rid, selfContained);
+            if (!r.Success)
+            {
+                return r;
+            }
+            if (!string.IsNullOrEmpty(r.OutputPath))
+            {
+                outputs.Add($"[{rid}] {r.OutputPath}");
             }
         }
 
