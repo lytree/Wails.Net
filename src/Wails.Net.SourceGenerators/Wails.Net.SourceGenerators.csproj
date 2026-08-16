@@ -11,7 +11,9 @@
     <GetTargetPathDependsOn>$(GetTargetPathDependsOn);GetTargetPathForRoslynComponent</GetTargetPathDependsOn>
     <RootNamespace>Wails.Net.SourceGenerators</RootNamespace>
     <AssemblyName>Wails.Net.SourceGenerators</AssemblyName>
-    <NoWarn>RS1041</NoWarn>
+    <!-- RS1033：诊断描述以中文句号 '。' 结尾，分析器只识别英文句点，属元规则误报；
+         RS2008：发布跟踪规则，内部生成器不对外发布，无需 AnalyzerReleases 文件。 -->
+    <NoWarn>RS1041;RS2008;RS1033</NoWarn>
     <PackageId>Wails.Net.SourceGenerators</PackageId>
     <Description>Wails.Net 源代码生成器：编译期扫描 [Binding]/[Command] 特性，生成强类型调用器替代反射，支持 AOT 裁剪。</Description>
     <DevelopmentDependency>true</DevelopmentDependency>

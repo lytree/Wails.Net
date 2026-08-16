@@ -65,35 +65,42 @@ public class FileSystemPlugin : IPlugin
         // 文件操作（短名，向后兼容）— 全部使用带 [ScopeParameter] 特性的方法组注册
         // 对应 Tauri v2 的 fs scope：限定可访问的路径范围
         // 读类命令绑定 fs:allow-read 权限，写类命令绑定 fs:allow-write 权限
-        context.Commands.MapCommand("fs.read", (Func<string, string>)ReadText);
-        context.Commands.MapCommand("fs.write", (Action<string, string>)WriteText);
-        context.Commands.MapCommand("fs.exists", (Func<string, bool>)ExistsFile);
-        context.Commands.MapCommand("fs.delete", (Action<string>)DeleteFile);
-        context.Commands.MapCommand("fs.readBinary", (Func<string, byte[]>)ReadBinary);
-        context.Commands.MapCommand("fs.writeBinary", (Action<string, byte[]>)WriteBinary);
+        // 能力声明与参数级 Scope 映射通过 CommandSecurity 显式传入，避免声明被运行时丢弃（SEC-H-002）
+        var readScope = CommandSecurity.Require("fs:allow-read").WithScope("path", "fs:allow-read");
+        var writeScope = CommandSecurity.Require("fs:allow-write").WithScope("path", "fs:allow-write");
+        var copyScope = CommandSecurity.Require("fs:allow-read", "fs:allow-write")
+            .WithScope("src", "fs:allow-read")
+            .WithScope("dest", "fs:allow-write");
+
+        context.Commands.MapCommand("fs.read", (Func<string, string>)ReadText, readScope);
+        context.Commands.MapCommand("fs.write", (Action<string, string>)WriteText, writeScope);
+        context.Commands.MapCommand("fs.exists", (Func<string, bool>)ExistsFile, readScope);
+        context.Commands.MapCommand("fs.delete", (Action<string>)DeleteFile, writeScope);
+        context.Commands.MapCommand("fs.readBinary", (Func<string, byte[]>)ReadBinary, readScope);
+        context.Commands.MapCommand("fs.writeBinary", (Action<string, byte[]>)WriteBinary, writeScope);
 
         // 文件操作（前端 wails.fs.* API 名，与 @wails-net/runtime/src/api/fs.ts 一致）
-        context.Commands.MapCommand("fs.readTextFile", (Func<string, string>)ReadText);
-        context.Commands.MapCommand("fs.writeTextFile", (Action<string, string>)WriteText);
-        context.Commands.MapCommand("fs.readBinaryFile", (Func<string, byte[]>)ReadBinary);
-        context.Commands.MapCommand("fs.writeBinaryFile", (Action<string, byte[]>)WriteBinary);
-        context.Commands.MapCommand("fs.remove", (Action<string>)DeleteFile);
+        context.Commands.MapCommand("fs.readTextFile", (Func<string, string>)ReadText, readScope);
+        context.Commands.MapCommand("fs.writeTextFile", (Action<string, string>)WriteText, writeScope);
+        context.Commands.MapCommand("fs.readBinaryFile", (Func<string, byte[]>)ReadBinary, readScope);
+        context.Commands.MapCommand("fs.writeBinaryFile", (Action<string, byte[]>)WriteBinary, writeScope);
+        context.Commands.MapCommand("fs.remove", (Action<string>)DeleteFile, writeScope);
 
         // 其他文件操作
-        context.Commands.MapCommand("fs.copy", (Action<string, string>)CopyFile);
-        context.Commands.MapCommand("fs.rename", (Action<string, string>)RenameFile);
-        context.Commands.MapCommand("fs.stat", (Func<string, FileStat>)StatFile);
+        context.Commands.MapCommand("fs.copy", (Action<string, string>)CopyFile, copyScope);
+        context.Commands.MapCommand("fs.rename", (Action<string, string>)RenameFile, copyScope);
+        context.Commands.MapCommand("fs.stat", (Func<string, FileStat>)StatFile, readScope);
 
         // 异步命令
-        context.Commands.MapCommandAsync("fs.readAsync", (Func<string, Task<string>>)ReadTextAsync);
-        context.Commands.MapCommandAsync("fs.writeAsync", (Func<string, string, Task>)WriteTextAsync);
+        context.Commands.MapCommandAsync("fs.readAsync", (Func<string, Task<string>>)ReadTextAsync, readScope);
+        context.Commands.MapCommandAsync("fs.writeAsync", (Func<string, string, Task>)WriteTextAsync, writeScope);
 
         // 目录操作
-        context.Commands.MapCommand("fs.mkdir", (Action<string>)MakeDirectory);
-        context.Commands.MapCommand("fs.rmdir", (Action<string, bool>)RemoveDirectory);
-        context.Commands.MapCommand("fs.existsDir", (Func<string, bool>)ExistsDirectory);
-        context.Commands.MapCommand("fs.readDir", (Func<string, string[]>)ReadDirectory);
-        context.Commands.MapCommand("fs.readDirRecursive", (Func<string, string[]>)ReadDirectoryRecursive);
+        context.Commands.MapCommand("fs.mkdir", (Action<string>)MakeDirectory, writeScope);
+        context.Commands.MapCommand("fs.rmdir", (Action<string, bool>)RemoveDirectory, writeScope);
+        context.Commands.MapCommand("fs.existsDir", (Func<string, bool>)ExistsDirectory, readScope);
+        context.Commands.MapCommand("fs.readDir", (Func<string, string[]>)ReadDirectory, readScope);
+        context.Commands.MapCommand("fs.readDirRecursive", (Func<string, string[]>)ReadDirectoryRecursive, readScope);
     }
 
     // ===== 带 [ScopeParameter] 特性的命令方法组 =====

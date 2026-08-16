@@ -1179,4 +1179,148 @@ public static class MapCommandExtensions
             await handler(ctx!, arg).ConfigureAwait(false);
             return (object?)null;
         }, new[] { typeof(T) }, security);
-    }}
+    }
+
+    // ============================================================
+    // 补充安全重载（SEC-H-002：覆盖带 [ScopeParameter]/[RequireCapability] 方法组的常见签名）
+    // ============================================================
+
+    /// <summary>
+    /// 注册单参数无返回值命令并指定命令安全声明（SEC-H-002）。
+    /// </summary>
+    public static CommandRegistry MapCommand<T>(
+        this CommandRegistry registry,
+        string name,
+        Action<T> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        var options = _jsonOptions;
+        return registry.Register(name, (instance, parameters, ctx) =>
+        {
+            var arg = Deserialize<T>(parameters, options);
+            handler(arg);
+            return Task.FromResult<object?>(null);
+        }, ExtractBusinessParameterTypes(handler.Method), security);
+    }
+
+    /// <summary>
+    /// 注册双参数无返回值命令并指定命令安全声明（SEC-H-002）。
+    /// </summary>
+    public static CommandRegistry MapCommand<T1, T2>(
+        this CommandRegistry registry,
+        string name,
+        Action<T1, T2> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        var options = _jsonOptions;
+        return registry.Register(name, (instance, parameters, ctx) =>
+        {
+            var (a1, a2) = ParseArgs2<T1, T2>(parameters, options);
+            handler(a1, a2);
+            return Task.FromResult<object?>(null);
+        }, ExtractBusinessParameterTypes(handler.Method), security);
+    }
+
+    /// <summary>
+    /// 注册双参数（第二参数为 bool）无返回值命令并指定命令安全声明（SEC-H-002）。
+    /// 适配 <c>fs.rmdir</c> 等场景。
+    /// </summary>
+    public static CommandRegistry MapCommand<T1>(
+        this CommandRegistry registry,
+        string name,
+        Action<T1, bool> handler,
+        CommandSecurity? security)
+        where T1 : notnull
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        var options = _jsonOptions;
+        return registry.Register(name, (instance, parameters, ctx) =>
+        {
+            var (a1, b2) = ParseArgs2<T1, bool>(parameters, options);
+            handler(a1, b2);
+            return Task.FromResult<object?>(null);
+        }, ExtractBusinessParameterTypes(handler.Method), security);
+    }
+
+    /// <summary>
+    /// 注册双参数 + <see cref="ICommandContext"/> 的有返回值命令并指定命令安全声明（SEC-H-002）。
+    /// 适配 <c>shell.execute</c> 等带 <c>[ScopeParameter]</c> 参数的多参命令。
+    /// </summary>
+    public static CommandRegistry MapCommand<T1, T2, TResult>(
+        this CommandRegistry registry,
+        string name,
+        Func<T1, T2, TResult> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        var options = _jsonOptions;
+        return registry.Register(name, (instance, parameters, ctx) =>
+        {
+            var (a1, a2) = ParseArgs2<T1, T2>(parameters, options);
+            var result = handler(a1, a2);
+            return Task.FromResult<object?>(result);
+        }, ExtractBusinessParameterTypes(handler.Method), security);
+    }
+
+    /// <summary>
+    /// 注册单参数有返回值的异步命令并指定命令安全声明（SEC-H-002）。
+    /// 适配 <c>http.get</c> 等带 <c>[ScopeParameter]</c> 参数的单参异步命令。
+    /// </summary>
+    public static CommandRegistry MapCommandAsync<T, TResult>(
+        this CommandRegistry registry,
+        string name,
+        Func<T, Task<TResult>> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        var options = _jsonOptions;
+        return registry.Register(name, async (instance, parameters, ctx) =>
+        {
+            var arg = Deserialize<T>(parameters, options);
+            var result = await handler(arg).ConfigureAwait(false);
+            return (object?)result;
+        }, new[] { typeof(T) }, security);
+    }
+
+    /// <summary>
+    /// 注册双参数无返回值的异步命令并指定命令安全声明（SEC-H-002）。
+    /// 适配 <c>fs.writeAsync</c> 等带 <c>[ScopeParameter]</c> 参数的双参异步命令。
+    /// </summary>
+    public static CommandRegistry MapCommandAsync<T1, T2>(
+        this CommandRegistry registry,
+        string name,
+        Func<T1, T2, Task> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        var options = _jsonOptions;
+        return registry.Register(name, async (instance, parameters, ctx) =>
+        {
+            var (a1, a2) = ParseArgs2<T1, T2>(parameters, options);
+            await handler(a1, a2).ConfigureAwait(false);
+            return (object?)null;
+        }, new[] { typeof(T1), typeof(T2) }, security);
+    }
+
+    /// <summary>
+    /// 注册双参数有返回值的异步命令并指定命令安全声明（SEC-H-002）。
+    /// 适配 <c>shell.executeAsync</c>、<c>http.post</c> 等带 <c>[ScopeParameter]</c> 参数的多参异步命令。
+    /// </summary>
+    public static CommandRegistry MapCommandAsync<T1, T2, TResult>(
+        this CommandRegistry registry,
+        string name,
+        Func<T1, T2, Task<TResult>> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        var options = _jsonOptions;
+        return registry.Register(name, async (instance, parameters, ctx) =>
+        {
+            var (a1, a2) = ParseArgs2<T1, T2>(parameters, options);
+            var result = await handler(a1, a2).ConfigureAwait(false);
+            return (object?)result;
+        }, new[] { typeof(T1), typeof(T2) }, security);
+    }
+}
