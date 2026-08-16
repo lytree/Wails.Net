@@ -13,6 +13,16 @@ namespace Wails.Net.Plugins.Store;
 /// </summary>
 public class StorePlugin : IPlugin
 {
+
+    /// <summary>
+    /// 全局键监听注册表：每个被订阅的 key 至多挂载一个事件处理器，
+    /// 重复调用 <c>store.watch</c> 替换前一次订阅（修复 SEC-H-005 / store.watch 事件泄漏）。
+    /// 键为被订阅的键名（不含命名空间前缀），值为事件处理器。
+    /// 进程级静态：KvStoreService 是单例，监听器跨窗口共享；
+    /// 窗口销毁时调用方需自行调用 <c>store.unwatch</c> 或通过窗口生命周期清理。
+    /// </summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Action<string, string?>> _watchers = new();
+
     /// <summary>插件名称</summary>
     public string Name => "store";
 
@@ -86,6 +96,10 @@ public class StorePlugin : IPlugin
 
         // 监听键变更：注册回调，当指定键变化时通过事件通知前端。
         // 对应 Tauri plugin-store 的 onKeyChange 功能。
+        //
+        // SEC-H-005（store.watch 事件泄漏修复）：每个 key 至多挂载一个处理器，
+        // 重复调用本命令替换前一次订阅，避免内存泄漏 + 多窗口多触发；
+        // 取消订阅使用 store.unwatch（无持有句柄时不抛错，幂等）。
         context.Commands.MapCommand("store.watch", (Action<ICommandContext, string>)((ctx, key) =>
         {
             var service = ctx.Services.GetService<KvStoreService>();
@@ -94,8 +108,15 @@ public class StorePlugin : IPlugin
                 return;
             }
 
+            // 若该 key 已有旧处理器，先解绑（避免多挂载泄漏）
+            if (_watchers.TryRemove(key, out var previous))
+            {
+                service.OnKeyChanged -= previous;
+            }
+
             // 订阅 OnKeyChanged 事件，过滤指定键的变更并转发到应用事件。
-            service.OnKeyChanged += (changedKey, value) =>
+            // 注意：handler 必须保持单一引用，才能在 unwatch 时精确解绑（修复前 leak 的根因）。
+            Action<string, string?> handler = (changedKey, value) =>
             {
                 if (changedKey == key)
                 {
@@ -103,6 +124,26 @@ public class StorePlugin : IPlugin
                         "store:changed", new { key = changedKey, value }, null);
                 }
             };
+            service.OnKeyChanged += handler;
+            _watchers[key] = handler;
+        }));
+
+        // 取消订阅：与 store.watch 配对。
+        // 解绑 KvStoreService.OnKeyChanged 上的处理器并从全局注册表移除。
+        // 调用方在窗口销毁或不再需要时调用，避免 store.watch 持续累计导致内存泄漏。
+        context.Commands.MapCommand("store.unwatch", (Action<ICommandContext, string>)((ctx, key) =>
+        {
+            var service = ctx.Services.GetService<KvStoreService>();
+            if (service is null)
+            {
+                return;
+            }
+
+            if (_watchers.TryRemove(key, out var handler))
+            {
+                service.OnKeyChanged -= handler;
+            }
+            // TryRemove 返回 false 表示无持有句柄（从未 watch 或已 unwatch），幂等不抛错。
         }));
     }
 }
