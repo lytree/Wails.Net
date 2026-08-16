@@ -9,6 +9,7 @@ using Cake.Common.Tools.DotNet.Publish;
 using Cake.Common.Tools.DotNet.Restore;
 using Cake.Common.Tools.DotNet.Run;
 using Cake.Core.IO;
+using Cake.Core;
 using Cake.Frosting;
 
 namespace Wails.Net.Build;
@@ -311,7 +312,7 @@ public sealed class DistWindowsTask : FrostingTask<BuildContext>
                         {
                             var args = $"sign /f \"{certPath}\" /p \"{certPwd}\" /tr \"{tsUrl}\" /td sha256 /fd sha256 \"{exePath}\"";
                             var exitCode = context.StartProcess("signtool", new ProcessSettings { Arguments = args });
-                            if (exitCode != 0) context.Warning($"signtool 退出码 {exitCode}，签名失败但继续");
+                            if (exitCode != 0) throw new CakeException($"signtool 退出码 {exitCode}，签名失败（已配置 WAILS_SIGN_BACKEND=signtool，禁止发布未签名产物）");
                             else context.Information($"已签名: {exePath}");
                         }
                         else
@@ -330,7 +331,7 @@ public sealed class DistWindowsTask : FrostingTask<BuildContext>
                         {
                             var args = $"sign -kvu \"{kvu}\" -kvc \"{kvc}\" -kvi \"{kvi}\" -kvs \"{kvs}\" -kvt \"{kvt}\" -tr \"{tsUrl}\" -td sha256 -fd sha256 \"{exePath}\"";
                             var exitCode = context.StartProcess("AzureSignTool", new ProcessSettings { Arguments = args });
-                            if (exitCode != 0) context.Warning($"AzureSignTool 退出码 {exitCode}，签名失败但继续");
+                            if (exitCode != 0) throw new CakeException($"AzureSignTool 退出码 {exitCode}，签名失败（已配置 WAILS_SIGN_BACKEND=azuresigntool，禁止发布未签名产物）");
                             else context.Information($"已签名: {exePath}");
                         }
                         else

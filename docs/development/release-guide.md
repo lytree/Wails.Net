@@ -117,6 +117,7 @@ build → test → pack → dist → publish
 | dist | dist-linux | ubuntu-latest | Linux 自包含构建（linux-x64/arm64，含 .deb/.rpm 原生包打包） |
 | dist | dist-android | windows-latest | Android APK 构建（android-arm64/x64/arm，允许失败） |
 | publish | publish-nuget | windows-latest | 通过 Trusted Publishing(OIDC) 推送全部 nupkg（含 CLI/SDK/Templates）到 nuget.org（仅 tag 触发，无需 API Key） |
+| publish | publish-npm | ubuntu-latest | 通过 `NPM_TOKEN` 推送前端双包 `@wails-net/runtime` + 全部 `@wails-net/plugin-*`（39 个）到 npmjs.com（仅 tag 触发，需前置版本一致性校验） |
 | publish | publish-github-release | ubuntu-latest | 创建 GitHub Release 并上传 nupkg + 三平台 dist 产物（仅 tag 触发） |
 
 ### 触发条件
@@ -126,7 +127,7 @@ build → test → pack → dist → publish
 | Pull Request | build, test |
 | 推送到任意分支 | build, test |
 | 推送到 main 分支 | build, test, pack, dist |
-| 推送 tag（`v*.*.*` 格式） | build, test, pack, dist, publish-nuget, publish-github-release |
+| 推送 tag（`v*.*.*` 格式） | build, test, pack, dist, publish-nuget, publish-npm, publish-github-release |
 
 ### Runner 要求
 
@@ -402,14 +403,15 @@ signtool verify /pa /v MyApplication.exe
 
 | 环境变量 | 说明 |
 |----------|------|
-| `WINDOWS_SIGN_BACKEND` | `signtool` 或 `azure`，未设置则跳过签名 |
-| `WINDOWS_CERT_PFX_PATH` | PFX 证书文件路径（signtool 模式） |
-| `WINDOWS_CERT_PASSWORD` | PFX 密码（signtool 模式） |
-| `WINDOWS_CERT_THUMBPRINT` | 证书存储指纹（signtool 模式，与 PFX 二选一） |
-| `WINDOWS_TIMESTAMP_URL` | 时间戳服务器，默认 `http://timestamp.digicert.com` |
-| `AZURE_SIGNING_ENDPOINT` | Azure Trusted Signing endpoint（azure 模式） |
-| `AZURE_SIGNING_ACCOUNT` | 账户名（azure 模式） |
-| `AZURE_SIGNING_PROFILE` | 证书 profile 名（azure 模式） |
+| `WAILS_SIGN_BACKEND` | `signtool` 或 `azuresigntool`，未设置则跳过签名 |
+| `WAILS_SIGN_TIMESTAMP_URL` | 时间戳服务器，默认 `http://timestamp.digicert.com` |
+| `WAILS_SIGN_CERT_PATH` | PFX 证书文件路径（signtool 模式） |
+| `WAILS_SIGN_CERT_PASSWORD` | PFX 密码（signtool 模式） |
+| `WAILS_SIGN_AKV_URL` | Azure Key Vault URL（azuresigntool 模式） |
+| `WAILS_SIGN_AKV_CERT` | Key Vault 中的证书名（azuresigntool 模式） |
+| `WAILS_SIGN_AZURE_CLIENT_ID` | Azure AD 应用 client id（azuresigntool 模式） |
+| `WAILS_SIGN_AZURE_CLIENT_SECRET` | Azure AD 应用 client secret（azuresigntool 模式） |
+| `WAILS_SIGN_AZURE_TENANT_ID` | Azure AD 租户 id（azuresigntool 模式） |
 
 在 GitHub Actions 中通过 Repository Secrets 注入上述环境变量。签名失败将中断流水线（与 Android 签名策略一致）。
 

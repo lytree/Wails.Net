@@ -643,7 +643,11 @@ jobs:
       id-token: write # Trusted Publishing 必需：启用 GitHub OIDC token 颁发
       contents: read
     environment:
-      name: release
+      # 与 docs/development/release-guide.md 第 188~198 行的 Trusted Publishing policy 同步：
+      #   - nuget.org 侧 policy 绑定 environment = "nuget-org"；
+      #   - GitHub 仓库侧 Settings → Environments 需存在同名 "nuget-org"。
+      #   - 修改此处必须先在两侧同步调整，否则 OIDC 换 key 步骤会失败（首次发布事故防护）。
+      name: nuget-org
       url: https://www.nuget.org/packages/Wails.Net.Sdk
     steps:
       - name: 检出代码
