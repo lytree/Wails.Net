@@ -134,7 +134,7 @@ public sealed class TypeScriptGeneratorTests
         var generator = new TypeScriptGenerator();
         var content = generator.GenerateCaller(CreateSampleMethods());
 
-        await Assert.That(content).Contains("import { wails } from '@wails/runtime';");
+        await Assert.That(content).Contains("import { wails } from '@wails-net/runtime';");
     }
 
     [Test]

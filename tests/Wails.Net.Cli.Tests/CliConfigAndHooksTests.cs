@@ -449,8 +449,8 @@ public sealed class CliConfigAndHooksTests
             await Assert.That(config.AssetDir).IsEqualTo("frontend/dist");
             await Assert.That(config.OutputFilename).IsEqualTo("MyApp");
             await Assert.That(config.WailsJsDir).IsEqualTo("frontend/src/wails");
-            await Assert.That(config.Frontend.InstallCommand).IsEqualTo("npm install");
-            await Assert.That(config.Frontend.BuildCommand).IsEqualTo("npm run build");
+            await Assert.That(config.Frontend.InstallCommand).IsEqualTo(string.Empty);
+            await Assert.That(config.Frontend.BuildCommand).IsEqualTo(string.Empty);
             await Assert.That(config.Frontend.DevServerUrl).IsEqualTo("http://localhost:5173");
         }
         finally
