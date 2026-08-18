@@ -73,6 +73,16 @@ public sealed class PermissionManager
     public bool Enabled => _options.Mode == PermissionMode.Strict || _options.Enabled;
 
     /// <summary>
+    /// 是否处于严格模式（OPT-SEC-001 / R0-4）。
+    /// <para>
+    /// 严格模式额外约束：未声明任何安全元数据（<c>entry.Security == null</c> 且
+    /// <c>entry.RequiredCapabilities.Count == 0</c>）的命令必须被拒绝，
+    /// 强制每个命令显式声明其能力需求（对应 Tauri v2 Capability 必须显式声明的最小权限姿态）。
+    /// </para>
+    /// </summary>
+    public bool IsStrict => _options.Mode == PermissionMode.Strict;
+
+    /// <summary>
     /// 当前平台标识（OPT-SEC-002）。
     /// 用于 <see cref="Capability.Platforms"/> 平台过滤；默认从宿主操作系统推断，
     /// 可通过构造参数注入（测试模拟 Windows/Linux/Android/Server 平台）。

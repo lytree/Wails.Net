@@ -1,5 +1,22 @@
 # Wails.Net 深度对比与重构加固方案（refactor-and-hardening-plan）
 
+> ## 状态漂移说明（2026-08-18 审计基线）
+>
+> 本文档编写于 2026-08-16，部分问题在审计基线（2026-08-18）已确认完成实现但文档未及时更新：
+>
+> | 编号 | 当前实现状态 | 落地位置 |
+> |------|------------|---------|
+> | RH-WIN-01 WebviewWindow Impl 断链 | ✅ 已实现 | `WindowManager.cs:108` 与 `Application.cs:921` 完成 `window.Impl = impl` 回填 |
+> | SEC-H-004 缺陷 A Strict + Enabled=false 能力加载脱节 | ✅ 已实现 | `DesktopApplicationBuilder.cs:380-385` 加载条件改为 `!permissionManager.Enabled`（与检查生效条件对齐） |
+> | R0-3 Native IPC 强制覆盖 WindowId/Origin | ✅ 已实现 | `NativeIpcTransport.cs` 新增 `ResolveOriginFromPlatform` + `parsed.WindowId = windowId` |
+> | R0-4 Strict 拒绝无安全声明命令 | ✅ 已实现 | `PermissionManager.IsStrict` + `CommandDispatcher` Strict 守卫 |
+> | R0-5 window.* 禁止无权限 fallback | ✅ 已实现 | `MessageProcessor.ProcessCommandFallbackAsync` 失败时返回错误响应而非 null |
+>
+> 详细 R0 止血清单见 `architecture-audit-2026-08-18.md` §6 R0-R4。
+>
+> **本文档其余条目尚未重新核对当前实现**，如需引用应以 2026-08-18 审计基线为准。
+
+
 > - **分析日期**：2026-08-16（基线提交 `9efef61`）
 > - **分析方法**：对 `src/`（核心宿主层、IPC/传输层、安全/权限层、四平台实现、40 个插件包）、`packages/`（npm 前端包）、`tests/`（36 个测试项目）、CLI/源生成器/模板/CI 做全量事实调研，并与 **Wails v3 `v3.0.0-beta.4`**（2026-08-05）与 **Tauri v2 GA `2.11.5`**（2026-07-01）的关键机制逐项对标。
 > - **与既有文档的关系**：本文是 `fusion-architecture-audit.md`（2026-08-15 审计）与 `optimization-roadmap.md`（OPT-* 系列）的**下一轮升级**。差异在于：**本文明确允许不兼容变更与破坏性更改（Breaking Changes）**，用于在 1.0 之前的版本窗口一次性收敛结构性债务；OPT-* 未完成项在本文中以 RH-* 编号继承并扩展。

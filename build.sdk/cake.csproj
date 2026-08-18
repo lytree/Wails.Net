@@ -1,0 +1,21 @@
+<Project Sdk="Cake.Sdk/6.1.0">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- build.sdk/ 是独立构建入口，不参与解决方案编译；不强制警告为错误 -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- 不打包此项目 -->
+    <IsPackable>false</IsPackable>
+    <!-- 不从 Directory.Build.props 继承版本号 -->
+    <Version>1.0.0</Version>
+    <PackageVersion>1.0.0</PackageVersion>
+    <!-- 本构建项目位于 build.sdk/ 子目录，运行时工作目录切换到仓库根，
+         使 build.sdk/Program.cs 内的相对路径（Wails.Net.slnx、src/…）从仓库根解析 -->
+    <RunWorkingDirectory>$(MSBuildProjectDirectory)/..</RunWorkingDirectory>
+  </PropertyGroup>
+
+</Project>

@@ -489,8 +489,12 @@ public class MessageProcessor
 
         if (!response.Success)
         {
-            // 命令未找到或执行失败时返回 null，保持与 _ => null 的向后兼容
-            return null;
+            // 审计 §3.5 / R0-5：插件命令未找到或权限拒绝时返回 PermissionDenied，
+            // 不再走 ProcessWindow 内硬编码 DispatchWindowAction 回退（无权限校验路径）。
+            // 调用方看到的是结构化错误（CallErrorKind.ReferenceError），
+            // 前端据此识别"未授权"而非被静默硬编码执行。
+            var errorMsg = response.Error ?? $"未找到命令: {message.Type}";
+            return CreateErrorResponse(message.Id, errorMsg, CallErrorKind.ReferenceError);
         }
 
         return new ResponseMessage
@@ -774,15 +778,16 @@ public class MessageProcessor
         // 优先尝试 CommandDispatcher（WindowPlugin 命令路径）。
         // ProcessCommandFallbackAsync 将 message.Type（如 "window.setTitle"）作为命令名派发，
         // 若 WindowPlugin 已注册则命中对应命令；若命令未找到则返回 null，继续走硬编码回退。
+        // 审计 §3.5 / R0-5：插件命令路径优先。
+        // 当 CommandDispatcher 已配置时，window.* 消息全部走 ProcessCommandFallbackAsync：
+        // 命中插件命令 → 返回成功；未命中/无权限 → 返回 PermissionDenied 错误响应，
+        // 严禁回退到下方硬编码 DispatchWindowAction（无权限校验路径）。
         if (_commands is not null)
         {
             var commandResponse = await ProcessCommandFallbackAsync(message);
-            if (commandResponse is not null)
-            {
-                // 命中插件命令：广播事件并返回响应
-                _events.Emit($"wails:window:{action}", payload, message.WindowId);
-                return commandResponse;
-            }
+            // 此处 commandResponse 不为 null（dispatcher 配置时 ProcessCommandFallbackAsync 必返回响应）
+            _events.Emit($"wails:window:{action}", payload, message.WindowId);
+            return commandResponse;
         }
 
         // 窗口查找器未配置时，仅广播事件并返回 null（保持向后兼容）

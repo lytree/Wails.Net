@@ -414,4 +414,23 @@ dotnet publish -c Release -r win-x64 -p:PublishAot=true
 
 ---
 
+## 附：Cake.Sdk 构建入口（可选）
+
+仓库同时提供 **Cake.Sdk** 项目式构建入口 `build.sdk/`（基于 `.cs` 的 DSL 脚本），与 `build/` 下的 Cake.Frosting（C# 类任务）并存：
+
+```bash
+# 编译验证脚本
+dotnet build build.sdk/cake.csproj
+
+# 运行默认目标 Test
+dotnet run --project build.sdk/cake.csproj
+
+# 指定目标/配置
+dotnet run --project build.sdk/cake.csproj -- --target Pack --configuration Release
+```
+
+说明：`<Project Sdk="Cake.Sdk/6.1.0">` 通过项目 SDK 形态管理依赖；`build.sdk/Program.cs` 提供 `Clean` / `Build` / `Test` / `Pack` 任务；`RunWorkingDirectory` 已切到仓库根，相对路径按仓库根解析。参考：<https://cakebuild.net/docs/running-builds/runners/cake-sdk>
+
+---
+
 **文档更新**：2026-07-18

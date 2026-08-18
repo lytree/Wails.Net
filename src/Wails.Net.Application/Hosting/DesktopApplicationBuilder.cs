@@ -8,6 +8,8 @@ using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform;
 using Wails.Net.Application.Plugins;
 using Wails.Net.Application.Security;
+using Wails.Net.Application.Bindings;
+using Wails.Net.Application.Events;
 using Wails.Net.AssetServer;
 
 namespace Wails.Net.Application.Hosting;
@@ -106,11 +108,16 @@ public sealed class DesktopApplicationBuilder
             };
         });
 
-        // 注册 Application 为工厂单例，复用已注册的 ApplicationOptions
+        // 注册 Application 为工厂单例（R1-1 DI 构造注入）。
+        // 通过 DI 解析 BindingManager、EventProcessor 与 IServiceProvider，
+        // 确保 Host、Server Transport 与 Application 共享同一对象图（消除审计 §3.1 描述的
+        // "Application 与 DI 各持一套 BindingManager/EventProcessor" 的双对象图问题）。
         Services.AddSingleton<Application>(sp =>
         {
             var options = sp.GetRequiredService<ApplicationOptions>();
-            return new Application(options);
+            var bindings = sp.GetRequiredService<BindingManager>();
+            var events = sp.GetRequiredService<EventProcessor>();
+            return new Application(options, bindings, events, sp);
         });
 
         // 注册 DesktopHostedService，将 Application 生命周期适配为 IHostedService

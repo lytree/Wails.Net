@@ -23,11 +23,28 @@ namespace Wails.Net.Application.Tests.Security;
 [NotInParallel]
 public sealed class CommandSecurityEnforcementTests
 {
-    private static PermissionManager CreateManager(bool enabled, bool denyByDefault, params string[] permissions)
+    private static PermissionManager CreateManager(
+        bool enabled,
+        bool denyByDefault,
+        params string[] permissions)
+        => CreateManager(enabled, denyByDefault, PermissionMode.Compatibility, permissions);
+
+    /// <summary>
+    /// 创建权限管理器，支持显式指定 <see cref="PermissionMode"/>.
+    /// <para>
+    /// 审计 §3.7 / R0-4 测试用：Strict 模式下无安全声明的命令应被拒绝.
+    /// </para>
+    /// </summary>
+    private static PermissionManager CreateManager(
+        bool enabled,
+        bool denyByDefault,
+        PermissionMode mode,
+        params string[] permissions)
     {
         var options = Microsoft.Extensions.Options.Options.Create(new PermissionOptions
         {
             Enabled = enabled,
+            Mode = mode,
             DenyByDefault = denyByDefault,
             Permissions = permissions.ToList(),
         });
@@ -244,5 +261,94 @@ public sealed class CommandSecurityEnforcementTests
         var uncovered = Wails.Net.Application.Manifests.ManifestGenerator.FindUncoveredCapabilities(
             registry, caps);
         await Assert.That(uncovered).Contains(u => u.Contains("app.awkward"));
+    }
+
+    // 审计 §3.7 / R0-4：Strict 模式下无安全声明的命令必须直接拒绝。
+
+    [Test]
+    public async Task Strict_CommandWithoutSecurity_IsRejected()
+    {
+        var registry = new CommandRegistry();
+        registry.MapCommand("app.ping", (Func<string, string>)(s => $"pong:{s}"));
+        var manager = CreateManager(enabled: true, denyByDefault: true, mode: PermissionMode.Strict);
+        var dispatcher = new CommandDispatcher(registry, EmptyServices(),
+            NullLogger<CommandDispatcher>.Instance, manager);
+
+        var request = new InvokeRequest(Guid.NewGuid(), "app.ping",
+            JsonDocument.Parse(@"""hi""").RootElement);
+        var response = await dispatcher.DispatchAsync(request);
+
+        await Assert.That(response.Success).IsFalse();
+        await Assert.That(response.Error).Contains("strict");
+    }
+
+    [Test]
+    public async Task Strict_CommandWithRequiredCapability_StaysAllowed()
+    {
+        var registry = new CommandRegistry();
+        CompiledCommandInvoker invoker = (instance, parameters, ctx) =>
+            Task.FromResult<object?>("ok");
+        registry.Register("app.allowed", invoker, new[] { typeof(string) }, "app:allow");
+
+        var manager = CreateManager(enabled: true, denyByDefault: true,
+            mode: PermissionMode.Strict, "app:allow");
+        var dispatcher = new CommandDispatcher(registry, EmptyServices(),
+            NullLogger<CommandDispatcher>.Instance, manager);
+
+        var request = new InvokeRequest(Guid.NewGuid(), "app.allowed",
+            JsonDocument.Parse(@"""x""").RootElement);
+        var response = await dispatcher.DispatchAsync(request);
+
+        await Assert.That(response.Success).IsTrue();
+        await Assert.That(response.Result).IsEqualTo("ok");
+    }
+
+    [Test]
+    public async Task Strict_CommandWithRequiredCapability_NoPermission_IsDenied()
+    {
+        var registry = new CommandRegistry();
+        CompiledCommandInvoker invoker = (instance, parameters, ctx) =>
+            Task.FromResult<object?>("ok");
+        registry.Register("app.deny", invoker, new[] { typeof(string) }, "app:allow");
+
+        var manager = CreateManager(enabled: true, denyByDefault: true,
+            mode: PermissionMode.Strict);
+        var dispatcher = new CommandDispatcher(registry, EmptyServices(),
+            NullLogger<CommandDispatcher>.Instance, manager);
+
+        var request = new InvokeRequest(Guid.NewGuid(), "app.deny",
+            JsonDocument.Parse(@"""x""").RootElement);
+        var response = await dispatcher.DispatchAsync(request);
+
+        await Assert.That(response.Success).IsFalse();
+        await Assert.That(response.Error).Contains("Permission denied");
+    }
+
+    [Test]
+    public async Task Compatibility_CommandWithoutSecurity_StaysAllowed()
+    {
+        var registry = new CommandRegistry();
+        registry.MapCommand("app.ping", (Func<string, string>)(s => $"pong:{s}"));
+        var manager = CreateManager(enabled: true, denyByDefault: true,
+            mode: PermissionMode.Compatibility);
+        var dispatcher = new CommandDispatcher(registry, EmptyServices(),
+            NullLogger<CommandDispatcher>.Instance, manager);
+
+        var request = new InvokeRequest(Guid.NewGuid(), "app.ping",
+            JsonDocument.Parse(@"""hi""").RootElement);
+        var response = await dispatcher.DispatchAsync(request);
+
+        await Assert.That(response.Success).IsTrue();
+        await Assert.That(response.Result).IsEqualTo("pong:hi");
+    }
+
+    [Test]
+    public async Task PermissionManager_IsStrict_ReflectsMode()
+    {
+        var strict = CreateManager(enabled: true, denyByDefault: true, mode: PermissionMode.Strict);
+        await Assert.That(strict.IsStrict).IsTrue();
+
+        var compat = CreateManager(enabled: true, denyByDefault: true, mode: PermissionMode.Compatibility);
+        await Assert.That(compat.IsStrict).IsFalse();
     }
 }

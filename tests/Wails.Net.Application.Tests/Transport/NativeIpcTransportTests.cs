@@ -1,7 +1,10 @@
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using TUnit.Core;
 using Wails.Net.Application.Bindings;
+using Wails.Net.Application.Commands;
 using Wails.Net.Application.Events;
 using Wails.Net.Application.Transport;
 using Wails.Net.Application.Windows;
@@ -394,6 +397,176 @@ public sealed class NativeIpcTransportTests
         using var doc = JsonDocument.Parse(posted[0]);
         await Assert.That(doc.RootElement.GetProperty("id").GetString()).IsEqualTo("via-handler");
         await Assert.That(doc.RootElement.GetProperty("result").GetProperty("result").GetString()).IsEqualTo("from-frontend");
+    }
+
+    /// <summary>
+    /// 创建带命令调度器的处理器：注册 observer.record 命令，回调内捕获 ICommandContext。
+    /// <para>
+    /// 用于审计 §3.3 / R0-3 测试：验证 HandleIncomingAsync 强制覆盖
+    /// <c>parsed.WindowId</c> 与 <c>parsed.Origin</c> 后再传给 CommandDispatcher。
+    /// </para>
+    /// </summary>
+    private static (MessageProcessor processor, NativeIpcTransport transport, IWebviewWindowImpl impl, Recorder recorder)
+        CreateProcessorWithDispatcher(out uint boundWindowId)
+    {
+        boundWindowId = 42u;
+        var recorder = new Recorder();
+        var registry = new CommandRegistry();
+        CompiledCommandInvoker invoker = (instance, parameters, ctx) =>
+        {
+            recorder.WindowId = ctx?.WindowId;
+            recorder.Origin = ctx?.Origin;
+            return Task.FromResult<object?>("observed");
+        };
+        registry.Register("observer.record", invoker, System.Array.Empty<Type>(), (CommandSecurity?)null);
+
+        var services = new ServiceCollection().BuildServiceProvider();
+        var dispatcher = new CommandDispatcher(registry, services, NullLogger<CommandDispatcher>.Instance);
+
+        var bindings = new BindingManager();
+        var events = new EventProcessor();
+        Func<uint, WebviewWindow?> windowLookup = null!;
+        var processor = new MessageProcessor(bindings, events, windowLookup, dispatcher, services);
+        var transport = new NativeIpcTransport(processor);
+        var (impl, _, _) = CreateStub();
+        transport.RegisterWindow(boundWindowId, impl);
+        return (processor, transport, impl, recorder);
+    }
+
+    /// <summary>
+    /// 测试用 ICommandContext 观测器，记录命令被调用时的 WindowId 与 Origin。
+    /// </summary>
+    private sealed class Recorder
+    {
+        public uint? WindowId { get; set; }
+        public string? Origin { get; set; }
+    }
+
+    // 审计 §3.3 / R0-3：传输层强制覆盖 WindowId/Origin。
+    // 前端 JSON 携带的 windowId/origin 不再被信任，由平台观测覆写。
+
+    [Test]
+    public async Task HandleIncomingAsync_FrontendSpoofsWindowId_OverwrittenByPlatform()
+    {
+        // 前端 JSON 携带 windowId=999，但平台回调绑定的 windowId 是 42。
+        var (processor, transport, _, recorder) = CreateProcessorWithDispatcher(out var boundWindowId);
+
+        var msg = new
+        {
+            id = "c1",
+            type = "call",
+            windowId = 999u,
+            origin = "https://evil.example",
+            payload = new { name = "observer.record", args = new object?[0] },
+        };
+        var json = JsonSerializer.Serialize(msg, JsonOptions.DefaultSerializerOptions);
+        await transport.HandleIncomingAsync(boundWindowId, json);
+
+        await Assert.That(recorder.WindowId).IsEqualTo(boundWindowId);
+    }
+
+    [Test]
+    public async Task HandleIncomingAsync_OriginDerivedFromPlatform_GetURL()
+    {
+        // 平台 impl.GetURL() 返回 "http://localhost:34115"；前端 JSON 携带 "https://attacker.example"。
+        var (processor, transport, impl, recorder) = CreateProcessorWithDispatcher(out var boundWindowId);
+        impl.GetURL().Returns("http://localhost:34115");
+
+        var msg = new
+        {
+            id = "c2",
+            type = "call",
+            windowId = boundWindowId,
+            origin = "https://attacker.example",
+            payload = new { name = "observer.record", args = new object?[0] },
+        };
+        var json = JsonSerializer.Serialize(msg, JsonOptions.DefaultSerializerOptions);
+        await transport.HandleIncomingAsync(boundWindowId, json);
+
+        await Assert.That(recorder.Origin).IsEqualTo("http://localhost:34115");
+    }
+
+    [Test]
+    public async Task HandleIncomingAsync_WailsSchemeOriginFromPlatform()
+    {
+        // 平台 impl.GetURL() 返回 "wails://app/main"；Origin 应为 "wails://app"。
+        var (processor, transport, impl, recorder) = CreateProcessorWithDispatcher(out var boundWindowId);
+        impl.GetURL().Returns("wails://app/main");
+
+        var msg = new
+        {
+            id = "c3",
+            type = "call",
+            windowId = boundWindowId,
+            origin = "https://spoof.example",
+            payload = new { name = "observer.record", args = new object?[0] },
+        };
+        var json = JsonSerializer.Serialize(msg, JsonOptions.DefaultSerializerOptions);
+        await transport.HandleIncomingAsync(boundWindowId, json);
+
+        await Assert.That(recorder.Origin).IsEqualTo("wails://app");
+    }
+
+    [Test]
+    public async Task HandleIncomingAsync_GetURLEmpty_FallsBackToMessageOrigin()
+    {
+        // 平台观测不可用（GetURL 返回空）时，保留消息自带 origin 作兜底。
+        var (processor, transport, impl, recorder) = CreateProcessorWithDispatcher(out var boundWindowId);
+        impl.GetURL().Returns(string.Empty);
+
+        var msg = new
+        {
+            id = "c4",
+            type = "call",
+            windowId = boundWindowId,
+            origin = "http://localhost:9999",
+            payload = new { name = "observer.record", args = new object?[0] },
+        };
+        var json = JsonSerializer.Serialize(msg, JsonOptions.DefaultSerializerOptions);
+        await transport.HandleIncomingAsync(boundWindowId, json);
+
+        await Assert.That(recorder.Origin).IsEqualTo("http://localhost:9999");
+    }
+
+    [Test]
+    public async Task HandleIncomingAsync_GetURLThrows_FallsBackToMessageOrigin()
+    {
+        // 平台 impl 抛异常时也不阻塞消息处理，保留消息自带 origin 作兜底。
+        var (processor, transport, impl, recorder) = CreateProcessorWithDispatcher(out var boundWindowId);
+        impl.GetURL().Returns(_ => throw new InvalidOperationException("platform boom"));
+
+        var msg = new
+        {
+            id = "c5",
+            type = "call",
+            windowId = boundWindowId,
+            origin = "http://localhost:9999",
+            payload = new { name = "observer.record", args = new object?[0] },
+        };
+        var json = JsonSerializer.Serialize(msg, JsonOptions.DefaultSerializerOptions);
+        await transport.HandleIncomingAsync(boundWindowId, json);
+
+        await Assert.That(recorder.Origin).IsEqualTo("http://localhost:9999");
+    }
+
+    [Test]
+    public async Task HandleIncomingAsync_MessageHasNoOrigin_GetURLProvidesIt()
+    {
+        // 消息 JSON 缺 origin 字段，平台观测仍能提供。
+        var (processor, transport, impl, recorder) = CreateProcessorWithDispatcher(out var boundWindowId);
+        impl.GetURL().Returns("https://app.example.com/index.html");
+
+        var msg = new
+        {
+            id = "c6",
+            type = "call",
+            windowId = boundWindowId,
+            payload = new { name = "observer.record", args = new object?[0] },
+        };
+        var json = JsonSerializer.Serialize(msg, JsonOptions.DefaultSerializerOptions);
+        await transport.HandleIncomingAsync(boundWindowId, json);
+
+        await Assert.That(recorder.Origin).IsEqualTo("https://app.example.com");
     }
 
     [Test]

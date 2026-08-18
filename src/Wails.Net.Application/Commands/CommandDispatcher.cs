@@ -133,6 +133,20 @@ public sealed class CommandDispatcher
                 return new InvokeResponse(request.Id, false, null, $"Command not found: {request.Method}");
             }
 
+            // 审计 §3.7 / R0-4：Strict 模式下无安全声明的命令必须直接拒绝。
+            // "安全声明"指：entry.Security 不为 null，或 entry.RequiredCapabilities 非空。
+            // 兼容模式（Compatibility）下保留旧行为（向后兼容）；Strict 强制最小权限姿态。
+            if (_permissionManager is not null && _permissionManager.IsStrict)
+            {
+                var hasSecurityDeclaration = entry.Security is not null || entry.RequiredCapabilities.Count > 0;
+                if (!hasSecurityDeclaration)
+                {
+                    _logger?.LogWarning("权限拒绝（Strict 无声明）: 命令 {Method}", request.Method);
+                    return new InvokeResponse(request.Id, false, null,
+                        $"Permission denied (strict): {request.Method} requires explicit security declaration");
+                }
+            }
+
             // 权限校验：合并 CommandEntry.RequiredCapabilities（注册时显式声明）
             // 和 GeneratedBindingRegistry 中编译期生成的能力列表（来自 [RequireCapability] 特性），
             // 统一通过 ValidateCapabilities 校验。

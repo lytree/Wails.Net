@@ -115,11 +115,13 @@ public sealed class NativeIpcTransport : INativeIpcTransport
             return;
         }
 
-        // 注入窗口 ID（若消息未显式指定）
-        if (parsed.WindowId is null)
-        {
-            parsed.WindowId = windowId;
-        }
+        // 审计 §3.3 / R0-3：传输层不再信任前端 JSON 携带的 windowId/origin。
+        // WindowId：直接使用 RegisterWindow 时绑定的窗口 ID（来自平台观测），
+        // 即便前端尝试伪造 windowId 也会被强制覆盖为真实来源窗口。
+        // Origin：从平台 impl 的 GetURL() 解析 scheme + authority，
+        // 这是 WebView 当前加载页面的真实源；前端无法跨域伪造 WebView 源。
+        parsed.WindowId = windowId;
+        parsed.Origin = ResolveOriginFromPlatform(windowId) ?? parsed.Origin;
 
         var response = await _processor.ProcessAsync(parsed);
         if (response is null)
@@ -130,6 +132,52 @@ public sealed class NativeIpcTransport : INativeIpcTransport
         // 将响应序列化为 JSON 并通过原生通道回推到前端
         var responseJson = JsonSerializer.Serialize(response, JsonOptions.DefaultSerializerOptions);
         await PostToWindowAsync(windowId, responseJson);
+    }
+
+    /// <summary>
+    /// 从平台 impl 观测的 WebView 当前 URL 中解析出权威 Origin（scheme + authority）。
+    /// <para>
+    /// 审计 §3.3 / R0-3：作为 IPC 消息的 Origin 字段唯一可信来源，替代前端 JSON 自报的 origin。
+    /// WebView 的 URL 由宿主应用加载（受同源策略约束），无法被前端脚本伪造为跨域值。
+    /// </para>
+    /// <para>
+    /// 实现策略：从 <see cref="IWebviewWindowImpl.GetURL"/> 取当前 URL，
+    /// 用 <see cref="Uri.GetLeftPart(UriPartial.Authority)"/> 取 scheme://host:port 段。
+    /// 解析失败或 impl 未实现 GetURL 时返回 null，调用方按 null 走消息自带 origin 的兜底。
+    /// 后续硬化（R3 Capability 收紧）应改为拒绝而非兜底。
+    /// </para>
+    /// </summary>
+    /// <param name="windowId">窗口 ID，用于索引已注册的 impl。</param>
+    /// <returns>解析得到的 Origin；不可用时为 null。</returns>
+    private string? ResolveOriginFromPlatform(uint windowId)
+    {
+        if (!_windowImpls.TryGetValue(windowId, out var impl))
+        {
+            return null;
+        }
+
+        try
+        {
+            var url = impl.GetURL();
+            if (string.IsNullOrEmpty(url))
+            {
+                return null;
+            }
+
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            {
+                return null;
+            }
+
+            // GetLeftPart(Authority) 对 wails://app 返回 "wails://app"，
+            // 对 http://localhost:34115 返回 "http://localhost:34115"。
+            return uri.GetLeftPart(UriPartial.Authority);
+        }
+        catch
+        {
+            // 平台层抛异常不应阻塞消息处理；返回 null 时保留消息自带 origin（兜底）
+            return null;
+        }
     }
 
     /// <summary>

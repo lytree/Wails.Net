@@ -60,12 +60,59 @@ public sealed class IpcOriginValidator
         return true;
     }
 
-    /// <summary>检查是否为本地源</summary>
+    /// <summary>
+    /// 检查是否为本地源。审计 §3.4：原先 <c>StartsWith</c> 会被
+    /// <c>http://localhost.evil.example</c>、<c>http://127.0.0.1.evil.example</c>、
+    /// <c>http://localhostfoo</c>、<c>https://wails.localhost.evil.example</c>
+    /// 等同源异义字符串绕过。改为先 <see cref="Uri.TryCreate(string, UriKind, out Uri?)"/>
+    /// 解析为绝对 URI，再精确比较 Scheme/Host；无法解析的串拒绝。
+    /// </summary>
     private static bool IsLocalOrigin(string origin)
     {
-        return origin.StartsWith("http://localhost", StringComparison.OrdinalIgnoreCase)
-            || origin.StartsWith("http://127.0.0.1", StringComparison.OrdinalIgnoreCase)
-            || origin.StartsWith("wails://", StringComparison.OrdinalIgnoreCase)
-            || origin.StartsWith("https://wails.localhost", StringComparison.OrdinalIgnoreCase);
+        if (string.IsNullOrEmpty(origin))
+        {
+            return false;
+        }
+
+        // wails:// 是 Wails 自定义 scheme，整个 scheme 视为可信来源。
+        // 注意：这里只信任整个 scheme，不再单独校验 host；如需限定 host 范围，
+        // 可在 Uri.TryCreate 后与下方 http/https 分支同等处理。
+        if (origin.StartsWith("wails://", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+        {
+            // 非绝对 URL 或解析失败（包含控制字符、空格、畸形 scheme 等），一律拒绝。
+            return false;
+        }
+
+        // Uri.Scheme 对标准 scheme 返回小写；非标准 scheme 保留原始大小写，故用 OrdinalIgnoreCase。
+        if (string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase))
+        {
+            // 仅信任精确的 loopback host；端口不限，留给上层策略决定。
+            return IsLoopbackHost(uri.Host);
+        }
+
+        if (string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            // Wails v3 的官方 loopback HTTPS 域。
+            return string.Equals(uri.Host, "wails.localhost", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 检查 host 是否为标准 loopback（localhost / 127.0.0.1 / [::1]）。
+    /// Uri.Host 已做 IDN/punycode 规范化且对 IPv6 自动剥方括号，可直接 Ordinal 比较。
+    /// </summary>
+    private static bool IsLoopbackHost(string host)
+    {
+        return string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(host, "127.0.0.1", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(host, "[::1]", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(host, "::1", StringComparison.OrdinalIgnoreCase);
     }
 }

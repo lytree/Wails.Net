@@ -380,29 +380,47 @@ public class StrongholdPlugin : IPlugin
         /// </summary>
         private void SaveVault()
         {
-            if (_key is null || _salt is null || _nonce is null) return;
+            if (_key is null || _salt is null) return;
 
             var json = JsonSerializer.Serialize(_secrets.ToDictionary(kv => kv.Key, kv => kv.Value));
             var plaintext = Encoding.UTF8.GetBytes(json);
             var ciphertext = new byte[plaintext.Length];
             var tag = new byte[TagSize];
 
-            using (var aes = new AesGcm(_key, TagSize))
+            // 每次加密都生成全新 12 字节 nonce（NIST SP 800-38D §8.3 / RFC 5116 §3.2）。
+            // AES-GCM 在同一 (key, nonce) 下绝不能加密两份不同明文，否则同时破坏机密性与认证。
+            // 旧实现复用 _nonce 是审计 §3.8 标注的 P0 安全阻断，已修正。
+            var freshNonce = RandomNumberGenerator.GetBytes(12);
+            try
             {
-                aes.Encrypt(_nonce, plaintext, ciphertext, tag);
+                using (var aes = new AesGcm(_key, TagSize))
+                {
+                    aes.Encrypt(freshNonce, plaintext, ciphertext, tag);
+                }
+            }
+            catch
+            {
+                CryptographicOperations.ZeroMemory(freshNonce);
+                CryptographicOperations.ZeroMemory(plaintext);
+                throw;
             }
 
             var container = new VaultContainer
             {
                 Salt = Convert.ToBase64String(_salt),
-                Nonce = Convert.ToBase64String(_nonce),
+                Nonce = Convert.ToBase64String(freshNonce),
                 Ciphertext = Convert.ToBase64String(ciphertext),
                 Tag = Convert.ToBase64String(tag)
             };
 
             var fileJson = JsonSerializer.Serialize(container, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(_path, fileJson);
 
+            // 原子写入：先写临时文件再 rename，避免读到半截 JSON。
+            var tempPath = _path + ".tmp";
+            File.WriteAllText(tempPath, fileJson);
+            File.Move(tempPath, _path, overwrite: true);
+
+            CryptographicOperations.ZeroMemory(freshNonce);
             CryptographicOperations.ZeroMemory(plaintext);
         }
 

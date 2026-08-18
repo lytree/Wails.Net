@@ -122,8 +122,22 @@ public static class ServerModeTransportExtensions
                 sp.GetRequiredService<WebSocketTransportEventListener>());
         }
 
-        // 注册 IPlatformAppInitializer：在 Application 初始化时将 Transport 注入到 Application
-        builder.Services.AddHostedService<ServerModeTransportInitializer>();
+        // 审计 §3.6 / R0-6：使用 DI 工厂注册 ServerModeTransportInitializer。
+        // DI 单例工厂首次解析时即构造 initializer 实例，触发构造函数中的
+        // _application.Transport = _transport 装配，早于 Host.StartAsync()。
+        // 同时注册为 IHostedService 以保持与 Generic Host 的启动协议兼容
+        // （StartAsync 变为空操作，保留接口契约）。
+        if (!builder.Services.Any(d => d.ServiceType == typeof(ServerModeTransportInitializer)))
+        {
+            builder.Services.AddSingleton<ServerModeTransportInitializer>(sp =>
+            {
+                var app = sp.GetRequiredService<Application>();
+                var transport = sp.GetRequiredService<WebSocketTransport>();
+                var logger = sp.GetService<ILogger<ServerModeTransportInitializer>>();
+                return new ServerModeTransportInitializer(app, transport, logger);
+            });
+            builder.Services.AddHostedService(sp => sp.GetRequiredService<ServerModeTransportInitializer>());
+        }
 
         return builder;
     }
@@ -198,9 +212,21 @@ public static class ServerModeTransportExtensions
     }
 
     /// <summary>
-    /// Server 模式传输层初始化器。
-    /// 在 Host 启动时将已构造的 <see cref="WebSocketTransport"/> 注入到
-    /// <see cref="Application.Transport"/>，使 Application.Run 能启动传输层。
+    /// Server 模式传输层初始化器（审计 §3.6 / R0-6：启动顺序硬化）。
+    /// <para>
+    /// <b>关键变更</b>：传输装配从 <see cref="Microsoft.Extensions.Hosting.IHostedService.StartAsync"/>
+    /// 阶段前移到 <see cref="ServerModeTransportInitializer"/> 构造期（即 DI 单例工厂首次解析时）。
+    /// </para>
+    /// <para>
+    /// 这样保证：当 <see cref="Application.Run"/> 在 <see cref="DesktopHostedService.StartAsync"/>
+    /// 触发的 UI 线程上执行 <c>_transport.StartAsync</c> 之前，
+    /// <see cref="Application.Transport"/> 一定已被赋值，避免竞争条件下 transport 为 null 的 NRE。
+    /// </para>
+    /// <para>
+    /// 实现：DI 工厂模式注册 <see cref="ServerModeTransportInitializer"/> 为单例，
+    /// 工厂函数内立即完成 <c>_application.Transport = _transport</c> 装配，
+    /// 后续 <see cref="Microsoft.Extensions.Hosting.IHostedService.StartAsync"/> 仅作空操作保留接口契约。
+    /// </para>
     /// </summary>
     private sealed class ServerModeTransportInitializer : Microsoft.Extensions.Hosting.IHostedService
     {
@@ -216,19 +242,28 @@ public static class ServerModeTransportExtensions
             _application = application;
             _transport = transport;
             _logger = logger;
-        }
 
-        /// <inheritdoc />
-        public Task StartAsync(System.Threading.CancellationToken cancellationToken)
-        {
-            // 若用户已显式设置 Transport，则保留用户配置不覆盖
+            // 审计 §3.6 / R0-6：构造期即完成传输装配，确保早于 Host.StartAsync 和 DesktopHostedService.StartAsync。
+            // 工厂首次解析该单例时（通常是 host.Build() 末尾）即触发此处赋值，
+            // 因此 Application.Run() 触发 _transport.StartAsync 前 Transport 一定非 null。
+            // 若用户已显式设置 Transport，则保留用户配置不覆盖。
             if (_application.Transport is null)
             {
                 _application.Transport = _transport;
                 _logger?.LogInformation(
-                    "Server 模式传输层已自动装配：WebSocketTransport @ {BaseUrl}",
+                    "Server 模式传输层已自动装配（构造期）：WebSocketTransport @ {BaseUrl}",
                     _transport.BaseUrl);
             }
+        }
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// 传输装配已前移到构造函数（DI 单例工厂阶段）。此方法保留为接口契约的空操作。
+        /// </remarks>
+        public Task StartAsync(System.Threading.CancellationToken cancellationToken)
+        {
+            _logger?.LogDebug(
+                "ServerModeTransportInitializer.StartAsync 调用（实际装配已在构造期完成）");
             return Task.CompletedTask;
         }
 
