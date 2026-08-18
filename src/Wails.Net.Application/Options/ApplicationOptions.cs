@@ -243,6 +243,25 @@ public class ApplicationOptions
     public int SingleInstanceExitCode { get; set; } = 1;
 
     /// <summary>
+    /// 关闭超时（R1-4）。
+    /// <para>
+    /// 应用优雅关闭（<see cref="Wails.Net.Application.Application.ShutdownAsync"/>）的最长等待时间。
+    /// 当关闭流程（包括窗口关闭、传输层停止、服务停止、平台销毁）超过此时长时，
+    /// 强制中断等待并继续清理，确保进程能在合理时间内退出。
+    /// </para>
+    /// <para>
+    /// 默认 <see cref="System.Threading.Timeout.InfiniteTimeSpan"/>（即不超时，依赖平台关闭信号自然完成）；
+    /// 推荐显式设置 <c>TimeSpan.FromSeconds(5)</c> ~ <c>TimeSpan.FromSeconds(30)</c>，与 ASP.NET Core 的
+    /// <c>HostOptions.ShutdownTimeout</c> 默认 5 秒对齐。
+    /// </para>
+    /// <para>
+    /// 当通过 <see cref="Wails.Net.Application.Hosting.DesktopApplicationBuilder"/> 启用 Host 时，
+    /// 此配置会与 <c>HostOptions.ShutdownTimeout</c> 取较小值，保证 Host 与 Application 关闭语义一致。
+    /// </para>
+    /// </summary>
+    public TimeSpan ShutdownTimeout { get; set; } = System.Threading.Timeout.InfiniteTimeSpan;
+
+    /// <summary>
     /// 是否禁用右键菜单。
     /// </summary>
     public bool DisableContextMenu { get; set; } = false;

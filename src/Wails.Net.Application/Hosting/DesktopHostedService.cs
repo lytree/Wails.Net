@@ -132,21 +132,58 @@ internal sealed class DesktopHostedService : IHostedService, IDisposable
     }
 
     /// <summary>
-    /// 停止服务，触发 <see cref="Application.Shutdown"/>。
+    /// 停止服务，触发 <see cref="Application.ShutdownAsync(CancellationToken)"/>（R1-4）。
+    /// <para>
+    /// 与 ASP.NET Core <c>IHostedService.StopAsync</c> 契约对齐：
+    /// <list type="bullet">
+    /// <item>外部 <paramref name="cancellationToken"/>（来自 Host.ShutdownTimeout）串联到 Application.ShutdownAsync，</item>
+    /// <item>Application 内部进一步与 <c>ApplicationOptions.ShutdownTimeout</c> 组合，任一触发即取消关闭流程，</item>
+    /// <item>UI 线程等待超时取 min(外部 cancellationToken 剩余时间, 5s)，避免 Host 关闭被卡住。</item>
+    /// </list>
+    /// </para>
     /// </summary>
-    /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>已完成的任务。</returns>
+    /// <param name="cancellationToken">取消令牌。Host.ShutdownTimeout 触发时此令牌被取消。</param>
+    /// <returns>关闭完成的任务。</returns>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("桌面应用停止中...");
-        _application.Shutdown();
 
-        // 等待 UI 线程退出
+        // R1-4：使用 ShutdownAsync 异步关闭路径，串联 Host 取消令牌与 ApplicationOptions.ShutdownTimeout。
+        try
+        {
+            await _application.ShutdownAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Host 关闭超时取消时不视为错误，仅记录日志。
+            _logger.LogWarning("Application.ShutdownAsync 因 Host 关闭超时被取消（ShutdownTimeout 已贯穿）");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Application.ShutdownAsync 发生异常");
+        }
+
+        // 等待 UI 线程退出。R1-4：使用 min(外部 cancellationToken 剩余时间, 5s) 作为上限，
+        // 当 Host.ShutdownTimeout 已触发时立即放弃等待，避免拖慢 Host 整体关闭。
         if (_uiThread is not null && _uiThread.IsAlive)
         {
+            TimeSpan joinTimeout;
+            if (cancellationToken.CanBeCanceled && cancellationToken.IsCancellationRequested)
+            {
+                // Host 关闭超时已触发，立即放弃等待
+                joinTimeout = TimeSpan.Zero;
+            }
+            else
+            {
+                joinTimeout = TimeSpan.FromSeconds(5);
+            }
+
             try
             {
-                _uiThread.Join(TimeSpan.FromSeconds(5));
+                if (!_uiThread.Join(joinTimeout))
+                {
+                    _logger.LogWarning("UI 线程未在 {Timeout} 内退出", joinTimeout);
+                }
             }
             catch
             {

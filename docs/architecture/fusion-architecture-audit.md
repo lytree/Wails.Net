@@ -382,3 +382,74 @@ Wails.Net.Bundle.*
 - [ ] 文档、前端 API、命令名、capability 是否保持一致？
 - [ ] 模板、Demo、Options、Validator 和配置文档是否同步更新？
 - [ ] 若修改 web runtime 或可视 UI，是否按要求截图或说明无需截图？
+
+
+---
+
+## 10. 2026-08-18 审计基线：R0 止血 + R1-R4 路线图
+
+> 本节为 2026-08-18 架构审计（详见 `architecture-audit-2026-08-18.md`）的精简路线图，
+> 与上文 §1-9 形成闭环跟踪：本文档（2026-08-15 事实基线 + backlog）+ 审计（2026-08-18 P0/P1/P2 + R0-R4）。
+> 详细事实链、P0 缺陷与 P1/P2 优化建议请查阅审计文档本体。
+
+### 10.1 R0：安全和正确性止血（审计基线起算）
+
+| 项 | 状态 | 落地位置 | 测试 |
+|---|---|---|---|
+| R0-1 Stronghold nonce 复用修复 | ✅ 已完成 | `src/Wails.Net.Plugins.Stronghold/StrongholdPlugin.cs` 每次加密前生成 12 字节 freshNonce + 原子文件替换 | 9/9 单元测试通过 |
+| R0-2 IpcOriginValidator 精确化 | ✅ 已完成 | `Security/IpcOriginValidator.cs` `Uri.TryCreate` + 严格 Host 比对替代 StartsWith 前缀匹配 | 18/18 测试通过（12 新增绕过串 + 6 原有） |
+| R0-3 Native IPC 强制覆盖 WindowId/Origin | ✅ 已完成 | `Transport/NativeIpcTransport.cs` `parsed.WindowId = windowId` + `ResolveOriginFromPlatform` | 27/27 测试通过（6 新增 observer.record） |
+| R0-4 Strict 拒绝无安全声明命令 | ✅ 已完成 | `Security/PermissionManager.cs` `IsStrict` + `Commands/CommandDispatcher.cs` Strict 守卫 | 12/12 测试通过（5 新增） |
+| R0-5 window.* 禁止无权限 fallback | ✅ 已完成 | `Transport/MessageProcessor.cs` `ProcessCommandFallbackAsync` 失败时返回错误响应 | 3/3 新增测试通过 |
+| R0-6 Server Mode transport 启动顺序 | ✅ 已完成 | `Hosting/ServerModeTransportExtensions.cs` 装配前移到 DI 单例工厂阶段 | 3/3 新增测试通过 |
+| R0-7 refactor-and-hardening-plan.md 文档漂移 | ✅ 已完成 | 文档头部添加状态漂移说明表 | N/A（文档修复） |
+| R0-8 fusion-architecture-audit.md 合并路线图 | ✅ 已完成 | 本节即 R0-8 落点 | N/A（文档合并） |
+
+### 10.2 R1：统一运行时事实源（下一批次）
+
+- Application 使用 DI 构造注入，移除手动 new + SetPlatformApp 路径。
+- Binding/Event/Window 注册表唯一化（删除 `Application._windows` 备份）。
+- 移除 `Application.Get()` 在平台和插件中的新增使用（保留向后兼容 shim）。
+- 建立真实平台 Ready 信号与 UI 线程 Shutdown 超时统一。
+
+### 10.3 R2：统一调用与传输管线
+
+- 建立 `InvocationGateway` 统一 Bind/Command 入口。
+- Binding 与 Plugin Command 共用授权、Scope、DI Scope、错误模型。
+- WebSocket mailbox、控制通道和背压机制。
+- 四平台 `WebviewRequestPipeline` 异步化（消除 UI 线程 `.GetAwaiter().GetResult()` 阻塞）。
+
+### 10.4 R3：完成 Tauri 风格 ACL
+
+- 全量迁移 47 插件 304 命令到 `Require/Public`。
+- 权限清单随 NuGet 包分发（对齐 Tauri `permissions/*.toml`）。
+- Capability JSON Schema 与构建期校验。
+- Scope 与 capability/window/origin grant 绑定。
+- 完成后再将库默认从 Compatibility 翻转为 Strict（破坏性变更，需配合迁移指南）。
+
+### 10.5 R4：清理与生态闭环
+
+- `PluginDescriptor` 与完整 manifest 三件套（commands/capabilities/events）。
+- Channel 协议（前后端加密通道）。
+- Asset protocol scope（`wails-asset://` + `AssetProtocolScope` + capability 授权）。
+- Options 单一来源（消灭散落 `_jsonOptions` / `_runtimeOptions` 副本）。
+- 结构化日志与可观测性（统一 ILogger + traceId 关联）。
+
+### 10.6 核心验收标准（继承自审计 §7）
+
+- [x] Host、Application、Server Transport 解析出的 BindingManager/EventProcessor 引用完全相同。
+- [ ] 全仓库每个命令显式标记 `Require` 或 `Public`（R3 进行中）。
+- [x] `[Binding]` 和插件命令均经过同一 ACL（`CommandDispatcher` 统一入口）。
+- [x] 低权限窗口无法伪造高权限 WindowId（R0-3 强制覆盖）。
+- [x] `localhost.evil.example` 被拒绝（R0-2 IpcOriginValidator 精确化）。
+- [ ] 未声明 remote 的 capability 拒绝远程页面（R3 Scope/Remote 校验进行中）。
+- [x] 单连接长调用期间 cancel 可立即生效（已有 CancellationToken 串联）。
+- [ ] 同一 WebSocket 不发生并发 SendAsync（R2 mailbox 进行中）。
+- [x] Host Stop 后 UI 线程在 shutdown timeout 内退出（R1-4 已完成：ApplicationOptions.ShutdownTimeout 默认 InfiniteTimeSpan；IPlatformApp 新增 ShutdownAsync(CancellationToken) 默认实现委派 Destroy；Application 新增 ShutdownAsync(CancellationToken) 异步关闭路径串联外部 CancellationToken + ShutdownTimeout；DesktopHostedService.StopAsync 改用 ShutdownAsync，UI 线程 Join 超时在外部 cancellationToken 已触发时立即放弃；新增 ShutdownAsyncTests 7/7 场景覆盖）。
+- [ ] 所有 `IpcOptions` 字段都有行为测试，或从公共 API 删除（R3/R4 进行中）。
+- [x] 全仓库只保留一个逻辑窗口注册表（R1-2 已完成：删除 `Application._windows`/`_nextWindowId`，统一委托给 WindowManager；新增 `WindowRegistryUnificationTests` 4/4 通过；连带修复 `WindowStatePlugin.SaveState/RestoreState` 平台未绑定早返回）。
+- [x] 移除 `Application.Get()` 在新增代码中的使用（R1-3 已完成：WindowManager 构造期接受 Application 引用注入，新增 `SetApplication` 方法处理 DI 覆盖路径，移除 WindowManager 内部 2 处 `Application.Get()` 调用；新增 `ApplicationResolutionTests` 5/5 场景覆盖；历史遗留的 100+ 处 `Application.Get()` 调用保留向后兼容 shim）。
+- [ ] 四平台 Asset/CSP/nonce/runtime-ready 使用同一共享管线（R2/R4 进行中）。
+
+> **跟踪说明**：上述条目与审计文档 `architecture-audit-2026-08-18.md` §6 R0-R4 + §7 同步维护；
+> 后续每完成一项 R1-R4 子任务，应同时更新两处状态，避免文档再次漂移（参考审计 §8 文档治理建议）。

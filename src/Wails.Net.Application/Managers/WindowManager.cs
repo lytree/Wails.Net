@@ -30,15 +30,51 @@ public class WindowManager : IWindowManager
     /// <summary>
     /// 平台应用实例。
     /// </summary>
-    private readonly IPlatformApp? _platformApp;
+    private IPlatformApp? _platformApp;
+
+    /// <summary>
+    /// Application 引用注入（R1-3），用于访问 <see cref="Application.AssetServer"/>、
+    /// <see cref="Application.RegisterWindowCsp"/> 等 facade API。
+    /// R1-3 之前通过 <see cref="Application.Get"/> 静态访问，违反 DI 原则；
+    /// 此字段允许构造期或后置注入 Application 实例。
+    /// </summary>
+    private Application? _application;
 
     /// <summary>
     /// 使用指定的平台应用构造 WindowManager 实例。
+    /// 可传入 <c>null</c>（Server 模式或 DI 容器路径下 platformApp 后置注入场景）。
+    /// R1-2：允许构造后通过 <see cref="SetPlatformApp"/> 注入平台应用，
+    /// 由 <c>Application.SetPlatformApp</c> 在已知 platformApp 时统一调用，
+    /// 避免 <see cref="Wails.Net.Application.Application"/> 同时持有两套窗口注册表。
     /// </summary>
-    /// <param name="platformApp">平台应用实例，可为 null（Server 模式）。</param>
-    public WindowManager(IPlatformApp? platformApp)
+    /// <param name="platformApp">平台应用实例，可为 null（Server 模式或 DI 路径）。</param>
+    public WindowManager(IPlatformApp? platformApp, Application? application = null)
     {
         _platformApp = platformApp;
+        _application = application;
+    }
+
+    /// <summary>
+    /// 设置或替换平台应用实例。
+    /// R1-2：用于 <c>Application.SetPlatformApp</c> 在已知 platformApp 时注入，
+    /// 避免 <see cref="Wails.Net.Application.Application"/> 同时持有两套窗口注册表。
+    /// 正常初始化顺序下 platformApp 在构造时已传入；此方法仅在 DI 容器路径下 platformApp 为 null 时调用。
+    /// </summary>
+    /// <param name="platformApp">平台应用实例。</param>
+    public void SetPlatformApp(IPlatformApp platformApp)
+    {
+        _platformApp = platformApp;
+    }
+
+    /// <summary>
+    /// 设置或替换 Application 引用（R1-3）。
+    /// 用于 <c>Application</c> 在 DI 路径下替换 WindowManager 实例时同步注入 Application 引用，
+    /// 避免 WindowManager 内部回退到 <see cref="Application.Get"/> 静态访问。
+    /// </summary>
+    /// <param name="application">Application 实例。</param>
+    public void SetApplication(Application application)
+    {
+        _application = application;
     }
 
     /// <summary>
@@ -87,7 +123,7 @@ public class WindowManager : IWindowManager
         }
 
         // P0-4：注册窗口级 CSP 到 AssetServer（通过 Application 静态引用）
-        Application.Get()?.RegisterWindowCsp(options.Name, options.Csp);
+        _application?.RegisterWindowCsp(options.Name, options.Csp);
 
         // 注册窗口关闭事件监听器，当窗口发出 WindowClosed 事件时自动从管理器中移除
         window.On((uint)WindowEventType.WindowClosed, () =>
@@ -98,7 +134,7 @@ public class WindowManager : IWindowManager
                 {
                     _windowNames.TryRemove(window.Name, out _);
                     // P0-4：清理窗口级 CSP 注册，避免内存泄漏
-                    Application.Get()?.AssetServer?.SetCspHeaderForWindow(window.Name, null);
+                    _application?.AssetServer?.SetCspHeaderForWindow(window.Name, null);
                 }
             }
         });

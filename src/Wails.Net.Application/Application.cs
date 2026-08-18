@@ -29,8 +29,6 @@ public class Application
     private readonly ApplicationOptions _options;
     private IPlatformApp? _platformApp = null;
     private readonly ServiceRegistry _serviceRegistry = new();
-    private uint _nextWindowId = 1;
-    private readonly Dictionary<uint, WebviewWindow> _windows = new();
 
     /// <summary>
     /// 配置驱动的窗口列表，由 DesktopApplicationBuilder.Build 传递。
@@ -48,13 +46,21 @@ public class Application
     /// 绑定管理器，负责注册和调用绑定方法。
     /// 对应 Wails v3 Go 版本 bindings.go 中的 Bindings 结构。
     /// </summary>
-    private readonly BindingManager _bindings = new();
+    /// <summary>
+    /// 绑定管理器（R1-1 DI 构造注入）：DI 模式下即为 DI 注册的实例；
+    /// 测试/遗留模式下为构造期局部创建。
+    /// </summary>
+    public BindingManager Bindings { get; }
 
     /// <summary>
     /// 事件处理器，管理事件订阅和发布。
     /// 对应 Wails v3 Go 版本 events.go 中的 EventProcessor。
     /// </summary>
-    private readonly EventProcessor _events = new();
+    /// <summary>
+    /// 事件处理器（R1-1 DI 构造注入）：DI 模式下即为 DI 注册的实例；
+    /// 测试/遗留模式下为构造期局部创建。
+    /// </summary>
+    public EventProcessor Events { get; }
 
     /// <summary>
     /// 传输层实例。
@@ -267,7 +273,8 @@ public class Application
     public void SetPlatformApp(IPlatformApp platformApp)
     {
         _platformApp = platformApp;
-        _windowManager = new WindowManager(platformApp);
+        // R1-2：复用构造期创建的 WindowManager，避免再次 new 造成窗口注册表分离。
+        _windowManager?.SetPlatformApp(platformApp);
         _dialogManager = new DialogManager(platformApp);
         _screenManager = new ScreenManager(platformApp);
     }
@@ -275,8 +282,9 @@ public class Application
     /// <summary>
     /// 从 DI 容器初始化管理器。
     /// 尝试从 DI 获取已注册的管理器实例，替换 Application 内部的管理器。
-    /// 注意：<see cref="_events"/> 和 <see cref="_bindings"/> 为只读字段，无法从 DI 替换，
-    /// 保留 Application 创建的实例；但可对 <see cref="_events"/> 设置传输层监听器。
+    /// R1-1：Bindings/Events 已改为构造注入的 get-only 自动属性。
+    /// DI 模式下与 DI 容器注册实例一致；测试/遗留模式下为局部实例。
+    /// 此方法仅用于注入非只读管理器（WindowManager/DialogManager 等），保留向后兼容。
     /// </summary>
     /// <param name="serviceProvider">DI 容器。</param>
     internal void InitializeFromServiceProvider(IServiceProvider serviceProvider)
@@ -299,6 +307,9 @@ public class Application
         if (windowManager is not null)
         {
             _windowManager = windowManager;
+            // R1-3：DI 注入的 WindowManager 已存在，需同步注入 Application 引用，
+            // 避免其内部回退到 Application.Get() 静态访问。
+            _windowManager.SetApplication(this);
         }
 
         var dialogManager = serviceProvider.GetService<DialogManager>();
@@ -371,7 +382,7 @@ public class Application
         var listener = serviceProvider.GetService<IWailsEventListener>();
         if (listener is not null)
         {
-            _events.AddWailsEventListener(listener);
+            Events.AddWailsEventListener(listener);
         }
 
         // 始终追加 EventIPCTransport 作为兜底，确保桌面端事件必达。
@@ -379,7 +390,7 @@ public class Application
         // P0-D：注入 ILogger<EventIPCTransport> 以便记录事件派发失败日志，
         // 支持结构化日志诊断。NativeIpcTransport 协作由 NotifyEvent 内部完成。
         var eventIpcLogger = serviceProvider.GetService<ILogger<EventIPCTransport>>();
-        _events.AddWailsEventListener(new EventIPCTransport(eventIpcLogger!));
+        Events.AddWailsEventListener(new EventIPCTransport(eventIpcLogger!));
 
         // 从 DI 容器获取 PluginManager 并收集已注册的插件实例。
         // 对应主题 B：插件生命周期对齐。PluginManager 由 UsePlugin 注册为单例，
@@ -393,15 +404,7 @@ public class Application
     /// </summary>
     public ServiceRegistry Services => _serviceRegistry;
 
-    /// <summary>
-    /// 获取绑定管理器。
-    /// </summary>
-    public BindingManager Bindings => _bindings;
-
-    /// <summary>
-    /// 获取事件处理器。
-    /// </summary>
-    public EventProcessor Events => _events;
+    // Bindings/Events 已在上方声明为 DI 注入的 get-only 自动属性（R1-1）
 
     /// <summary>
     /// 获取插件管理器实例（当通过 <see cref="DesktopApplicationBuilder.Build"/> 初始化时可用）。
@@ -565,7 +568,7 @@ public class Application
     /// <summary>
     /// 获取所有窗口的只读列表。
     /// </summary>
-    public IReadOnlyList<WebviewWindow> Windows => _windows.Values.ToList().AsReadOnly();
+    public IReadOnlyList<WebviewWindow> Windows => _windowManager?.AllWindows ?? Array.Empty<WebviewWindow>();
 
     /// <summary>
     /// 获取是否正在运行。
@@ -744,12 +747,53 @@ public class Application
     /// 将 <see cref="ApplicationOptions.ShutdownTasks"/> 中的任务合并到内部关闭任务列表。
     /// </summary>
     /// <param name="options">应用选项。</param>
+    /// <remarks>
+    /// 向后兼容入口：测试/遗留代码使用，构造期局部创建 BindingManager/EventProcessor。
+    /// 推荐 DI 模式使用下方接受 IServiceProvider 的重载，确保 Host、Server Transport 与
+    /// Application 共享同一个 BindingManager/EventProcessor（避免 R1-1 描述的"两套对象图"问题）。
+    /// </remarks>
     public Application(ApplicationOptions options)
+        : this(options, new BindingManager(), new EventProcessor(), services: null)
+    {
+    }
+
+    /// <summary>
+    /// DI 构造注入版本（审计 §3.1 / R1-1）：从 DI 容器传入 BindingManager、EventProcessor、
+    /// IServiceProvider。Host/DI 成为唯一对象图，<see cref="Application"/> 仅作为 facade/coordinator。
+    /// <para>
+    /// 服务定位器式 <c>InitializeFromServiceProvider</c>（旧路径）已逐步收敛：
+    /// DI 模式下 Bindings/Events 在构造期即与 DI 注册的实例一致；该方法仅保留
+    /// WindowManager/DialogManager 等非只读管理器的后置注入（向后兼容）。
+    /// </para>
+    /// </summary>
+    /// <param name="options">应用选项。</param>
+    /// <param name="bindings">绑定管理器；DI 模式下即为 DI 容器注册的实例。</param>
+    /// <param name="events">事件处理器；DI 模式下即为 DI 容器注册的实例。</param>
+    /// <param name="services">DI 服务容器；为 null 时跳过 InitializeFromServiceProvider 调用。</param>
+    public Application(
+        ApplicationOptions options,
+        BindingManager bindings,
+        EventProcessor events,
+        IServiceProvider? services)
     {
         _options = options;
+        Bindings = bindings;
+        Events = events;
+        _serviceProvider = services;
         _globalApplication = this;
         _shutdownTasks.AddRange(options.ShutdownTasks);
         _runtimeServices = new RuntimeServicesCoordinator(_serviceRegistry);
+
+        // R1-1：构造期不自动调用 InitializeFromServiceProvider，避免与
+        // DesktopApplicationBuilder.Build() 中的显式调用重复（双调用会触发
+        // EventIPCTransport/PluginManager 等组件重复初始化乃至 stack overflow）。
+        // 调用方负责在合适时机显式调用 InitializeFromServiceProvider。
+        _ = services;
+
+        // R1-2：构造期创建 WindowManager（platformApp 可为 null），
+        // Application 不再持有 _windows/_nextWindowId 双注册表，统一委托给 WindowManager。
+        // SetPlatformApp 时通过 SetPlatformApp(...) 注入 platformApp。
+        _windowManager = new WindowManager(_platformApp, this);
     }
 
     /// <summary>
@@ -799,7 +843,7 @@ public class Application
         var opts = options ?? ServiceOptions.Default;
 
         _serviceRegistry.Register(service, opts);
-        _bindings.RegisterInstance(service);
+        Bindings.RegisterInstance(service);
 
         // 若服务实现 IHttpServiceHandler 且配置了 Route，挂载到 AssetServer
         if (service is Wails.Net.AssetServer.IHttpServiceHandler handler &&
@@ -843,7 +887,7 @@ public class Application
         }
 
         var service = _serviceProvider.GetRequiredService<T>();
-        _bindings.RegisterInstance(service);
+        Bindings.RegisterInstance(service);
         return service;
     }
 
@@ -909,18 +953,11 @@ public class Application
     /// <returns>新创建的窗口实例。</returns>
     public virtual WebviewWindow CreateWebviewWindow(WebviewWindowOptions options)
     {
-        var id = _nextWindowId++;
-        var window = new WebviewWindow(id, options.Name, options);
-        _windows[id] = window;
-
-        // P0-4：注册窗口级 CSP 到 AssetServer（在平台创建窗口前完成，确保资源请求拦截时 CSP 已就绪）
-        RegisterWindowCsp(options.Name, options.Csp);
-
-        // 创建平台实现并回填，使 facade 全部方法可用（RH-WIN-01）。
-        var impl = _platformApp?.CreateWebviewWindow(id, options);
-        window.Impl = impl;
-
-        return window;
+        // R1-2：委托给 WindowManager，确保窗口元数据（ID 分配、名称索引、关闭监听）
+        // 与平台创建（_platformApp.CreateWebviewWindow）走同一注册表，
+        // 修复 R0-3 提到的 EventIPCTransport 枚举窗口丢失 bug。
+        var id = _windowManager!.CreateWebviewWindow(options);
+        return _windowManager.GetWindow(id)!;
     }
 
     /// <summary>
@@ -930,7 +967,8 @@ public class Application
     /// <returns>匹配的窗口实例，若不存在则返回 null。</returns>
     public virtual WebviewWindow? GetWindow(uint id)
     {
-        return _windows.TryGetValue(id, out var window) ? window : null;
+        // R1-2：委托给 WindowManager 单一注册表。
+        return _windowManager?.GetWindow(id);
     }
 
     /// <summary>
@@ -940,7 +978,8 @@ public class Application
     /// <returns>匹配的窗口实例，若不存在则返回 null。</returns>
     public virtual WebviewWindow? GetWindowByName(string name)
     {
-        return _windows.Values.FirstOrDefault(w => w.Name == name);
+        // R1-2：委托给 WindowManager 单一注册表（O(1) 按名称索引）。
+        return _windowManager?.GetWindowByName(name);
     }
 
     /// <summary>
@@ -949,11 +988,8 @@ public class Application
     /// <param name="id">窗口 ID。</param>
     public virtual void DestroyWindow(uint id)
     {
-        if (_windows.TryGetValue(id, out var window))
-        {
-            _windows.Remove(id);
-            window.Close();
-        }
+        // R1-2：委托给 WindowManager 单一注册表。
+        _windowManager?.DestroyWindow(id);
     }
 
     /// <summary>
@@ -1005,10 +1041,10 @@ public class Application
         }
 
         // 确保 MessageProcessor 已构造（NativeIpcTransport 需要它来路由消息）
-        _messageProcessor ??= new MessageProcessor(_bindings, _events, id => GetWindow(id), _commandDispatcher, _serviceProvider);
+        _messageProcessor ??= new MessageProcessor(Bindings, Events, id => GetWindow(id), _commandDispatcher, _serviceProvider);
 
         NativeIpcTransport = new NativeIpcTransport(_messageProcessor);
-        _events.AddWailsEventListener(NativeIpcTransport);
+        Events.AddWailsEventListener(NativeIpcTransport);
     }
 
     /// <summary>
@@ -1122,7 +1158,36 @@ public class Application
     /// 停止传输层、停止资源服务器、按逆序关闭服务。
     /// 对应 Wails v3 Go 版本 application.go 中的 Shutdown 方法。
     /// </summary>
+    /// <summary>
+    /// 关闭应用（同步入口，向后兼容）。
+    /// 委派给 <see cref="ShutdownAsync(CancellationToken)"/> 并同步等待。
+    /// 推荐 Host 集成场景使用 <see cref="ShutdownAsync(CancellationToken)"/>。
+    /// </summary>
     public virtual void Shutdown()
+    {
+        // R1-4：保留同步入口以兼容既有调用方（Quit()、DesktopHostedService.Dispose 等）。
+        // 内部委派给异步实现；CancellationToken.None 表示不限时（依赖 ShutdownTimeout 兜底）。
+        ShutdownAsync(CancellationToken.None).GetAwaiter().GetResult();
+    }
+
+    /// <summary>
+    /// 异步关闭应用（R1-4）。
+    /// <para>
+    /// 执行关闭任务、OnShutdown 回调、取消取消令牌、关闭所有窗口、停止传输层、停止资源服务器、
+    /// 按逆序关闭服务、异步销毁平台应用。
+    /// </para>
+    /// <para>
+    /// 内部使用 <see cref="ApplicationOptions.ShutdownTimeout"/>（默认无超时）作为取消令牌链的上限：
+    /// 当关闭流程超过此时长时，<paramref name="cancellationToken"/> 与 ShutdownTimeout 中**先到者**触发取消，
+    /// 强制中断等待以保证进程在合理时间内退出。
+    /// </para>
+    /// <para>
+    /// 对应 Wails v3 Go 版本 application.go 中的 Shutdown 方法；与 ASP.NET Core
+    /// <c>IHostedService.StopAsync</c> 的契约对齐——支持 CancellationToken 串联、超时降级。
+    /// </para>
+    /// </summary>
+    /// <param name="cancellationToken">取消令牌。宿主关闭超时或用户主动取消时触发。</param>
+    public virtual async Task ShutdownAsync(CancellationToken cancellationToken)
     {
         if (!_isRunning)
         {
@@ -1137,6 +1202,15 @@ public class Application
 
         // 取消应用级取消令牌
         _cts.Cancel();
+
+        // R1-4：组合外部 CancellationToken 与 ApplicationOptions.ShutdownTimeout，
+        // 任一触发即取消后续清理路径，确保 ShutdownTimeout 真正贯穿整条关闭链。
+        using var shutdownCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        if (_options.ShutdownTimeout != System.Threading.Timeout.InfiniteTimeSpan)
+        {
+            shutdownCts.CancelAfter(_options.ShutdownTimeout);
+        }
+        var ct = shutdownCts.Token;
 
         // 执行关闭任务（包括 options 中的和 OnShutdown 注册的）
         foreach (var task in _shutdownTasks)
@@ -1155,40 +1229,108 @@ public class Application
         _options.OnShutdown?.Invoke();
 
         // 关闭所有窗口
-        foreach (var window in _windows.Values.ToList())
+        // R1-2：委托给 WindowManager 单一注册表，避免重复维护 _windows。
+        var windowManager = _windowManager;
+        if (windowManager is not null)
         {
-            try
+            foreach (var window in windowManager.AllWindows)
             {
-                window.Close();
+                try
+                {
+                    window.Close();
+                }
+                catch
+                {
+                    // 关闭窗口时的异常不应中断关闭流程
+                }
             }
-            catch
-            {
-                // 关闭窗口时的异常不应中断关闭流程
-            }
+            windowManager.Clear();
         }
-        _windows.Clear();
 
         // 停止传输层
         if (_transport is not null)
         {
-            _transport.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
+            try
+            {
+                await _transport.StopAsync(ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // 超时取消时不阻塞关闭流程
+            }
+            catch
+            {
+                // 停止传输层的异常不应中断关闭流程
+            }
         }
 
         // 停止资源服务器（若实现了 IServiceShutdown）
         if (_assetServer is IServiceShutdown assetShutdown)
         {
-            assetShutdown.ServiceShutdown(CancellationToken.None).GetAwaiter().GetResult();
+            try
+            {
+                await assetShutdown.ServiceShutdown(ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // 超时取消时不阻塞关闭流程
+            }
+            catch
+            {
+                // 停止资源服务器的异常不应中断关闭流程
+            }
         }
 
         // 关闭所有插件（调用 IPlugin.ShutdownAsync，按注册逆序）。
         // 对应 Wails v3 的 Shutdown() 和 Tauri v2 的 on_drop 钩子。
         // 在服务逆序关闭之前调用，确保插件能在服务仍然可用时释放资源。
-        _pluginManager?.ShutdownPluginsAsync(CancellationToken.None).GetAwaiter().GetResult();
+        if (_pluginManager is not null)
+        {
+            try
+            {
+                await _pluginManager.ShutdownPluginsAsync(ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // 超时取消时不阻塞关闭流程
+            }
+            catch
+            {
+                // 关闭插件的异常不应中断关闭流程
+            }
+        }
 
         // 逆序关闭服务（P1-1：委托给 RuntimeServicesCoordinator 管理顺序）
-        _runtimeServices.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
+        try
+        {
+            await _runtimeServices.StopAsync(ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // 超时取消时不阻塞关闭流程
+        }
+        catch
+        {
+            // 停止服务的异常不应中断关闭流程
+        }
 
-        _platformApp?.Destroy();
+        // R1-4：使用异步平台销毁（带取消令牌）替代原同步 Destroy。
+        if (_platformApp is not null)
+        {
+            try
+            {
+                await _platformApp.ShutdownAsync(ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // 平台销毁超时时不阻塞关闭流程
+            }
+            catch
+            {
+                // 平台销毁异常不阻塞关闭流程
+            }
+        }
+
         _isRunning = false;
         LifecycleState = Hosting.ApplicationLifecycleState.Stopped;
 
@@ -1314,7 +1456,7 @@ public class Application
     /// <param name="args">新实例启动时的命令行参数。</param>
     public void RaiseSecondInstanceLaunched(string[] args)
     {
-        _events.Emit(KnownEvents.SecondInstanceLaunched, args, null);
+        Events.Emit(KnownEvents.SecondInstanceLaunched, args, null);
         try
         {
             _onSecondInstanceLaunch?.Invoke(args);
@@ -1373,12 +1515,12 @@ public class Application
     public void HandlePlatformEvent(uint eventId)
     {
         var eventName = KnownEvents.GetEventName(eventId);
-        _events.Emit(eventName, null, null);
+        Events.Emit(eventName, null, null);
 
         // 同时触发应用事件路径，对齐 Wails v3 EventManager.handleApplicationEvent。
         if (Enum.IsDefined(typeof(ApplicationEventType), eventId))
         {
-            _events.EmitApplicationEvent((ApplicationEventType)eventId, null, null);
+            Events.EmitApplicationEvent((ApplicationEventType)eventId, null, null);
         }
     }
 
@@ -1390,12 +1532,12 @@ public class Application
     public void HandlePlatformEvent(uint eventId, object? data)
     {
         var eventName = KnownEvents.GetEventName(eventId);
-        _events.Emit(eventName, data, null);
+        Events.Emit(eventName, data, null);
 
         // 同时触发应用事件路径，对齐 Wails v3 EventManager.handleApplicationEvent。
         if (Enum.IsDefined(typeof(ApplicationEventType), eventId))
         {
-            _events.EmitApplicationEvent((ApplicationEventType)eventId, data, null);
+            Events.EmitApplicationEvent((ApplicationEventType)eventId, data, null);
         }
     }
 
@@ -1408,7 +1550,7 @@ public class Application
     public void DispatchWindowEvent(uint windowId, uint eventType)
     {
         var eventName = KnownEvents.GetEventName(eventType);
-        _events.Emit(eventName, null, windowId);
+        Events.Emit(eventName, null, windowId);
     }
 
     /// <summary>
@@ -1422,7 +1564,7 @@ public class Application
     /// <returns>响应消息，若无需响应则返回 null。</returns>
     public async Task<ResponseMessage?> HandleMessageFromFrontend(string message, uint? windowId = null)
     {
-        _messageProcessor ??= new MessageProcessor(_bindings, _events, id => GetWindow(id), _commandDispatcher, _serviceProvider);
+        _messageProcessor ??= new MessageProcessor(Bindings, Events, id => GetWindow(id), _commandDispatcher, _serviceProvider);
         var parsed = _messageProcessor.ParseMessage(message);
         if (parsed is null)
         {
@@ -1645,7 +1787,7 @@ public class Application
     /// <param name="data">事件数据，可为 null。</param>
     public void BroadcastEvent(string eventName, object? data = null)
     {
-        _events.Emit(eventName, data, null);
+        Events.Emit(eventName, data, null);
     }
 
     /// <summary>
@@ -1662,7 +1804,7 @@ public class Application
     /// <param name="data">事件数据，可为 null。</param>
     public void EmitTo(uint targetWindowId, string eventName, object? data = null)
     {
-        _events.EmitTo(targetWindowId, eventName, data);
+        Events.EmitTo(targetWindowId, eventName, data);
     }
 
     /// <summary>

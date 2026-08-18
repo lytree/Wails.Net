@@ -54,6 +54,26 @@ public interface IPlatformApp
     void Destroy();
 
     /// <summary>
+    /// 异步销毁平台应用（R1-4）。
+    /// <para>
+    /// 默认实现同步调用 <see cref="Destroy"/> 后返回已完成的 <see cref="Task"/>，
+    /// 由支持异步关闭的平台（如 Android 生命周期回调）覆盖以实现真正的优雅退出。
+    /// </para>
+    /// <para>
+    /// 当宿主（如 <c>Microsoft.Extensions.Hosting</c>）通过 <c>IHostedService.StopAsync</c>
+    /// 触发关闭时，会等待此方法的 <see cref="CancellationToken"/> 完成或被取消；
+    /// 实现方应将 <paramref name="cancellationToken"/> 串联到内部异步清理路径。
+    /// </para>
+    /// </summary>
+    /// <param name="cancellationToken">取消令牌。宿主关闭超时或用户主动取消时触发。</param>
+    /// <returns>销毁完成的任务。</returns>
+    Task ShutdownAsync(CancellationToken cancellationToken)
+    {
+        Destroy();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
     /// 设置应用菜单。
     /// </summary>
     /// <param name="menu">应用菜单实例，可为 null。</param>

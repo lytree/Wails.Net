@@ -74,8 +74,9 @@ public sealed class DesktopHostedServiceTests
         // 操作
         await service.StopAsync(CancellationToken.None);
 
-        // 断言：StopAsync 应触发 Application.Shutdown
-        await Assert.That(() => application.Received(1).Shutdown())
+        // R1-4：StopAsync 改为调用 ShutdownAsync(CancellationToken)，而非同步 Shutdown()。
+        // Host ShutdownTimeout 贯穿到 Application.ShutdownAsync 内部。
+        await Assert.That(() => application.Received(1).ShutdownAsync(Arg.Any<CancellationToken>()))
             .ThrowsNothing();
     }
 

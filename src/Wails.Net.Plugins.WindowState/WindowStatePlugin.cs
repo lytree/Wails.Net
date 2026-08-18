@@ -68,6 +68,13 @@ public class WindowStatePlugin : IPlugin
             return;
         }
 
+        // R1-2：使用 PlatformApp 检查代替 WindowManager 检查，
+        // 避免 Application 在构造期就创建 WindowManager 后误认为已绑定平台。
+        if (app.PlatformApp is null)
+        {
+            return;
+        }
+
         var windowManager = app.WindowManager;
         if (windowManager is null)
         {
@@ -133,6 +140,13 @@ public class WindowStatePlugin : IPlugin
 
         var app = WailsApplication.Get();
         if (app is null)
+        {
+            return;
+        }
+
+        // R1-2：使用 PlatformApp 检查代替 WindowManager 检查，
+        // 避免 Application 在构造期就创建 WindowManager 后误认为已绑定平台。
+        if (app.PlatformApp is null)
         {
             return;
         }
