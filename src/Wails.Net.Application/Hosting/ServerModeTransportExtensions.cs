@@ -56,7 +56,14 @@ public static class ServerModeTransportExtensions
         // 注册 WebSocketBroadcaster 为单例（幂等：若用户已注册则保留）
         if (!builder.Services.Any(d => d.ServiceType == typeof(WebSocketBroadcaster)))
         {
-            builder.Services.AddSingleton<WebSocketBroadcaster>();
+            builder.Services.AddSingleton(sp =>
+            {
+                var ipcOptions = sp.GetService<Microsoft.Extensions.Options.IOptions<Wails.Net.Application.Security.IpcOptions>>()?.Value;
+                var loggerFactory = sp.GetService<ILoggerFactory>();
+                var logger = loggerFactory?.CreateLogger<WebSocketBroadcaster>();
+                var capacity = ipcOptions?.MailboxCapacity ?? WebSocketBroadcaster.DefaultMailboxCapacity;
+                return new WebSocketBroadcaster(logger, capacity);
+            });
         }
 
         // 注册 MessageProcessor 工厂（依赖 BindingManager + EventProcessor，均为单例）

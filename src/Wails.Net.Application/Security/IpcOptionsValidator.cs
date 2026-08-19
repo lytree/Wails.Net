@@ -32,6 +32,18 @@ public sealed class IpcOptionsValidator : IValidateOptions<IpcOptions>
             failures.Add($"Wails:Ipc:PortEnd 必须 >= PortStart 且 <= 65535（当前 PortEnd={options.PortEnd}，PortStart={options.PortStart}）。");
         }
 
+        
+
+        if (options.MailboxCapacity < 1)
+        {
+            failures.Add($"Wails:Ipc:MailboxCapacity 必须 >= 1（当前 {options.MailboxCapacity}）。");
+        }
+
+        if (options.MaxConcurrentCallsPerConnection < 1)
+        {
+            failures.Add($"Wails:Ipc:MaxConcurrentCallsPerConnection 必须 >= 1（当前 {options.MaxConcurrentCallsPerConnection}）。");
+        }
+
         for (var i = 0; i < options.AllowedOrigins.Count; i++)
         {
             var origin = options.AllowedOrigins[i];

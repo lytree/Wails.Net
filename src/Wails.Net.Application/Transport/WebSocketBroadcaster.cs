@@ -18,6 +18,10 @@ namespace Wails.Net.Application.Transport;
 /// 当邮箱满时 <see cref="ClientMailbox.EnqueueAsync"/> 阻塞生产者形成背压，
 /// 同时通过 <see cref="ClientMailbox.DisposeAsync"/> 等待写入循环退出，避免 StopAsync 之后的悬挂写入。
 /// </para>
+/// <para>
+/// R2-3 融合审计：暴露 <see cref="MessagesEnqueued"/> / <see cref="MessagesSent"/> / <see cref="MessagesDropped"/>
+/// 计数器（Interlocked 安全），让运维能观测 mailbox 健康度。
+/// </para>
 /// </summary>
 public class WebSocketBroadcaster
 {
@@ -31,7 +35,22 @@ public class WebSocketBroadcaster
     /// <see cref="ClientMailbox.EnqueueAsync"/> 阻塞生产者形成背压，
     /// 避免无界队列耗尽内存。
     /// </summary>
-    private const int DefaultMailboxCapacity = 256;
+    public const int DefaultMailboxCapacity = 256;
+
+    private readonly int _mailboxCapacity;
+
+    private long _messagesEnqueued;
+    private long _messagesSent;
+    private long _messagesDropped;
+
+    /// <summary>累计入队的消息数（已成功写入 mailbox）。</summary>
+    public long MessagesEnqueued => Interlocked.Read(ref _messagesEnqueued);
+
+    /// <summary>累计成功通过底层 WebSocket SendAsync 发送的消息数。</summary>
+    public long MessagesSent => Interlocked.Read(ref _messagesSent);
+
+    /// <summary>累计丢弃的消息数（邮箱已释放 / ObjectDisposed / OperationCanceled）。</summary>
+    public long MessagesDropped => Interlocked.Read(ref _messagesDropped);
 
     /// <summary>
     /// 关闭阶段等待写入循环退出消息排空的最大时长。
@@ -59,7 +78,7 @@ public class WebSocketBroadcaster
     public int ClientCount => _mailboxes.Count;
 
     public WebSocketBroadcaster()
-        : this(null)
+        : this(null, DefaultMailboxCapacity)
     {
     }
 
@@ -68,8 +87,19 @@ public class WebSocketBroadcaster
     /// </summary>
     /// <param name="logger">日志记录器，可为 null（无日志输出）。</param>
     public WebSocketBroadcaster(ILogger<WebSocketBroadcaster>? logger)
+        : this(logger, DefaultMailboxCapacity)
+    {
+    }
+
+    /// <summary>
+    /// 使用可选日志记录器与 mailbox 容量构造广播器。
+    /// </summary>
+    /// <param name="logger">日志记录器，可为 null。</param>
+    /// <param name="mailboxCapacity">每客户端 mailbox 容量，&lt;= 0 时回退到 <see cref="DefaultMailboxCapacity"/>。</param>
+    public WebSocketBroadcaster(ILogger<WebSocketBroadcaster>? logger, int mailboxCapacity)
     {
         _logger = logger;
+        _mailboxCapacity = mailboxCapacity > 0 ? mailboxCapacity : DefaultMailboxCapacity;
     }
 
     /// <summary>
@@ -81,7 +111,7 @@ public class WebSocketBroadcaster
     {
         var clientId = Interlocked.Increment(ref _nextClientId).ToString();
         // R2-2：每个连接创建独立 ClientMailbox（单写者顺序发送），避免并发 SendAsync 导致帧交错。
-        _mailboxes[clientId] = new ClientMailbox(webSocket, DefaultMailboxCapacity, _logger);
+        _mailboxes[clientId] = new ClientMailbox(webSocket, _mailboxCapacity, _logger, this);
         _clientWindowIds[clientId] = null;
         return clientId;
     }
@@ -186,21 +216,26 @@ public class WebSocketBroadcaster
         try
         {
             await mailbox.EnqueueAsync(bytes).ConfigureAwait(false);
+            Interlocked.Increment(ref _messagesEnqueued);
         }
         catch (ChannelClosedException)
         {
-            // 邮箱已关闭（客户端断开/StopAsync），忽略。
+            // 邮箱已关闭（客户端断开/StopAsync），记录并忽略。
+            Interlocked.Increment(ref _messagesDropped);
         }
         catch (ObjectDisposedException)
         {
-            // 写入循环的资源已释放，忽略。
+            // 写入循环的资源已释放，记录并忽略。
+            Interlocked.Increment(ref _messagesDropped);
         }
         catch (OperationCanceledException)
         {
-            // 邮箱关闭时取消了正在等待的入队，忽略。
+            // 邮箱关闭时取消了正在等待的入队，记录并忽略。
+            Interlocked.Increment(ref _messagesDropped);
         }
         catch (Exception ex)
         {
+            Interlocked.Increment(ref _messagesDropped);
             _logger?.LogDebug(ex, "WebSocketBroadcaster 入队失败");
         }
     }
@@ -322,6 +357,10 @@ public class WebSocketBroadcaster
     /// 关闭所有客户端连接并停止广播（向后兼容 API）。
     /// </summary>
     public Task StopAsync() => StopAsync(CancellationToken.None);
+
+    // 供 ClientMailbox 在成功 SendAsync 后递增；使用 ref 访问避免暴露整个 broadcaster。
+    internal void IncrementMessagesSent() => Interlocked.Increment(ref _messagesSent);
+    internal void IncrementMessagesDropped() => Interlocked.Increment(ref _messagesDropped);
 }
 
 /// <summary>
@@ -346,6 +385,7 @@ internal sealed class ClientMailbox
     private readonly Task _writer;
     private readonly CancellationTokenSource _cts = new();
     private readonly ILogger? _logger;
+    private readonly WebSocketBroadcaster _owner;
     private readonly TaskCompletionSource _writerExited = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>
@@ -353,10 +393,11 @@ internal sealed class ClientMailbox
     /// </summary>
     private int _state;
 
-    public ClientMailbox(WebSocket socket, int capacity, ILogger? logger)
+    public ClientMailbox(WebSocket socket, int capacity, ILogger? logger, WebSocketBroadcaster owner)
     {
         _socket = socket;
         _logger = logger;
+        _owner = owner;
         _queue = Channel.CreateBounded<ReadOnlyMemory<byte>>(
             new BoundedChannelOptions(capacity)
             {
@@ -408,6 +449,7 @@ internal sealed class ClientMailbox
                     if (_socket.State == WebSocketState.Open)
                     {
                         await _socket.SendAsync(msg, WebSocketMessageType.Text, endOfMessage: true, _cts.Token).ConfigureAwait(false);
+                        _owner.IncrementMessagesSent();
                     }
                 }
                 catch
@@ -481,6 +523,7 @@ internal sealed class ClientMailbox
         }
         catch (TimeoutException)
         {
+            _owner.IncrementMessagesDropped();
             _logger?.LogWarning("ClientMailbox 写入循环在 {DrainTimeout} 内未退出", drainTimeout);
         }
         catch (OperationCanceledException)

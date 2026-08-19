@@ -69,4 +69,19 @@ public sealed class IpcOptions
     /// 本地源（wails://、localhost、127.0.0.1）总是允许，无需在此声明。
     /// </summary>
     public List<string> AllowedOrigins { get; set; } = new();
+
+    /// <summary>
+    /// 每连接 WebSocket mailbox 容量上限（默认 256）。
+    /// 超过则 <see cref="Wails.Net.Application.Transport.WebSocketBroadcaster"/> 入队阻塞形成背压。
+    /// 对应 R2-3 融合审计（§3.7：有界 mailbox）。
+    /// </summary>
+    public int MailboxCapacity { get; set; } = 256;
+
+    /// <summary>
+    /// 每连接 WebSocket 的最大并发调用数（默认 32）。
+    /// 超过则调用被拒绝（返回 RuntimeError 给前端），调用方可以重试。
+    /// 控制消息（cancel 等）不受此限制，确保取消指令总能被处理。
+    /// 对应 R2-3 融合审计（§3.7：call 使用受控并发任务 + 拒绝策略）。
+    /// </summary>
+    public int MaxConcurrentCallsPerConnection { get; set; } = 32;
 }

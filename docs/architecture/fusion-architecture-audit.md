@@ -443,8 +443,9 @@ Wails.Net.Bundle.*
 - [x] 低权限窗口无法伪造高权限 WindowId（R0-3 强制覆盖）。
 - [x] `localhost.evil.example` 被拒绝（R0-2 IpcOriginValidator 精确化）。
 - [ ] 未声明 remote 的 capability 拒绝远程页面（R3 Scope/Remote 校验进行中）。
-- [x] 单连接长调用期间 cancel 可立即生效（已有 CancellationToken 串联）。
+- [x] 单连接长调用期间 cancel 可立即生效（R2-3 已强化：WebSocket 接收循环不再 await 全消息处理，cancel 走 `ClientMessageDispatcher.DispatchControl` 独立通道派发，不占用调用并发槽位）。
 - [x] 同一 WebSocket 不发生并发 SendAsync（R2-2 已完成：`WebSocketBroadcaster` 改为每连接 `ClientMailbox`（Channel<ReadOnlyMemory<byte>> 单写者）；生产者经 `EnqueueOrLogAsync` 统一入队，邮箱满时阻塞形成背压；`RemoveClientAsync` 与 `StopAsync` 通过 `DisposeAsync(drainTimeout)` 等待写入循环退出，避免悬挂 SendAsync 访问已释放 socket）。
+- [x] call 使用受控并发任务 + cancel 独立控制通道 + 拒绝/指标策略（R2-3 已完成：新增 `ClientMessageDispatcher`（SemaphoreSlim 受控并发，默认上限 32，配置 `IpcOptions.MaxConcurrentCallsPerConnection`）；控制消息 `cancel` 走 `DispatchControl` 不占用槽位；调用并发耗尽时拒绝并返回 `RuntimeError` 给前端；新增 `WebSocketTransportMetrics`（CallsInFlight/CallsRejected/CallsCompleted/ControlProcessed/ControlRejected）+ `WebSocketBroadcaster` 计数器 MessagesEnqueued/Sent/Dropped；接收循环不再 await 全消息处理，立即回到 `ReceiveAsync`）。
 - [x] Host Stop 后 UI 线程在 shutdown timeout 内退出（R1-4 已完成：ApplicationOptions.ShutdownTimeout 默认 InfiniteTimeSpan；IPlatformApp 新增 ShutdownAsync(CancellationToken) 默认实现委派 Destroy；Application 新增 ShutdownAsync(CancellationToken) 异步关闭路径串联外部 CancellationToken + ShutdownTimeout；DesktopHostedService.StopAsync 改用 ShutdownAsync，UI 线程 Join 超时在外部 cancellationToken 已触发时立即放弃；新增 ShutdownAsyncTests 7/7 场景覆盖）。
 - [ ] 所有 `IpcOptions` 字段都有行为测试，或从公共 API 删除（R3/R4 进行中）。
 - [x] 全仓库只保留一个逻辑窗口注册表（R1-2 已完成：删除 `Application._windows`/`_nextWindowId`，统一委托给 WindowManager；新增 `WindowRegistryUnificationTests` 4/4 通过；连带修复 `WindowStatePlugin.SaveState/RestoreState` 平台未绑定早返回）。

@@ -90,6 +90,7 @@ public sealed class DefaultIpcTransportStrategy : IIpcTransportStrategy
                 transport.RequireHandshakeToken = ipcOptions.RequireHandshakeToken;
                 transport.OriginValidator = CreateOriginValidator(ipcOptions);
                 transport.CorsOptions = CreateCorsOptions(ipcOptions);
+                transport.MaxConcurrentCallsPerConnection = ipcOptions.MaxConcurrentCallsPerConnection;
             }
 
             return transport;

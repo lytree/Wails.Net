@@ -5,6 +5,8 @@ using System.Text;
 using System.Text.Json;
 using Wails.Net.Application.Bindings;
 using Wails.Net.Application.Events;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Wails.Net.Application.Security;
 
 namespace Wails.Net.Application.Transport;
@@ -82,6 +84,26 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
     private readonly ConcurrentDictionary<string, Task> _clientTasks = new();
 
     /// <summary>
+    /// 每连接消息分发器集合：客户端 ID → 分发器实例（R2-3：控制通道 + 受控并发）。
+    /// </summary>
+    private readonly ConcurrentDictionary<string, ClientMessageDispatcher> _dispatchers = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 传输层指标（R2-3）。
+    /// </summary>
+    private readonly WebSocketTransportMetrics _metrics = new();
+
+    /// <summary>
+    /// 可选日志记录器（用于记录控制消息失败、并发上限等异常）。
+    /// </summary>
+    private ILogger<WebSocketTransport>? _logger;
+
+    /// <summary>
+    /// 每连接最大并发调用数（R2-3 受控并发）。
+    /// </summary>
+    private int _maxConcurrentCallsPerConnection = 32;
+
+    /// <summary>
     /// 是否已启动。
     /// </summary>
     public bool IsRunning { get; private set; }
@@ -121,6 +143,31 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
     /// 与前端 <c>@wails-net/runtime</c> 保持一致（WebSocket 用查询参数，HTTP 用同名头）。
     /// </summary>
     public const string HandshakeTokenQuery = "token";
+
+    /// <summary>
+    /// 获取或设置每连接最大并发调用数（默认 32）。
+    /// 控制消息（cancel 等）不受此限制，确保取消指令总能被处理。
+    /// 对应 IpcOptions.MaxConcurrentCallsPerConnection。
+    /// </summary>
+    public int MaxConcurrentCallsPerConnection
+    {
+        get => _maxConcurrentCallsPerConnection;
+        set => _maxConcurrentCallsPerConnection = value > 0 ? value : 32;
+    }
+
+    /// <summary>
+    /// 获取传输层指标（R2-3）。线程安全。
+    /// </summary>
+    public WebSocketTransportMetrics Metrics => _metrics;
+
+    /// <summary>
+    /// 设置日志记录器（DI 装配时由 <c>UseServerModeTransport</c> 注入）。
+    /// </summary>
+    public ILogger<WebSocketTransport>? Logger
+    {
+        get => _logger;
+        set => _logger = value;
+    }
 
     /// <summary>
     /// 使用指定的消息处理器和事件广播器构造 WebSocketTransport 实例。
@@ -344,17 +391,32 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
         var webSocket = wsContext.WebSocket;
         var clientId = _broadcaster.AddClient(webSocket);
 
+        // R2-3：每连接创建独立消息分发器（控制通道 + 受控并发）。
+        var dispatcher = new ClientMessageDispatcher(
+            clientId,
+            _maxConcurrentCallsPerConnection,
+            _processor,
+            _broadcaster,
+            _metrics,
+            null /* per-dispatcher logger; 后续接入 ILoggerFactory */);
+        _dispatchers[clientId] = dispatcher;
+
         try
         {
             // 创建绑定到当前 cancellationToken 的接收循环任务
-            var receiveTask = ReceiveLoopAsync(clientId, webSocket, cancellationToken);
+            var receiveTask = ReceiveLoopAsync(clientId, webSocket, dispatcher, cancellationToken);
             _clientTasks[clientId] = receiveTask;
 
             await receiveTask;
         }
         finally
         {
-            _broadcaster.RemoveClient(clientId);
+            // R2-3：先释放 dispatcher（不再接受新的派发），再等待 mailbox 排空。
+            if (_dispatchers.TryRemove(clientId, out var d))
+            {
+                d.Dispose();
+            }
+            await _broadcaster.RemoveClientAsync(clientId);
             _clientTasks.TryRemove(clientId, out _);
             webSocket.Dispose();
         }
@@ -367,7 +429,7 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
     /// <param name="webSocket">WebSocket 连接。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>表示接收循环的异步任务。</returns>
-    private async Task ReceiveLoopAsync(string clientId, WebSocket webSocket, CancellationToken cancellationToken)
+    private async Task ReceiveLoopAsync(string clientId, WebSocket webSocket, ClientMessageDispatcher dispatcher, CancellationToken cancellationToken)
     {
         var buffer = new byte[81920];
         var messageBuilder = new StringBuilder();
@@ -398,35 +460,30 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
             // 累积消息片段
             messageBuilder.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
 
-            if (result.EndOfMessage)
+            if (!result.EndOfMessage)
             {
-                var messageText = messageBuilder.ToString();
-                messageBuilder.Clear();
-
-                await ProcessWebSocketMessageAsync(clientId, messageText, cancellationToken);
+                continue;
             }
+
+            var messageText = messageBuilder.ToString();
+            messageBuilder.Clear();
+
+            // R2-3：仅解析 + 分窗映射留在接收循环；后续处理通过 dispatcher
+            // 派发到后台，接收循环立即回到 ReceiveAsync，
+            // 确保 cancel/ping 等控制消息不会被长调用阻塞读取。
+            DispatchMessage(clientId, messageText, dispatcher);
         }
     }
 
     /// <summary>
-    /// 处理 WebSocket 接收到的消息。
+    /// 解析单条消息并根据类型选择控制通道或调用通道派发。
     /// </summary>
-    /// <param name="clientId">发送消息的客户端 ID。</param>
-    /// <param name="messageText">消息文本（JSON）。</param>
-    /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>表示处理操作的异步任务。</returns>
-    private async Task ProcessWebSocketMessageAsync(string clientId, string messageText, CancellationToken cancellationToken)
+    private void DispatchMessage(string clientId, string messageText, ClientMessageDispatcher dispatcher)
     {
         var message = _processor.ParseMessage(messageText);
         if (message is null)
         {
-            // 发送错误响应
-            var errorJson = JsonSerializer.Serialize(new
-            {
-                type = "error",
-                error = "无法解析消息"
-            }, JsonOptions.DefaultSerializerOptions);
-            await _broadcaster.SendToClientAsync(clientId, errorJson);
+            _ = SendParseErrorAsync(clientId);
             return;
         }
 
@@ -437,14 +494,45 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
             _broadcaster.SetClientWindow(clientId, windowId);
         }
 
-        var result = await _processor.ProcessAsync(message);
-
-        if (result is not null)
+        if (IsControlMessageType(message.Type))
         {
-            var json = JsonSerializer.Serialize(result, JsonOptions.DefaultSerializerOptions);
-            await _broadcaster.SendToClientAsync(clientId, json);
+            dispatcher.DispatchControl(message);
+        }
+        else
+        {
+            dispatcher.DispatchCall(message);
         }
     }
+
+    /// <summary>
+    /// 判断消息类型是否为控制类（cancel 等）。
+    /// 控制消息走独立通道，不占用调用并发槽位，确保长调用期间也能被及时处理。
+    /// </summary>
+    private static bool IsControlMessageType(string type)
+    {
+        if (string.IsNullOrEmpty(type))
+        {
+            return false;
+        }
+
+        var dotIndex = type.IndexOf('.');
+        var baseType = dotIndex > 0 ? type[..dotIndex] : type;
+        return baseType == MessageProcessor.MessageTypes.Cancel;
+    }
+
+    /// <summary>
+    /// 发送解析失败错误响应（异步非阻塞）。
+    /// </summary>
+    private async Task SendParseErrorAsync(string clientId)
+    {
+        var errorJson = JsonSerializer.Serialize(new
+        {
+            type = "error",
+            error = "无法解析消息"
+        }, JsonOptions.DefaultSerializerOptions);
+        await _broadcaster.SendToClientAsync(clientId, errorJson).ConfigureAwait(false);
+    }
+
 
     /// <summary>
     /// 应用 CORS 响应头。
