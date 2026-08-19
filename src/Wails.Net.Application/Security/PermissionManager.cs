@@ -181,6 +181,14 @@ public sealed class PermissionManager
         => new Dictionary<string, string>(_declaredPermissions, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
+    /// 获取所有已声明权限的标识集合（R3-A.3 CapabilityManifestValidator 使用）。
+    /// 返回底层字典的只读键集合，便于高频调用方做引用校验而无需分配字典副本。
+    /// </summary>
+    /// <returns>已声明权限的标识集合。</returns>
+    public ICollection<string> GetDeclaredPermissionIds()
+        => _declaredPermissions.Keys;
+
+    /// <summary>
     /// 为权限绑定作用域。
     /// </summary>
     /// <param name="permissionId">权限标识。</param>

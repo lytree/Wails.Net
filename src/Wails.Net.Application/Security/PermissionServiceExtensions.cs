@@ -41,4 +41,26 @@ public static class PermissionServiceExtensions
         services.Configure<PermissionOptions>(opts => opts.Enabled = true);
         return services;
     }
+    /// <summary>
+    /// 启用全局 Strict 默认模式（R3-A.4）。
+    /// <para>
+    /// 通过设置 PermissionOptions.EnforceStrictByDefault = true，
+    /// 使后续构造的 PermissionOptions 实例的 Mode 默认值为 Strict。
+    /// 调用方应在 builder 构造（如 CreateBuilder）之后立即调用本方法，
+    /// 确保 DI 容器实例化 PermissionOptions 时已生效。
+    /// </para>
+    /// <para>
+    /// 这是 R3 最终默认翻转前的 opt-in 入口：当前默认仍为 Compatibility，
+    /// 调用本方法会让应用以 Strict 模式启动，配合 DenyByDefault（默认 true）
+    /// 实现最小权限姿态。
+    /// </para>
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <returns>当前服务集合，用于链式调用。</returns>
+    public static IServiceCollection EnableStrictByDefault(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        PermissionOptions.EnforceStrictByDefault = true;
+        return services;
+    }
 }

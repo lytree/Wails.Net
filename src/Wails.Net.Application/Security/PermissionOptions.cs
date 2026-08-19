@@ -7,6 +7,21 @@ namespace Wails.Net.Application.Security;
 public class PermissionOptions
 {
     /// <summary>
+    /// 启动期全局开关（R3-A.4）：是否将库默认 Mode 翻转为 PermissionMode.Strict。
+    /// <para>
+    /// 当前默认 false（保持向后兼容）；一旦置 true，所有未显式覆盖 Mode 的 PermissionOptions 实例
+    /// 都将以 Strict 为初始值。这是 R3 最终默认翻转前的 opt-in 入口。
+    /// </para>
+    /// <para>
+    /// 调用方应在 Program.cs 启动期（DI 容器构造 PermissionOptions 之前）一次性设置，
+    /// 后续构造 PermissionOptions 实例时读取该值。线程安全：bool 读写在 .NET 上是原子的，
+    /// 但调用方应避免在 PermissionOptions 实例化期间并发修改此标志。
+    /// </para>
+    /// </summary>
+    public static bool EnforceStrictByDefault { get; set; }
+
+    /// <summary>
+    /// <summary>
     /// 获取或设置已授权的权限标识列表。
     /// 权限标识可以是细粒度权限（如 "fs:allow-read"）或命名权限集（如 "core:default"）。
     /// </summary>
@@ -24,7 +39,7 @@ public class PermissionOptions
     /// </list>
     /// </para>
     /// </summary>
-    public PermissionMode Mode { get; set; } = PermissionMode.Compatibility;
+    public PermissionMode Mode { get; set; } = EnforceStrictByDefault ? PermissionMode.Strict : PermissionMode.Compatibility;
 
     /// <summary>
     /// 获取或设置是否启用权限检查（默认 false，向后兼容）。

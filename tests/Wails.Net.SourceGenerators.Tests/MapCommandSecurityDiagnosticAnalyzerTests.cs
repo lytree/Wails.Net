@@ -166,6 +166,32 @@ public sealed class MapCommandSecurityDiagnosticAnalyzerTests
         await Assert.That(securityDiagnostics).IsEmpty();
     }
 
+
+    [Test]
+    public async Task MapCommand_WithSecurityArgument_ReportsNoWnet003()
+    {
+        var (diagnostics, _) = await RunAnalyzerAsync(BuildSource(
+            "context.Commands.MapCommand(\"fs.read\", (Func<string, string>)ReadText," +
+            " CommandSecurity.Require(\"fs:allow-read\").WithScope(\"path\", \"fs:allow-read\"));"));
+
+        var wnet003 = diagnostics
+            .Where(d => d.Id == MapCommandSecurityDiagnosticAnalyzer.Wnet003.Id)
+            .ToList();
+        await Assert.That(wnet003).IsEmpty();
+    }
+
+    [Test]
+    public async Task MapCommand_OldOverloadWithoutSecurity_ReportsNoWnet003()
+    {
+        var (diagnostics, _) = await RunAnalyzerAsync(BuildSource(
+            "context.Commands.MapCommand(\"app.getName\", (Func<string, string>)(p => p));"));
+
+        var wnet003 = diagnostics
+            .Where(d => d.Id == MapCommandSecurityDiagnosticAnalyzer.Wnet003.Id)
+            .ToList();
+        await Assert.That(wnet003).IsEmpty();
+    }
+
     [Test]
     public async Task AsyncScopeParameter_WithoutSecurity_ReportsWnet002()
     {
@@ -185,6 +211,7 @@ public sealed class MapCommandSecurityDiagnosticAnalyzerTests
 /// <summary>
 /// 供分析器测试复用的引用集构建（与 GeneratorRunner 共用引用逻辑）。
 /// </summary>
+
 internal static class GeneratorRunnerReferences
 {
     internal static readonly IReadOnlyList<MetadataReference> References = BuildReferences();

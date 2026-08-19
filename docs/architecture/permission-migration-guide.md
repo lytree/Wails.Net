@@ -153,3 +153,64 @@ default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src
 | 单个命令失败 | 该命令需要的能力未授权 | 在 capabilities 中追加对应权限标识 |
 | 平台声明不生效 | `platforms` 拼写错误 | 平台名固定为 `windows`/`linux`/`android`/`macos`/`server`；未知平台加载时输出 warning |
 | Debug 模式 HMR 断开 | CSP 拦截了 websocket | 确认 `connect-src` 含 `ws://localhost:*` |
+
+## 6. R3-A：命令安全声明强制（2026-08-19 落地）
+
+R3-A 是 R3（Tauri 风格 ACL）的第一阶段基础设施落地，在不破坏现有应用的前提下引入
+**编译期**与**启动期**两道关卡，为后续默认 Strict 翻转做准备。
+
+### 6.1 新增的诊断 WNET003
+
+源生成器 `MapCommandSecurityDiagnosticAnalyzer` 新增 WNET003 诊断：
+
+- **触发条件**：调用 `MapCommand` / `MapCommandAsync` 的**新重载**（已声明 `CommandSecurity?` 形参）时未传入 `CommandSecurity` 实参。
+- **不触发场景**：旧重载（无 `CommandSecurity` 形参）调用，以避免对存量未迁移注册路径产生噪声。
+- **严重度**：Warning。在 `TreatWarningsAsErrors=true` 下即构建失败。
+- **修复方式**：调用末尾追加 `CommandSecurity.Require("xxx:cap").WithScope(...)` 或 `CommandSecurity.Public()`，或迁移到带 security 形参的重载。
+
+WNET001 / WNET002 行为不变：
+
+- WNET001：方法标记 `[RequireCapability]` 但 MapCommand 调用未传 `CommandSecurity`。
+- WNET002：方法参数标记 `[ScopeParameter]` 但 MapCommand 调用未传 `CommandSecurity`。
+- WNET003 是更宽泛的"未传任何 CommandSecurity"警告，覆盖即使无特性标注的命令也应显式声明安全姿态。
+
+### 6.2 Capability JSON Schema 与启动期校验
+
+新增 `schemas/capability.schema.json`（嵌入到 `Wails.Net.Application` 程序集）：
+
+- 描述 capability 文件的权威字段形状，对应 `Wails.Net.Application.Security.Capability`。
+- 平台字段约束为枚举：`windows` / `linux` / `android` / `macos` / `server`。
+- 权限字段允许 `!` 前缀表示显式 deny。
+
+新增 `CapabilityManifestValidator`（R3-A.3）：
+
+- `ValidateShape(capabilities)`：字段级结构校验，返回 `CapabilityValidationIssue` 列表。错误码 `CM001`–`CM005`。
+- `FindUndeclaredPermissions(manager, capabilities)`：引用校验，capability 引用的 permission 若未通过 `IPermissionRegistrar.DeclarePermission` 声明则报错。
+- `LoadSchemaJson()`：导出嵌入的 schema 文本，供 CLI / IDE 插件消费。
+
+### 6.3 默认 Strict 翻转开关
+
+新增 `PermissionOptions.EnforceStrictByDefault`（静态属性，默认 `false`）与 `EnableStrictByDefault()` 扩展方法：
+
+```csharp
+// Program.cs（启动期）
+PermissionOptions.EnforceStrictByDefault = true;
+
+// 或通过 DI
+builder.Services.EnableStrictByDefault();
+```
+
+设置后，所有未显式覆盖 `Mode` 的 `PermissionOptions` 实例都将以 `Strict` 为初始值。
+当前库默认仍为 `Compatibility`（向后兼容），此开关是 R3 完成后翻转默认前的 opt-in 入口。
+
+### 6.4 迁移顺序建议
+
+1. **先消除 WNET003**：把所有 `MapCommand` 调用补充 `CommandSecurity`，或迁移到带 security 形参的重载。
+2. **再消除 WNET001 / WNET002**：补充 `Require(...)` / `WithScope(...)`。
+3. **最后开启 Strict 默认**：在生产应用启动期调用 `EnableStrictByDefault()`，
+   配合已迁移的 capability JSON 完成默认翻转。
+
+### 6.5 后续 R3 阶段
+
+- **R3-B（待启动）**：47 插件 304 命令全量迁移到 `Require` / `Public`，每个插件配套生成 capability 默认 JSON。
+- **R3-C（待启动）**：库默认从 `Compatibility` 翻转为 `Strict`（破坏性变更，需配合本指南与版本号 bump）。

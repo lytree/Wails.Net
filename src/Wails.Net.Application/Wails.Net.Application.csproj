@@ -47,4 +47,9 @@
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
 
+
+  <ItemGroup>
+    <!-- R3-A.2: Embed Capability JSON Schema so CapabilityManifestValidator can validate capability files at runtime without external file I/O. -->
+    <EmbeddedResource Include="..\..\schemas\capability.schema.json" LogicalName="Wails.Net.Application.Security.Capability.schema.json" />
+  </ItemGroup>
 </Project>

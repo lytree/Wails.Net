@@ -56,9 +56,29 @@ public sealed class MapCommandSecurityDiagnosticAnalyzer : DiagnosticAnalyzer
         isEnabledByDefault: true,
         description: "带 [ScopeParameter] 参数的方法经 MapCommand 注册时若未传 CommandSecurity，编译期声明的参数级 Scope 校验不会生效。");
 
+    /// <summary>
+    /// WNET003：MapCommand 调用未传入 CommandSecurity（R3 落地）。
+    /// <para>
+    /// 仅当目标 MapCommand / MapCommandAsync 重载已声明 CommandSecurity? 形参但调用未提供该实参时报告。
+    /// 不接受 security 形参的旧重载（迁移期尚未被废弃）不会触发本诊断，避免对存量注册路径产生噪声。
+    /// </para>
+    /// <para>
+    /// 修复方向：在 MapCommand 调用末尾追加 CommandSecurity.Require("xxx:cap").WithScope(...)
+    /// 或 CommandSecurity.Public()；或迁移到 R3 之后将被废弃的不带 security 形参的重载。
+    /// </para>
+    /// </summary>
+    public static readonly DiagnosticDescriptor Wnet003 = new(
+        id: "WNET003",
+        title: "MapCommand 调用未声明 CommandSecurity",
+        messageFormat: "命令 `{0}` 通过 MapCommand 调用时未传入 CommandSecurity；建议补充 CommandSecurity.Require(...) 声明所需 capability 或 CommandSecurity.Public() 标记为公开命令，以便 Strict + DenyByDefault 模式下命令仍可被调用",
+        category: "Security",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "MapCommand 调用未传入 CommandSecurity 时，运行时不读取任何 capability/scope 声明；Strict + DenyByDefault 模式下未声明的命令将被拒绝。");
+
     /// <inheritdoc />
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics =>
-        ImmutableArray.Create(Wnet001, Wnet002);
+        ImmutableArray.Create(Wnet001, Wnet002, Wnet003);
 
     /// <inheritdoc />
     public override void Initialize(AnalysisContext context)
@@ -80,13 +100,26 @@ public sealed class MapCommandSecurityDiagnosticAnalyzer : DiagnosticAnalyzer
             return;
         }
 
+        // 目标重载是否声明了 CommandSecurity 形参：未声明则不能诊断（旧重载没有该参数）。
+        var hasSecurityParameter = HasCommandSecurityParameter(method);
+
         // 已传入 CommandSecurity（任意参数为该类型）则不诊断
+        var hasSecurityArgument = false;
         foreach (var arg in invocation.Arguments)
         {
             if (IsCommandSecurityType(arg.Parameter?.Type))
             {
-                return;
+                hasSecurityArgument = true;
+                break;
             }
+        }
+
+        // WNET003：重载支持 security 但调用未传入。命令名取自第一个 string 实参。
+        if (hasSecurityParameter && !hasSecurityArgument)
+        {
+            var commandName = TryGetCommandName(invocation);
+            context.ReportDiagnostic(Diagnostic.Create(
+                Wnet003, invocation.Syntax.GetLocation(), commandName ?? "<unknown>"));
         }
 
         // 遍历各参数，解析委托引用到的方法，检查其安全特性
@@ -242,4 +275,71 @@ public sealed class MapCommandSecurityDiagnosticAnalyzer : DiagnosticAnalyzer
 
         return false;
     }
+
+    /// <summary>
+    /// 判断方法是否声明了 <c>CommandSecurity?</c> 形参。
+    /// 静态助手，供 WNET003 在重载筛选时使用；不在重载上做反射，符号由 Roslyn 在编译期提供。
+    /// </summary>
+    private static bool HasCommandSecurityParameter(IMethodSymbol method)
+    {
+        foreach (var parameter in method.Parameters)
+        {
+            if (IsCommandSecurityType(parameter.Type))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 从 MapCommand 调用的实参中提取命令名。
+    /// 约定：第一个 string 实参为 name；找不到时返回 null，诊断用 <c>&lt;unknown&gt;</c> 占位。
+    /// </summary>
+    private static string? TryGetCommandName(IInvocationOperation invocation)
+    {
+        foreach (var argument in invocation.Arguments)
+        {
+            if (argument.Parameter is null)
+            {
+                continue;
+            }
+
+            if (argument.Parameter.Type.SpecialType == SpecialType.System_String)
+            {
+                return ExtractConstantString(argument.Value);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 从运算中提取常量字符串。仅支持字面量 / 隐式转换后的字符串字面量；
+    /// 其余形式（如 const 字段、变量拼接）返回 null，分析器不杜撰内容。
+    /// </summary>
+    private static string? ExtractConstantString(IOperation? operation)
+    {
+        while (operation is not null)
+        {
+            switch (operation)
+            {
+                case IConversionOperation conversion:
+                    operation = conversion.Operand;
+                    break;
+                case IParenthesizedOperation parenthesized:
+                    operation = parenthesized.Operand;
+                    break;
+                case ILiteralOperation literal when literal.ConstantValue.HasValue && literal.ConstantValue.Value is string s:
+                    return s;
+                default:
+                    return null;
+            }
+        }
+
+        return null;
+    }
 }
+
+

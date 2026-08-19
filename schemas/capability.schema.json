@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://wails.net/schemas/capability.schema.json",
+  "title": "Wails.Net Capability",
+  "description": "Wails.Net capability declaration. Defines a named bundle of permissions that can be granted to specific windows or remote origins. Mirrors the shape consumed by PermissionManager / CapabilityFileLoader at startup.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "identifier"
+  ],
+  "properties": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_:.\\-]+$",
+      "description": "Unique capability identifier (e.g. main-capability). Matches Tauri v2 capability identifier."
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description shown in tooling and audit logs."
+    },
+    "permissions": {
+      "type": "array",
+      "description": "Permission identifiers included in this capability. A leading '!' denotes an explicit deny entry that overrides grants.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": []
+    },
+    "windows": {
+      "type": "array",
+      "description": "Window names this capability applies to. Empty array means all windows (global grant).",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": []
+    },
+    "remote": {
+      "type": "array",
+      "description": "Remote URL patterns allowed for this capability. Local origins (wails://, http(s)://localhost, http(s)://127.0.0.1) are always allowed regardless of this list.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": []
+    },
+    "platforms": {
+      "type": "array",
+      "description": "Platform identifiers this capability applies to. Empty array means all platforms.",
+      "items": {
+        "type": "string",
+        "enum": [
+          "windows",
+          "linux",
+          "android",
+          "macos",
+          "server"
+        ]
+      },
+      "default": []
+    },
+    "plugin": {
+      "type": "string",
+      "description": "Optional plugin name this capability belongs to. Filled in by plugin declarations at runtime; not consumed by CapabilityFileLoader."
+    }
+  }
+}
