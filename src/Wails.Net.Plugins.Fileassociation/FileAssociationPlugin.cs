@@ -68,6 +68,10 @@ public class FileAssociationPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B：该插件全部为只读命令，统一标记 Public，无需 permission 声明。
+
         // 注册当前已配置的文件扩展名。
         foreach (var ext in _extensions)
         {
@@ -78,11 +82,11 @@ public class FileAssociationPlugin : IPlugin
         ProcessCommandLineArgs();
 
         context.Commands.MapCommand("fileassociation.register",
-            (Action<string>)(ext => RegisterExtension(NormalizeExtension(ext) ?? string.Empty)));
+            (Action<string>)(ext => RegisterExtension(NormalizeExtension(ext) ?? string.Empty)), CommandSecurity.Public());
         context.Commands.MapCommand("fileassociation.unregister",
-            (Action<string>)(ext => UnregisterExtension(NormalizeExtension(ext) ?? string.Empty)));
+            (Action<string>)(ext => UnregisterExtension(NormalizeExtension(ext) ?? string.Empty)), CommandSecurity.Public());
         context.Commands.MapCommand("fileassociation.getRegistered",
-            (Func<string[]>)(() => _extensions.ToArray()));
+            (Func<string[]>)(() => _extensions.ToArray()), CommandSecurity.Public());
     }
 
     /// <summary>

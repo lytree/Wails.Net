@@ -1292,4 +1292,234 @@ public static class MapCommandExtensions
             return (object?)result;
         }, new[] { typeof(T1), typeof(T2) }, security);
     }
+
+    /// <summary>
+    /// 注册三参数无返回值命令并指定命令安全声明（R3-B 落地补齐）。
+    /// 适配 host / store / Localhost 等 3 参数 Action 的命令（无 security 重载会强制走 params string[] 而非 CommandSecurity）。
+    /// </summary>
+    public static CommandRegistry MapCommand<T1, T2, T3>(
+        this CommandRegistry registry,
+        string name,
+        Action<T1, T2, T3> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        var options = _jsonOptions;
+        return registry.Register(name, (instance, parameters, ctx) =>
+        {
+            var (a1, a2, a3) = ParseArgs3<T1, T2, T3>(parameters, options);
+            handler(a1, a2, a3);
+            return Task.FromResult<object?>(null);
+        }, new[] { typeof(T1), typeof(T2), typeof(T3) }, security);
+    }
+
+    /// <summary>
+    /// 注册四参数无返回值命令并指定命令安全声明（R3-B 落地补齐）。
+    /// </summary>
+    public static CommandRegistry MapCommand<T1, T2, T3, T4>(
+        this CommandRegistry registry,
+        string name,
+        Action<T1, T2, T3, T4> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        var options = _jsonOptions;
+        return registry.Register(name, (instance, parameters, ctx) =>
+        {
+            var (a1, a2, a3, a4) = ParseArgs4<T1, T2, T3, T4>(parameters, options);
+            handler(a1, a2, a3, a4);
+            return Task.FromResult<object?>(null);
+        }, new[] { typeof(T1), typeof(T2), typeof(T3), typeof(T4) }, security);
+    }
+
+
+    /// <summary>
+    /// 注册注入 ICommandContext 的单参数无返回值命令并指定命令安全声明（R3-B 落地补齐）。
+    /// 适配 window-state 等 ctx+arg 命令。
+    /// </summary>
+    public static CommandRegistry MapCommand<T>(
+        this CommandRegistry registry,
+        string name,
+        Action<ICommandContext, T> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        var options = _jsonOptions;
+        return registry.Register(name, (instance, parameters, ctx) =>
+        {
+            var arg = Deserialize<T>(parameters, options);
+            handler(ctx!, arg);
+            return Task.FromResult<object?>(null);
+        }, new[] { typeof(T) }, security);
+    }
+
+    /// <summary>
+    /// 注册注入 ICommandContext 的双参数无返回值命令并指定命令安全声明（R3-B 落地补齐）。
+    /// 适配 shell 等 ctx+arg1+arg2 命令。
+    /// </summary>
+    public static CommandRegistry MapCommand<T1, T2>(
+        this CommandRegistry registry,
+        string name,
+        Action<ICommandContext, T1, T2> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        var options = _jsonOptions;
+        return registry.Register(name, (instance, parameters, ctx) =>
+        {
+            var (a1, a2) = ParseArgs2<T1, T2>(parameters, options);
+            handler(ctx!, a1, a2);
+            return Task.FromResult<object?>(null);
+        }, new[] { typeof(T1), typeof(T2) }, security);
+    }
+
+    /// <summary>
+    /// 注册三参数有返回值命令并指定命令安全声明（R3-B 落地补齐）。
+    /// </summary>
+    public static CommandRegistry MapCommand<T1, T2, T3, TResult>(
+        this CommandRegistry registry,
+        string name,
+        Func<T1, T2, T3, TResult> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        var options = _jsonOptions;
+        return registry.Register(name, (instance, parameters, ctx) =>
+        {
+            var (a1, a2, a3) = ParseArgs3<T1, T2, T3>(parameters, options);
+            var result = handler(a1, a2, a3);
+            return Task.FromResult<object?>(result);
+        }, new[] { typeof(T1), typeof(T2), typeof(T3) }, security);
+    }
+
+    /// <summary>
+    /// 注册三参数异步无返回值命令并指定命令安全声明（R3-B 落地补齐）。
+    /// </summary>
+    public static CommandRegistry MapCommandAsync<T1, T2, T3>(
+        this CommandRegistry registry,
+        string name,
+        Func<T1, T2, T3, Task> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        var options = _jsonOptions;
+        return registry.Register(name, async (instance, parameters, ctx) =>
+        {
+            var (a1, a2, a3) = ParseArgs3<T1, T2, T3>(parameters, options);
+            await handler(a1, a2, a3).ConfigureAwait(false);
+            return null;
+        }, new[] { typeof(T1), typeof(T2), typeof(T3) }, security);
+    }
+
+    /// <summary>
+    /// R3-B 补齐：ctx 异步返回值（适配 dialog.confirm 等）。
+    /// </summary>
+    public static CommandRegistry MapCommandAsync<TResult>(
+        this CommandRegistry registry,
+        string name,
+        Func<ICommandContext, Task<TResult>> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        return registry.Register(name, async (instance, parameters, ctx) =>
+        {
+            var result = await handler(ctx!).ConfigureAwait(false);
+            return (object?)result;
+        }, System.Array.Empty<Type>(), security);
+    }
+
+    /// <summary>
+    /// R3-B 补齐：ctx + 1 业务参数 异步返回值。
+    /// </summary>
+    public static CommandRegistry MapCommandAsync<T, TResult>(
+        this CommandRegistry registry,
+        string name,
+        Func<ICommandContext, T, Task<TResult>> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        var options = _jsonOptions;
+        return registry.Register(name, async (instance, parameters, ctx) =>
+        {
+            var arg = Deserialize<T>(parameters, options);
+            var result = await handler(ctx!, arg).ConfigureAwait(false);
+            return (object?)result;
+        }, new[] { typeof(T) }, security);
+    }
+
+    /// <summary>
+    /// R3-B 补齐：ctx + 2 业务参数 异步返回值。
+    /// </summary>
+    public static CommandRegistry MapCommandAsync<T1, T2, TResult>(
+        this CommandRegistry registry,
+        string name,
+        Func<ICommandContext, T1, T2, Task<TResult>> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        var options = _jsonOptions;
+        return registry.Register(name, async (instance, parameters, ctx) =>
+        {
+            var (a1, a2) = ParseArgs2<T1, T2>(parameters, options);
+            var result = await handler(ctx!, a1, a2).ConfigureAwait(false);
+            return (object?)result;
+        }, new[] { typeof(T1), typeof(T2) }, security);
+    }
+
+    /// <summary>
+    /// R3-B 补齐：ctx + 3 业务参数 异步返回值（适配 dialog.openFile / sqlite.delete 等）。
+    /// </summary>
+    public static CommandRegistry MapCommandAsync<T1, T2, T3, TResult>(
+        this CommandRegistry registry,
+        string name,
+        Func<ICommandContext, T1, T2, T3, Task<TResult>> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        var options = _jsonOptions;
+        return registry.Register(name, async (instance, parameters, ctx) =>
+        {
+            var (a1, a2, a3) = ParseArgs3<T1, T2, T3>(parameters, options);
+            var result = await handler(ctx!, a1, a2, a3).ConfigureAwait(false);
+            return (object?)result;
+        }, new[] { typeof(T1), typeof(T2), typeof(T3) }, security);
+    }
+
+    /// <summary>
+    /// R3-B 补齐：ctx + 4 业务参数 异步返回值（适配 dialog.saveFile / sqlite.update 等）。
+    /// </summary>
+    public static CommandRegistry MapCommandAsync<T1, T2, T3, T4, TResult>(
+        this CommandRegistry registry,
+        string name,
+        Func<ICommandContext, T1, T2, T3, T4, Task<TResult>> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        var options = _jsonOptions;
+        return registry.Register(name, async (instance, parameters, ctx) =>
+        {
+            var (a1, a2, a3, a4) = ParseArgs4<T1, T2, T3, T4>(parameters, options);
+            var result = await handler(ctx!, a1, a2, a3, a4).ConfigureAwait(false);
+            return (object?)result;
+        }, new[] { typeof(T1), typeof(T2), typeof(T3), typeof(T4) }, security);
+    }
+
+    /// <summary>
+    /// R3-B 补齐：ctx + 7 业务参数 异步返回值（适配 sqlite.select）。
+    /// </summary>
+    public static CommandRegistry MapCommandAsync<T1, T2, T3, T4, T5, T6, T7, TResult>(
+        this CommandRegistry registry,
+        string name,
+        Func<ICommandContext, T1, T2, T3, T4, T5, T6, T7, Task<TResult>> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        var options = _jsonOptions;
+        return registry.Register(name, async (instance, parameters, ctx) =>
+        {
+            var (a1, a2, a3, a4, a5, a6, a7) = ParseArgs7<T1, T2, T3, T4, T5, T6, T7>(parameters, options);
+            var result = await handler(ctx!, a1, a2, a3, a4, a5, a6, a7).ConfigureAwait(false);
+            return (object?)result;
+        }, new[] { typeof(T1), typeof(T2), typeof(T3), typeof(T4), typeof(T5), typeof(T6), typeof(T7) }, security);
+    }
 }

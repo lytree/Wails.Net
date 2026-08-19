@@ -41,6 +41,13 @@ public class StorePlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B 权限声明：所有 store 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("store:default", "store 默认权限集",
+            "store:allow-default");
+        context.Permissions.DeclarePermission("store:allow-default", "允许调用 store 插件命令");
+
         // 声明权限集
         context.Permissions.RegisterPermissionSet("store:default", "键值存储默认权限集",
             "store:allow-get", "store:allow-set", "store:allow-delete");
@@ -52,32 +59,32 @@ public class StorePlugin : IPlugin
         {
             var service = ctx.Services.GetService<KvStoreService>();
             return service?.Get(key);
-        }));
+        }), CommandSecurity.Require("store:allow-default"));
 
         context.Commands.MapCommand("store.set", (Action<ICommandContext, string, string>)((ctx, key, value) =>
         {
             var service = ctx.Services.GetService<KvStoreService>();
             service?.Set(key, value);
-        }));
+        }), CommandSecurity.Require("store:allow-default"));
 
         context.Commands.MapCommand("store.delete", (Func<ICommandContext, string, bool>)((ctx, key) =>
         {
             var service = ctx.Services.GetService<KvStoreService>();
             return service?.Delete(key) ?? false;
-        }));
+        }), CommandSecurity.Require("store:allow-default"));
 
         // 检查键是否存在（与前端 wails.store.has API 一致）
         context.Commands.MapCommand("store.has", (Func<ICommandContext, string, bool>)((ctx, key) =>
         {
             var service = ctx.Services.GetService<KvStoreService>();
             return service?.Get(key) is not null;
-        }));
+        }), CommandSecurity.Require("store:allow-default"));
 
         context.Commands.MapCommand("store.keys", (Func<ICommandContext, string[]>)(ctx =>
         {
             var service = ctx.Services.GetService<KvStoreService>();
             return service?.Keys() ?? Array.Empty<string>();
-        }));
+        }), CommandSecurity.Require("store:allow-default"));
 
         context.Commands.MapCommand("store.clear", (Action<ICommandContext>)(ctx =>
         {
@@ -92,7 +99,7 @@ public class StorePlugin : IPlugin
             {
                 service.Delete(key);
             }
-        }));
+        }), CommandSecurity.Require("store:allow-default"));
 
         // 监听键变更：注册回调，当指定键变化时通过事件通知前端。
         // 对应 Tauri plugin-store 的 onKeyChange 功能。
@@ -126,7 +133,7 @@ public class StorePlugin : IPlugin
             };
             service.OnKeyChanged += handler;
             _watchers[key] = handler;
-        }));
+        }), CommandSecurity.Require("store:allow-default"));
 
         // 取消订阅：与 store.watch 配对。
         // 解绑 KvStoreService.OnKeyChanged 上的处理器并从全局注册表移除。
@@ -144,6 +151,6 @@ public class StorePlugin : IPlugin
                 service.OnKeyChanged -= handler;
             }
             // TryRemove 返回 false 表示无持有句柄（从未 watch 或已 unwatch），幂等不抛错。
-        }));
+        }), CommandSecurity.Require("store:allow-default"));
     }
 }

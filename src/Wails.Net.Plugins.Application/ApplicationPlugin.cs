@@ -42,49 +42,60 @@ public class ApplicationPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        // 声明权限：quit / hide / show / setIcon / showAboutDialog 是写操作，需要显式 Require；
+        // 其余命令（getName / getVersion / getDescription / isDarkMode / getAccentColor / screens）只读，标记 Public。
+        context.Permissions.RegisterPermissionSet("application:default", "Application 插件默认权限集",
+            "application:allow-quit", "application:allow-hide", "application:allow-show",
+            "application:allow-set-icon", "application:allow-show-about-dialog");
+        context.Permissions.DeclarePermission("application:allow-quit", "允许关闭应用");
+        context.Permissions.DeclarePermission("application:allow-hide", "允许隐藏应用");
+        context.Permissions.DeclarePermission("application:allow-show", "允许显示应用");
+        context.Permissions.DeclarePermission("application:allow-set-icon", "允许设置应用图标");
+        context.Permissions.DeclarePermission("application:allow-show-about-dialog", "允许显示关于对话框");
+
         var commands = context.Commands;
 
         // === 应用生命周期 ===
         commands.MapCommand("application.quit", (Action<ICommandContext>)(ctx =>
-            GetAppOrThrow(ctx).Shutdown()));
+            GetAppOrThrow(ctx).Shutdown()), CommandSecurity.Require("application:allow-quit"));
 
         commands.MapCommand("application.hide", (Action<ICommandContext>)(ctx =>
-            GetAppOrThrow(ctx).Hide()));
+            GetAppOrThrow(ctx).Hide()), CommandSecurity.Require("application:allow-hide"));
 
         commands.MapCommand("application.show", (Action<ICommandContext>)(ctx =>
-            GetAppOrThrow(ctx).Show()));
+            GetAppOrThrow(ctx).Show()), CommandSecurity.Require("application:allow-show"));
 
         // === 应用信息 ===
         commands.MapCommand("application.getName", (Func<ICommandContext, string>)(ctx =>
-            GetAppOrThrow(ctx).Options.Name));
+            GetAppOrThrow(ctx).Options.Name), CommandSecurity.Public());
 
         commands.MapCommand("application.getVersion", (Func<ICommandContext, string>)(ctx =>
-            GetAppOrThrow(ctx).Options.Version));
+            GetAppOrThrow(ctx).Options.Version), CommandSecurity.Public());
 
         commands.MapCommand("application.getDescription", (Func<ICommandContext, string>)(ctx =>
-            GetAppOrThrow(ctx).Options.Description));
+            GetAppOrThrow(ctx).Options.Description), CommandSecurity.Public());
 
         // === 图标 ===
         commands.MapCommand("application.setIcon", (Action<ICommandContext, ApplicationIconOptions>)((ctx, opts) =>
-            GetAppOrThrow(ctx).SetIcon(opts.IconData)));
+            GetAppOrThrow(ctx).SetIcon(opts.IconData)), CommandSecurity.Require("application:allow-set-icon"));
 
         // === 主题 ===
         commands.MapCommand("application.isDarkMode", (Func<ICommandContext, bool>)(ctx =>
-            GetAppOrThrow(ctx).IsDarkMode()));
+            GetAppOrThrow(ctx).IsDarkMode()), CommandSecurity.Public());
 
         commands.MapCommand("application.getAccentColor", (Func<ICommandContext, string>)(ctx =>
-            GetAppOrThrow(ctx).GetAccentColor()));
+            GetAppOrThrow(ctx).GetAccentColor()), CommandSecurity.Public());
 
         // === 屏幕 ===
         commands.MapCommand("application.getPrimaryScreen", (Func<ICommandContext, Screen?>)(ctx =>
-            GetAppOrThrow(ctx).GetPrimaryScreen()));
+            GetAppOrThrow(ctx).GetPrimaryScreen()), CommandSecurity.Public());
 
         commands.MapCommand("application.getScreens", (Func<ICommandContext, Screen[]>)(ctx =>
-            GetAppOrThrow(ctx).GetScreens()));
+            GetAppOrThrow(ctx).GetScreens()), CommandSecurity.Public());
 
         // === 关于对话框 ===
         commands.MapCommand("application.showAboutDialog", (Action<ICommandContext>)(ctx =>
-            GetAppOrThrow(ctx).ShowAboutDialog()));
+            GetAppOrThrow(ctx).ShowAboutDialog()), CommandSecurity.Require("application:allow-show-about-dialog"));
     }
 
     /// <summary>

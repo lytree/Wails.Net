@@ -52,9 +52,16 @@ public class WindowStatePlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
-        context.Commands.MapCommand("windowstate.save", (Action)(() => SaveState()));
-        context.Commands.MapCommand("windowstate.restore", (Action)(() => RestoreState()));
-        context.Commands.MapCommand("windowstate.clear", (Action)(() => ClearState()));
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B 权限声明：所有 window-state 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("window-state:default", "window-state 默认权限集",
+            "window-state:allow-default");
+        context.Permissions.DeclarePermission("window-state:allow-default", "允许调用 window-state 插件命令");
+
+        context.Commands.MapCommand("windowstate.save", (Action)(() => SaveState()), CommandSecurity.Require("window-state:allow-default"));
+        context.Commands.MapCommand("windowstate.restore", (Action)(() => RestoreState()), CommandSecurity.Require("window-state:allow-default"));
+        context.Commands.MapCommand("windowstate.clear", (Action)(() => ClearState()), CommandSecurity.Require("window-state:allow-default"));
     }
 
     /// <summary>

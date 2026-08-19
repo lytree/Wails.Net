@@ -36,6 +36,13 @@ public class GlobalShortcutPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B 权限声明：所有 global-shortcut 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("global-shortcut:default", "global-shortcut 默认权限集",
+            "global-shortcut:allow-register");
+        context.Permissions.DeclarePermission("global-shortcut:allow-register", "允许调用 global-shortcut 插件命令");
+
         // 声明权限集
         context.Permissions.RegisterPermissionSet("global-shortcut:default", "全局快捷键默认权限集",
             "global-shortcut:allow-register", "global-shortcut:allow-unregister");
@@ -56,7 +63,7 @@ public class GlobalShortcutPlugin : IPlugin
             {
                 WailsApplication.Get()?.Events.Emit("globalshortcut:pressed", accelerator, null);
             });
-        }));
+        }), CommandSecurity.Require("global-shortcut:allow-register"));
 
         context.Commands.MapCommand("globalshortcut.unregister", (Action<ICommandContext, string>)((ctx, accelerator) =>
         {
@@ -69,7 +76,7 @@ public class GlobalShortcutPlugin : IPlugin
 
             _registered.Remove(accelerator);
             manager.UnregisterKeyBinding(accelerator);
-        }));
+        }), CommandSecurity.Require("global-shortcut:allow-register"));
 
         context.Commands.MapCommand("globalshortcut.unregisterAll", (Action<ICommandContext>)(ctx =>
         {
@@ -85,9 +92,9 @@ public class GlobalShortcutPlugin : IPlugin
                 manager.UnregisterKeyBinding(accelerator);
             }
             _registered.Clear();
-        }));
+        }), CommandSecurity.Require("global-shortcut:allow-register"));
 
         context.Commands.MapCommand("globalshortcut.isRegistered", (Func<ICommandContext, string, bool>)((ctx, accelerator) =>
-            _registered.Contains(accelerator)));
+            _registered.Contains(accelerator)), CommandSecurity.Require("global-shortcut:allow-register"));
     }
 }

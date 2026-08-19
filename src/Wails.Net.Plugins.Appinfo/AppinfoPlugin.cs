@@ -30,15 +30,15 @@ public class AppInfoPlugin : IPlugin
     public void Configure(IPluginContext context)
     {
         context.Commands.MapCommand("app.getName", (Func<ICommandContext, string>)(ctx =>
-            WailsApplication.Get()?.Options.Name ?? string.Empty));
+            WailsApplication.Get()?.Options.Name ?? string.Empty), CommandSecurity.Public());
 
         context.Commands.MapCommand("app.getVersion", (Func<ICommandContext, string>)(ctx =>
-            WailsApplication.Get()?.Options.Version ?? string.Empty));
+            WailsApplication.Get()?.Options.Version ?? string.Empty), CommandSecurity.Public());
 
         context.Commands.MapCommand("app.getDescription", (Func<ICommandContext, string>)(ctx =>
-            WailsApplication.Get()?.Options.Description ?? string.Empty));
+            WailsApplication.Get()?.Options.Description ?? string.Empty), CommandSecurity.Public());
 
         context.Commands.MapCommand("app.getTauriVersion", (Func<ICommandContext, string>)(ctx =>
-            "wails-net-1.0.0"));
+            "wails-net-1.0.0"), CommandSecurity.Public());
     }
 }

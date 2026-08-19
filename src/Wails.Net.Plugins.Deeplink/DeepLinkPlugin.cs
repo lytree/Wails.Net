@@ -57,6 +57,13 @@ public class DeepLinkPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B 权限声明：所有 deeplink 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("deeplink:default", "deeplink 默认权限集",
+            "deeplink:allow-open");
+        context.Permissions.DeclarePermission("deeplink:allow-open", "允许调用 deeplink 插件命令");
+
         // 注册当前已配置的 schemes。
         foreach (var scheme in _schemes)
         {
@@ -66,9 +73,9 @@ public class DeepLinkPlugin : IPlugin
         // 处理启动时传入的 URL 参数。
         ProcessCommandLineArgs();
 
-        context.Commands.MapCommand("deeplink.register", (Action<string>)(scheme => RegisterScheme(scheme)));
-        context.Commands.MapCommand("deeplink.unregister", (Action<string>)(scheme => UnregisterScheme(scheme)));
-        context.Commands.MapCommand("deeplink.getCurrent", (Func<string?>)(() => GetCurrentUrl()));
+        context.Commands.MapCommand("deeplink.register", (Action<string>)(scheme => RegisterScheme(scheme)), CommandSecurity.Require("deeplink:allow-open"));
+        context.Commands.MapCommand("deeplink.unregister", (Action<string>)(scheme => UnregisterScheme(scheme)), CommandSecurity.Require("deeplink:allow-open"));
+        context.Commands.MapCommand("deeplink.getCurrent", (Func<string?>)(() => GetCurrentUrl()), CommandSecurity.Require("deeplink:allow-open"));
     }
 
     /// <summary>

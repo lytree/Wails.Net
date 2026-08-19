@@ -46,21 +46,21 @@ public class OsInfoPlugin : IPlugin
         var commands = context.Commands;
 
         // === os.* 命令（历史名，保留向后兼容） ===
-        commands.MapCommand("os.platform", (Func<ICommandContext, string>)(_ => GetPlatform()));
-        commands.MapCommand("os.hostname", (Func<ICommandContext, string>)(_ => GetHostname()));
-        commands.MapCommand("os.arch", (Func<ICommandContext, string>)(_ => GetArch()));
-        commands.MapCommand("os.locale", (Func<ICommandContext, string>)(_ => GetLocale()));
-        commands.MapCommand("os.version", (Func<ICommandContext, string>)(_ => GetVersion()));
-        commands.MapCommand("os.type", (Func<ICommandContext, string>)(_ => GetSystemType()));
+        commands.MapCommand("os.platform", (Func<ICommandContext, string>)(_ => GetPlatform()), CommandSecurity.Public());
+        commands.MapCommand("os.hostname", (Func<ICommandContext, string>)(_ => GetHostname()), CommandSecurity.Public());
+        commands.MapCommand("os.arch", (Func<ICommandContext, string>)(_ => GetArch()), CommandSecurity.Public());
+        commands.MapCommand("os.locale", (Func<ICommandContext, string>)(_ => GetLocale()), CommandSecurity.Public());
+        commands.MapCommand("os.version", (Func<ICommandContext, string>)(_ => GetVersion()), CommandSecurity.Public());
+        commands.MapCommand("os.type", (Func<ICommandContext, string>)(_ => GetSystemType()), CommandSecurity.Public());
 
         // === system.* 命令（与前端 wails.system.* API 一致） ===
-        commands.MapCommand("system.platform", (Func<ICommandContext, string>)(_ => GetPlatform()));
-        commands.MapCommand("system.hostname", (Func<ICommandContext, string>)(_ => GetHostname()));
-        commands.MapCommand("system.arch", (Func<ICommandContext, string>)(_ => GetArch()));
-        commands.MapCommand("system.locale", (Func<ICommandContext, string>)(_ => GetLocale()));
-        commands.MapCommand("system.version", (Func<ICommandContext, string>)(_ => GetVersion()));
-        commands.MapCommand("system.type", (Func<ICommandContext, string>)(_ => GetSystemType()));
-        commands.MapCommand("system.timezone", (Func<ICommandContext, string>)(_ => GetTimezone()));
+        commands.MapCommand("system.platform", (Func<ICommandContext, string>)(_ => GetPlatform()), CommandSecurity.Public());
+        commands.MapCommand("system.hostname", (Func<ICommandContext, string>)(_ => GetHostname()), CommandSecurity.Public());
+        commands.MapCommand("system.arch", (Func<ICommandContext, string>)(_ => GetArch()), CommandSecurity.Public());
+        commands.MapCommand("system.locale", (Func<ICommandContext, string>)(_ => GetLocale()), CommandSecurity.Public());
+        commands.MapCommand("system.version", (Func<ICommandContext, string>)(_ => GetVersion()), CommandSecurity.Public());
+        commands.MapCommand("system.type", (Func<ICommandContext, string>)(_ => GetSystemType()), CommandSecurity.Public());
+        commands.MapCommand("system.timezone", (Func<ICommandContext, string>)(_ => GetTimezone()), CommandSecurity.Public());
     }
 
     private static string GetPlatform() =>

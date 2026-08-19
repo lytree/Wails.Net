@@ -47,15 +47,15 @@ public class DpiScalePlugin : IPlugin
 
         // 查询当前缩放因子
         commands.MapCommand("dpi-scale.getScaleFactor", (Func<ICommandContext, float>)(ctx =>
-            GetWindowOrThrow(ctx).GetZoomLevel()));
+            GetWindowOrThrow(ctx).GetZoomLevel()), CommandSecurity.Public());
 
         // 设置缩放因子
         commands.MapCommand("dpi-scale.setZoomFactor", (Action<ICommandContext, DpiScaleZoomOptions>)((ctx, opts) =>
-            GetWindowOrThrow(ctx).SetZoomLevel(opts.Zoom)));
+            GetWindowOrThrow(ctx).SetZoomLevel(opts.Zoom)), CommandSecurity.Require("dpi-scale:allow-set"));
 
         // 重置缩放为默认值 1.0
         commands.MapCommand("dpi-scale.reset", (Action<ICommandContext>)(ctx =>
-            GetWindowOrThrow(ctx).SetZoomLevel(1.0f)));
+            GetWindowOrThrow(ctx).SetZoomLevel(1.0f)), CommandSecurity.Require("dpi-scale:allow-set"));
     }
 
     /// <summary>

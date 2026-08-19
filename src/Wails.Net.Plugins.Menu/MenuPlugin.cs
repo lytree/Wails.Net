@@ -47,14 +47,19 @@ public class MenuPlugin : IPlugin
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        // R3-B 权限声明：所有 menu 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("menu:default", "menu 默认权限集",
+            "menu:allow-default");
+        context.Permissions.DeclarePermission("menu:allow-default", "允许调用 menu 插件命令");
+
         var commands = context.Commands;
 
         // === 应用菜单 ===
         commands.MapCommand("menu.setApplicationMenu", (Action<ICommandContext, MenuApplicationMenuOptions>)((ctx, opts) =>
-            GetMenuManagerOrThrow(ctx).SetApplicationMenu(opts.Menu)));
+            GetMenuManagerOrThrow(ctx).SetApplicationMenu(opts.Menu)), CommandSecurity.Require("menu:allow-default"));
 
         commands.MapCommand("menu.getApplicationMenu", (Func<ICommandContext, MenuType?>)(ctx =>
-            GetMenuManagerOrThrow(ctx).GetApplicationMenu()));
+            GetMenuManagerOrThrow(ctx).GetApplicationMenu()), CommandSecurity.Require("menu:allow-default"));
 
         // === 上下文菜单注册 ===
         // menu.setContextMenu — 按 ID 注册上下文菜单到全局注册表
@@ -77,7 +82,7 @@ public class MenuPlugin : IPlugin
             }
 
             GetMenuManagerOrThrow(ctx).RegisterContextMenu(opts.Id, contextMenu);
-        }));
+        }), CommandSecurity.Require("menu:allow-default"));
 
         // === 上下文菜单弹窗 ===
         // menu.popup — 在指定窗口的 (X, Y) 坐标弹出已注册的上下文菜单
@@ -93,7 +98,7 @@ public class MenuPlugin : IPlugin
                 Data = opts.Data
             };
             window.OpenContextMenu(data);
-        }));
+        }), CommandSecurity.Require("menu:allow-default"));
 
         // === 菜单项更新 ===
         // menu.updateMenuItem — 按菜单项 ID 更新属性（label、enabled、checked、hidden 等）
@@ -109,7 +114,7 @@ public class MenuPlugin : IPlugin
             }
 
             ApplyMenuItemProperties(item, opts.Properties);
-        }));
+        }), CommandSecurity.Require("menu:allow-default"));
 
         // === 角色菜单项（MenuRole，对应 Wails v3 / Tauri v2 PredefinedMenuItem）===
         // menu.addRoleItem — 向指定父菜单追加一个角色菜单项，返回新菜单项 ID
@@ -121,28 +126,28 @@ public class MenuPlugin : IPlugin
                 ?? throw new InvalidOperationException($"找不到 ID 为 '{opts.ParentId}' 的父菜单项");
             var item = parent.AddRoleItem(opts.Role, opts.Label);
             return item.ID.ToString(CultureInfo.InvariantCulture);
-        }));
+        }), CommandSecurity.Require("menu:allow-default"));
 
         // menu.addStandardEditMenu — 向指定父菜单追加标准编辑菜单项（Undo/Redo/Sep/Cut/Copy/Paste/SelectAll）
         commands.MapCommand("menu.addStandardEditMenu", (Action<ICommandContext, MenuParentOptions>)((ctx, opts) =>
         {
             var parent = ResolveParentOrThrow(ctx, opts.ParentId);
             parent.AddStandardEditMenu();
-        }));
+        }), CommandSecurity.Require("menu:allow-default"));
 
         // menu.addStandardWindowMenu — 向指定父菜单追加标准窗口菜单项（Minimize/Maximize/Sep/CloseWindow）
         commands.MapCommand("menu.addStandardWindowMenu", (Action<ICommandContext, MenuParentOptions>)((ctx, opts) =>
         {
             var parent = ResolveParentOrThrow(ctx, opts.ParentId);
             parent.AddStandardWindowMenu();
-        }));
+        }), CommandSecurity.Require("menu:allow-default"));
 
         // menu.addStandardHelpMenu — 向指定父菜单追加标准帮助菜单项（About）
         commands.MapCommand("menu.addStandardHelpMenu", (Action<ICommandContext, MenuAddStandardHelpOptions>)((ctx, opts) =>
         {
             var parent = ResolveParentOrThrow(ctx, opts.ParentId);
             parent.AddStandardHelpMenu(opts.Metadata, opts.Label);
-        }));
+        }), CommandSecurity.Require("menu:allow-default"));
     }
 
     /// <summary>

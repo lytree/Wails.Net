@@ -34,6 +34,13 @@ public class DialogPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B 权限声明：所有 dialog 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("dialog:default", "dialog 默认权限集",
+            "dialog:allow-open");
+        context.Permissions.DeclarePermission("dialog:allow-open", "允许调用 dialog 插件命令");
+
         // 声明权限集
         context.Permissions.RegisterPermissionSet("dialog:default", "对话框默认权限集",
             "dialog:allow-open", "dialog:allow-save", "dialog:allow-message");
@@ -52,7 +59,7 @@ public class DialogPlugin : IPlugin
             }
 
             return await dialog.ShowMessageDialog(title, message, DialogStyle.Info, ["OK"]);
-        }));
+        }), CommandSecurity.Require("dialog:allow-open"));
 
         // 消息对话框：警告
         context.Commands.MapCommandAsync("dialog.warning",
@@ -65,7 +72,7 @@ public class DialogPlugin : IPlugin
             }
 
             return await dialog.ShowMessageDialog(title, message, DialogStyle.Warning, ["OK"]);
-        }));
+        }), CommandSecurity.Require("dialog:allow-open"));
 
         // 消息对话框：错误
         context.Commands.MapCommandAsync("dialog.error",
@@ -78,7 +85,7 @@ public class DialogPlugin : IPlugin
             }
 
             return await dialog.ShowMessageDialog(title, message, DialogStyle.Error, ["OK"]);
-        }));
+        }), CommandSecurity.Require("dialog:allow-open"));
 
         // 消息对话框：询问
         context.Commands.MapCommandAsync("dialog.question",
@@ -91,7 +98,7 @@ public class DialogPlugin : IPlugin
             }
 
             return await dialog.ShowMessageDialog(title, message, DialogStyle.Question, ["Yes", "No"]);
-        }));
+        }), CommandSecurity.Require("dialog:allow-open"));
 
         // 打开文件对话框
         context.Commands.MapCommandAsync("dialog.openFile",
@@ -111,7 +118,7 @@ public class DialogPlugin : IPlugin
                 AllowFiles = true
             };
             return await dialog.OpenFileDialog(options);
-        }));
+        }), CommandSecurity.Require("dialog:allow-open"));
 
         // 保存文件对话框
         context.Commands.MapCommandAsync("dialog.saveFile",
@@ -132,7 +139,7 @@ public class DialogPlugin : IPlugin
                 CreateDirectories = true
             };
             return await dialog.SaveFileDialog(options);
-        }));
+        }), CommandSecurity.Require("dialog:allow-open"));
 
         // 打开多文件选择对话框
         context.Commands.MapCommandAsync("dialog.openMultipleFiles",
@@ -153,7 +160,7 @@ public class DialogPlugin : IPlugin
                 CanChooseMultiple = true
             };
             return await dialog.OpenMultipleFilesDialog(options);
-        }));
+        }), CommandSecurity.Require("dialog:allow-open"));
     }
 
     /// <summary>

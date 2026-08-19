@@ -41,6 +41,13 @@ public class WindowPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B 权限声明：所有 window 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("window:default", "window 默认权限集",
+            "window:allow-create");
+        context.Permissions.DeclarePermission("window:allow-create", "允许调用 window 插件命令");
+
         var commands = context.Commands;
 
         // === 权限声明（对齐 Tauri v2 window 插件权限模型） ===
@@ -55,35 +62,35 @@ public class WindowPlugin : IPlugin
 
         // === 标题与尺寸 ===
         commands.MapCommand("window.setTitle", (Action<ICommandContext, WindowSetTitleOptions>)((ctx, opts) =>
-            GetWindowOrThrow(ctx).SetTitle(opts.Title)));
+            GetWindowOrThrow(ctx).SetTitle(opts.Title)), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.setSize", (Action<ICommandContext, WindowSizeOptions>)((ctx, opts) =>
-            GetWindowOrThrow(ctx).SetSize(opts.Width, opts.Height)));
+            GetWindowOrThrow(ctx).SetSize(opts.Width, opts.Height)), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.setMinSize", (Action<ICommandContext, WindowSizeOptions>)((ctx, opts) =>
-            GetWindowOrThrow(ctx).SetMinSize(opts.Width, opts.Height)));
+            GetWindowOrThrow(ctx).SetMinSize(opts.Width, opts.Height)), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.setMaxSize", (Action<ICommandContext, WindowSizeOptions>)((ctx, opts) =>
-            GetWindowOrThrow(ctx).SetMaxSize(opts.Width, opts.Height)));
+            GetWindowOrThrow(ctx).SetMaxSize(opts.Width, opts.Height)), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.setPosition", (Action<ICommandContext, WindowPositionOptions>)((ctx, opts) =>
-            GetWindowOrThrow(ctx).SetPosition(opts.X, opts.Y)));
+            GetWindowOrThrow(ctx).SetPosition(opts.X, opts.Y)), CommandSecurity.Require("window:allow-create"));
 
         // === 显示/隐藏/状态 ===
-        commands.MapCommand("window.close", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).Close()));
-        commands.MapCommand("window.minimize", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).Minimise()));
-        commands.MapCommand("window.maximize", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).Maximise()));
-        commands.MapCommand("window.unminimize", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).UnMinimise()));
-        commands.MapCommand("window.unmaximize", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).UnMaximise()));
-        commands.MapCommand("window.show", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).Show()));
-        commands.MapCommand("window.hide", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).Hide()));
-        commands.MapCommand("window.centre", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).Centre()));
-        commands.MapCommand("window.restore", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).Restore()));
-        commands.MapCommand("window.focus", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).Focus()));
+        commands.MapCommand("window.close", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).Close()), CommandSecurity.Require("window:allow-create"));
+        commands.MapCommand("window.minimize", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).Minimise()), CommandSecurity.Require("window:allow-create"));
+        commands.MapCommand("window.maximize", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).Maximise()), CommandSecurity.Require("window:allow-create"));
+        commands.MapCommand("window.unminimize", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).UnMinimise()), CommandSecurity.Require("window:allow-create"));
+        commands.MapCommand("window.unmaximize", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).UnMaximise()), CommandSecurity.Require("window:allow-create"));
+        commands.MapCommand("window.show", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).Show()), CommandSecurity.Require("window:allow-create"));
+        commands.MapCommand("window.hide", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).Hide()), CommandSecurity.Require("window:allow-create"));
+        commands.MapCommand("window.centre", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).Centre()), CommandSecurity.Require("window:allow-create"));
+        commands.MapCommand("window.restore", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).Restore()), CommandSecurity.Require("window:allow-create"));
+        commands.MapCommand("window.focus", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).Focus()), CommandSecurity.Require("window:allow-create"));
 
         // === 全屏与置顶 ===
         commands.MapCommand("window.setAlwaysOnTop", (Action<ICommandContext, WindowBoolOptions>)((ctx, opts) =>
-            GetWindowOrThrow(ctx).SetAlwaysOnTop(opts.OnTop)));
+            GetWindowOrThrow(ctx).SetAlwaysOnTop(opts.OnTop)), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.setFullscreen", (Action<ICommandContext, WindowFullscreenOptions>)((ctx, opts) =>
         {
@@ -96,119 +103,119 @@ public class WindowPlugin : IPlugin
             {
                 window.UnFullscreen();
             }
-        }));
+        }), CommandSecurity.Require("window:allow-create"));
 
-        commands.MapCommand("window.unfullscreen", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).UnFullscreen()));
+        commands.MapCommand("window.unfullscreen", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).UnFullscreen()), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.setFrameless", (Action<ICommandContext, WindowFramelessOptions>)((ctx, opts) =>
-            GetWindowOrThrow(ctx).SetFrameless(opts.Frameless)));
+            GetWindowOrThrow(ctx).SetFrameless(opts.Frameless)), CommandSecurity.Require("window:allow-create"));
 
         // === DevTools ===
-        commands.MapCommand("window.openDevTools", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).OpenDevTools()));
-        commands.MapCommand("window.closeDevTools", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).CloseDevTools()));
+        commands.MapCommand("window.openDevTools", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).OpenDevTools()), CommandSecurity.Require("window:allow-create"));
+        commands.MapCommand("window.closeDevTools", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).CloseDevTools()), CommandSecurity.Require("window:allow-create"));
 
         // === 缩放 ===
         commands.MapCommand("window.setZoom", (Action<ICommandContext, WindowZoomOptions>)((ctx, opts) =>
-            GetWindowOrThrow(ctx).SetZoom(opts.Zoom)));
+            GetWindowOrThrow(ctx).SetZoom(opts.Zoom)), CommandSecurity.Require("window:allow-create"));
 
-        commands.MapCommand("window.zoomIn", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).ZoomIn()));
-        commands.MapCommand("window.zoomOut", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).ZoomOut()));
-        commands.MapCommand("window.zoomReset", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).ZoomReset()));
+        commands.MapCommand("window.zoomIn", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).ZoomIn()), CommandSecurity.Require("window:allow-create"));
+        commands.MapCommand("window.zoomOut", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).ZoomOut()), CommandSecurity.Require("window:allow-create"));
+        commands.MapCommand("window.zoomReset", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).ZoomReset()), CommandSecurity.Require("window:allow-create"));
 
         // === 导航 ===
-        commands.MapCommand("window.goBack", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).GoBack()));
-        commands.MapCommand("window.goForward", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).GoForward()));
-        commands.MapCommand("window.reload", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).Reload()));
+        commands.MapCommand("window.goBack", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).GoBack()), CommandSecurity.Require("window:allow-create"));
+        commands.MapCommand("window.goForward", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).GoForward()), CommandSecurity.Require("window:allow-create"));
+        commands.MapCommand("window.reload", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).Reload()), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.setURL", (Action<ICommandContext, WindowSetUrlOptions>)((ctx, opts) =>
-            GetWindowOrThrow(ctx).SetURL(opts.Url)));
+            GetWindowOrThrow(ctx).SetURL(opts.Url)), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.setHTML", (Action<ICommandContext, WindowSetHtmlOptions>)((ctx, opts) =>
-            GetWindowOrThrow(ctx).SetHTML(opts.Html)));
+            GetWindowOrThrow(ctx).SetHTML(opts.Html)), CommandSecurity.Require("window:allow-create"));
 
         // === 打印与导出 ===
-        commands.MapCommand("window.print", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).Print()));
+        commands.MapCommand("window.print", (Action<ICommandContext>)(ctx => GetWindowOrThrow(ctx).Print()), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.printToPDF", (Action<ICommandContext, WindowPrintToPdfOptions>)((ctx, opts) =>
-            GetWindowOrThrow(ctx).PrintToPDF(opts.Path, opts.Options)));
+            GetWindowOrThrow(ctx).PrintToPDF(opts.Path, opts.Options)), CommandSecurity.Require("window:allow-create"));
 
         // === 执行 JS 与注入 CSS ===
         commands.MapCommand("window.execJS", (Action<ICommandContext, WindowExecJsOptions>)((ctx, opts) =>
-            GetWindowOrThrow(ctx).ExecJS(opts.Js)));
+            GetWindowOrThrow(ctx).ExecJS(opts.Js)), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.injectCSS", (Action<ICommandContext, WindowInjectCssOptions>)((ctx, opts) =>
-            GetWindowOrThrow(ctx).InjectCSS(opts.Css)));
+            GetWindowOrThrow(ctx).InjectCSS(opts.Css)), CommandSecurity.Require("window:allow-create"));
 
         // === 透明度 ===
         commands.MapCommand("window.setOpacity", (Action<ICommandContext, WindowOpacityOptions>)((ctx, opts) =>
-            GetWindowOrThrow(ctx).SetOpacity(opts.Opacity)));
+            GetWindowOrThrow(ctx).SetOpacity(opts.Opacity)), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.getOpacity", (Func<ICommandContext, float>)(ctx =>
-            GetWindowOrThrow(ctx).GetOpacity()));
+            GetWindowOrThrow(ctx).GetOpacity()), CommandSecurity.Require("window:allow-create"));
 
         // === 可调整大小 ===
         commands.MapCommand("window.setResizable", (Action<ICommandContext, WindowResizableOptions>)((ctx, opts) =>
-            GetWindowOrThrow(ctx).SetResizable(opts.Resizable)));
+            GetWindowOrThrow(ctx).SetResizable(opts.Resizable)), CommandSecurity.Require("window:allow-create"));
 
         // === 自定义协议 ===
         commands.MapCommand("window.registerCustomScheme", (Action<ICommandContext, WindowSchemeOptions>)((ctx, opts) =>
-            GetWindowOrThrow(ctx).RegisterCustomScheme(opts.Scheme)));
+            GetWindowOrThrow(ctx).RegisterCustomScheme(opts.Scheme)), CommandSecurity.Require("window:allow-create"));
 
         // === 任务栏 ===
         commands.MapCommand("window.setSkipTaskbar", (Action<ICommandContext, WindowSkipOptions>)((ctx, opts) =>
-            GetWindowOrThrow(ctx).SetSkipTaskbar(opts.Skip)));
+            GetWindowOrThrow(ctx).SetSkipTaskbar(opts.Skip)), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.setIgnoreCursorEvents", (Action<ICommandContext, WindowIgnoreOptions>)((ctx, opts) =>
-            GetWindowOrThrow(ctx).SetIgnoreCursorEvents(opts.Ignore)));
+            GetWindowOrThrow(ctx).SetIgnoreCursorEvents(opts.Ignore)), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.setBadgeCount", (Action<ICommandContext, WindowBadgeCountOptions>)((ctx, opts) =>
-            GetWindowOrThrow(ctx).SetBadgeCount(opts.Count)));
+            GetWindowOrThrow(ctx).SetBadgeCount(opts.Count)), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.setBadgeLabel", (Action<ICommandContext, WindowBadgeLabelOptions>)((ctx, opts) =>
-            GetWindowOrThrow(ctx).SetBadgeLabel(opts.Label)));
+            GetWindowOrThrow(ctx).SetBadgeLabel(opts.Label)), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.setVisibleOnAllWorkspaces", (Action<ICommandContext, WindowVisibleOptions>)((ctx, opts) =>
-            GetWindowOrThrow(ctx).SetVisibleOnAllWorkspaces(opts.Visible)));
+            GetWindowOrThrow(ctx).SetVisibleOnAllWorkspaces(opts.Visible)), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.setBorderColor", (Action<ICommandContext, WindowBorderColorOptions>)((ctx, opts) =>
-            GetWindowOrThrow(ctx).SetBorderColor(opts.Color)));
+            GetWindowOrThrow(ctx).SetBorderColor(opts.Color)), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.setFileDropEnabled", (Action<ICommandContext, WindowEnabledOptions>)((ctx, opts) =>
-            GetWindowOrThrow(ctx).SetFileDropEnabled(opts.Enabled)));
+            GetWindowOrThrow(ctx).SetFileDropEnabled(opts.Enabled)), CommandSecurity.Require("window:allow-create"));
 
         // === 查询类操作（有返回值） ===
         commands.MapCommand("window.getSize", (Func<ICommandContext, WindowSizeResult>)(ctx =>
         {
             var (width, height) = GetWindowOrThrow(ctx).GetSize();
             return new WindowSizeResult { Width = width, Height = height };
-        }));
+        }), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.getPosition", (Func<ICommandContext, WindowPositionResult>)(ctx =>
         {
             var (x, y) = GetWindowOrThrow(ctx).GetPosition();
             return new WindowPositionResult { X = x, Y = y };
-        }));
+        }), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.getURL", (Func<ICommandContext, string>)(ctx =>
-            GetWindowOrThrow(ctx).GetURL()));
+            GetWindowOrThrow(ctx).GetURL()), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.getZoom", (Func<ICommandContext, float>)(ctx =>
-            GetWindowOrThrow(ctx).GetZoom()));
+            GetWindowOrThrow(ctx).GetZoom()), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.isFullscreen", (Func<ICommandContext, bool>)(ctx =>
-            GetWindowOrThrow(ctx).IsFullscreen()));
+            GetWindowOrThrow(ctx).IsFullscreen()), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.isMaximised", (Func<ICommandContext, bool>)(ctx =>
-            GetWindowOrThrow(ctx).IsMaximised()));
+            GetWindowOrThrow(ctx).IsMaximised()), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.isMinimised", (Func<ICommandContext, bool>)(ctx =>
-            GetWindowOrThrow(ctx).IsMinimised()));
+            GetWindowOrThrow(ctx).IsMinimised()), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.isVisible", (Func<ICommandContext, bool>)(ctx =>
-            GetWindowOrThrow(ctx).IsVisible()));
+            GetWindowOrThrow(ctx).IsVisible()), CommandSecurity.Require("window:allow-create"));
 
         commands.MapCommand("window.isFocused", (Func<ICommandContext, bool>)(ctx =>
-            GetWindowOrThrow(ctx).IsFocused()));
+            GetWindowOrThrow(ctx).IsFocused()), CommandSecurity.Require("window:allow-create"));
     }
 
     /// <summary>

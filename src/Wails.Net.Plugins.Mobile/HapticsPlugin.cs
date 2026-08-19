@@ -40,6 +40,11 @@ public class HapticsPlugin : IPlugin
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        // R3-B 权限声明：所有 mobile 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("mobile:default", "mobile 默认权限集",
+            "mobile:allow-default");
+        context.Permissions.DeclarePermission("mobile:allow-default", "允许调用 mobile 插件命令");
+
         context.Permissions.RegisterPermissionSet("haptics:default", "震动反馈默认权限集",
             "haptics:allow-vibrate", "haptics:allow-cancel", "haptics:allow-notify");
         context.Permissions.DeclarePermission("haptics:allow-vibrate", "允许触发震动");
@@ -51,16 +56,16 @@ public class HapticsPlugin : IPlugin
         // 触发震动
         commands.MapCommand("haptics.vibrate",
             (Action<ICommandContext, HapticsVibrateOptions>)((ctx, opts) =>
-                ResolveHaptics(ctx).Vibrate(opts.Duration)));
+                ResolveHaptics(ctx).Vibrate(opts.Duration)), CommandSecurity.Require("mobile:allow-default"));
 
         // 取消震动
         commands.MapCommand("haptics.cancel",
-            (Action<ICommandContext>)(ctx => ResolveHaptics(ctx).Cancel()));
+            (Action<ICommandContext>)(ctx => ResolveHaptics(ctx).Cancel()), CommandSecurity.Require("mobile:allow-default"));
 
         // 触发通知震动
         commands.MapCommand("haptics.notification",
             (Action<ICommandContext, HapticsNotificationOptions>)((ctx, opts) =>
-                ResolveHaptics(ctx).Notify(opts.Type)));
+                ResolveHaptics(ctx).Notify(opts.Type)), CommandSecurity.Require("mobile:allow-default"));
     }
 
     /// <summary>

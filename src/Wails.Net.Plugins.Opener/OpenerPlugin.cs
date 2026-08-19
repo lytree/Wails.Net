@@ -96,20 +96,27 @@ public class OpenerPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B 权限声明：所有 opener 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("opener:default", "opener 默认权限集",
+            "opener:allow-open");
+        context.Permissions.DeclarePermission("opener:allow-open", "允许调用 opener 插件命令");
+
         context.Commands.MapCommand("opener.openUrl", (Func<string, string?, bool>)((url, target) =>
-            OpenUrl(url, target)));
+            OpenUrl(url, target)), CommandSecurity.Require("opener:allow-open"));
 
         context.Commands.MapCommand("opener.openPath", (Func<string, string?, bool>)((path, target) =>
-            OpenPath(path, target)));
+            OpenPath(path, target)), CommandSecurity.Require("opener:allow-open"));
 
         context.Commands.MapCommand("opener.revealInFolder", (Action<string>)(path =>
-            RevealInFolder(path)));
+            RevealInFolder(path)), CommandSecurity.Require("opener:allow-open"));
 
         context.Commands.MapCommand("opener.isUrlAllowed", (Func<string, bool>)(url =>
-            IsUrlAllowed(url)));
+            IsUrlAllowed(url)), CommandSecurity.Require("opener:allow-open"));
 
         context.Commands.MapCommand("opener.verifyUrl", (Func<string, string?>)(url =>
-            VerifyUrl(url)));
+            VerifyUrl(url)), CommandSecurity.Require("opener:allow-open"));
     }
 
     /// <summary>

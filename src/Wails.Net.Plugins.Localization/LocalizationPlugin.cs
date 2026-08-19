@@ -47,26 +47,37 @@ public class LocalizationPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // 声明权限：set-locale / register-translations 是写操作，需要显式 Require；
+        // 其余命令（get / translate）只读，标记 Public。
+        context.Permissions.RegisterPermissionSet("localization:default", "本地化默认权限集",
+            "localization:allow-set-locale", "localization:allow-register-translations");
+        context.Permissions.DeclarePermission("localization:allow-set-locale", "允许设置当前 locale");
+        context.Permissions.DeclarePermission("localization:allow-register-translations", "允许注册翻译资源");
+
         // 设置当前 locale
         context.Commands.MapCommand("localization.setLocale",
-            (Action<string>)(locale => SetLocale(locale)));
+            (Action<string>)(locale => SetLocale(locale)),
+            CommandSecurity.Require("localization:allow-set-locale"));
 
         // 获取当前 locale
         context.Commands.MapCommand("localization.getLocale",
-            (Func<string>)(() => _currentLocale));
+            (Func<string>)(() => _currentLocale), CommandSecurity.Public());
 
         // 翻译指定 key
         context.Commands.MapCommand("localization.t",
-            (Func<string, string?, string>)((key, paramsJson) => Translate(key, paramsJson)));
+            (Func<string, string?, string>)((key, paramsJson) => Translate(key, paramsJson)), CommandSecurity.Public());
 
         // 注册翻译资源
         context.Commands.MapCommand("localization.registerTranslations",
             (Action<string, string>)((locale, translationsJson) =>
-                RegisterTranslations(locale, translationsJson)));
+                RegisterTranslations(locale, translationsJson)),
+            CommandSecurity.Require("localization:allow-register-translations"));
 
         // 获取已注册的所有 locale
         context.Commands.MapCommand("localization.getAvailableLocales",
-            (Func<string[]>)(() => _translations.Keys.ToArray()));
+            (Func<string[]>)(() => _translations.Keys.ToArray()), CommandSecurity.Public());
     }
 
     /// <summary>

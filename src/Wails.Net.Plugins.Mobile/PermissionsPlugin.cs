@@ -39,6 +39,11 @@ public class PermissionsPlugin : IPlugin
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        // R3-B 权限声明：所有 mobile 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("mobile:default", "mobile 默认权限集",
+            "mobile:allow-default");
+        context.Permissions.DeclarePermission("mobile:allow-default", "允许调用 mobile 插件命令");
+
         context.Permissions.RegisterPermissionSet("permissions:default", "权限插件默认权限集",
             "permissions:allow-check", "permissions:allow-request");
         context.Permissions.DeclarePermission("permissions:allow-check", "允许检查权限状态");
@@ -49,12 +54,12 @@ public class PermissionsPlugin : IPlugin
         // 检查权限状态
         commands.MapCommand("permissions.check",
             (Func<ICommandContext, string, Task<string>>)((ctx, permission) =>
-                ResolvePermissions(ctx).CheckAsync(permission)));
+                ResolvePermissions(ctx).CheckAsync(permission)), CommandSecurity.Require("mobile:allow-default"));
 
         // 请求一组权限（CancellationToken 由 ICommandContext 提供，不作为 JSON 参数暴露给前端）
         commands.MapCommand("permissions.request",
             (Func<ICommandContext, string[], Task<PermissionRequestResult[]>>)((ctx, perms) =>
-                ResolvePermissions(ctx).RequestAsync(perms, ctx.CancellationToken)));
+                ResolvePermissions(ctx).RequestAsync(perms, ctx.CancellationToken)), CommandSecurity.Require("mobile:allow-default"));
     }
 
     /// <summary>

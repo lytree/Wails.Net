@@ -30,43 +30,43 @@ public class PathPlugin : IPlugin
     public void Configure(IPluginContext context)
     {
         context.Commands.MapCommand("path.appDataDir", (Func<ICommandContext, string>)(ctx =>
-            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppName)));
+            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppName)), CommandSecurity.Public());
 
         context.Commands.MapCommand("path.appConfigDir", (Func<ICommandContext, string>)(ctx =>
             OperatingSystem.IsWindows()
                 ? System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppName)
-                : System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", AppName)));
+                : System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", AppName)), CommandSecurity.Public());
 
         context.Commands.MapCommand("path.appLogDir", (Func<ICommandContext, string>)(ctx =>
-            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppName, "logs")));
+            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppName, "logs")), CommandSecurity.Public());
 
         context.Commands.MapCommand("path.appCacheDir", (Func<ICommandContext, string>)(ctx =>
-            System.IO.Path.Combine(System.IO.Path.GetTempPath(), AppName)));
+            System.IO.Path.Combine(System.IO.Path.GetTempPath(), AppName)), CommandSecurity.Public());
 
         context.Commands.MapCommand("path.downloadDir", (Func<ICommandContext, string>)(ctx =>
         {
             var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             var downloads = System.IO.Path.Combine(profile, "Downloads");
             return Directory.Exists(downloads) ? downloads : profile;
-        }));
+        }), CommandSecurity.Public());
 
         context.Commands.MapCommand("path.documentDir", (Func<ICommandContext, string>)(ctx =>
-            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)));
+            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)), CommandSecurity.Public());
 
         context.Commands.MapCommand("path.homeDir", (Func<ICommandContext, string>)(ctx =>
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)));
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)), CommandSecurity.Public());
 
         context.Commands.MapCommand("path.tempDir", (Func<ICommandContext, string>)(ctx =>
-            System.IO.Path.GetTempPath()));
+            System.IO.Path.GetTempPath()), CommandSecurity.Public());
 
         context.Commands.MapCommand("path.configDir", (Func<ICommandContext, string>)(ctx =>
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)));
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)), CommandSecurity.Public());
 
         context.Commands.MapCommand("path.dataDir", (Func<ICommandContext, string>)(ctx =>
-            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppName)));
+            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppName)), CommandSecurity.Public());
 
         context.Commands.MapCommand("path.runtimeDir", (Func<ICommandContext, string>)(ctx =>
-            System.IO.Path.GetTempPath()));
+            System.IO.Path.GetTempPath()), CommandSecurity.Public());
     }
 
     /// <summary>

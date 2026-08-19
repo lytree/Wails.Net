@@ -40,6 +40,13 @@ public class CookiePlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B 权限声明：所有 cookie 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("cookie:default", "cookie 默认权限集",
+            "cookie:allow-default");
+        context.Permissions.DeclarePermission("cookie:allow-default", "允许调用 cookie 插件命令");
+
         context.Commands.MapCommandAsync("cookie.get", (Func<ICommandContext, string, Task<string>>)(async (ctx, url) =>
         {
             await Task.CompletedTask;
@@ -47,7 +54,7 @@ public class CookiePlugin : IPlugin
             // url 参数保留用于未来按 URL 过滤的扩展，当前实现忽略。
             var dict = new Dictionary<string, string>(_cookies);
             return JsonSerializer.Serialize(dict);
-        }));
+        }), CommandSecurity.Require("cookie:allow-default"));
 
         context.Commands.MapCommandAsync("cookie.set", (Func<ICommandContext, string, string, Task<bool>>)(async (ctx, name, value) =>
         {
@@ -63,7 +70,7 @@ public class CookiePlugin : IPlugin
             window.ExecJS($"document.cookie = '{name}={value}; path=/'");
             await Task.CompletedTask;
             return true;
-        }));
+        }), CommandSecurity.Require("cookie:allow-default"));
 
         context.Commands.MapCommandAsync("cookie.delete", (Func<ICommandContext, string, Task<bool>>)(async (ctx, name) =>
         {
@@ -79,7 +86,7 @@ public class CookiePlugin : IPlugin
             window.ExecJS($"document.cookie = '{name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/'");
             await Task.CompletedTask;
             return true;
-        }));
+        }), CommandSecurity.Require("cookie:allow-default"));
 
         context.Commands.MapCommandAsync("cookie.clear", (Func<ICommandContext, Task<bool>>)(async (ctx) =>
         {
@@ -101,7 +108,7 @@ public class CookiePlugin : IPlugin
             """);
             await Task.CompletedTask;
             return true;
-        }));
+        }), CommandSecurity.Require("cookie:allow-default"));
     }
 
     /// <summary>

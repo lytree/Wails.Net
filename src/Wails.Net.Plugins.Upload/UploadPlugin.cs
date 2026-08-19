@@ -40,33 +40,40 @@ public class UploadPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B 权限声明：所有 upload 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("upload:default", "upload 默认权限集",
+            "upload:allow-default");
+        context.Permissions.DeclarePermission("upload:allow-default", "允许调用 upload 插件命令");
+
         // 下载文件到本地路径
         context.Commands.MapCommand("upload.download",
             (Func<ICommandContext, string, string, Task<bool>>)(async (ctx, url, path) =>
         {
             return await DownloadFileAsync(url, path);
-        }));
+        }), CommandSecurity.Require("upload:allow-default"));
 
         // 上传本地文件到 URL
         context.Commands.MapCommand("upload.upload",
             (Func<ICommandContext, string, string, Task<bool>>)(async (ctx, url, filePath) =>
         {
             return await UploadFileAsync(url, filePath);
-        }));
+        }), CommandSecurity.Require("upload:allow-default"));
 
         // 下载文件到本地路径（带进度回调）
         context.Commands.MapCommand("upload.downloadWithProgress",
             (Func<ICommandContext, string, string, Task<bool>>)(async (ctx, url, path) =>
         {
             return await DownloadWithProgressAsync(url, path);
-        }));
+        }), CommandSecurity.Require("upload:allow-default"));
 
         // 上传本地文件到 URL（带进度回调）
         context.Commands.MapCommand("upload.uploadWithProgress",
             (Func<ICommandContext, string, string, Task<bool>>)(async (ctx, url, filePath) =>
         {
             return await UploadWithProgressAsync(url, filePath);
-        }));
+        }), CommandSecurity.Require("upload:allow-default"));
     }
 
     /// <summary>

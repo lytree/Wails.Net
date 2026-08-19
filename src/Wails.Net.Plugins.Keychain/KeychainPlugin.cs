@@ -42,13 +42,20 @@ public class KeychainPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B 权限声明：所有 keychain 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("keychain:default", "keychain 默认权限集",
+            "keychain:allow-default");
+        context.Permissions.DeclarePermission("keychain:allow-default", "允许调用 keychain 插件命令");
+
         // 设置密码：keychain.setPassword(service, account, password)
         context.Commands.MapCommand("keychain.setPassword",
             (Func<string, string, string, bool>)((service, account, password) =>
             {
                 if (Keychain is null) return false;
                 return Keychain.SetPassword(service, account, password);
-            }));
+            }), CommandSecurity.Require("keychain:allow-default"));
 
         // 读取密码：keychain.getPassword(service, account) -> string?
         context.Commands.MapCommand("keychain.getPassword",
@@ -56,7 +63,7 @@ public class KeychainPlugin : IPlugin
             {
                 if (Keychain is null) return null;
                 return Keychain.GetPassword(service, account);
-            }));
+            }), CommandSecurity.Require("keychain:allow-default"));
 
         // 删除密码：keychain.deletePassword(service, account) -> bool
         context.Commands.MapCommand("keychain.deletePassword",
@@ -64,6 +71,6 @@ public class KeychainPlugin : IPlugin
             {
                 if (Keychain is null) return false;
                 return Keychain.DeletePassword(service, account);
-            }));
+            }), CommandSecurity.Require("keychain:allow-default"));
     }
 }

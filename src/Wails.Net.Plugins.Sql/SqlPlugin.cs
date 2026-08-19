@@ -32,6 +32,13 @@ public class SqlPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B 权限声明：所有 sql 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("sql:default", "sql 默认权限集",
+            "sql:allow-default");
+        context.Permissions.DeclarePermission("sql:allow-default", "允许调用 sql 插件命令");
+
         // 声明权限集
         context.Permissions.RegisterPermissionSet("sql:default", "SQL 数据库默认权限集",
             "sql:allow-execute", "sql:allow-select");
@@ -56,7 +63,7 @@ public class SqlPlugin : IPlugin
             {
                 return 0;
             }
-        }));
+        }), CommandSecurity.Require("sql:allow-default"));
 
         // 执行查询 SQL（SELECT），返回行列表
         context.Commands.MapCommandAsync("sqlite.query",
@@ -77,7 +84,7 @@ public class SqlPlugin : IPlugin
             {
                 return "[]";
             }
-        }));
+        }), CommandSecurity.Require("sql:allow-default"));
 
         // 执行标量查询，返回第一行第一列的值
         context.Commands.MapCommandAsync("sqlite.scalar",
@@ -98,7 +105,7 @@ public class SqlPlugin : IPlugin
             {
                 return "null";
             }
-        }));
+        }), CommandSecurity.Require("sql:allow-default"));
 
         // 创建表
         context.Commands.MapCommandAsync("sqlite.createTable",
@@ -124,7 +131,7 @@ public class SqlPlugin : IPlugin
             {
                 return 0;
             }
-        }));
+        }), CommandSecurity.Require("sql:allow-default"));
 
         // 删除表
         context.Commands.MapCommandAsync("sqlite.dropTable",
@@ -144,7 +151,7 @@ public class SqlPlugin : IPlugin
             {
                 return 0;
             }
-        }));
+        }), CommandSecurity.Require("sql:allow-default"));
 
         // 获取所有表名
         context.Commands.MapCommandAsync("sqlite.getTables",
@@ -165,7 +172,7 @@ public class SqlPlugin : IPlugin
             {
                 return "[]";
             }
-        }));
+        }), CommandSecurity.Require("sql:allow-default"));
 
         // 插入数据
         context.Commands.MapCommandAsync("sqlite.insert",
@@ -191,7 +198,7 @@ public class SqlPlugin : IPlugin
             {
                 return 0;
             }
-        }));
+        }), CommandSecurity.Require("sql:allow-default"));
 
         // 更新数据
         context.Commands.MapCommandAsync("sqlite.update",
@@ -217,7 +224,7 @@ public class SqlPlugin : IPlugin
             {
                 return 0;
             }
-        }));
+        }), CommandSecurity.Require("sql:allow-default"));
 
         // 删除数据
         context.Commands.MapCommandAsync("sqlite.delete",
@@ -237,7 +244,7 @@ public class SqlPlugin : IPlugin
             {
                 return 0;
             }
-        }));
+        }), CommandSecurity.Require("sql:allow-default"));
 
         // 查询数据
         context.Commands.MapCommandAsync("sqlite.select",
@@ -264,6 +271,6 @@ public class SqlPlugin : IPlugin
             {
                 return "[]";
             }
-        }));
+        }), CommandSecurity.Require("sql:allow-default"));
     }
 }

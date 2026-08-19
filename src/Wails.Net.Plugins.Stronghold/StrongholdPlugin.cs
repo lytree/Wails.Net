@@ -53,13 +53,20 @@ public class StrongholdPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B 权限声明：所有 stronghold 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("stronghold:default", "stronghold 默认权限集",
+            "stronghold:allow-default");
+        context.Permissions.DeclarePermission("stronghold:allow-default", "允许调用 stronghold 插件命令");
+
         // 解锁或创建金库
         context.Commands.MapCommand("stronghold.unlock", (Func<string, string?, bool>)((password, vaultPath) =>
         {
             var path = string.IsNullOrEmpty(vaultPath) ? DefaultVaultPath : vaultPath;
             var vault = _vaults.GetOrAdd(path, _ => new StrongholdVault(path));
             return vault.Unlock(password, Pbkdf2Iterations);
-        }));
+        }), CommandSecurity.Require("stronghold:allow-default"));
 
         // 锁定金库（清除内存中的密钥）
         context.Commands.MapCommand("stronghold.lock", (Action<string?>)((vaultPath) =>
@@ -69,7 +76,7 @@ public class StrongholdPlugin : IPlugin
             {
                 vault.Lock();
             }
-        }));
+        }), CommandSecurity.Require("stronghold:allow-default"));
 
         // 保存加密秘密
         context.Commands.MapCommand("stronghold.saveSecret", (Func<string, string, string?, bool>)((key, value, vaultPath) =>
@@ -80,7 +87,7 @@ public class StrongholdPlugin : IPlugin
                 return false;
             }
             return vault.SetSecret(key, value);
-        }));
+        }), CommandSecurity.Require("stronghold:allow-default"));
 
         // 获取解密秘密
         context.Commands.MapCommand("stronghold.getSecret", (Func<string, string?, string?>)((key, vaultPath) =>
@@ -91,7 +98,7 @@ public class StrongholdPlugin : IPlugin
                 return null;
             }
             return vault.GetSecret(key);
-        }));
+        }), CommandSecurity.Require("stronghold:allow-default"));
 
         // 删除秘密
         context.Commands.MapCommand("stronghold.deleteSecret", (Func<string, string?, bool>)((key, vaultPath) =>
@@ -102,7 +109,7 @@ public class StrongholdPlugin : IPlugin
                 return false;
             }
             return vault.DeleteSecret(key);
-        }));
+        }), CommandSecurity.Require("stronghold:allow-default"));
 
         // 列出所有秘密键
         context.Commands.MapCommand("stronghold.listKeys", (Func<string?, string[]?>)((vaultPath) =>
@@ -113,14 +120,14 @@ public class StrongholdPlugin : IPlugin
                 return null;
             }
             return vault.ListKeys();
-        }));
+        }), CommandSecurity.Require("stronghold:allow-default"));
 
         // 检查金库是否已解锁
         context.Commands.MapCommand("stronghold.isUnlocked", (Func<string?, bool>)((vaultPath) =>
         {
             var path = string.IsNullOrEmpty(vaultPath) ? DefaultVaultPath : vaultPath;
             return _vaults.TryGetValue(path, out var vault) && vault.IsUnlocked;
-        }));
+        }), CommandSecurity.Require("stronghold:allow-default"));
 
         // 修改密码
         context.Commands.MapCommand("stronghold.changePassword", (Func<string, string, string?, bool>)((oldPassword, newPassword, vaultPath) =>
@@ -131,7 +138,7 @@ public class StrongholdPlugin : IPlugin
                 return false;
             }
             return vault.ChangePassword(oldPassword, newPassword, Pbkdf2Iterations);
-        }));
+        }), CommandSecurity.Require("stronghold:allow-default"));
     }
 
     /// <summary>

@@ -46,9 +46,16 @@ public class PowerManagementPlugin : IPlugin, IDisposable
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
-        context.Commands.MapCommand("power.requestWakeLock", (Func<bool>)(() => RequestWakeLock()));
-        context.Commands.MapCommand("power.releaseWakeLock", (Func<bool>)(() => ReleaseWakeLock()));
-        context.Commands.MapCommand("power.isWakeLockHeld", (Func<bool>)(() => _wakeLockHeld));
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B 权限声明：所有 power-management 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("power-management:default", "power-management 默认权限集",
+            "power-management:allow-default");
+        context.Permissions.DeclarePermission("power-management:allow-default", "允许调用 power-management 插件命令");
+
+        context.Commands.MapCommand("power.requestWakeLock", (Func<bool>)(() => RequestWakeLock()), CommandSecurity.Require("power-management:allow-default"));
+        context.Commands.MapCommand("power.releaseWakeLock", (Func<bool>)(() => ReleaseWakeLock()), CommandSecurity.Require("power-management:allow-default"));
+        context.Commands.MapCommand("power.isWakeLockHeld", (Func<bool>)(() => _wakeLockHeld), CommandSecurity.Require("power-management:allow-default"));
     }
 
     /// <summary>

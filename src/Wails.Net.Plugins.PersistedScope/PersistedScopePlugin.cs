@@ -67,6 +67,13 @@ public class PersistedScopePlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B 权限声明：所有 persisted-scope 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("persisted-scope:default", "persisted-scope 默认权限集",
+            "persisted-scope:allow-default");
+        context.Permissions.DeclarePermission("persisted-scope:allow-default", "允许调用 persisted-scope 插件命令");
+
         // P2-2：将持久化作用域管理器绑定为受管权限的 IScope。
         // 绑定后，scope.addPath 等命令添加的路径会立即参与 CommandDispatcher 的
         // 参数级 Scope 校验（fs 插件的 [ScopeParameter] 路径参数）。
@@ -77,19 +84,19 @@ public class PersistedScopePlugin : IPlugin
 
         // 添加允许的路径
         context.Commands.MapCommand("scope.addPath", (Func<string, string?, bool>)((path, scopeName) =>
-            _manager.AddPath(path, scopeName)));
+            _manager.AddPath(path, scopeName)), CommandSecurity.Require("persisted-scope:allow-default"));
 
         // 移除允许的路径
         context.Commands.MapCommand("scope.removePath", (Func<string, string?, bool>)((path, scopeName) =>
-            _manager.RemovePath(path, scopeName)));
+            _manager.RemovePath(path, scopeName)), CommandSecurity.Require("persisted-scope:allow-default"));
 
         // 列出所有允许的路径
         context.Commands.MapCommand("scope.listPaths", (Func<string?, string[]?>)((scopeName) =>
-            _manager.ListPaths(scopeName)));
+            _manager.ListPaths(scopeName)), CommandSecurity.Require("persisted-scope:allow-default"));
 
         // 清除所有允许的路径
         context.Commands.MapCommand("scope.clear", (Action<string?>)((scopeName) =>
-            _manager.Clear(scopeName)));
+            _manager.Clear(scopeName)), CommandSecurity.Require("persisted-scope:allow-default"));
 
         // 检查路径是否在允许范围内
         context.Commands.MapCommand("scope.isAllowed", (Func<string, string?, bool>)((path, scopeName) =>
@@ -97,14 +104,14 @@ public class PersistedScopePlugin : IPlugin
             // 兼容旧签名（scopeName 指定单作用域）：指定时仅查该作用域，未指定时合并所有作用域。
             // 两种路径均复用 PersistedScopeManager 的规范化 + 通配符匹配逻辑。
             return _manager.IsAllowed(path, scopeName);
-        }));
+        }), CommandSecurity.Require("persisted-scope:allow-default"));
 
         // 手动保存范围到磁盘
         context.Commands.MapCommand("scope.save", (Action<string?>)((scopeName) =>
-            _manager.Save(scopeName)));
+            _manager.Save(scopeName)), CommandSecurity.Require("persisted-scope:allow-default"));
 
         // 从磁盘加载范围
         context.Commands.MapCommand("scope.load", (Func<string?, bool>)((scopeName) =>
-            _manager.Load(scopeName)));
+            _manager.Load(scopeName)), CommandSecurity.Require("persisted-scope:allow-default"));
     }
 }

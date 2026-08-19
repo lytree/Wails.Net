@@ -30,6 +30,13 @@ public class ProcessPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B 权限声明：所有 process 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("process:default", "process 默认权限集",
+            "process:allow-default");
+        context.Permissions.DeclarePermission("process:allow-default", "允许调用 process 插件命令");
+
         // 声明权限集
         context.Permissions.RegisterPermissionSet("process:default", "进程管理默认权限集",
             "process:allow-exit", "process:allow-restart");
@@ -39,20 +46,20 @@ public class ProcessPlugin : IPlugin
         context.Commands.MapCommand("process.exit", (Action<ICommandContext, int>)((ctx, exitCode) =>
         {
             WailsApplication.Get()?.Quit();
-        }));
+        }), CommandSecurity.Require("process:allow-default"));
 
         context.Commands.MapCommand("process.restart", (Action<ICommandContext>)(ctx =>
         {
             Restart();
-        }));
+        }), CommandSecurity.Require("process:allow-default"));
 
         context.Commands.MapCommand("process.relaunch", (Action<ICommandContext>)(ctx =>
         {
             Restart();
-        }));
+        }), CommandSecurity.Require("process:allow-default"));
 
         // 获取当前进程 ID（与前端 wails.process.getPid API 一致）
-        context.Commands.MapCommand("process.getPid", (Func<ICommandContext, int>)(_ => Environment.ProcessId));
+        context.Commands.MapCommand("process.getPid", (Func<ICommandContext, int>)(_ => Environment.ProcessId), CommandSecurity.Require("process:allow-default"));
     }
 
     /// <summary>

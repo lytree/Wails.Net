@@ -41,20 +41,27 @@ public class TrayPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B 权限声明：所有 tray 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("tray:default", "tray 默认权限集",
+            "tray:allow-set");
+        context.Permissions.DeclarePermission("tray:allow-set", "允许调用 tray 插件命令");
+
         var commands = context.Commands;
 
         // === 托盘属性 ===
         commands.MapCommand("tray.setIcon", (Action<ICommandContext, TrayIconOptions>)((ctx, opts) =>
-            GetTrayManagerOrThrow(ctx).SetIcon(GetActiveTrayOrThrow(ctx), opts.IconData)));
+            GetTrayManagerOrThrow(ctx).SetIcon(GetActiveTrayOrThrow(ctx), opts.IconData)), CommandSecurity.Require("tray:allow-set"));
 
         commands.MapCommand("tray.setLabel", (Action<ICommandContext, TrayLabelOptions>)((ctx, opts) =>
-            GetTrayManagerOrThrow(ctx).SetLabel(GetActiveTrayOrThrow(ctx), opts.Label)));
+            GetTrayManagerOrThrow(ctx).SetLabel(GetActiveTrayOrThrow(ctx), opts.Label)), CommandSecurity.Require("tray:allow-set"));
 
         commands.MapCommand("tray.setMenu", (Action<ICommandContext, TrayMenuOptions>)((ctx, opts) =>
-            GetTrayManagerOrThrow(ctx).SetMenu(GetActiveTrayOrThrow(ctx), opts.Menu)));
+            GetTrayManagerOrThrow(ctx).SetMenu(GetActiveTrayOrThrow(ctx), opts.Menu)), CommandSecurity.Require("tray:allow-set"));
 
         commands.MapCommand("tray.setTooltip", (Action<ICommandContext, TrayTooltipOptions>)((ctx, opts) =>
-            GetTrayManagerOrThrow(ctx).SetTooltip(GetActiveTrayOrThrow(ctx), opts.Tooltip)));
+            GetTrayManagerOrThrow(ctx).SetTooltip(GetActiveTrayOrThrow(ctx), opts.Tooltip)), CommandSecurity.Require("tray:allow-set"));
 
         // === 显示状态 ===
         commands.MapCommand("tray.destroy", (Action<ICommandContext>)(ctx =>
@@ -63,16 +70,16 @@ public class TrayPlugin : IPlugin
             var tray = GetActiveTrayOrThrow(ctx);
             manager.DestroySystemTray(tray);
             ctx.Services.GetRequiredService<TrayHolder>().ActiveTray = null;
-        }));
+        }), CommandSecurity.Require("tray:allow-set"));
 
         commands.MapCommand("tray.show", (Action<ICommandContext>)(ctx =>
-            GetTrayManagerOrThrow(ctx).Show(GetActiveTrayOrThrow(ctx))));
+            GetTrayManagerOrThrow(ctx).Show(GetActiveTrayOrThrow(ctx))), CommandSecurity.Require("tray:allow-set"));
 
         commands.MapCommand("tray.hide", (Action<ICommandContext>)(ctx =>
-            GetTrayManagerOrThrow(ctx).Hide(GetActiveTrayOrThrow(ctx))));
+            GetTrayManagerOrThrow(ctx).Hide(GetActiveTrayOrThrow(ctx))), CommandSecurity.Require("tray:allow-set"));
 
         commands.MapCommand("tray.isVisible", (Func<ICommandContext, bool>)(ctx =>
-            GetTrayManagerOrThrow(ctx).IsVisible(GetActiveTrayOrThrow(ctx))));
+            GetTrayManagerOrThrow(ctx).IsVisible(GetActiveTrayOrThrow(ctx))), CommandSecurity.Require("tray:allow-set"));
     }
 
     /// <summary>

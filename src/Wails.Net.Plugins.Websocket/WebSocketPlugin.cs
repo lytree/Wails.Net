@@ -50,6 +50,13 @@ public class WebSocketPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B 权限声明：所有 websocket 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("websocket:default", "websocket 默认权限集",
+            "websocket:allow-default");
+        context.Permissions.DeclarePermission("websocket:allow-default", "允许调用 websocket 插件命令");
+
         // 声明权限集
         context.Permissions.RegisterPermissionSet("websocket:default", "WebSocket 默认权限集",
             "websocket:allow-connect", "websocket:allow-send");
@@ -78,7 +85,7 @@ public class WebSocketPlugin : IPlugin
             {
                 return JsonSerializer.Serialize(new { connected = false, error = ex.Message });
             }
-        }));
+        }), CommandSecurity.Require("websocket:allow-default"));
 
         // 发送文本消息
         context.Commands.MapCommand("websocket.send",
@@ -104,7 +111,7 @@ public class WebSocketPlugin : IPlugin
             {
                 return false;
             }
-        }));
+        }), CommandSecurity.Require("websocket:allow-default"));
 
         // 关闭连接
         context.Commands.MapCommand("websocket.close",
@@ -130,7 +137,7 @@ public class WebSocketPlugin : IPlugin
                 ws.Dispose();
                 return false;
             }
-        }));
+        }), CommandSecurity.Require("websocket:allow-default"));
 
         // 查询连接状态
         context.Commands.MapCommand("websocket.getState",
@@ -142,7 +149,7 @@ public class WebSocketPlugin : IPlugin
             }
 
             return ws.State.ToString().ToLowerInvariant();
-        }));
+        }), CommandSecurity.Require("websocket:allow-default"));
 
         // 发送二进制数据（Base64 编码）
         context.Commands.MapCommand("websocket.sendBinary",
@@ -168,7 +175,7 @@ public class WebSocketPlugin : IPlugin
             {
                 return false;
             }
-        }));
+        }), CommandSecurity.Require("websocket:allow-default"));
     }
 
     /// <summary>

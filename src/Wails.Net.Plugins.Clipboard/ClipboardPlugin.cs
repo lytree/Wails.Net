@@ -30,6 +30,13 @@ public class ClipboardPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B 权限声明：所有 clipboard 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("clipboard:default", "clipboard 默认权限集",
+            "clipboard:allow-write");
+        context.Permissions.DeclarePermission("clipboard:allow-write", "允许调用 clipboard 插件命令");
+
         // 声明权限集
         context.Permissions.RegisterPermissionSet("clipboard:default", "剪贴板默认权限集",
             "clipboard:allow-read", "clipboard:allow-write");
@@ -40,36 +47,36 @@ public class ClipboardPlugin : IPlugin
         {
             var app = ctx.Services.GetService<WailsApplication>();
             return app?.ClipboardManager?.GetText() ?? string.Empty;
-        }));
+        }), CommandSecurity.Require("clipboard:allow-write"));
 
         context.Commands.MapCommand("clipboard.setText", (Action<ICommandContext, string>)((ctx, text) =>
         {
             var app = ctx.Services.GetService<WailsApplication>();
             app?.ClipboardManager?.SetText(text);
-        }));
+        }), CommandSecurity.Require("clipboard:allow-write"));
 
         context.Commands.MapCommand("clipboard.getHTML", (Func<ICommandContext, string>)(ctx =>
-            ctx.Services.GetService<WailsApplication>()?.ClipboardManager?.GetHTML() ?? string.Empty));
+            ctx.Services.GetService<WailsApplication>()?.ClipboardManager?.GetHTML() ?? string.Empty), CommandSecurity.Require("clipboard:allow-write"));
 
         context.Commands.MapCommand("clipboard.setHTML", (Action<ICommandContext, string, string>)((ctx, html, fallbackText) =>
         {
             var app = ctx.Services.GetService<WailsApplication>();
             app?.ClipboardManager?.SetHTML(html, fallbackText);
-        }));
+        }), CommandSecurity.Require("clipboard:allow-write"));
 
         context.Commands.MapCommand("clipboard.getImage", (Func<ICommandContext, byte[]?>)(ctx =>
-            ctx.Services.GetService<WailsApplication>()?.ClipboardManager?.GetImage()));
+            ctx.Services.GetService<WailsApplication>()?.ClipboardManager?.GetImage()), CommandSecurity.Require("clipboard:allow-write"));
 
         context.Commands.MapCommand("clipboard.setImage", (Action<ICommandContext, byte[]>)((ctx, imageData) =>
         {
             var app = ctx.Services.GetService<WailsApplication>();
             app?.ClipboardManager?.SetImage(imageData);
-        }));
+        }), CommandSecurity.Require("clipboard:allow-write"));
 
         context.Commands.MapCommand("clipboard.clear", (Action<ICommandContext>)(ctx =>
         {
             var app = ctx.Services.GetService<WailsApplication>();
             app?.ClipboardManager?.Clear();
-        }));
+        }), CommandSecurity.Require("clipboard:allow-write"));
     }
 }

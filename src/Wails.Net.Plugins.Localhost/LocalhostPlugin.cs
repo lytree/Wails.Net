@@ -38,6 +38,13 @@ public class LocalhostPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B 权限声明：所有 localhost 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("localhost:default", "localhost 默认权限集",
+            "localhost:allow-fetch");
+        context.Permissions.DeclarePermission("localhost:allow-fetch", "允许调用 localhost 插件命令");
+
         // 启动本地服务器
         context.Commands.MapCommand("localhost.start", (Func<int, string?, string>)((port, rootDir) =>
         {
@@ -49,7 +56,7 @@ public class LocalhostPlugin : IPlugin
             }
             server.Start();
             return $"http://localhost:{actualPort}";
-        }));
+        }), CommandSecurity.Require("localhost:allow-fetch"));
 
         // 停止本地服务器
         context.Commands.MapCommand("localhost.stop", (Action<int>)((port) =>
@@ -58,7 +65,7 @@ public class LocalhostPlugin : IPlugin
             {
                 server.Stop();
             }
-        }));
+        }), CommandSecurity.Require("localhost:allow-fetch"));
 
         // 获取服务器 URL
         context.Commands.MapCommand("localhost.getUrl", (Func<int, string?>)((port) =>
@@ -68,13 +75,13 @@ public class LocalhostPlugin : IPlugin
                 return null;
             }
             return $"http://localhost:{port}";
-        }));
+        }), CommandSecurity.Require("localhost:allow-fetch"));
 
         // 检查服务器是否运行
         context.Commands.MapCommand("localhost.isRunning", (Func<int, bool>)((port) =>
         {
             return _servers.TryGetValue(port, out var server) && server.IsRunning;
-        }));
+        }), CommandSecurity.Require("localhost:allow-fetch"));
 
         // 设置静态文件根目录
         context.Commands.MapCommand("localhost.setRoot", (Action<int, string>)((port, rootDir) =>
@@ -83,7 +90,7 @@ public class LocalhostPlugin : IPlugin
             {
                 server.RootDirectory = rootDir;
             }
-        }));
+        }), CommandSecurity.Require("localhost:allow-fetch"));
 
         // 添加路由处理
         context.Commands.MapCommand("localhost.addRoute", (Action<int, string, string>)((port, route, method) =>
@@ -92,7 +99,7 @@ public class LocalhostPlugin : IPlugin
             {
                 server.AddRoute(route, method.ToUpperInvariant());
             }
-        }));
+        }), CommandSecurity.Require("localhost:allow-fetch"));
 
         // 移除路由处理
         context.Commands.MapCommand("localhost.removeRoute", (Action<int, string>)((port, route) =>
@@ -101,7 +108,7 @@ public class LocalhostPlugin : IPlugin
             {
                 server.RemoveRoute(route);
             }
-        }));
+        }), CommandSecurity.Require("localhost:allow-fetch"));
 
         // 列出所有路由
         context.Commands.MapCommand("localhost.listRoutes", (Func<int, string[]?>)((port) =>
@@ -111,7 +118,7 @@ public class LocalhostPlugin : IPlugin
                 return null;
             }
             return server.ListRoutes();
-        }));
+        }), CommandSecurity.Require("localhost:allow-fetch"));
     }
 
     /// <summary>

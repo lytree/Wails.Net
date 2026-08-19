@@ -86,21 +86,28 @@ public class FsWatchPlugin : IPlugin, IDisposable
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B 权限声明：所有 fs-watch 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("fs-watch:default", "fs-watch 默认权限集",
+            "fs-watch:allow-watch");
+        context.Permissions.DeclarePermission("fs-watch:allow-watch", "允许调用 fs-watch 插件命令");
+
         context.Commands.MapCommand("fswatch.watch",
             (Func<string, bool, string?, int>)((path, recursive, extensionsJson) =>
-                StartWatch(path, recursive, extensionsJson)));
+                StartWatch(path, recursive, extensionsJson)), CommandSecurity.Require("fs-watch:allow-watch"));
 
         context.Commands.MapCommand("fswatch.unwatch",
-            (Action<int>)(id => StopWatch(id)));
+            (Action<int>)(id => StopWatch(id)), CommandSecurity.Require("fs-watch:allow-watch"));
 
         context.Commands.MapCommand("fswatch.unwatchAll",
-            (Action)(() => StopAll()));
+            (Action)(() => StopAll()), CommandSecurity.Require("fs-watch:allow-watch"));
 
         context.Commands.MapCommand("fswatch.listWatches",
-            (Func<int[]>)(() => s_watches.Keys.ToArray()));
+            (Func<int[]>)(() => s_watches.Keys.ToArray()), CommandSecurity.Require("fs-watch:allow-watch"));
 
         context.Commands.MapCommand("fswatch.isWatching",
-            (Func<int, bool>)(id => s_watches.ContainsKey(id)));
+            (Func<int, bool>)(id => s_watches.ContainsKey(id)), CommandSecurity.Require("fs-watch:allow-watch"));
     }
 
     /// <summary>

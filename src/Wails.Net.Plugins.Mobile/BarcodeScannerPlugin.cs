@@ -39,6 +39,11 @@ public class BarcodeScannerPlugin : IPlugin
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        // R3-B 权限声明：所有 mobile 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("mobile:default", "mobile 默认权限集",
+            "mobile:allow-default");
+        context.Permissions.DeclarePermission("mobile:allow-default", "允许调用 mobile 插件命令");
+
         context.Permissions.RegisterPermissionSet("barcode-scanner:default", "条码扫描默认权限集",
             "barcode-scanner:allow-scan", "barcode-scanner:allow-cancel");
         context.Permissions.DeclarePermission("barcode-scanner:allow-scan", "允许启动条码扫描");
@@ -48,11 +53,11 @@ public class BarcodeScannerPlugin : IPlugin
 
         // 启动扫描，返回扫描结果
         commands.MapCommand("barcode-scanner.scan",
-            (Func<ICommandContext, Task<string>>)(ctx => ResolveScanner(ctx).ScanAsync()));
+            (Func<ICommandContext, Task<string>>)(ctx => ResolveScanner(ctx).ScanAsync()), CommandSecurity.Require("mobile:allow-default"));
 
         // 取消扫描
         commands.MapCommand("barcode-scanner.cancel",
-            (Action<ICommandContext>)(ctx => ResolveScanner(ctx).Cancel()));
+            (Action<ICommandContext>)(ctx => ResolveScanner(ctx).Cancel()), CommandSecurity.Require("mobile:allow-default"));
     }
 
     /// <summary>

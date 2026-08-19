@@ -31,13 +31,17 @@ public class PositionerPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B：该插件全部为只读命令，统一标记 Public，无需 permission 声明。
+
         // 将窗口移动到指定位置（相对于屏幕原点）
         context.Commands.MapCommand("positioner.move",
             (Action<ICommandContext, string, int, int>)((ctx, windowName, x, y) =>
         {
             var window = GetWindow(ctx, windowName);
             window?.SetPosition(x, y);
-        }));
+        }), CommandSecurity.Public());
 
         // 将窗口居中显示
         context.Commands.MapCommand("positioner.center",
@@ -45,7 +49,7 @@ public class PositionerPlugin : IPlugin
         {
             var window = GetWindow(ctx, windowName);
             window?.Centre();
-        }));
+        }), CommandSecurity.Public());
 
         // 将窗口移动到指定方向（topLeft/topRight/bottomLeft/bottomRight/center/top/bottom/left/right）
         context.Commands.MapCommand("positioner.moveRelativeTo",
@@ -59,7 +63,7 @@ public class PositionerPlugin : IPlugin
 
             var (x, y) = CalculatePosition(position, window);
             window.SetPosition(x, y);
-        }));
+        }), CommandSecurity.Public());
 
         // 将窗口移动到鼠标光标位置
         context.Commands.MapCommand("positioner.moveToCursor",
@@ -81,7 +85,7 @@ public class PositionerPlugin : IPlugin
                 var y = screen.Y + (screen.Height - height) / 2;
                 window.SetPosition(x, y);
             }
-        }));
+        }), CommandSecurity.Public());
 
         // 获取窗口当前位置
         context.Commands.MapCommand("positioner.getPosition",
@@ -95,7 +99,7 @@ public class PositionerPlugin : IPlugin
 
             var (x, y) = window.GetPosition();
             return $"{{\"x\":{x},\"y\":{y}}}";
-        }));
+        }), CommandSecurity.Public());
     }
 
     /// <summary>

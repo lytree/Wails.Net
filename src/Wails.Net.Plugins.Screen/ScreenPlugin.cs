@@ -49,10 +49,10 @@ public class ScreenPlugin : IPlugin
 
         // === 屏幕查询 ===
         commands.MapCommand("screen.getAll", (Func<ICommandContext, ScreenType[]>)(ctx =>
-            GetAppOrThrow(ctx).GetScreens()));
+            GetAppOrThrow(ctx).GetScreens()), CommandSecurity.Public());
 
         commands.MapCommand("screen.getPrimary", (Func<ICommandContext, ScreenType?>)(ctx =>
-            GetAppOrThrow(ctx).GetPrimaryScreen()));
+            GetAppOrThrow(ctx).GetPrimaryScreen()), CommandSecurity.Public());
     }
 
     /// <summary>

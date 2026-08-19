@@ -30,42 +30,50 @@ public class LogPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // 声明权限：所有 log.* 命令都是写操作（写入应用日志），需要显式 Require。
+        // 这是为了在 Strict + DenyByDefault 模式下，未授权前端无法向应用日志注入任意内容，
+        // 防止日志伪造与污染（攻击者常利用日志注入绕过审计）。
+        context.Permissions.RegisterPermissionSet("log:default", "Log 插件默认权限集",
+            "log:allow-log");
+        context.Permissions.DeclarePermission("log:allow-log", "允许写入应用日志（debug/info/warn/error/trace/log/logStructured）");
         context.Commands.MapCommand("log.debug", (Action<ICommandContext, string>)((ctx, message) =>
         {
             var service = ctx.Services.GetService<LogService>();
             service?.Debug(message);
-        }));
+        }), CommandSecurity.Require("log:allow-log"));
 
         context.Commands.MapCommand("log.info", (Action<ICommandContext, string>)((ctx, message) =>
         {
             var service = ctx.Services.GetService<LogService>();
             service?.Info(message);
-        }));
+        }), CommandSecurity.Require("log:allow-log"));
 
         context.Commands.MapCommand("log.warn", (Action<ICommandContext, string>)((ctx, message) =>
         {
             var service = ctx.Services.GetService<LogService>();
             service?.Warning(message);
-        }));
+        }), CommandSecurity.Require("log:allow-log"));
 
         context.Commands.MapCommand("log.error", (Action<ICommandContext, string>)((ctx, message) =>
         {
             var service = ctx.Services.GetService<LogService>();
             service?.Error(message);
-        }));
+        }), CommandSecurity.Require("log:allow-log"));
 
         // trace 级别映射到 Debug，与 Tauri plugin-log 行为一致
         context.Commands.MapCommand("log.trace", (Action<ICommandContext, string>)((ctx, message) =>
         {
             var service = ctx.Services.GetService<LogService>();
             service?.Debug(message);
-        }));
+        }), CommandSecurity.Require("log:allow-log"));
 
         context.Commands.MapCommand("log.log", (Action<ICommandContext, string, string>)((ctx, level, message) =>
         {
             var service = ctx.Services.GetService<LogService>();
             service?.Log(level, message);
-        }));
+        }), CommandSecurity.Require("log:allow-log"));
 
         // 结构化日志：带字段字典的日志写入，对应 Tauri plugin-log 的结构化日志扩展。
         // fieldsJson 为 JSON 对象字符串，解析为字典后传递给 LogStructured。
@@ -91,6 +99,6 @@ public class LogPlugin : IPlugin
             }
 
             service.LogStructured(level, message, fields ?? new());
-        }));
+        }), CommandSecurity.Require("log:allow-log"));
     }
 }

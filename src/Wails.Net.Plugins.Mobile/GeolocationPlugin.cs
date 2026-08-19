@@ -39,6 +39,11 @@ public class GeolocationPlugin : IPlugin
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        // R3-B 权限声明：所有 mobile 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("mobile:default", "mobile 默认权限集",
+            "mobile:allow-default");
+        context.Permissions.DeclarePermission("mobile:allow-default", "允许调用 mobile 插件命令");
+
         context.Permissions.RegisterPermissionSet("geolocation:default", "地理定位默认权限集",
             "geolocation:allow-check-availability", "geolocation:allow-get-position", "geolocation:allow-watch-position");
         context.Permissions.DeclarePermission("geolocation:allow-check-availability", "允许检查地理定位可用性");
@@ -49,13 +54,13 @@ public class GeolocationPlugin : IPlugin
 
         // 检查地理定位可用性
         commands.MapCommand("geolocation.checkAvailability",
-            (Func<ICommandContext, string>)(ctx => ResolveGeolocation(ctx).CheckAvailability()));
+            (Func<ICommandContext, string>)(ctx => ResolveGeolocation(ctx).CheckAvailability()), CommandSecurity.Require("mobile:allow-default"));
 
         // 获取当前位置（单次定位）
         // CancellationToken 由 ICommandContext 提供，不作为 JSON 业务参数暴露给前端（遵循 AGENTS.md §3.4.6）
         commands.MapCommand("geolocation.getCurrentPosition",
             (Func<ICommandContext, GeolocationOptions?, Task<GeolocationPosition?>>)((ctx, opts) =>
-                ResolveGeolocation(ctx).GetCurrentPositionAsync(opts ?? new GeolocationOptions(), ctx.CancellationToken)));
+                ResolveGeolocation(ctx).GetCurrentPositionAsync(opts ?? new GeolocationOptions(), ctx.CancellationToken)), CommandSecurity.Require("mobile:allow-default"));
 
         // 开始持续监听位置变化
         commands.MapCommand("geolocation.watchPosition",
@@ -66,12 +71,12 @@ public class GeolocationPlugin : IPlugin
                 var watchId = await impl.WatchPositionAsync(opts ?? new GeolocationOptions(),
                     position => OnPositionUpdate(ctx, position), ctx.CancellationToken);
                 return new WatchPositionResult { WatchId = watchId };
-            }));
+            }), CommandSecurity.Require("mobile:allow-default"));
 
         // 取消位置监听
         commands.MapCommand("geolocation.clearWatch",
             (Action<ICommandContext, WatchPositionResult>)((ctx, result) =>
-                ResolveGeolocation(ctx).ClearWatch(result.WatchId)));
+                ResolveGeolocation(ctx).ClearWatch(result.WatchId)), CommandSecurity.Require("mobile:allow-default"));
     }
 
     /// <summary>

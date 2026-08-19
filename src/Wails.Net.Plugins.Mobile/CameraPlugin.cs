@@ -49,16 +49,16 @@ public class CameraPlugin : IPlugin
 
         // 检查相机可用性
         commands.MapCommand("camera.checkAvailability",
-            (Func<ICommandContext, string>)(ctx => ResolveCamera(ctx).CheckAvailability()));
+            (Func<ICommandContext, string>)(ctx => ResolveCamera(ctx).CheckAvailability()), CommandSecurity.Require("mobile:allow-default"));
 
         // 启动拍照，返回 JPEG 字节数据（CancellationToken 由 ICommandContext 提供，不作为 JSON 参数暴露给前端）
         commands.MapCommand("camera.capture",
             (Func<ICommandContext, Task<CameraCaptureResult>>)(ctx =>
-                CaptureAsync(ctx, ctx.CancellationToken)));
+                CaptureAsync(ctx, ctx.CancellationToken)), CommandSecurity.Require("mobile:allow-default"));
 
         // 取消正在进行的拍照
         commands.MapCommand("camera.cancel",
-            (Action<ICommandContext>)(ctx => ResolveCamera(ctx).Cancel()));
+            (Action<ICommandContext>)(ctx => ResolveCamera(ctx).Cancel()), CommandSecurity.Require("mobile:allow-default"));
     }
 
     /// <summary>

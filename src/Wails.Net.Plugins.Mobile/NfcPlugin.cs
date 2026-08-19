@@ -39,6 +39,11 @@ public class NfcPlugin : IPlugin
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        // R3-B 权限声明：所有 mobile 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("mobile:default", "mobile 默认权限集",
+            "mobile:allow-default");
+        context.Permissions.DeclarePermission("mobile:allow-default", "允许调用 mobile 插件命令");
+
         context.Permissions.RegisterPermissionSet("nfc:default", "NFC 默认权限集",
             "nfc:allow-read", "nfc:allow-write", "nfc:allow-cancel");
         context.Permissions.DeclarePermission("nfc:allow-read", "允许读取 NFC 标签");
@@ -49,15 +54,15 @@ public class NfcPlugin : IPlugin
 
         // 读取 NFC 标签
         commands.MapCommand("nfc.read",
-            (Func<ICommandContext, Task<string>>)(ctx => ResolveNfc(ctx).ReadAsync()));
+            (Func<ICommandContext, Task<string>>)(ctx => ResolveNfc(ctx).ReadAsync()), CommandSecurity.Require("mobile:allow-default"));
 
         // 写入 NFC 标签
         commands.MapCommand("nfc.write",
-            (Func<ICommandContext, NfcWriteOptions, Task>)((ctx, opts) => ResolveNfc(ctx).WriteAsync(opts.Data)));
+            (Func<ICommandContext, NfcWriteOptions, Task>)((ctx, opts) => ResolveNfc(ctx).WriteAsync(opts.Data)), CommandSecurity.Require("mobile:allow-default"));
 
         // 取消 NFC 操作
         commands.MapCommand("nfc.cancel",
-            (Action<ICommandContext>)(ctx => ResolveNfc(ctx).Cancel()));
+            (Action<ICommandContext>)(ctx => ResolveNfc(ctx).Cancel()), CommandSecurity.Require("mobile:allow-default"));
     }
 
     /// <summary>

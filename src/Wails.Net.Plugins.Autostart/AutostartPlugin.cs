@@ -33,6 +33,13 @@ public class AutostartPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B 权限声明：所有 autostart 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("autostart:default", "autostart 默认权限集",
+            "autostart:allow-default");
+        context.Permissions.DeclarePermission("autostart:allow-default", "允许调用 autostart 插件命令");
+
         // 声明权限集
         context.Permissions.RegisterPermissionSet("autostart:default", "开机自启默认权限集",
             "autostart:allow-enable", "autostart:allow-disable");
@@ -40,13 +47,13 @@ public class AutostartPlugin : IPlugin
         context.Permissions.DeclarePermission("autostart:allow-disable", "允许禁用开机自启");
 
         context.Commands.MapCommand("autostart.enable", (Func<ICommandContext, bool>)(ctx =>
-            EnableAutostart(GetAppName())));
+            EnableAutostart(GetAppName())), CommandSecurity.Require("autostart:allow-default"));
 
         context.Commands.MapCommand("autostart.disable", (Func<ICommandContext, bool>)(ctx =>
-            DisableAutostart(GetAppName())));
+            DisableAutostart(GetAppName())), CommandSecurity.Require("autostart:allow-default"));
 
         context.Commands.MapCommand("autostart.isEnabled", (Func<ICommandContext, bool>)(ctx =>
-            IsAutostartEnabled(GetAppName())));
+            IsAutostartEnabled(GetAppName())), CommandSecurity.Require("autostart:allow-default"));
     }
 
     /// <summary>

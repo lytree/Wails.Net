@@ -31,6 +31,13 @@ public class UpdaterPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B 权限声明：所有 updater 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("updater:default", "updater 默认权限集",
+            "updater:allow-default");
+        context.Permissions.DeclarePermission("updater:allow-default", "允许调用 updater 插件命令");
+
         // 声明权限集
         context.Permissions.RegisterPermissionSet("updater:default", "更新器默认权限集",
             "updater:allow-check", "updater:allow-download", "updater:allow-install");
@@ -67,7 +74,7 @@ public class UpdaterPlugin : IPlugin
                 // UpdateURL 未配置或网络请求失败时，抛出异常而非返回空对象
                 throw new InvalidOperationException($"更新检查失败: {ex.Message}", ex);
             }
-        }));
+        }), CommandSecurity.Require("updater:allow-default"));
 
         // 下载更新包，返回下载文件的本地路径。
         // 服务未注册、无可用下载地址或下载失败时抛出异常，由调度器包装为结构化 CallError（§2.5 卫生项：不再返回空字符串吞错）。
@@ -102,7 +109,7 @@ public class UpdaterPlugin : IPlugin
             {
                 throw new InvalidOperationException($"更新下载失败: {ex.Message}", ex);
             }
-        }));
+        }), CommandSecurity.Require("updater:allow-default"));
 
         // 安装指定路径的更新包。
         // 服务未注册或安装失败时抛出异常，由调度器包装为结构化 CallError（§2.5 卫生项：不再静默忽略吞错）。
@@ -127,7 +134,7 @@ public class UpdaterPlugin : IPlugin
             {
                 throw new InvalidOperationException($"更新安装失败: {ex.Message}", ex);
             }
-        }));
+        }), CommandSecurity.Require("updater:allow-default"));
 
         // 检查并下载更新，返回包含版本、可用性和下载路径的 JSON 字符串。
         // 服务未注册或操作失败时抛出异常，由调度器包装为结构化 CallError（§2.5 卫生项：不再返回 "{}" 吞错）。
@@ -164,6 +171,6 @@ public class UpdaterPlugin : IPlugin
             {
                 throw new InvalidOperationException($"检查并下载更新失败: {ex.Message}", ex);
             }
-        }));
+        }), CommandSecurity.Require("updater:allow-default"));
     }
 }

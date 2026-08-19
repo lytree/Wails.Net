@@ -55,7 +55,7 @@ public class CliPlugin : IPlugin
 
         // 获取命令行解析结果（对应 Tauri cli.getMatches）
         commands.MapCommand("cli.getMatches",
-            (Func<ICommandContext, CliMatches>)(ctx => ResolveParser(ctx).Parse(definition)));
+            (Func<ICommandContext, CliMatches>)(ctx => ResolveParser(ctx).Parse(definition)), CommandSecurity.Public());
     }
 
     /// <summary>

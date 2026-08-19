@@ -40,6 +40,13 @@ public class WindowsPlugin : IPlugin
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
+        // R3-B 权限声明：所有 windows 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("windows:default", "windows 默认权限集",
+            "windows:allow-default");
+        context.Permissions.DeclarePermission("windows:allow-default", "允许调用 windows 插件命令");
+
         var commands = context.Commands;
 
         // === 窗口查询 ===
@@ -53,27 +60,27 @@ public class WindowsPlugin : IPlugin
 
             var window = app.GetWindow(ctx.WindowId.Value);
             return window is null ? null : ToWindowInfo(window);
-        }));
+        }), CommandSecurity.Require("windows:allow-default"));
 
         commands.MapCommand("windows.getAll", (Func<ICommandContext, WindowInfo[]>)(ctx =>
         {
             var app = GetAppOrThrow(ctx);
             return app.Windows.Select(ToWindowInfo).ToArray();
-        }));
+        }), CommandSecurity.Require("windows:allow-default"));
 
         commands.MapCommand("windows.getByName", (Func<ICommandContext, WindowsByNameOptions, WindowInfo?>)((ctx, opts) =>
         {
             var app = GetAppOrThrow(ctx);
             var window = app.Windows.FirstOrDefault(w => string.Equals(w.Name, opts.Name, StringComparison.OrdinalIgnoreCase));
             return window is null ? null : ToWindowInfo(window);
-        }));
+        }), CommandSecurity.Require("windows:allow-default"));
 
         commands.MapCommand("windows.getById", (Func<ICommandContext, WindowsByIdOptions, WindowInfo?>)((ctx, opts) =>
         {
             var app = GetAppOrThrow(ctx);
             var window = app.GetWindow((uint)opts.Id);
             return window is null ? null : ToWindowInfo(window);
-        }));
+        }), CommandSecurity.Require("windows:allow-default"));
 
         // === 窗口事件广播 ===
         commands.MapCommand("windows.emit", (Action<ICommandContext, WindowsEmitOptions>)((ctx, opts) =>
@@ -94,7 +101,7 @@ public class WindowsPlugin : IPlugin
                 // 广播到所有窗口
                 app.Events.Emit($"wails:window:{opts.Name}", opts.Data);
             }
-        }));
+        }), CommandSecurity.Require("windows:allow-default"));
     }
 
     /// <summary>

@@ -39,6 +39,11 @@ public class BiometricPlugin : IPlugin
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        // R3-B 权限声明：所有 mobile 命令显式声明 capability。
+        context.Permissions.RegisterPermissionSet("mobile:default", "mobile 默认权限集",
+            "mobile:allow-default");
+        context.Permissions.DeclarePermission("mobile:allow-default", "允许调用 mobile 插件命令");
+
         context.Permissions.RegisterPermissionSet("biometric:default", "生物识别默认权限集",
             "biometric:allow-check-availability", "biometric:allow-authenticate");
         context.Permissions.DeclarePermission("biometric:allow-check-availability", "允许检查生物识别可用性");
@@ -48,12 +53,12 @@ public class BiometricPlugin : IPlugin
 
         // 检查生物识别可用性
         commands.MapCommand("biometric.checkAvailability",
-            (Func<ICommandContext, string>)(ctx => ResolveBiometric(ctx).CheckAvailability()));
+            (Func<ICommandContext, string>)(ctx => ResolveBiometric(ctx).CheckAvailability()), CommandSecurity.Require("mobile:allow-default"));
 
         // 发起生物识别认证
         commands.MapCommand("biometric.authenticate",
             (Func<ICommandContext, BiometricAuthOptions, Task<bool>>)((ctx, opts) =>
-                ResolveBiometric(ctx).AuthenticateAsync(opts.Reason)));
+                ResolveBiometric(ctx).AuthenticateAsync(opts.Reason)), CommandSecurity.Require("mobile:allow-default"));
     }
 
     /// <summary>
