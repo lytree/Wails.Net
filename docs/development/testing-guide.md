@@ -307,9 +307,95 @@ public async Task ProcessPlugin_Configure_RegistersCommands()
 }
 ```
 
+
 ---
 
-## 7. 测试最佳实践
+## 7. GUI 契约测试（跨平台 `IWebviewWindowImpl` 一致性）
+
+Wails.Net 在 Windows / Linux / Android 三平台各有一个 `IWebviewWindowImpl` 实现（macOS 真实 GUI 行为见下方"§7.5 macOS 备注"）。为避免 80+ 个窗口方法的契约测试被重复写 3 份，项目引入了 **GuiContract 模式**：
+
+- 一份契约规范 → `tests/Wails.Net.Application.GuiContract.Tests/WebviewWindowContractTests.cs`（抽象基类）
+- 三平台夹具实现 → 各平台测试项目内的 `*WebviewWindowFixture` 类
+- 自动复用 → 平台测试项目以 `ProjectReference` 或 `<Compile Include>` 链接契约源代码，源生成器为每个平台生成独立的测试入口
+
+详细架构与运行方式见 [`tests/Wails.Net.Application.GuiContract.Tests/README.md`](../../tests/Wails.Net.Application.GuiContract.Tests/README.md)。本节聚焦**编写契约测试**时的实操约定。
+
+### 7.1 契约分级（L1 / L2 / L3）
+
+每个测试方法必须用 `[Category(WindowContractLevel.L*)]` 标注级别，便于 CI 过滤和故障定位：
+
+| 级别 | 适用 | 验证点 |
+|------|------|-------|
+| **L1-Universal** | 全部平台 | 方法不抛异常、返回类型正确、空实现 no-op 行为明确。 |
+| **L2-Functional** | Windows / Linux（Android 窗口由系统管理，部分跳过） | `Set*` 后 `Get*` 返回新值；状态查询方法反映真实状态。 |
+| **L3-PlatformSpecific** | 仅对应平台 | 平台特有功能（Windows Mica/Acrylic、Linux GTK CSS、Android Activity 生命周期）。 |
+
+```csharp
+using Wails.Net.Application.GuiContract.Tests;
+
+[Test]
+[Category(WindowContractLevel.L1Universal)]
+public async Task SetTitle_DoesNotThrow_ForValidString()
+{
+    var fixture = GetFixture();
+    var (window, cleanup) = CreateWindow(fixture);
+
+    try
+    {
+        await Assert.That(() =>
+            fixture.RunOnUiThread(() => window.SetTitle("新标题"))).ThrowsNothing();
+    }
+    finally { cleanup(); }
+}
+```
+
+### 7.2 无 GUI 环境自动降级
+
+基类提供两种保护机制，避免无桌面会话的 CI 容器（Linux 无 `DISPLAY`、Android 单元测试无 Activity）出现假性失败：
+
+1. **早退**：L2/L3 测试方法体内第一行写 `if (!fixture.HasRealGuiEnvironment) return;` —— 测试被记为通过。
+2. **显式跳过**：更严格的场景用基类的 `CreateWindow(...)` 抛 `SkipTestException`，确保 L1 之外的契约被**显式跳过**而非静默通过。
+
+平台 fixture 决定 `HasRealGuiEnvironment`：
+
+| 平台 | `HasRealGuiEnvironment` 判定 |
+|------|---------------------------|
+| Windows | `OperatingSystem.IsWindows()`（要求桌面会话）。 |
+| Linux   | 检测 `DISPLAY` 或 `WAYLAND_DISPLAY` 环境变量。 |
+| Android | **始终 false**（单元测试环境无 Activity / Surface，仅跑 L1）。 |
+
+### 7.3 UI 线程模型
+
+`IWebviewWindowFixture.RunOnUiThread(...)` 在三个平台分别映射到：
+
+| 平台 | 实现策略 |
+|------|---------|
+| Windows | 每次操作起新 STA 线程（`Thread.SetApartmentState(ApartmentState.STA)`）。Win32 窗口创建/销毁必须 STA。 |
+| Linux   | 当前线程同步执行（测试套件不启动 GTK MainLoop，避免死锁）。 |
+| Android | 委托给 `AndroidPlatformApp.DispatchOnMainThread`，无 MainLooper 时回退同步。 |
+
+**契约测试中**：永远通过 `fixture.RunOnUiThread(() => window.Xxx())` 包装窗口方法调用，不要直接调用 —— 否则 Windows 上会因 STA 缺失导致 `CreateWindowEx` 失败。
+
+### 7.4 添加新契约测试的检查清单
+
+1. 在 `WebviewWindowContractTests.cs` 的适当"模块"注释下添加 `[Test]` 方法（现有模块已按"模块 A：窗口创建与生命周期"、"模块 B：窗口标题"、"模块 C：窗口尺寸"…组织）。
+2. 选择正确的级别（L1/L2/L3），并对 L2/L3 加 `if (!HasRealGuiEnvironment) return;`。
+3. 永远通过 `CreateWindow(fixture)` 构造窗口并配合 `try/finally { cleanup(); }`。
+4. 窗口操作统一包在 `fixture.RunOnUiThread(...)` 中。
+5. 不需要修改任何平台 fixture —— 三平台自动共享新测试。
+
+### 7.5 macOS 备注
+
+`tests/Wails.Net.Application.MacOS.Tests/MacOSPlatformSkeletonTests.cs` **不参与** GuiContract，原因：
+
+- 本项目无 macOS 测试主机，`net10.0-macos` TFM 不可在本地编译；
+- `net10.0` 目标下 `MacOSWebviewWindow` 是 `#else` 分支的 ServerMode 占位，与 `Wails.Net.Application.Platform.ServerWebviewWindow` 行为等价，契约验证与 `ServerPlatformAppTests` 重叠。
+
+macOS 在测试套件中仅以"骨架行为不抛异常"的形式覆盖；完整的 AppKit 分支测试需在 macOS 上以独立测试项目或 E2E 形式补充。
+
+---
+
+## 8. 测试最佳实践
 
 1. **测试独立性**：每个测试可独立运行，不依赖执行顺序。
 2. **使用 `[NotInParallel]`**：涉及共享状态的测试类必须标记，避免并发冲突。

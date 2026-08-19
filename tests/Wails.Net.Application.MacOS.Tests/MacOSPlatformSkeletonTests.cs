@@ -5,8 +5,33 @@ using Wails.Net.Application.Platform;
 namespace Wails.Net.Application.MacOS.Tests;
 
 /// <summary>
-/// macOS 平台骨架（net10.0 目标，#else 分支）行为测试。
-/// 验证非 macOS 目标下平台实现降级为 no-op / 默认值且不抛异常。
+/// macOS 平台骨架（net10.0 目标，<c>#else</c> 分支）行为测试。
+/// <para>
+/// 验证在非 macOS 主机（例如 Windows / Linux 开发机）上编译 net10.0 目标时，
+/// 平台实现降级为 no-op / 默认值路径且不抛异常，
+/// 以保证跨平台源码兼容性与 ServerMode 回退可用性。
+/// </para>
+/// <para>
+/// <b>双 TFM 策略背景</b>（与 <c>src/Wails.Net.Application.MacOS/Wails.Net.Application.MacOS.csproj</c> 一致）：
+/// <list type="bullet">
+/// <item><term>net10.0</term><description>任意宿主可编译的骨架目标。AppKit/WebKit 代码由 <c>#if MACOS</c> 保护，此处仅编译 <c>#else</c> 分支的 ServerMode 降级实现（构造默认 / 方法 no-op / 集合空 / 标志位 false 等）。</description></item>
+/// <item><term>net10.0-macos</term><description>完整 AppKit + WebKit（WKWebView）实现，仅在 macOS 主机自动启用；可通过 <c>-p:WailsNetEnableMacOS=true</c> 强制启用（需 macOS 工作负载与 SDK）。该目标下的真实 GUI 行为不在本测试套件覆盖范围内，须在 macOS 主机上端到端验证（参考 AGENTS.md §4.4）。</description></item>
+/// </list>
+/// </para>
+/// <para>
+/// <b>为什么不参与 GuiContract 契约测试：</b>
+/// <list type="bullet">
+/// <item>本项目无 macOS 测试主机（CI / 开发者均为 Windows / Linux），<c>net10.0-macos</c> TFM 不可在本地编译；</item>
+/// <item>net10.0 目标下 <see cref="MacOSWebviewWindow"/> 的实现是 <c>#else</c> 分支的 ServerMode 占位，与 <see cref="Wails.Net.Application.Platform.ServerWebviewWindow"/> 行为等价，契约验证与 <see cref="Wails.Net.Application.Tests.ServerPlatformAppTests"/> 重叠；</item>
+/// <item>因此 macOS 在本套件中仅以"骨架行为不抛异常"的形式覆盖，本类 + <see cref="MacOptionsTests"/> 共同构成 macOS 的测试入口。完整的 AppKit 分支测试需在 macOS 上以独立测试项目或 E2E 形式补充（见实施计划阶段 5 / 后续 macOS 工作项）。</description></item>
+/// </list>
+/// </para>
+/// <para>
+/// <b>测试组织：</b>每个 <c>[Test]</c> 方法命名遵循 <c>Type_Behavior_ExpectedResult</c> 模式
+/// （如 <c>PlatformApp_Skeleton_Constructs</c>、<c>Clipboard_Skeleton_ReturnsEmpty</c>），
+/// 测试方法本身不要求 GUI 运行环境，因此不需要 <c>[NotInParallel]</c>，
+/// 可与 <see cref="MacOptionsTests"/> 并行执行。
+/// </para>
 /// </summary>
 public class MacOSPlatformSkeletonTests
 {
