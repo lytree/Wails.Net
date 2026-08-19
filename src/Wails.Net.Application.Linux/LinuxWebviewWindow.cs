@@ -5,6 +5,7 @@ using GLib;
 using Gtk;
 using WebKit;
 using Wails.Net.Application.Menus;
+using Wails.Net.Application.Webview;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Windows;
 using Wails.Net.Events;
@@ -76,6 +77,11 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     /// 为 null 时使用系统默认 WebKitGTK 配置。
     /// </summary>
     private readonly LinuxOptions? _linuxOptions;
+
+    /// <summary>
+    /// R2-4：当前窗口的 <see cref="WebviewRequestPipeline"/>，懒加载并缓存。
+    /// </summary>
+    private WebviewRequestPipeline? _pipeline;
 
     /// <summary>
     /// GTK 原生窗口实例。
@@ -438,20 +444,21 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     {
         try
         {
-            // 优先处理 POST IPC 请求（/wails/* 端点）。
-            // WebKitGTK 6.0 从 2.36 起支持通过 URISchemeRequest 处理 POST 请求。
-            var httpMethod = request.GetHttpMethod();
-            var path = request.GetPath();
-
-            if (string.Equals(httpMethod, "POST", StringComparison.OrdinalIgnoreCase) &&
-                path.StartsWith("/wails/", StringComparison.OrdinalIgnoreCase))
+            // R2-4：统一委托给 WebviewRequestPipeline。
+            // Linux GTK MainLoop 存在同步上下文，因此同步包装使用 WebviewPipelineSync.RunOnThreadPool
+            // 通过 Task.Run 强制不捕获调用方上下文，避免死锁。
+            var pipeline = GetOrCreatePipeline();
+            var webviewRequest = new WebviewRequest
             {
-                HandleIpcRequest(request);
-                return;
-            }
-
-            // GET 静态资源请求。
-            HandleAssetRequest(request);
+                Method = request.GetHttpMethod(),
+                Path = request.GetPath(),
+                RequestBody = ReadRequestBody(request),
+                WindowId = _id,
+                WindowName = _options.Name,
+                Origin = null
+            };
+            var response = pipeline.HandleAsync(webviewRequest).RunOnThreadPool();
+            FinishWithResponse(request, response);
         }
         catch (Exception ex)
         {
@@ -459,97 +466,6 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         }
     }
 
-    /// <summary>
-    /// 处理 POST /wails/* IPC 请求。
-    /// 同步读取请求体并转发到 <see cref="WailsApplication.HandleMessageFromFrontend"/>，
-    /// 返回 JSON 响应。对应 Win32 平台 OnWebResourceRequested 中的 IPC 分支。
-    /// </summary>
-    /// <param name="request">URI scheme 请求对象。</param>
-    private void HandleIpcRequest(URISchemeRequest request)
-    {
-        var app = WailsApplication.Get();
-        string responseJson = "{\"result\":null,\"error\":null}";
-
-        // 同步读取请求体（GInputStream → GLib.Bytes → 原生字节 → UTF-8 字符串）。
-        var bodyStream = request.GetHttpBody();
-        string body = "{}";
-        if (bodyStream is not null)
-        {
-            // 使用 ReadBytes 一次性读取全部可用字节（最多 4MB，足够 IPC 消息）。
-            var gBytes = bodyStream.ReadBytes(4 * 1024 * 1024, null);
-            if (gBytes is not null)
-            {
-                // GirCore 0.8.0 的 GLib.Bytes 未公开 Data 属性，
-                // 通过 P/Invoke g_bytes_get_data 获取原生数据指针与大小。
-                var dataPtr = GBytesGetData(gBytes.Handle.DangerousGetHandle(), out var size);
-                if (dataPtr != IntPtr.Zero && size > 0)
-                {
-                    var data = new byte[(int)size];
-                    Marshal.Copy(dataPtr, data, 0, (int)size);
-                    body = System.Text.Encoding.UTF8.GetString(data);
-                }
-            }
-        }
-
-        if (app is not null)
-        {
-            // 同步调用后端处理消息并获取响应（与 Win32 平台一致）。
-            var response = app.HandleMessageFromFrontend(body, _id).GetAwaiter().GetResult();
-            if (response is not null)
-            {
-                responseJson = JsonSerializer.Serialize(response, _jsonOptions);
-            }
-        }
-
-        var responseBytes = System.Text.Encoding.UTF8.GetBytes(responseJson);
-        FinishResponse(request, responseBytes, "application/json", 200, "OK");
-    }
-
-    /// <summary>
-    /// 处理 GET 静态资源请求。
-    /// 从 <see cref="WailsApplication.AssetServer"/> 读取静态资源并返回给 WebView。
-    /// 支持 SPA 路由回退：当资源不存在且路径无扩展名时，回退到 index.html。
-    /// </summary>
-    /// <param name="request">URI scheme 请求对象。</param>
-    private void HandleAssetRequest(URISchemeRequest request)
-    {
-        var path = request.GetPath().TrimStart('/');
-        if (string.IsNullOrEmpty(path))
-        {
-            path = "index.html";
-        }
-
-        var app = WailsApplication.Get();
-        var assetServer = app?.AssetServer;
-        if (assetServer is null)
-        {
-            FinishWithStatus(request, 500, "AssetServer not configured");
-            return;
-        }
-
-        var content = assetServer.ServeAsync(path, _options.Name).GetAwaiter().GetResult();
-        if (content is null || content.Length == 0)
-        {
-            // SPA 路由回退：当资源不存在时，回退到 index.html。
-            if (!string.IsNullOrEmpty(path)
-                && !path.Equals("index.html", StringComparison.OrdinalIgnoreCase)
-                && !Path.HasExtension(path))
-            {
-                content = assetServer.ServeAsync("index.html", _options.Name).GetAwaiter().GetResult();
-                if (content is not null && content.Length > 0)
-                {
-                    FinishResponse(request, content, "text/html", 200, "OK");
-                    return;
-                }
-            }
-
-            FinishWithStatus(request, 404, "Not Found");
-            return;
-        }
-
-        var mimeType = assetServer.GetMimeType(path);
-        FinishResponse(request, content, mimeType, 200, "OK");
-    }
 
     /// <summary>
     /// 使用 <see cref="URISchemeResponse"/> 构造并完成请求响应。
@@ -586,6 +502,68 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         response.SetContentType("text/plain");
         response.SetStatus(statusCode, reasonPhrase);
         request.FinishWithResponse(response);
+    }
+
+    /// <summary>
+    /// R2-4：创建或获取当前窗口的 <see cref="WebviewRequestPipeline"/>，懒加载并缓存。
+    /// </summary>
+    private WebviewRequestPipeline GetOrCreatePipeline()
+    {
+        if (_pipeline is not null)
+        {
+            return _pipeline;
+        }
+        var app = WailsApplication.Get();
+        var assetServer = app?.AssetServer;
+        _pipeline = new WebviewRequestPipeline(
+            ipcHandler: async (body, windowId, _, _) =>
+            {
+                if (app is null) return null;
+                var msg = await app.HandleMessageFromFrontend(body, windowId).ConfigureAwait(false);
+                return (object?)msg;
+            },
+            assetHandler: async (path, windowName, _) =>
+            {
+                if (assetServer is null) return null;
+                var bytes = await assetServer.ServeAsync(path, windowName).ConfigureAwait(false);
+                return (byte[]?)bytes;
+            },
+            mimeTypeResolver: path => assetServer?.GetMimeType(path) ?? "application/octet-stream");
+        return _pipeline;
+    }
+
+    /// <summary>
+    /// R2-4：同步读取 Linux URI scheme 请求体（POST）。
+    /// 保留原 HandleIpcRequest 中的 GInputStream → GLib.Bytes → Marshal.Copy 流程。
+    /// </summary>
+    private static string ReadRequestBody(URISchemeRequest request)
+    {
+        var bodyStream = request.GetHttpBody();
+        if (bodyStream is null)
+        {
+            return "{}";
+        }
+        var gBytes = bodyStream.ReadBytes(4 * 1024 * 1024, null);
+        if (gBytes is null)
+        {
+            return "{}";
+        }
+        var dataPtr = GBytesGetData(gBytes.Handle.DangerousGetHandle(), out var size);
+        if (dataPtr == IntPtr.Zero || size <= 0)
+        {
+            return "{}";
+        }
+        var data = new byte[(int)size];
+        Marshal.Copy(dataPtr, data, 0, (int)size);
+        return System.Text.Encoding.UTF8.GetString(data);
+    }
+
+    /// <summary>
+    /// R2-4：将 <see cref="WebviewResponse"/> 写入 <see cref="URISchemeRequest"/>。
+    /// </summary>
+    private void FinishWithResponse(URISchemeRequest request, WebviewResponse response)
+    {
+        FinishResponse(request, response.Body, response.ContentType, (uint)response.StatusCode, response.StatusText);
     }
 
     /// <summary>

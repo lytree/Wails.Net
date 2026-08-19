@@ -2,6 +2,7 @@ using System.Text.Json;
 using Android.Webkit;
 using Wails.Net.Application.Bindings;
 using WailsApplication = Wails.Net.Application.Application;
+using Wails.Net.Application.Webview;
 
 namespace Wails.Net.Application.Android;
 
@@ -23,6 +24,11 @@ public sealed class WailsWebMessageListener : Java.Lang.Object
     /// 当前窗口 ID，用于将消息路由到正确的 WebviewWindow 实例。
     /// </summary>
     private readonly uint _windowId;
+
+    /// <summary>
+    /// R2-4：当前监听器的 <see cref="WebviewRequestPipeline"/>，懒加载并缓存。
+    /// </summary>
+    private WebviewRequestPipeline? _pipeline;
 
     /// <summary>
     /// 构造 WailsWebMessageListener 实例。
@@ -54,16 +60,46 @@ public sealed class WailsWebMessageListener : Java.Lang.Object
             return SerializeError("应用实例不可用");
         }
 
-        // 同步等待结果返回给前端。
-        // 注意：JS 调用 JavascriptInterface 方法是同步阻塞的，此处 GetResult() 不会死锁
-        // 因为 HandleMessageFromFrontend 内部不依赖 UI 线程（绑定调用在工作线程执行）。
-        var response = app.HandleMessageFromFrontend(message, _windowId).GetAwaiter().GetResult();
-        if (response is null)
+        // R2-4：统一委托给 WebviewRequestPipeline。
+        // Android 主线程（WebView JavascriptInterface 回调线程）存在同步上下文，
+        // 同步包装使用 WebviewPipelineSync.RunOnThreadPool 通过 Task.Run
+        // 强制不捕获调用方上下文，避免死锁。
+        var pipeline = GetOrCreatePipeline();
+        var request = new WebviewRequest
         {
-            return string.Empty;
-        }
+            Method = "POST",
+            Path = "/wails/invoke",
+            RequestBody = message,
+            WindowId = _windowId,
+            WindowName = null,
+            Origin = null
+        };
+        var response = pipeline.HandleAsync(request).RunOnThreadPool();
+        return response.Body is null || response.Body.Length == 0
+            ? string.Empty
+            : System.Text.Encoding.UTF8.GetString(response.Body);
+    }
 
-        return JsonSerializer.Serialize(response, JsonOptions.DefaultSerializerOptions);
+    /// <summary>
+    /// R2-4：创建或获取当前监听器的 <see cref="WebviewRequestPipeline"/>，懒加载并缓存。
+    /// </summary>
+    private WebviewRequestPipeline GetOrCreatePipeline()
+    {
+        if (_pipeline is not null)
+        {
+            return _pipeline;
+        }
+        var app = WailsApplication.Get();
+        _pipeline = new WebviewRequestPipeline(
+            ipcHandler: async (body, windowId, _, _) =>
+            {
+                if (app is null) return null;
+                var msg = await app.HandleMessageFromFrontend(body, windowId).ConfigureAwait(false);
+                return (object?)msg;
+            },
+            assetHandler: (_, _, _) => Task.FromResult<byte[]?>(null) /* 监听器仅用于 IPC */,
+            mimeTypeResolver: _ => "application/json");
+        return _pipeline;
     }
 
     /// <summary>

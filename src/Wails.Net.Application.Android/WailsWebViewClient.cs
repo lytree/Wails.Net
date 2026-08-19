@@ -2,6 +2,7 @@ using Android.Webkit;
 using Wails.Net.Application.Platform;
 using Wails.Net.Events;
 using WailsApplication = Wails.Net.Application.Application;
+using Wails.Net.Application.Webview;
 
 namespace Wails.Net.Application.Android;
 
@@ -41,6 +42,11 @@ public sealed class WailsWebViewClient : WebViewClient
     /// 对应 Wails v3 Go 版本 WebView 导航完成后的 emit(WindowRuntimeReady) 行为（P0-2 审计项）。
     /// </summary>
     private readonly uint _windowId;
+
+    /// <summary>
+    /// R2-4：当前窗口的 <see cref="WebviewRequestPipeline"/>，懒加载并缓存。
+    /// </summary>
+    private WebviewRequestPipeline? _pipeline;
 
     /// <summary>
     /// 构造 WailsWebViewClient 实例。
@@ -95,29 +101,74 @@ public sealed class WailsWebViewClient : WebViewClient
             assetPath = "index.html";
         }
 
-        // 同步调用 AssetServer（ShouldInterceptRequest 不支持 async）。
-        // 当前 AssetServer 中间件链基于 Task.FromResult 包装同步 AssetManager.Open 调用，
-        // 实际无真正异步 I/O，不会死锁。
-        // P0-4：传递窗口名称以支持 per-window CSP 注入
-        var content = _assetServer.ServeAsync(assetPath, _windowName).GetAwaiter().GetResult();
-        if (content is not null && content.Length > 0)
+        // R2-4：统一委托给 WebviewRequestPipeline。
+        // Android 主线程存在同步上下文，同步包装使用 WebviewPipelineSync.RunOnThreadPool
+        // 通过 Task.Run 强制不捕获调用方上下文，避免死锁。
+        var pipeline = GetOrCreatePipeline();
+        var webviewRequest = new WebviewRequest
         {
-            var mimeType = _assetServer.GetMimeType(assetPath);
-            return new WebResourceResponse(mimeType, "utf-8", new MemoryStream(content));
+            Method = request.Method ?? "GET",
+            Path = path,
+            RequestBody = null,
+            WindowId = _windowId,
+            WindowName = _windowName,
+            Origin = request.RequestHeaders != null && request.RequestHeaders.TryGetValue("Referer", out var referer) ? referer : null
+        };
+        var response = pipeline.HandleAsync(webviewRequest).RunOnThreadPool();
+
+        // 特殊处理：管线返回 404 且请求为 /api/ 路径时，交回 WebView 默认处理。
+        if (response.StatusCode == 404 && assetPath.StartsWith("api/", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
         }
 
-        // SPA 路由回退：无扩展名的路径（非 /api/）回退到 index.html
-        if (ShouldFallbackToIndex(assetPath))
+        return CreateWebResourceResponse(response);
+    }
+
+    /// <summary>
+    /// R2-4：创建或获取当前窗口的 <see cref="WebviewRequestPipeline"/>，懒加载并缓存。
+    /// </summary>
+    private WebviewRequestPipeline GetOrCreatePipeline()
+    {
+        if (_pipeline is not null)
         {
-            var fallbackContent = _assetServer.ServeAsync("index.html", _windowName).GetAwaiter().GetResult();
-            if (fallbackContent is not null && fallbackContent.Length > 0)
+            return _pipeline;
+        }
+        var app = WailsApplication.Get();
+        _pipeline = new WebviewRequestPipeline(
+            ipcHandler: async (body, windowId, _, _) =>
             {
-                return new WebResourceResponse("text/html", "utf-8", new MemoryStream(fallbackContent));
-            }
-        }
+                if (app is null) return null;
+                var msg = await app.HandleMessageFromFrontend(body, windowId).ConfigureAwait(false);
+                return (object?)msg;
+            },
+            assetHandler: async (path, windowName, _) =>
+            {
+                if (_assetServer is null) return null;
+                var bytes = await _assetServer.ServeAsync(path, windowName).ConfigureAwait(false);
+                return (byte[]?)bytes;
+            },
+            mimeTypeResolver: path => _assetServer?.GetMimeType(path) ?? "application/octet-stream");
+        return _pipeline;
+    }
 
-        // 无匹配资源：返回 404
-        return new WebResourceResponse("text/plain", "utf-8", 404, "Not Found", new Dictionary<string, string>(), Stream.Null);
+    /// <summary>
+    /// R2-4：将 <see cref="WebviewResponse"/> 转换为 Android <see cref="WebResourceResponse"/>。
+    /// </summary>
+    private static WebResourceResponse CreateWebResourceResponse(WebviewResponse response)
+    {
+        var stream = response.Body is { Length: > 0 } ? new MemoryStream(response.Body) : Stream.Null;
+        var headers = new Dictionary<string, string>
+        {
+            ["Content-Type"] = response.ContentType
+        };
+        return new WebResourceResponse(
+            response.ContentType,
+            "utf-8",
+            response.StatusCode,
+            response.StatusText,
+            headers,
+            stream);
     }
 
     /// <summary>
@@ -156,34 +207,4 @@ public sealed class WailsWebViewClient : WebViewClient
         return string.Equals(host, WailsHost, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// 判断是否应回退到 index.html。
-    /// 满足以下条件之一则回退：
-    /// <list type="bullet">
-    ///   <item>路径无扩展名（SPA 路由，如 <c>/users</c>）。</item>
-    ///   <item>路径不以 <c>api/</c> 开头（避免误把 IPC 请求当 SPA 路由）。</item>
-    /// </list>
-    /// </summary>
-    /// <param name="assetPath">规范化后的资源路径（无前导斜杠）。</param>
-    /// <returns>应回退返回 true；否则返回 false。</returns>
-    private static bool ShouldFallbackToIndex(string assetPath)
-    {
-        if (string.IsNullOrEmpty(assetPath))
-        {
-            return false;
-        }
-
-        if (assetPath.Equals("index.html", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        // /api/ 路径不触发 SPA 回退（应由前端 fetch 直接处理 404）
-        if (assetPath.StartsWith("api/", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        return !Path.HasExtension(assetPath);
-    }
 }

@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Wails.Net.Application.Logging;
 using Wails.Net.Application.Menus;
+using Wails.Net.Application.Webview;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Windows;
 using Menu = Wails.Net.Application.Menus.Menu;
@@ -50,6 +51,11 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
     /// 窗口选项。
     /// </summary>
     private readonly WebviewWindowOptions _options;
+
+    /// <summary>
+    /// R2-4：当前窗口的 <see cref="WebviewRequestPipeline"/>，懒加载并缓存。
+    /// </summary>
+    private WebviewRequestPipeline? _pipeline;
 
     /// <summary>
     /// 应用级 macOS 选项（可为 null）。
@@ -1316,14 +1322,21 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
             var path = request.Url?.Path ?? string.Empty;
             var httpMethod = request.HttpMethod ?? "GET";
 
-            if (string.Equals(httpMethod, "POST", StringComparison.OrdinalIgnoreCase)
-                && path.StartsWith("/wails/", StringComparison.OrdinalIgnoreCase))
+            // R2-4：统一委托给 WebviewRequestPipeline。
+            // macOS RunLoop 存在同步上下文，同步包装使用 WebviewPipelineSync.RunOnThreadPool
+            // 通过 Task.Run 强制不捕获调用方上下文，避免死锁。
+            var pipeline = GetOrCreatePipeline();
+            var webviewRequest = new WebviewRequest
             {
-                HandleIpcRequest(urlSchemeTask, request);
-                return;
-            }
-
-            HandleAssetRequest(urlSchemeTask, path);
+                Method = httpMethod,
+                Path = path,
+                RequestBody = ReadRequestBody(request),
+                WindowId = _id,
+                WindowName = _options.Name,
+                Origin = null
+            };
+            var response = pipeline.HandleAsync(webviewRequest).RunOnThreadPool();
+            CompleteTask(urlSchemeTask, (nint)response.StatusCode, response.ContentType, response.Body);
         }
         catch
         {
@@ -1331,78 +1344,6 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
         }
     }
 
-    /// <summary>
-    /// 处理 POST /wails/message IPC 请求。
-    /// </summary>
-    /// <param name="task">URL scheme 任务。</param>
-    /// <param name="request">原始请求。</param>
-    private void HandleIpcRequest(IWKUrlSchemeTask task, NSUrlRequest request)
-    {
-        var app = WailsApplication.Get();
-        string responseJson = "{\"result\":null,\"error\":null}";
-
-        if (app is not null)
-        {
-            var body = ReadRequestBody(request);
-            try
-            {
-                var response = app.HandleMessageFromFrontend(body, _id).GetAwaiter().GetResult();
-                if (response is not null)
-                {
-                    responseJson = JsonSerializer.Serialize(response);
-                }
-            }
-            catch
-            {
-                // 处理失败返回空响应。
-            }
-        }
-
-        CompleteTask(task, 200, "application/json", Encoding.UTF8.GetBytes(responseJson));
-    }
-
-    /// <summary>
-    /// 处理 GET 静态资源请求（AssetServer + SPA 回退）。
-    /// </summary>
-    /// <param name="task">URL scheme 任务。</param>
-    /// <param name="path">资源路径。</param>
-    private void HandleAssetRequest(IWKUrlSchemeTask task, string path)
-    {
-        path = path.TrimStart('/');
-        if (string.IsNullOrEmpty(path))
-        {
-            path = "index.html";
-        }
-
-        var app = WailsApplication.Get();
-        var assetServer = app?.AssetServer;
-        if (assetServer is null)
-        {
-            CompleteTask(task, 500, "text/plain", Encoding.UTF8.GetBytes("AssetServer not configured"));
-            return;
-        }
-
-        var content = assetServer.ServeAsync(path, _options.Name).GetAwaiter().GetResult();
-        if (content is null || content.Length == 0)
-        {
-            // SPA 路由回退。
-            if (!path.Equals("index.html", StringComparison.OrdinalIgnoreCase)
-                && !Path.HasExtension(path))
-            {
-                content = assetServer.ServeAsync("index.html", _options.Name).GetAwaiter().GetResult();
-                if (content is not null && content.Length > 0)
-                {
-                    CompleteTask(task, 200, "text/html", content);
-                    return;
-                }
-            }
-
-            CompleteTask(task, 404, "text/plain", Encoding.UTF8.GetBytes("Not Found"));
-            return;
-        }
-
-        CompleteTask(task, 200, assetServer.GetMimeType(path), content);
-    }
 
     /// <summary>
     /// 完成 URL scheme 任务响应。
@@ -1437,6 +1378,34 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
         {
             // 任务可能已取消（页面导航），忽略。
         }
+    }
+
+    /// <summary>
+    /// R2-4：创建或获取当前窗口的 <see cref="WebviewRequestPipeline"/>，懒加载并缓存。
+    /// </summary>
+    private WebviewRequestPipeline GetOrCreatePipeline()
+    {
+        if (_pipeline is not null)
+        {
+            return _pipeline;
+        }
+        var app = WailsApplication.Get();
+        var assetServer = app?.AssetServer;
+        _pipeline = new WebviewRequestPipeline(
+            ipcHandler: async (body, windowId, _, _) =>
+            {
+                if (app is null) return null;
+                var msg = await app.HandleMessageFromFrontend(body, windowId).ConfigureAwait(false);
+                return (object?)msg;
+            },
+            assetHandler: async (path, windowName, _) =>
+            {
+                if (assetServer is null) return null;
+                var bytes = await assetServer.ServeAsync(path, windowName).ConfigureAwait(false);
+                return (byte[]?)bytes;
+            },
+            mimeTypeResolver: path => assetServer?.GetMimeType(path) ?? "application/octet-stream");
+        return _pipeline;
     }
 
     /// <summary>

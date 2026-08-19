@@ -2,6 +2,7 @@ using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
+using Wails.Net.Application.Webview;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Screens;
 using Wails.Net.Application.Windows;
@@ -204,6 +205,11 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     /// 窗口选项。
     /// </summary>
     private readonly WebviewWindowOptions _options;
+
+    /// <summary>
+    /// R2-4：当前窗口的 <see cref="WebviewRequestPipeline"/>，懒加载并缓存。
+    /// </summary>
+    private WebviewRequestPipeline? _pipeline;
 
     /// <summary>
     /// Windows 平台特定应用级选项，用于配置 WebView2 运行时环境。
@@ -755,87 +761,29 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
             var path = uri.AbsolutePath;
             var method = args.Request.Method;
             var app = Application.Get();
-
-            // IPC 消息端点：拦截所有 POST /wails/* 请求
-            // 运行时 API（window/dialog/clipboard 等）通过 _wailsInvoke 发送到 /wails/<type> 端点，
-            // 全部由 MessageProcessor 统一分发处理。
-            if (method.Equals("POST", StringComparison.OrdinalIgnoreCase) &&
-                path.StartsWith("/wails/", StringComparison.OrdinalIgnoreCase))
+            if (app is null || _webview is null)
             {
-                // 同步读取请求体，避免 await 导致后续在线程池线程执行
-                string body = string.Empty;
-                if (args.Request.Content is { } contentStream)
-                {
-                    using var reader = new StreamReader(contentStream);
-                    body = reader.ReadToEnd();
-                }
-
-                // 同步调用后端处理消息并获取响应。
-                // HandleMessageFromFrontend 主要是 CPU 密集型（反射调用），
-                // 阻塞 UI 线程的时间通常很短，可接受。
-                // 传递当前窗口 ID，使窗口操作消息能分发到对应的 WebviewWindow 实例。
-                string responseJson = "{\"result\":null,\"error\":null}";
-                if (app is not null)
-                {
-                    var response = app.HandleMessageFromFrontend(body, _id).GetAwaiter().GetResult();
-                    if (response is not null)
-                    {
-                        responseJson = JsonSerializer.Serialize(response, _jsonOptions);
-                    }
-                }
-
-                var responseBytes = System.Text.Encoding.UTF8.GetBytes(responseJson);
-                var responseStream = new MemoryStream(responseBytes);
                 args.Response = _webview?.Environment.CreateWebResourceResponse(
-                    responseStream, 200, "OK", "Content-Type: application/json\r\n");
+                    null, 500, "Internal Server Error", string.Empty);
                 return;
             }
 
-            // 静态资源端点：转发给 AssetServer
-            var assetServer = app?.AssetServer;
-            if (assetServer is not null)
+            // R2-4：构建平台无关请求并委托给 WebviewRequestPipeline。
+            // 同步通过 WebviewPipelineSync.RunOnThreadPool（Task.Run 包装）避免 UI 同步上下文死锁。
+            var requestBody = ReadRequestBodySync(args.Request);
+            var request = new WebviewRequest
             {
-                var assetPath = path.TrimStart('/');
-                if (string.IsNullOrEmpty(assetPath))
-                {
-                    assetPath = "index.html";
-                }
+                Method = method,
+                Path = path,
+                RequestBody = requestBody,
+                WindowId = _id,
+                WindowName = _options.Name,
+                Origin = null /* TODO: extract from Referer header */
+            };
 
-                // 同步读取资源，避免 await 导致后续在线程池线程执行
-                // P0-4：传递窗口名称以支持 per-window CSP 注入
-                var content = assetServer.ServeAsync(assetPath, _options.Name).GetAwaiter().GetResult();
-                if (content is not null && content.Length > 0)
-                {
-                    // 使用 assetPath（已规范化为 index.html 等）而非原始 path（可能是 "/"）
-                    // 计算 MIME 类型，否则根路径请求会得到 application/octet-stream，
-                    // 导致 WebView2 把 HTML 当作下载文件而非网页渲染（白屏 + 下载按钮）。
-                    var mimeType = assetServer.GetMimeType(assetPath);
-                    var ms = new MemoryStream(content);
-                    args.Response = _webview?.Environment.CreateWebResourceResponse(
-                        ms, 200, "OK", $"Content-Type: {mimeType}\r\n");
-                    return;
-                }
-
-                // SPA 路由回退：当资源不存在时，回退到 index.html。
-                // 适用于 Vue/React/Angular 等前端框架的客户端路由。
-                if (!string.IsNullOrEmpty(assetPath) &&
-                    !assetPath.Equals("index.html", StringComparison.OrdinalIgnoreCase) &&
-                    !Path.HasExtension(assetPath))
-                {
-                    var fallbackContent = assetServer.ServeAsync("index.html", _options.Name).GetAwaiter().GetResult();
-                    if (fallbackContent is not null && fallbackContent.Length > 0)
-                    {
-                        var ms = new MemoryStream(fallbackContent);
-                        args.Response = _webview?.Environment.CreateWebResourceResponse(
-                            ms, 200, "OK", "Content-Type: text/html\r\n");
-                        return;
-                    }
-                }
-            }
-
-            // 无匹配资源：返回 404
-            args.Response = _webview?.Environment.CreateWebResourceResponse(
-                null, 404, "Not Found", string.Empty);
+            var pipeline = GetOrCreatePipeline(app);
+            var response = pipeline.HandleAsync(request).RunOnThreadPool();
+            args.Response = CreateWebResourceResponse(_webview.Environment, response);
         }
         catch
         {
@@ -847,6 +795,56 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         {
             deferral.Complete();
         }
+    }
+
+    /// <summary>
+    /// 同步读取 WebView2 请求体（POST）。
+    /// </summary>
+    private static string ReadRequestBodySync(CoreWebView2WebResourceRequest request)
+    {
+        if (request.Content is not { } contentStream)
+        {
+            return string.Empty;
+        }
+        using var reader = new StreamReader(contentStream);
+        return reader.ReadToEnd();
+    }
+
+    /// <summary>
+    /// 创建或获取当前窗口的 <see cref="WebviewRequestPipeline"/>（R2-4）。
+    /// </summary>
+    private WebviewRequestPipeline GetOrCreatePipeline(Application app)
+    {
+        if (_pipeline is not null)
+        {
+            return _pipeline;
+        }
+        var assetServer = app.AssetServer;
+        _pipeline = new WebviewRequestPipeline(
+            ipcHandler: async (body, windowId, _, _) =>
+            {
+                var msg = await app.HandleMessageFromFrontend(body, windowId).ConfigureAwait(false);
+                return (object?)msg;
+            },
+            assetHandler: async (path, windowName, _) =>
+            {
+                if (assetServer is null) return null;
+                return await assetServer.ServeAsync(path, windowName).ConfigureAwait(false);
+            },
+            mimeTypeResolver: path => assetServer?.GetMimeType(path) ?? "application/octet-stream");
+        return _pipeline;
+    }
+
+    /// <summary>
+    /// 将 <see cref="WebviewResponse"/> 转换为 <see cref="CoreWebView2WebResourceResponse"/>。
+    /// </summary>
+    private static CoreWebView2WebResourceResponse CreateWebResourceResponse(
+        CoreWebView2Environment environment,
+        WebviewResponse response)
+    {
+        var stream = response.Body is { Length: > 0 } ? new MemoryStream(response.Body) : null;
+        var headers = $"Content-Type: {response.ContentType}\r\n";
+        return environment.CreateWebResourceResponse(stream, response.StatusCode, response.StatusText, headers);
     }
 
     /// <summary>
