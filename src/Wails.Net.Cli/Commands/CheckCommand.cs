@@ -25,7 +25,7 @@ internal sealed class CheckCommand : CliCommandBase
         capabilitiesDirOption.Description = "capabilities 目录路径（默认读 appsettings.json 配置或项目根/capabilities）";
 
         var permissionsManifestOption = new Option<DirectoryInfo?>("--permissions-manifest");
-        permissionsManifestOption.Description = "插件权限清单目录（每插件一个 JSON 文件）；提供后校验权限标识存在性";
+        permissionsManifestOption.Description = "插件权限清单目录（每插件一个 JSON 文件，可选；缺省时自动加载源生成器嵌入的插件清单）";
 
         var command = new Command("check", "校验 capabilities 目录（构建期权限检查）");
         command.Options.Add(projectOption);
@@ -52,7 +52,7 @@ internal sealed class CheckCommand : CliCommandBase
     /// <param name="capabilitiesDir">显式 capabilities 目录。</param>
     /// <param name="manifestDir">插件权限清单目录。</param>
     /// <returns>退出码：0 通过；1 校验失败。</returns>
-    private Task<int> ExecuteAsync(
+    internal Task<int> ExecuteAsync(
         FileInfo? project,
         DirectoryInfo? capabilitiesDir,
         DirectoryInfo? manifestDir)
@@ -81,18 +81,17 @@ internal sealed class CheckCommand : CliCommandBase
 
         Info($"校验项目：{projectPath}");
 
-        // 加载已知权限集合（可选）
-        IReadOnlySet<string>? knownPermissions = null;
-        if (manifestDir is not null)
+        // 加载已知权限集合（R3-D.A）：始终包含源生成器聚合的插件清单（OPT-PLUGIN-003 闭环），
+        // 显式指定 --permissions-manifest 时再合并外部目录，去重后报告来源计数。
+        // 显式目录不存在视为错误（用户显式声明的资源缺失）。
+        if (manifestDir is not null && !manifestDir.Exists)
         {
-            if (!manifestDir.Exists)
-            {
-                Error($"权限清单目录不存在：{manifestDir.FullName}");
-                return Task.FromResult(1);
-            }
-            knownPermissions = CapabilityChecker.LoadKnownPermissionsFromManifests(manifestDir.FullName);
-            Info($"已加载权限清单：{knownPermissions.Count} 个已知权限标识");
+            Error($"权限清单目录不存在：{manifestDir.FullName}");
+            return Task.FromResult(1);
         }
+        var (knownPermissions, generatedCount, manifestCount) =
+            CapabilityChecker.LoadKnownPermissions(manifestDir?.FullName);
+        Info($"已加载权限清单：源生成 {generatedCount} 个 + 外部目录 {manifestCount} 个 = 去重后 {knownPermissions.Count} 个已知权限标识");
 
         var result = CapabilityChecker.CheckProject(
             projectPath,

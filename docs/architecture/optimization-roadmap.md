@@ -961,7 +961,7 @@ capability 文件仅启动期加载（`CapabilityFileLoader.cs:36-69` 目录扫�
 | OPT-EVENT-002 | 跨窗口定向事件（✅ 2026-08-15，后端 + 前端 + 传输层过滤） |
 | OPT-PLUGIN-001 | 插件资产 manifest（未动，后续批次） |
 | OPT-PLUGIN-002 | AssetServer 插件资源路由（未动，后续批次；`Routes/` 空目录待启用或移除） |
-| OPT-PLUGIN-003 | 插件命令权限清单生成（未动，后续批次；同时作为 OPT-SEC-004 的权限集合数据源） |
+| OPT-PLUGIN-003 | 插件命令权限清单生成（✅ 2026-08-19：R3-C 生成器 + 注册表；R3-D.A CLI 自动加载） |
 | OPT-RUNTIME-001 | `Application` 职责拆分（未动，后续批次） |
 | OPT-RUNTIME-002 | 生命周期 ready 状态建模（核心 ✅ 2026-08-15：`ApplicationLifecycleState` + `PlatformStarted` + `_startedTcs` 移除 + Linux `WindowRuntimeReady`；Android `WindowRuntimeReady` 待补） |
 | OPT-RUNTIME-003 | Channels 对称加密（未动，后续批次，opt-in） |

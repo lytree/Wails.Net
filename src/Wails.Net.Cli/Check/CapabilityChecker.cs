@@ -339,4 +339,41 @@ public static class CapabilityChecker
 
         return known;
     }
+
+    /// <summary>
+    /// 加载已知权限标识集合（R3-D.A）：合并 <see cref="PluginPermissionManifestRegistry"/>
+    /// 编译期聚合结果与 <paramref name="manifestDir"/> 外部清单目录。
+    /// <para>
+    /// 数据源优先级：
+    /// <list type="number">
+    /// <item>源生成器嵌入的插件清单（编译期由 <c>PluginPermissionManifestGenerator</c> 通过
+    /// <c>[ModuleInitializer]</c> 写入 <see cref="PluginPermissionManifestRegistry"/>）；</item>
+    /// <item><c>--permissions-manifest</c> 显式目录（运行时外部覆盖 / 插件包未发布清单时补位）。</item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// 返回元组 <c>(Permissions, GeneratedCount, ManifestCount)</c> 便于调用方报告来源；
+    /// 任一源缺失不影响另一源参与合并。
+    /// </para>
+    /// </summary>
+    /// <param name="manifestDir">外部清单目录；可为 null。</param>
+    /// <returns>合并后的权限集合与各源计数。</returns>
+    public static (IReadOnlySet<string> Permissions, int GeneratedCount, int ManifestCount) LoadKnownPermissions(
+        string? manifestDir = null)
+    {
+        // 源 1：源生成器聚合（OPT-PLUGIN-003 闭环：编译期清单 → 运行时注册表 → CLI 校验）。
+        var generated = PluginPermissionManifestRegistry.CollectAllPermissions();
+
+        // 源 2：外部清单目录（向后兼容 + 离线 / 第三方插件清单补位）。
+        var fromDir = LoadKnownPermissionsFromManifests(manifestDir ?? string.Empty);
+
+        // 合并：源生成结果优先作为基线，外部清单补全 / 覆盖（去重）。
+        var merged = new HashSet<string>(generated, StringComparer.Ordinal);
+        foreach (var p in fromDir)
+        {
+            merged.Add(p);
+        }
+
+        return (merged, generated.Count, fromDir.Count);
+    }
 }

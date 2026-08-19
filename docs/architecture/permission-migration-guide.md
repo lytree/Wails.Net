@@ -212,5 +212,43 @@ builder.Services.EnableStrictByDefault();
 
 ### 6.5 后续 R3 阶段
 
-- **R3-B（待启动）**：47 插件 304 命令全量迁移到 `Require` / `Public`，每个插件配套生成 capability 默认 JSON。
-- **R3-C（待启动）**：库默认从 `Compatibility` 翻转为 `Strict`（破坏性变更，需配合本指南与版本号 bump）。
+- **R3-B ✅**：47 插件 304 命令全量迁移到 `Require` / `Public`，每个插件配套生成 capability 默认 JSON。
+- **R3-C ✅**：源生成器产出插件权限清单 + 运行时注册表 (PluginPermissionManifestRegistry)，库默认仍为 Compatibility（Strict 翻转延后到 R3-E 协调版本号 bump）。 `Compatibility` 翻转为 `Strict`（破坏性变更，需配合本指南与版本号 bump）。
+
+## 7. R3-D.A：wails-net check 自动加载插件清单（2026-08-19 落地）
+
+R3-C 提供了 PluginPermissionManifestRegistry.CollectAllPermissions() 运行时聚合 API，
+R3-D.A 把它接入 CapabilityChecker，形成"编译期生成 → 运行时聚合 → CLI 校验"的完整闭环。
+
+### 7.1 行为变化
+
+wails-net check 现在**自动**加载源生成器嵌入的插件清单，无需显式指定目录：
+
+`ash
+# 之前（仍可用，作为外部覆盖 / 离线补位）
+wails-net check --project MyApp.csproj --permissions-manifest ./manifests
+
+# 现在（默认自动加载源生成器嵌入的清单，可选叠加外部目录）
+wails-net check --project MyApp.csproj
+`
+
+执行结果会在日志中报告来源计数：
+
+`
+已加载权限清单：源生成 137 个 + 外部目录 0 个 = 去重后 137 个已知权限标识
+`
+
+### 7.2 合并语义
+
+- **源生成器嵌入**（基线）：编译期由 PluginPermissionManifestGenerator 通过 [ModuleInitializer] 写入 PluginPermissionManifestRegistry，随 Wails.Net.Application.dll 自动加载。
+- **外部清单目录**（补位）：--permissions-manifest <dir> 指向的目录下的 *.json 文件，支持数组形式（["x:default", ...]）或对象形式（{"plugin": "x", "permissions": [...]}）。
+- **去重合并**：两个源的去重并集；源生成器作为基线，外部清单补全。
+
+### 7.3 显式目录不存在视为错误
+
+如果用户显式指定 --permissions-manifest <dir> 但目录不存在，命令以退出码 1 失败（用户显式声明的资源缺失）。
+若不指定该参数，则目录源视为空（仅使用源生成器聚合）。
+
+### 7.4 后续 R3 阶段
+
+- **R3-E（计划）**：库默认从 Compatibility 翻转为 Strict（破坏性变更，需配合 SemVer 2.0.0 → 3.0.0 版本号 bump 与本指南大版本段更新）。
