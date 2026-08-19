@@ -7,6 +7,7 @@ using Wails.Net.Application.Commands;
 using Wails.Net.Application.Coordinators;
 using Wails.Net.Application.Events;
 using Wails.Net.Application.Hosting;
+using Wails.Net.Application.Invocation;
 using Wails.Net.Application.Managers;
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.Options;
@@ -79,6 +80,13 @@ public class Application
     /// 对应 Wails v3 中通过 MapCommand 注册的命令路径。
     /// </summary>
     private CommandDispatcher? _commandDispatcher;
+
+    /// <summary>
+    /// 统一调用网关（R2-1 融合审计：Binding + Command 共用入口）。
+    /// 在 CommandDispatcher 注入后创建，并注入到 MessageProcessor。
+    /// 为 null 时 MessageProcessor 仍保留本地 Binding/Command 调用路径（向后兼容）。
+    /// </summary>
+    public InvocationGateway? InvocationGateway { get; private set; }
 
     /// <summary>
     /// DI 服务容器，由 <see cref="InitializeFromServiceProvider"/> 注入。
@@ -430,7 +438,27 @@ public class Application
     public CommandDispatcher? CommandDispatcher
     {
         get => _commandDispatcher;
-        internal set => _commandDispatcher = value;
+        internal set
+        {
+            _commandDispatcher = value;
+            // R2-1：CommandDispatcher 注入后创建统一调用网关，
+            // 将 BindingManager、CommandDispatcher、PermissionManager、IServiceProvider、ILogger 注入网关，
+            // 并通过 SetWindowLookup 注入窗口查找，使网关能在调用时解析窗口名（用于窗口级 Capability 隔离）。
+            if (value is not null)
+            {
+                var gatewayLogger = _serviceProvider?.GetService<Microsoft.Extensions.Logging.ILogger<InvocationGateway>>();
+                InvocationGateway = new InvocationGateway(
+                    Bindings,
+                    value,
+                    _serviceProvider?.GetService<Wails.Net.Application.Security.PermissionManager>(),
+                    _serviceProvider,
+                    gatewayLogger);
+                InvocationGateway.SetWindowLookup(GetWindow);
+
+                // 同时将网关注入到 MessageProcessor（若已创建）。
+                _messageProcessor?.SetGateway(InvocationGateway);
+            }
+        }
     }
 
     /// <summary>
@@ -1041,7 +1069,7 @@ public class Application
         }
 
         // 确保 MessageProcessor 已构造（NativeIpcTransport 需要它来路由消息）
-        _messageProcessor ??= new MessageProcessor(Bindings, Events, id => GetWindow(id), _commandDispatcher, _serviceProvider);
+        _messageProcessor ??= new MessageProcessor(Bindings, Events, id => GetWindow(id), _commandDispatcher, _serviceProvider, InvocationGateway);
 
         NativeIpcTransport = new NativeIpcTransport(_messageProcessor);
         Events.AddWailsEventListener(NativeIpcTransport);
@@ -1564,7 +1592,7 @@ public class Application
     /// <returns>响应消息，若无需响应则返回 null。</returns>
     public async Task<ResponseMessage?> HandleMessageFromFrontend(string message, uint? windowId = null)
     {
-        _messageProcessor ??= new MessageProcessor(Bindings, Events, id => GetWindow(id), _commandDispatcher, _serviceProvider);
+        _messageProcessor ??= new MessageProcessor(Bindings, Events, id => GetWindow(id), _commandDispatcher, _serviceProvider, InvocationGateway);
         var parsed = _messageProcessor.ParseMessage(message);
         if (parsed is null)
         {

@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 using Wails.Net.Application.Bindings;
 using Wails.Net.Application.Commands;
 using Wails.Net.Application.Events;
+using Wails.Net.Application.Invocation;
 using Wails.Net.Application.Menus;
 using Wails.Net.Application.Windows;
 using Wails.Net.Errors;
@@ -77,6 +78,13 @@ public class MessageProcessor
     /// 事件处理器实例。
     /// </summary>
     private readonly EventProcessor _events;
+
+    /// <summary>
+    /// 统一调用网关（R2-1 融合审计：Binding + Command 共用入口）。
+    /// 为 null 时回退到本地 BindingManager/CommandDispatcher 直接调用路径（向后兼容）。
+    /// 由 <see cref="SetGateway"/> 在运行时注入，允许 Application 在平台就绪后再注入。
+    /// </summary>
+    private InvocationGateway? _gateway;
 
     /// <summary>
     /// 窗口查找器，根据窗口 ID 获取 <see cref="WebviewWindow"/> 实例。
@@ -179,6 +187,48 @@ public class MessageProcessor
         _windowLookup = windowLookup;
         _commands = commands;
         _services = services;
+    }
+
+    /// <summary>
+    /// 使用指定的绑定管理器、事件处理器、窗口查找器、命令调度器、DI 服务容器与统一调用网关构造 MessageProcessor 实例。
+    /// R2-1：当提供 <paramref name="gateway"/> 时，消息处理路径优先通过网关调用
+    /// （Binding → Command 回退、错误模型、窗口名解析统一处理）；
+    /// 网关为 null 时回退到本地 BindingManager/CommandDispatcher 直接调用路径（向后兼容）。
+    /// </summary>
+    /// <param name="bindings">绑定管理器。</param>
+    /// <param name="events">事件处理器。</param>
+    /// <param name="windowLookup">窗口查找器，根据窗口 ID 返回对应的窗口实例。</param>
+    /// <param name="commands">命令调度器，可为 null；为 null 时不进行命令回退。</param>
+    /// <param name="services">DI 服务容器，用于创建命令上下文。</param>
+    /// <param name="gateway">统一调用网关（R2-1 新增），可为 null。</param>
+    public MessageProcessor(
+        BindingManager bindings,
+        EventProcessor events,
+        Func<uint, WebviewWindow?> windowLookup,
+        CommandDispatcher? commands,
+        IServiceProvider? services,
+        InvocationGateway? gateway)
+    {
+        _bindings = bindings;
+        _events = events;
+        _windowLookup = windowLookup;
+        _commands = commands;
+        _services = services;
+        _gateway = gateway;
+    }
+
+    /// <summary>
+    /// 设置统一调用网关（R2-1 融合审计）。
+    /// 由 <see cref="Application"/> 在 <see cref="Application.SetPlatformApp"/> 之后注入，
+    /// 使 MessageProcessor 后续的消息处理路径通过网关调用。
+    /// </summary>
+    /// <param name="gateway">统一调用网关，可为 null（清除）。</param>
+    public void SetGateway(InvocationGateway? gateway)
+    {
+        // 与 _gateway 字段的 volatile 写入：通过 Interlocked 不适用（引用类型仅替换整个引用），
+        // 此处使用普通赋值。_gateway 只在消息处理路径读取，Application 在启动早期一次性设置后只读，
+        // 因此不需要锁/屏障（与 Wails v3 Go 单 version 字段语义等价）。
+        _gateway = gateway;
     }
 
     /// <summary>
@@ -324,40 +374,61 @@ public class MessageProcessor
             var args = callPayload.Args ?? Array.Empty<JsonElement>();
             Dictionary<string, object?> result;
 
-            // 优先按 ID 调用，其次按名称调用
-            // 按 ID 调用通过 GeneratedBindingsMetadata 查找 ID 对应的方法全名，
-            // 然后委托到按名称调用路径（源生成器生成的强类型调用器，零反射）。
-            if (callPayload.Id is not null)
+            // R2-1：优先通过统一调用网关调用（Binding + Command 统一入口、错误模型）。
+            // 当网关未注入时（向后兼容：测试场景或独立 MessageProcessor）回退到本地直接调用路径。
+            if (_gateway is not null)
             {
-                var methodName = TryResolveMethodNameById(callPayload.Id.Value);
-                if (methodName is not null)
+                if (callPayload.Id is not null)
                 {
-                    result = await _bindings.Call(methodName, args, callCts.Token);
+                    // 按 ID 调用：网关内部通过 GeneratedBindingsMetadata 解析 ID → 方法全名，
+                    // 再走与按名称调用一致的 Binding → Command 回退路径。
+                    result = await _gateway.InvokeByIdAsync(callPayload.Id.Value, args, message.WindowId, message.Origin, callCts.Token);
+                }
+                else if (!string.IsNullOrEmpty(callPayload.Name))
+                {
+                    // 按名称调用：网关内部处理 Binding → Command 回退。
+                    result = await _gateway.InvokeAsync(callPayload.Name!, args, message.WindowId, message.Origin, callCts.Token);
                 }
                 else
                 {
-                    return CreateErrorResponse(message.Id, $"未找到 ID 为 {callPayload.Id.Value} 的绑定方法",
-                        CallErrorKind.ReferenceError);
-                }
-            }
-            else if (!string.IsNullOrEmpty(callPayload.Name))
-            {
-                result = await _bindings.Call(callPayload.Name!, args, callCts.Token);
-
-                // 若 BindingManager 未找到方法（且未通过源生成器注册），
-                // 尝试回退到 CommandDispatcher 查找命令（如 "counter.increment"、"notification.show"）
-                if (IsNotFoundResult(result, callPayload.Name!) && _commands is not null)
-                {
-                    var commandResult = await TryDispatchCommandAsync(callPayload.Name!, args, message.WindowId, message.Origin, callCts.Token);
-                    if (commandResult is not null)
-                    {
-                        result = commandResult;
-                    }
+                    return CreateErrorResponse(message.Id, "调用必须指定 id 或 name", CallErrorKind.TypeError);
                 }
             }
             else
             {
-                return CreateErrorResponse(message.Id, "调用必须指定 id 或 name", CallErrorKind.TypeError);
+                // 本地路径（向后兼容）：保留原有按 ID / 按名称调用与命令回退逻辑。
+                if (callPayload.Id is not null)
+                {
+                    var methodName = TryResolveMethodNameById(callPayload.Id.Value);
+                    if (methodName is not null)
+                    {
+                        result = await _bindings.Call(methodName, args, callCts.Token);
+                    }
+                    else
+                    {
+                        return CreateErrorResponse(message.Id, $"未找到 ID 为 {callPayload.Id.Value} 的绑定方法",
+                            CallErrorKind.ReferenceError);
+                    }
+                }
+                else if (!string.IsNullOrEmpty(callPayload.Name))
+                {
+                    result = await _bindings.Call(callPayload.Name!, args, callCts.Token);
+
+                    // 若 BindingManager 未找到方法（且未通过源生成器注册），
+                    // 尝试回退到 CommandDispatcher 查找命令（如 "counter.increment"、"notification.show"）
+                    if (IsNotFoundResult(result, callPayload.Name!) && _commands is not null)
+                    {
+                        var commandResult = await TryDispatchCommandAsync(callPayload.Name!, args, message.WindowId, message.Origin, callCts.Token);
+                        if (commandResult is not null)
+                        {
+                            result = commandResult;
+                        }
+                    }
+                }
+                else
+                {
+                    return CreateErrorResponse(message.Id, "调用必须指定 id 或 name", CallErrorKind.TypeError);
+                }
             }
 
             return new ResponseMessage
@@ -468,6 +539,50 @@ public class MessageProcessor
     /// <returns>命令调用结果响应；若 CommandDispatcher 未配置或命令不存在则返回 null。</returns>
     private async Task<ResponseMessage?> ProcessCommandFallbackAsync(Message message)
     {
+        // R2-1：优先通过统一调用网关调用（消息类型作为命令名）。
+        // 网关已封装 Binding → Command 回退、参数序列化、窗口名解析与错误模型。
+        // 当网关未注入时（向后兼容：测试场景）回退到本地直接调用路径。
+        if (_gateway is not null)
+        {
+            var gatewayResult = await _gateway.InvokeAsync(
+                message.Type,
+                new[] { message.Payload },
+                message.WindowId,
+                message.Origin,
+                _cts.Token);
+
+            if (gatewayResult.TryGetValue("error", out var errObj) && errObj is not null)
+            {
+                // 网关已封装结构化错误，统一提取 message + kind 转换为 ResponseMessage。
+                var kind = CallErrorKind.ReferenceError;
+                string? errorMessage = null;
+                if (errObj is Dictionary<string, object?> errDict)
+                {
+                    if (errDict.TryGetValue("kind", out var kindObj) && kindObj is string ks)
+                    {
+                        kind = ks switch
+                        {
+                            "TypeError" => CallErrorKind.TypeError,
+                            "RuntimeError" => CallErrorKind.RuntimeError,
+                            _ => CallErrorKind.ReferenceError
+                        };
+                    }
+                    if (errDict.TryGetValue("message", out var msgObj))
+                    {
+                        errorMessage = msgObj?.ToString();
+                    }
+                }
+                return CreateErrorResponse(message.Id, errorMessage ?? $"未找到命令: {message.Type}", kind);
+            }
+
+            return new ResponseMessage
+            {
+                Id = message.Id,
+                Type = MessageTypes.Response,
+                Result = gatewayResult
+            };
+        }
+
         // CommandDispatcher 未配置时（如单元测试场景），保持向后兼容返回 null
         if (_commands is null)
         {
