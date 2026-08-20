@@ -33,6 +33,7 @@ public static class Program
         root.Subcommands.Add(SetupCommand.Create());
         root.Subcommands.Add(NewCommand.Create());
         root.Subcommands.Add(CheckCommand.Create());
+        root.Subcommands.Add(CapabilityCommand.Create());
         root.Subcommands.Add(BuildCommand.Create());
         root.Subcommands.Add(DevCommand.Create());
         root.Subcommands.Add(PublishCommand.Create());
