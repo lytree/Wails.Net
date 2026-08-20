@@ -7,10 +7,16 @@ namespace Wails.Net.Application.Security;
 public class PermissionOptions
 {
     /// <summary>
-    /// 启动期全局开关（R3-A.4）：是否将库默认 Mode 翻转为 PermissionMode.Strict。
+    /// 启动期全局开关：是否在 PermissionOptions 默认 <see cref="PermissionMode.Strict"/> 的基础上
+    /// 强制覆盖为 <see cref="PermissionMode.Compatibility"/>（用于极少数需回退宽松模式的迁移场景）。
     /// <para>
-    /// 当前默认 false（保持向后兼容）；一旦置 true，所有未显式覆盖 Mode 的 PermissionOptions 实例
-    /// 都将以 Strict 为初始值。这是 R3 最终默认翻转前的 opt-in 入口。
+    /// 默认 <c>false</c>（即默认走 Strict 最小权限姿态，对应 Tauri v2 默认行为）。
+    /// R3-E 起（库默认从 Compatibility 翻转为 Strict）：
+    /// <list type="bullet">
+    /// <item>新代码无需触碰本属性即可获得 Strict 默认；</item>
+    /// <item>仅当用户从旧版本升级且短期内无法完成 capability 文件配套时，
+    /// 才需要在 Program.cs 启动期一次性置 <c>true</c> 临时回退。</item>
+    /// </list>
     /// </para>
     /// <para>
     /// 调用方应在 Program.cs 启动期（DI 容器构造 PermissionOptions 之前）一次性设置，
@@ -18,9 +24,8 @@ public class PermissionOptions
     /// 但调用方应避免在 PermissionOptions 实例化期间并发修改此标志。
     /// </para>
     /// </summary>
-    public static bool EnforceStrictByDefault { get; set; }
+    public static bool CompatibilityByDefault { get; set; }
 
-    /// <summary>
     /// <summary>
     /// 获取或设置已授权的权限标识列表。
     /// 权限标识可以是细粒度权限（如 "fs:allow-read"）或命名权限集（如 "core:default"）。
@@ -28,7 +33,7 @@ public class PermissionOptions
     public List<string> Permissions { get; set; } = new();
 
     /// <summary>
-    /// 获取或设置权限检查模式（默认 <see cref="PermissionMode.Compatibility"/>，向后兼容）。
+    /// 获取或设置权限检查模式（默认 <see cref="PermissionMode.Strict"/>，对应 Tauri v2 最小权限姿态）。
     /// <para>
     /// OPT-SEC-001（权限 strict 模式迁移）：
     /// <list type="bullet">
@@ -39,7 +44,7 @@ public class PermissionOptions
     /// </list>
     /// </para>
     /// </summary>
-    public PermissionMode Mode { get; set; } = EnforceStrictByDefault ? PermissionMode.Strict : PermissionMode.Compatibility;
+    public PermissionMode Mode { get; set; } = CompatibilityByDefault ? PermissionMode.Compatibility : PermissionMode.Strict;
 
     /// <summary>
     /// 获取或设置是否启用权限检查（默认 false，向后兼容）。

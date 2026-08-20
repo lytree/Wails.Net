@@ -34,22 +34,71 @@ public sealed class PermissionModeTests
     }
 
     [Test]
-    public async Task DefaultMode_IsCompatibility()
+    public async Task DefaultMode_IsStrict_R3E()
     {
+        // R3-E：库默认从 Compatibility 翻转为 Strict（最小权限姿态）。
         var options = new PermissionOptions();
 
-        await Assert.That(options.Mode).IsEqualTo(PermissionMode.Compatibility);
-        await Assert.That(options.Enabled).IsFalse();
+        await Assert.That(options.Mode).IsEqualTo(PermissionMode.Strict);
+        // PermissionManager.Enabled 是计算属性（Mode==Strict || options.Enabled），
+        // 所以即使 options.Enabled 默认 false，Strict 模式下 PermissionManager 仍报告 Enabled=true。
+        var manager = new PermissionManager(Microsoft.Extensions.Options.Options.Create(options), null);
+        await Assert.That(manager.Enabled).IsTrue();
     }
 
     [Test]
-    public async Task CompatibilityMode_Disabled_AllowsAll()
+    public async Task DefaultMode_WithCompatibilityByDefault_OverridesToCompatibility()
     {
-        // 兼容模式 + Enabled=false：未授权命令默认放行
-        var manager = CreateManager(PermissionMode.Compatibility, enabled: false);
+        // R3-E：v2.x → v3.0 升级过渡入口，临时回退到宽松模式。
+        PermissionOptions.CompatibilityByDefault = true;
+        try
+        {
+            var options = new PermissionOptions();
+            await Assert.That(options.Mode).IsEqualTo(PermissionMode.Compatibility);
+        }
+        finally
+        {
+            PermissionOptions.CompatibilityByDefault = false;  // 恢复
+        }
+    }
+
+    [Test]
+    public async Task DefaultMode_IsStrict_DoesNotAffectOtherInstances_WhenCompatibilityByDefaultToggled()
+    {
+        // 验证 CompatibilityByDefault 是进程级开关，在切换后实例化新对象才会生效。
+        var strictOptions = new PermissionOptions();
+        await Assert.That(strictOptions.Mode).IsEqualTo(PermissionMode.Strict);
+
+        PermissionOptions.CompatibilityByDefault = true;
+        try
+        {
+            var compatOptions = new PermissionOptions();
+            await Assert.That(compatOptions.Mode).IsEqualTo(PermissionMode.Compatibility);
+        }
+        finally
+        {
+            PermissionOptions.CompatibilityByDefault = false;
+        }
+    }
+
+    [Test]
+    public async Task CompatibilityMode_Disabled_DenyByDefaultFalse_AllowsAll()
+    {
+        // 兼容模式 + Enabled=false + DenyByDefault=false：未授权命令默认放行（v2.x 旧版行为）
+        var manager = CreateManager(PermissionMode.Compatibility, enabled: false, denyByDefault: false);
 
         await Assert.That(manager.Enabled).IsFalse();
         await Assert.That(manager.IsGranted("fs:allow-read")).IsTrue();
+    }
+
+    [Test]
+    public async Task CompatibilityMode_Disabled_DenyByDefaultTrue_Rejects()
+    {
+        // 兼容模式 + Enabled=false + DenyByDefault=true：未授权命令拒绝（DenyByDefault 优先）
+        var manager = CreateManager(PermissionMode.Compatibility, enabled: false, denyByDefault: true);
+
+        await Assert.That(manager.Enabled).IsFalse();
+        await Assert.That(manager.IsGranted("fs:allow-read")).IsFalse();
     }
 
     [Test]

@@ -16,8 +16,11 @@ public sealed class PermissionManagerTests
     /// </summary>
     private static PermissionManager CreateManager(bool enabled, bool denyByDefault, params string[] permissions)
     {
+        // R3-E: 库默认从 Compatibility 翻转为 Strict（最小权限姿态）。
+        // 测试期望旧版 Enabled 字段决定启用行为，需要显式回退到 Compatibility 模式。
         var options = Microsoft.Extensions.Options.Options.Create(new PermissionOptions
         {
+            Mode = PermissionMode.Compatibility,
             Enabled = enabled,
             DenyByDefault = denyByDefault,
             Permissions = permissions.ToList(),
@@ -29,7 +32,10 @@ public sealed class PermissionManagerTests
     public async Task IsGranted_Disabled_ReturnsTrue()
     {
         // 安排：权限检查未启用
-        var manager = CreateManager(enabled: false, denyByDefault: true);
+        // 注：缺陷 B 修复后，Enabled=false + DenyByDefault=true 会继续走 DenyByDefault 检查
+        // （用于让"默认拒绝"在关闭总开关时依然生效）。本测试验证"未启用时全部放行"的
+        // 原始语义，应使用 DenyByDefault=false（与 Enabled 互斥）。
+        var manager = CreateManager(enabled: false, denyByDefault: false);
 
         // 操作与断言：未启用时全部放行
         await Assert.That(manager.IsGranted("any:permission")).IsTrue();

@@ -1,3 +1,145 @@
+
+# v2.x → v3.0 迁移指南：权限默认 Strict 翻转
+
+> 本文档对应 R3-E（库默认从 Compatibility 翻转为 Strict）与 SemVer 2.0.0 → 3.0.0 版本号 bump。
+>
+> **状态**：✅ 已落地（2026-08-20，R3-E 提交待合并）
+> **影响范围**：所有 v2.x 应用升级到 v3.0.0 时必须审视权限配置
+> **预期破坏性**：默认 Mode 由 Compatibility 翻转为 Strict
+
+## 0. TL;DR
+
+v3.0 起，Wails.Net 库默认采用 **Strict 最小权限姿态**，对齐 Tauri v2 默认行为。
+未授权命令一律拒绝，需要通过 `capabilities/` 目录下的 JSON 文件显式声明。
+
+如果你的应用在 v2.x 下默认能跑通且未声明 capability 文件，升级到 v3.0 后会立即触发"未授权命令拒绝"错误——这是预期行为，请按本文档配套 capability 文件或临时回退到 Compatibility 模式。
+
+## 1. 行为变化
+
+| 配置项 | v2.x 默认 | v3.0 默认 | 说明 |
+|---|---|---|---|
+| `Wails:Permissions:Mode` | `Compatibility` | `Strict` | **破坏性变化** |
+| `Wails:Permissions:Enabled` | `false` | `true`（在 Strict 下隐式） | Strict 模式下始终启用检查 |
+| `Wails:Permissions:DenyByDefault` | `true` | `true` | 不变 |
+| 未声明能力的命令 | 默认放行 | **拒绝**（"权限拒绝：未声明能力"） | **破坏性变化** |
+| 启动日志 warning 触发条件 | `Mode=Compatibility && !Enabled` | `Mode=Compatibility`（用户显式回退） | warning 引导用户回正 Strict |
+
+## 2. API 变化
+
+### 2.1 重命名：`EnforceStrictByDefault` → `CompatibilityByDefault`
+
+```csharp
+// v2.x（已废弃，v3.0 已移除）
+PermissionOptions.EnforceStrictByDefault = true;
+
+// v3.0（仅作临时回退用）
+PermissionOptions.CompatibilityByDefault = true;
+```
+
+新名字直接表达语义：默认是 Strict（对齐 Tauri v2），此标志仅在需要回退时使用。
+
+### 2.2 重命名：`EnableStrictByDefault()` → `EnableCompatibilityByDefault()`
+
+```csharp
+// v2.x（已废弃，v3.0 已移除）
+builder.Services.EnableStrictByDefault();
+
+// v3.0（仅作临时回退用）
+builder.Services.EnableCompatibilityByDefault();
+```
+
+### 2.3 `PermissionOptions.Mode` 默认值变更
+
+```csharp
+// v2.x
+public PermissionMode Mode { get; set; } = PermissionMode.Compatibility;
+
+// v3.0
+public PermissionMode Mode { get; set; } = PermissionMode.Strict;
+```
+
+## 3. 升级步骤
+
+### 3.1 最小影响（capability 配套就绪的项目）
+
+如果项目已经按 R3-B 落地了 capability 文件（每个插件默认 `<plugin>:default` 权限集），
+升级到 v3.0 后**无需任何修改**——Strict 默认行为就是你的预期。
+
+### 3.2 中等影响（仅有部分 capability 配套）
+
+升级后会看到部分命令被拒绝。运行 `wails-net check` 识别缺失的 capability，
+再用 `wails-net capability init <plugin>` 生成默认 capability JSON。
+
+### 3.3 较大影响（尚未迁移到 capability 模型）
+
+短期过渡方案：在 `Program.cs` 启动期调用 `EnableCompatibilityByDefault()` 临时回退：
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+// 临时回退 v2.x 行为，仅作 v2.x → v3.0 升级过渡
+// **生产环境应配套 capability JSON 后移除此调用**
+builder.Services.EnableCompatibilityByDefault();
+
+var app = builder.Build();
+app.Run();
+```
+
+或在 `appsettings.json` 显式置回：
+
+```json
+{
+  "Wails": {
+    "Permissions": {
+      "Mode": "Compatibility",
+      "Enabled": false,
+      "DenyByDefault": false
+    }
+  }
+}
+```
+
+> ⚠️ **警告**：以上两种回退方式都会让应用运行在宽松模式（未授权命令默认放行）。
+> **仅建议短期过渡**（数天 / 数周），生产环境必须配套 capability JSON 后移除。
+
+### 3.4 推荐升级顺序
+
+1. **升级 Wails.Net NuGet 包到 3.0.0-alpha.1**
+2. **运行 `wails-net check`** 定位缺失的 capability（预期会有大量"未知权限"警告）
+3. **对每个插件运行 `wails-net capability init <plugin> --out capabilities/<plugin>.json`**
+4. **在主 capability 文件中引用各插件的 `<plugin>:default` 权限集**
+5. **再次运行 `wails-net check`** 确认无警告
+6. **移除临时回退调用**（`EnableCompatibilityByDefault()` 或 `Mode: Compatibility`）
+7. **完整回归测试 + 灰度上线**
+
+## 4. 版本号
+
+| 系列 | 范围 | 状态 |
+|---|---|---|
+| 0.1.0-alpha.x | 早期开发（Strict 默认前的 Compatibility 默认） | 历史 |
+| **1.0.0-alpha.x** | **R3-E 起，Strict 默认 + Capability 模型 GA** | **当前** |
+| 1.0.0 | R3-E 完成后 GA（视 RC 测试周期） | 待启动 |
+
+## 5. 与 Tauri v2 默认行为对齐
+
+| 维度 | Wails.Net v3.0 | Tauri v2 GA |
+|---|---|---|
+| 默认权限姿态 | Strict | Strict（最小权限） |
+| capability JSON 目录 | `capabilities/` | `capabilities/`（同） |
+| capability 校验时机 | 启动期 + 编译期（`wails-net check`） | 编译期（`tauri-build`） |
+| 默认 deny 未声明权限 | ✓ | ✓ |
+| 窗口级 capability 隔离 | ✓ | ✓ |
+| 远程 URL 模式限制 | ✓ | ✓ |
+
+## 6. 后续阶段
+
+- R3-E 完成后进入 1.0 RC 阶段（API 冻结、文档完善、迁移工具）
+- 1.0 GA 后进入 H1：插件市场 + IDE 插件（VS Code / Rider）
+
+---
+
+*历史内容（v2.x → v3.0 大版本段之前的 Compatibility 详细迁移指南）保留在下方章节，
+仅作历史参考；v3.0+ 用户请直接阅读 §1-5。*
 # 权限模式迁移指南：Compatibility → Strict
 
 > 本文档对应优化路线图 [OPT-SEC-003](./optimization-roadmap.md#46-安全模板落地清单opt-sec-003-遗留项-2026-08-15-核实)
@@ -252,3 +394,74 @@ wails-net check --project MyApp.csproj
 ### 7.4 后续 R3 阶段
 
 - **R3-E（计划）**：库默认从 Compatibility 翻转为 Strict（破坏性变更，需配合 SemVer 2.0.0 → 3.0.0 版本号 bump 与本指南大版本段更新）。
+
+- **R3-D.B/C (2026-08-19)**：wails-net capability 子命令与默认 capability 生成器。
+## 8. R3-D.B/C：`wails-net capability` 子命令（2026-08-19 落地）
+
+R3-D.B/C 在 R3-D.A 的基础上提供 capability 文件的 CLI 生命周期管理，对标 Tauri v2
+`cargo tauri capability` 体验。
+
+### 8.1 子命令概览
+
+```
+wails-net capability init <plugin> [--out <path>]
+wails-net capability list
+wails-net capability validate <file>
+```
+
+数据源均为 `PluginPermissionManifestRegistry`（R3-C 源生成器嵌入的插件清单），
+CLI 与运行期共享同一份注册表，确保 `init` 产出的 capability 与运行时声明的权限一致。
+
+### 8.2 `capability init <plugin>`
+
+为指定插件生成默认 capability JSON（含命名权限集 `<plugin>:default` + 全部已声明细粒度权限）。
+
+```bash
+# 输出到 stdout（管道友好）
+wails-net capability init window
+
+# 输出到文件
+wails-net capability init window --out capabilities/window.json
+```
+
+输出示例：
+
+```json
+{
+  "identifier": "window:default",
+  "description": "默认能力（自动生成于 R3-D.B）：包含 window 插件全部已声明权限",
+  "permissions": [
+    "window:default",
+    "window:allow-close",
+    "window:allow-minimize"
+  ]
+}
+```
+
+库支持（`DefaultCapabilityGenerator`）：
+
+- `GenerateJson(pluginName, manifestJson)` — 单个插件；
+- `GenerateAllDefaults()` — 全部已注册插件 → `Dictionary<string, string>`；
+- `ExtractPermissions(manifestJson)` — 复用为独立解析器。
+
+### 8.3 `capability list`
+
+列出所有已注册插件 + 其默认 capability 标识符 + 权限计数，便于诊断源生成器是否触发：
+
+```
+已注册插件清单：3 个
+  - dialog  (5 个权限)  default capability: dialog:default
+  - fs  (12 个权限)  default capability: fs:default
+  - window  (8 个权限)  default capability: window:default
+```
+
+### 8.4 `capability validate <file>`
+
+对单个 capability JSON 做结构校验（CM001-CM005），退出码 0 = 通过（可能含 Warning）/ 1 = 含 Error。
+
+```bash
+wails-net capability validate capabilities/main.json
+# [成功] capability 校验通过：main-capability
+```
+
+底层使用 `CapabilityManifestValidator.ValidateShape`（R3-A.3）。

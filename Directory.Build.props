@@ -34,7 +34,7 @@
       版本号遵循 Semantic Versioning 2.0：MAJOR.MINOR.PATCH 后接可选预发布标签
       示例：1.0.0 / 1.0.0-alpha.1 / 1.0.0-beta.2 / 1.0.0-rc.1
     -->
-    <WailsNetVersion>0.1.0-alpha.1</WailsNetVersion>
+    <WailsNetVersion>1.0.0-alpha.1</WailsNetVersion>
 
     <!-- 派生属性：NuGet 包版本与 InformationalVersion 保留预发布标签 -->
     <Version>$(WailsNetVersion)</Version>

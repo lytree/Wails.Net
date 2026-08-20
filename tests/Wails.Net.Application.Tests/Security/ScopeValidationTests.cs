@@ -24,8 +24,11 @@ public sealed class ScopeValidationTests
     /// </summary>
     private static PermissionManager CreateManager(bool enabled, bool denyByDefault, params string[] permissions)
     {
+        // R3-E: 库默认从 Compatibility 翻转为 Strict（最小权限姿态）。
+        // 测试期望旧版 Enabled 字段决定启用行为，需要显式回退到 Compatibility 模式。
         var options = Microsoft.Extensions.Options.Options.Create(new PermissionOptions
         {
+            Mode = PermissionMode.Compatibility,
             Enabled = enabled,
             DenyByDefault = denyByDefault,
             Permissions = permissions.ToList(),

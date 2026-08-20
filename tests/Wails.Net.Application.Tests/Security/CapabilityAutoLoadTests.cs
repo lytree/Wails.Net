@@ -59,6 +59,9 @@ public sealed class CapabilityAutoLoadTests
             var builder = DesktopApplicationBuilder.CreateBuilder();
             builder.Services.Configure<PermissionOptions>(o =>
             {
+                // R3-E: 库默认从 Compatibility 翻转为 Strict。
+                // 本测试期望旧版 Enabled 字段决定启用行为，回退到 Compatibility 模式。
+                o.Mode = PermissionMode.Compatibility;
                 o.Enabled = true;
                 o.DenyByDefault = true;
                 o.CapabilitiesDirectory = capDir; // 绝对路径
@@ -87,7 +90,10 @@ public sealed class CapabilityAutoLoadTests
 
         var builder = DesktopApplicationBuilder.CreateBuilder();
         builder.Services.Configure<PermissionOptions>(o =>
-        {
+            {
+                // R3-E: 库默认从 Compatibility 翻转为 Strict。
+                // 本测试期望旧版 Enabled 字段决定启用行为，回退到 Compatibility 模式。
+                o.Mode = PermissionMode.Compatibility;
             o.Enabled = true;
             o.DenyByDefault = true;
             o.CapabilitiesDirectory = nonExistentDir;
@@ -111,6 +117,9 @@ public sealed class CapabilityAutoLoadTests
             var builder = DesktopApplicationBuilder.CreateBuilder();
             builder.Services.Configure<PermissionOptions>(o =>
             {
+                // R3-E: 库默认从 Compatibility 翻转为 Strict。
+                // 本测试期望旧版 Enabled 字段决定启用行为，回退到 Compatibility 模式。
+                o.Mode = PermissionMode.Compatibility;
                 o.Enabled = false; // 未启用
                 o.CapabilitiesDirectory = capDir;
             });
@@ -139,6 +148,9 @@ public sealed class CapabilityAutoLoadTests
             var builder = DesktopApplicationBuilder.CreateBuilder();
             builder.Services.Configure<PermissionOptions>(o =>
             {
+                // R3-E: 库默认从 Compatibility 翻转为 Strict。
+                // 本测试期望旧版 Enabled 字段决定启用行为，回退到 Compatibility 模式。
+                o.Mode = PermissionMode.Compatibility;
                 o.Enabled = true;
                 o.DenyByDefault = true;
                 o.CapabilitiesDirectory = null; // 显式禁用自动加载
@@ -167,6 +179,9 @@ public sealed class CapabilityAutoLoadTests
             var builder = DesktopApplicationBuilder.CreateBuilder();
             builder.Services.Configure<PermissionOptions>(o =>
             {
+                // R3-E: 库默认从 Compatibility 翻转为 Strict。
+                // 本测试期望旧版 Enabled 字段决定启用行为，回退到 Compatibility 模式。
+                o.Mode = PermissionMode.Compatibility;
                 o.Enabled = true;
                 o.DenyByDefault = true;
                 o.CapabilitiesDirectory = customDir;

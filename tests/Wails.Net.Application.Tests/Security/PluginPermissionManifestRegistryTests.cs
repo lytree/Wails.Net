@@ -7,6 +7,7 @@ namespace Wails.Net.Application.Tests.Security;
 /// PluginPermissionManifestRegistry 单元测试（R3-C.2）。
 /// 验证注册表正确收录、检索、聚合插件权限清单。
 /// </summary>
+[NotInParallel]
 public sealed class PluginPermissionManifestRegistryTests
 {
     [Test]

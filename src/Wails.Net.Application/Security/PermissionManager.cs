@@ -122,15 +122,14 @@ public sealed class PermissionManager
             Grant(perm);
         }
 
-        // OPT-SEC-001：兼容模式且未启用权限检查时输出一次 warning，
-        // 引导用户迁移到 Strict 模式（生产环境最小权限）。
+        // R3-E 起：默认即为 Strict。Compatibility 仅作升级过渡，输出一次 warning 引导用户回正。
         // 注意：日志模板禁止包含字面大括号（CA2023），此处用纯文字描述配置指引。
-        if (!_options.Enabled && _options.Mode == PermissionMode.Compatibility)
+        if (_options.Mode == PermissionMode.Compatibility)
         {
             _logger?.LogWarning(
-                "权限检查未启用（Wails:Permissions:Enabled=false，Mode=Compatibility），" +
-                "所有命令默认放行。生产环境请启用 Strict 模式：" +
-                "配置 Wails:Permissions 为 Mode=Strict、Enabled=true、DenyByDefault=true。");
+                "权限检查运行在 Compatibility 宽松模式（Mode=Compatibility）：所有命令默认放行。" +
+                "R3-E 起库默认已为 Strict 最小权限姿态。请尽快配套 capability JSON，" +
+                "在 appsettings.json 中移除 Mode=Compatibility 设置（或显式置 Mode=Strict）。");
         }
     }
 

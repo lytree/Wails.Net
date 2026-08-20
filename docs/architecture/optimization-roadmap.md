@@ -951,7 +951,7 @@ capability 文件仅启动期加载（`CapabilityFileLoader.cs:36-69` 目录扫�
 | OPT-IPC-001 | 新增 `IpcOptions`（✅ 2026-08-10） |
 | OPT-IPC-002 | IPC fallback handshake token（✅ 2026-08-10） |
 | OPT-IPC-003 | 统一 IPC strategy（核心已落地 2026-08-15；平台窗口迁移 + `HttpTransport` 前端 URL 注入协议扩展待后续批次） |
-| OPT-SEC-001 | 权限 strict 模式（✅ 2026-08-10） |
+| OPT-SEC-001 | 权限 strict 模式（R3-E ✅ 2026-08-20：库默认 Strict + CompatibilityByDefault 临时回退入口） |
 | OPT-SEC-002 | `Capability.platforms`（✅ 2026-08-10） |
 | OPT-SEC-003 | 安全模板与迁移指南（✅ 2026-08-15，见 §4.6 清单全部完成） |
 | OPT-SEC-004 | capability 构建期校验（✅ 2026-08-15：`wails-net check` + build 前置校验） |

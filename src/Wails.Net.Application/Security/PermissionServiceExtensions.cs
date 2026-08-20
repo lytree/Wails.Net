@@ -42,25 +42,25 @@ public static class PermissionServiceExtensions
         return services;
     }
     /// <summary>
-    /// 启用全局 Strict 默认模式（R3-A.4）。
+    /// 临时回退到全局 Compatibility 宽松模式（R3-E；仅作 v2.x → v3.0 升级过渡）。
     /// <para>
-    /// 通过设置 PermissionOptions.EnforceStrictByDefault = true，
-    /// 使后续构造的 PermissionOptions 实例的 Mode 默认值为 Strict。
+    /// 通过设置 PermissionOptions.CompatibilityByDefault = true，
+    /// 使后续构造的 PermissionOptions 实例的 Mode 默认值为 Compatibility（临时回退）。
     /// 调用方应在 builder 构造（如 CreateBuilder）之后立即调用本方法，
     /// 确保 DI 容器实例化 PermissionOptions 时已生效。
     /// </para>
     /// <para>
-    /// 这是 R3 最终默认翻转前的 opt-in 入口：当前默认仍为 Compatibility，
-    /// 调用本方法会让应用以 Strict 模式启动，配合 DenyByDefault（默认 true）
-    /// 实现最小权限姿态。
+    /// R3-E 起，库默认已为 Strict。本方法仅作"临时回退"入口（用于 v2.x → v3.0 升级期未完成 capability 配套的项目）：
+    /// 调用本方法会让应用以 Compatibility 模式启动（**仅建议短期过渡**，生产环境应配套 capability JSON 后移除此调用）：
+    /// 可与 DenyByDefault=false 配合实现"未显式撤销则放行"的宽松语义。
     /// </para>
     /// </summary>
     /// <param name="services">服务集合。</param>
     /// <returns>当前服务集合，用于链式调用。</returns>
-    public static IServiceCollection EnableStrictByDefault(this IServiceCollection services)
+    public static IServiceCollection EnableCompatibilityByDefault(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
-        PermissionOptions.EnforceStrictByDefault = true;
+        PermissionOptions.CompatibilityByDefault = true;
         return services;
     }
 }
