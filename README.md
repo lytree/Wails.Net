@@ -4,7 +4,32 @@
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20Android%20%7C%20macOS(skeleton)-lightgrey.svg)](#平台支持)
+[![Version](https://img.shields.io/badge/version-1.0.0--alpha.1-orange.svg)](#版本状态)
+[![Status](https://img.shields.io/badge/status-alpha%20%28%E4%B8%8D%E5%86%BB%E7%BB%93%29-yellow.svg)](#版本状态)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+
+## 版本状态
+
+> ⚠️ **当前版本 `1.0.0-alpha.1`（R3-E 后）尚未冻结**。API 可能在 1.0.0 GA 之前继续调整；锁定版本请使用精确版本号（如 `1.0.0-alpha.1`）而非通配符。
+
+| 阶段 | 版本范围 | 状态 | 关键变化 |
+|------|---------|------|---------|
+| 历史 | `0.1.0-alpha.x` | ❌ Deprecated | 库默认 `Mode=Compatibility`（未授权放行） |
+| **当前** | `1.0.0-alpha.x` | 🔄 **活跃迭代中** | **库默认 `Mode=Strict`（最小权限，破坏性变更）** |
+| 下一阶段 | `1.0.0-rc.x` | ⏳ 待启动 | API 冻结、迁移工具完善、80+ 插件文档齐全 |
+| 正式版 | `1.0.0` | ⏳ 待启动 | GA 稳定版（视 RC 反馈周期） |
+
+**升级路径**：
+
+- 0.1.x → 1.0.0-alpha.x：**破坏性变更**。详见 [权限迁移指南](docs/architecture/permission-migration-guide.md)。
+- 1.0.0-alpha.x → 1.0.0-rc.x：预计 2026 Q4 完成 RC；RC 阶段 API 冻结。
+- 1.0.0-rc.x → 1.0.0：视 RC 反馈周期，2027 Q1 GA 目标。
+
+**R3-E 关键变更**（2026-08-20）：
+
+- 库默认 `PermissionMode = Strict`（取代 0.1.x 的 `Compatibility` 默认），对齐 Tauri v2 默认行为。
+- SemVer `0.1.0-alpha.x` → `1.0.0-alpha.x`（破坏性变更标记 `feat!`）。
+- 引入 `capability` 子命令（`wails.net capability generate|validate|init`）辅助生成 capability JSON。
 
 ## 项目简介
 
@@ -116,6 +141,12 @@ wails-net new MyApp --template vue-ts
 
 # 构建项目
 wails-net build --project path/to/MyApp.csproj
+
+# 为 R3-E Strict 默认配置生成 capability JSON
+wails-net capability generate
+
+# 校验 capability 文件（CI 友好，--strict 警告视为错误）
+wails-net capability validate --strict
 
 # 查看全部可用命令
 wails-net --help

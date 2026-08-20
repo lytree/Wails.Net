@@ -19,7 +19,7 @@ Wails.Net 的安全体系借鉴 **Tauri v2 的多层防护策略**，将安全�
 设计原则：
 
 1. **默认安全**：CSP 默认启用且使用 `'self'` 严格策略；文件系统沙箱可选但推荐启用。
-2. **向后兼容**：权限检查默认关闭（`PermissionOptions.Enabled = false`），未启用时全部放行，避免破坏既有应用。
+2. **默认最小权限**（R3-E 起）：库默认 `PermissionMode = Strict`、`PermissionManager.Enabled = true`，对齐 Tauri v2 默认行为；未授权命令一律拒绝。0.1.x → 1.0.0-alpha.x 升级用户需配套 `capabilities/` JSON 文件或临时调用 `EnableCompatibilityByDefault()`。
 3. **零信任文件路径**：所有文件命令统一过 `GetSafePath` 算法，路径穿越攻击在沙箱模式下被阻断。
 4. **加密静态数据**：敏感数据通过 AES-GCM 认证加密落盘，密码从不以明文形式持久化。
 
@@ -309,14 +309,17 @@ public async Task<InvokeResponse> DispatchAsync(InvokeRequest request, ICommandC
 
 | 属性 | 默认值 | 说明 |
 |------|--------|------|
-| `Mode` | `Compatibility` | 权限模式（OPT-SEC-001）：`Compatibility`（未授权放行，旧应用迁移）vs `Strict`（未授权拒绝，推荐生产；即便漏配 `Enabled=true` 也强制启用检查） |
-| `Enabled` | `false` | 是否启用权限检查（默认关闭，向后兼容；`Strict` 模式下忽略） |
+| `Mode` | `Strict` | 权限模式（OPT-SEC-001，**R3-E 默认**）：`Compatibility`（未授权放行，0.1.x 旧应用迁移期）vs `Strict`（最小权限姿态，未授权拒绝；即便漏配 `Enabled=true` 也强制启用检查，对齐 Tauri v2 默认行为） |
+| `Enabled` | `true`（受 `Mode` 隐式控制） | 是否启用权限检查（`Strict` 模式下 `Enabled` 始终为 `true`；`Compatibility` 模式下由 `Enabled` 标志决定） |
 | `DenyByDefault` | `true` | 未声明能力是否拒绝 |
 | `Permissions` | `[]` | 已授权能力标识列表 |
-| `CapabilitiesDirectory` | `capabilities` | capabilities/*.json 目录（`Enabled=true` 时自动加载） |
+| `CapabilitiesDirectory` | `capabilities` | capabilities/*.json 目录（`Mode=Strict` 时自动加载） |
 | `Scopes` | `{}` | 权限作用域配置（路径/URL 白名单） |
 
-> **注意**：默认 `Compatibility` 模式（`Enabled=false`）是为了不破坏既有应用——升级后未配置权限的应用仍可正常运行。生产环境强烈建议显式启用 `Strict` 模式；启动时会对未启用权限检查输出一次 warning 提示。
+> **R3-E 默认行为变更**（破坏性）：库默认 `Mode=Strict`（取代 0.1.x 的 `Mode=Compatibility` 默认）。
+> 0.1.x 升级用户需配套 `capabilities/*.json` 声明所需能力，否则所有命令会被拒绝。
+> 短期过渡：可在 `Program.cs` 启动期调用 `EnableCompatibilityByDefault()` 临时回退（仅建议数天/数周，
+> 生产环境必须配套 capability JSON 后移除）。详见 [permission-migration-guide.md](./permission-migration-guide.md)。
 
 > **配置校验**：`PermissionOptionsValidator`（OPT-CONFIG-002）在 Host 启动期校验 `Permissions` 无空字符串、`CapabilitiesDirectory` 无非法路径字符、`Scopes` 键非空，错误通过 `ValidateOnStart()` 前置到启动阶段。
 

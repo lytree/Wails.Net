@@ -1,24 +1,24 @@
 
-# v2.x → v3.0 迁移指南：权限默认 Strict 翻转
+# 0.1.x → 1.0.0-alpha.x 迁移指南：权限默认 Strict 翻转
 
-> 本文档对应 R3-E（库默认从 Compatibility 翻转为 Strict）与 SemVer 2.0.0 → 3.0.0 版本号 bump。
+> 本文档对应 R3-E（库默认从 Compatibility 翻转为 Strict）与 SemVer 0.1.0-alpha.x → 1.0.0-alpha.x 版本号 bump。
 >
 > **状态**：✅ 已落地（2026-08-20，R3-E 提交待合并）
-> **影响范围**：所有 v2.x 应用升级到 v3.0.0 时必须审视权限配置
+> **影响范围**：所有 0.1.x 应用升级到 1.0.0-alpha.x 时必须审视权限配置
 > **预期破坏性**：默认 Mode 由 Compatibility 翻转为 Strict
 
 ## 0. TL;DR
 
-v3.0 起，Wails.Net 库默认采用 **Strict 最小权限姿态**，对齐 Tauri v2 默认行为。
+1.0.0-alpha.x 起，Wails.Net 库默认采用 **Strict 最小权限姿态**，对齐 Tauri v2 默认行为。
 未授权命令一律拒绝，需要通过 `capabilities/` 目录下的 JSON 文件显式声明。
 
-如果你的应用在 v2.x 下默认能跑通且未声明 capability 文件，升级到 v3.0 后会立即触发"未授权命令拒绝"错误——这是预期行为，请按本文档配套 capability 文件或临时回退到 Compatibility 模式。
+如果你的应用在 0.1.x 下默认能跑通且未声明 capability 文件，升级到 1.0.0-alpha.x 后会立即触发"未授权命令拒绝"错误——这是预期行为，请按本文档配套 capability 文件或临时回退到 Compatibility 模式。
 
 ## 1. 行为变化
 
-| 配置项 | v2.x 默认 | v3.0 默认 | 说明 |
+| 配置项 | 0.1.x 默认 | 1.0.0-alpha.x 默认 | 说明 |
 |---|---|---|---|
-| `Wails:Permissions:Mode` | `Compatibility` | `Strict` | **破坏性变化** |
+| `Wails:Permissions:Mode` | `Compatibility` | `Strict` | **破坏性变化**（R3-E） |
 | `Wails:Permissions:Enabled` | `false` | `true`（在 Strict 下隐式） | Strict 模式下始终启用检查 |
 | `Wails:Permissions:DenyByDefault` | `true` | `true` | 不变 |
 | 未声明能力的命令 | 默认放行 | **拒绝**（"权限拒绝：未声明能力"） | **破坏性变化** |
@@ -29,10 +29,10 @@ v3.0 起，Wails.Net 库默认采用 **Strict 最小权限姿态**，对齐 Taur
 ### 2.1 重命名：`EnforceStrictByDefault` → `CompatibilityByDefault`
 
 ```csharp
-// v2.x（已废弃，v3.0 已移除）
+// 0.1.x（已废弃，1.0.0-alpha.x 已移除）
 PermissionOptions.EnforceStrictByDefault = true;
 
-// v3.0（仅作临时回退用）
+// 1.0.0-alpha.x（仅作临时回退用）
 PermissionOptions.CompatibilityByDefault = true;
 ```
 
@@ -41,20 +41,20 @@ PermissionOptions.CompatibilityByDefault = true;
 ### 2.2 重命名：`EnableStrictByDefault()` → `EnableCompatibilityByDefault()`
 
 ```csharp
-// v2.x（已废弃，v3.0 已移除）
+// 0.1.x（已废弃，1.0.0-alpha.x 已移除）
 builder.Services.EnableStrictByDefault();
 
-// v3.0（仅作临时回退用）
+// 1.0.0-alpha.x（仅作临时回退用）
 builder.Services.EnableCompatibilityByDefault();
 ```
 
 ### 2.3 `PermissionOptions.Mode` 默认值变更
 
 ```csharp
-// v2.x
+// 0.1.x
 public PermissionMode Mode { get; set; } = PermissionMode.Compatibility;
 
-// v3.0
+// 1.0.0-alpha.x
 public PermissionMode Mode { get; set; } = PermissionMode.Strict;
 ```
 
@@ -63,7 +63,7 @@ public PermissionMode Mode { get; set; } = PermissionMode.Strict;
 ### 3.1 最小影响（capability 配套就绪的项目）
 
 如果项目已经按 R3-B 落地了 capability 文件（每个插件默认 `<plugin>:default` 权限集），
-升级到 v3.0 后**无需任何修改**——Strict 默认行为就是你的预期。
+升级到 1.0.0-alpha.x 后**无需任何修改**——Strict 默认行为就是你的预期。
 
 ### 3.2 中等影响（仅有部分 capability 配套）
 
@@ -72,12 +72,12 @@ public PermissionMode Mode { get; set; } = PermissionMode.Strict;
 
 ### 3.3 较大影响（尚未迁移到 capability 模型）
 
-短期过渡方案：在 `Program.cs` 启动期调用 `EnableCompatibilityByDefault()` 临时回退：
+短期过渡方案：在 `Program.cs` 启动期调用 `EnableCompatibilityByDefault()` 临时回退（仅作 0.1.x → 1.0.0-alpha.x 升级过渡）：
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// 临时回退 v2.x 行为，仅作 v2.x → v3.0 升级过渡
+// 临时回退 0.1.x 行为，仅作 0.1.x → 1.0.0-alpha.x 升级过渡
 // **生产环境应配套 capability JSON 后移除此调用**
 builder.Services.EnableCompatibilityByDefault();
 
@@ -104,7 +104,7 @@ app.Run();
 
 ### 3.4 推荐升级顺序
 
-1. **升级 Wails.Net NuGet 包到 3.0.0-alpha.1**
+1. **升级 Wails.Net NuGet 包到 1.0.0-alpha.x（最新 alpha 版本）**
 2. **运行 `wails-net check`** 定位缺失的 capability（预期会有大量"未知权限"警告）
 3. **对每个插件运行 `wails-net capability init <plugin> --out capabilities/<plugin>.json`**
 4. **在主 capability 文件中引用各插件的 `<plugin>:default` 权限集**
@@ -116,13 +116,15 @@ app.Run();
 
 | 系列 | 范围 | 状态 |
 |---|---|---|
-| 0.1.0-alpha.x | 早期开发（Strict 默认前的 Compatibility 默认） | 历史 |
-| **1.0.0-alpha.x** | **R3-E 起，Strict 默认 + Capability 模型 GA** | **当前** |
-| 1.0.0 | R3-E 完成后 GA（视 RC 测试周期） | 待启动 |
+| 0.1.x | 早期开发（Strict 默认前的 Compatibility 默认） | 历史 |
+| **1.0.0-alpha.x** | **R3-E 起，Strict 默认 + Capability 模型（持续迭代）** | **当前** |
+| 1.0.0-rc.x | RC 阶段（API 冻结、迁移工具完善） | 待启动 |
+| 1.0.0 | GA 正式版（视 RC 测试周期） | 待启动 |
+| 1.x.x 之后 | 1.x 系列持续迭代（插件市场、IDE 插件） | 规划 |
 
 ## 5. 与 Tauri v2 默认行为对齐
 
-| 维度 | Wails.Net v3.0 | Tauri v2 GA |
+| 维度 | Wails.Net 1.0.0-alpha.x | Tauri v2 GA |
 |---|---|---|
 | 默认权限姿态 | Strict | Strict（最小权限） |
 | capability JSON 目录 | `capabilities/` | `capabilities/`（同） |
@@ -138,8 +140,8 @@ app.Run();
 
 ---
 
-*历史内容（v2.x → v3.0 大版本段之前的 Compatibility 详细迁移指南）保留在下方章节，
-仅作历史参考；v3.0+ 用户请直接阅读 §1-5。*
+*历史内容（0.1.x → 1.0.0-alpha.x 大版本段之前的 Compatibility 详细迁移指南）保留在下方章节，
+仅作历史参考；1.0.0-alpha.x+ 用户请直接阅读 §1-5。*
 # 权限模式迁移指南：Compatibility → Strict
 
 > 本文档对应优化路线图 [OPT-SEC-003](./optimization-roadmap.md#46-安全模板落地清单opt-sec-003-遗留项-2026-08-15-核实)

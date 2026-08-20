@@ -61,7 +61,7 @@ public static async Task<int> Main(string[] args)
 
 下表汇总了 [Program.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Program.cs) 中注册的全部命令（本文重点详述前 8 个核心命令）：
 
-| 命令 | 对应类 | 功能 | 对应 Go 版 |
+| 命令 | 对应类 | 功能 | 对应 Go 版 / Tauri 对标 |
 |------|--------|------|-----------|
 | `new` | `NewCommand` | 项目脚手架 | `cmd_new.go` |
 | `build` | `BuildCommand` | 编译项目 | `build.go` |
@@ -72,6 +72,7 @@ public static async Task<int> Main(string[] args)
 | `doctor` | `DoctorCommand` | 环境诊断 | `internal/doctor/doctor.go` |
 | `version` | `VersionCommand` | 显示版本信息 | Tauri `tauri version` |
 | `plugin`（add/remove/list/build/publish） | `PluginCommand` | 插件引用管理 + 插件双包构建发布 | — |
+| `capability`（generate/validate/init） | `CapabilityCommand` | Capability JSON 自动生成与校验（R3-D.B/C） | Tauri `tauri capability` |
 | `clean`/`info`/`icon`/`signer`/`platform`/`self-update` | — | 辅助命令 | — |
 
 ### 3.1 plugin build / plugin publish — 插件双包构建与发布
@@ -114,6 +115,66 @@ wails.net plugin publish --plugin updater --skip-build       # 直接发布已�
 3. **先构建后发布**：默认先执行构建，`--skip-build` 时要求产物已存在，否则报错并提示先构建。
 
 前端构建/发布通过 `FrontendToolchain` 检测 pnpm（回退 npm），实现类见 [PluginBuilder](../../src/Wails.Net.Cli/Build/PluginBuilder.cs) 与 [PluginPublisher](../../src/Wails.Net.Cli/Build/PluginPublisher.cs)。
+
+### 3.2 capability generate / capability validate — Capability JSON 生成与校验（R3-D.B/C）
+
+[CapabilityCommand](../../src/Wails.Net.Cli/Commands/CapabilityCommand.cs) 提供 capability 子命令，对应 Tauri v2 的 `tauri capability` 工具链。
+在 R3-E 起库默认 `Mode=Strict` 后，capability JSON 是应用声明命令所需能力的唯一载体。
+
+**子命令**：
+
+| 子命令 | 功能 | 对应 Tauri 命令 |
+|--------|------|----------------|
+| `capability generate` | 基于已注册插件清单（`<plugin>:default` 权限集）自动产出 `capabilities/default.json` | `tauri capability generate` |
+| `capability validate` | 检查项目内所有 capability JSON 的 schema 合法性与权限交叉引用 | `tauri capability validate` |
+| `capability init <plugin>` | 为指定插件生成最小可用的 capability JSON 模板 | （Tauri 无直接对标） |
+
+**用法**：
+
+```bash
+# 自动生成项目的 default capability（聚合所有插件的 <plugin>:default 权限集）
+wails.net capability generate
+
+# 验证现有 capability 文件
+wails.net capability validate
+
+# 为指定插件生成 capability 模板（写到 capabilities/<plugin>.json）
+wails.net capability init filesystem --out capabilities/filesystem.json
+```
+
+**`capability generate` 选项**：
+
+| 名称 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--output` / `-o` | `FileInfo?` | `capabilities/default.json` | 输出文件路径 |
+| `--plugins` | `string[]?` | 全部已注册插件 | 仅包含指定插件（短名） |
+| `--force` | `bool` | `false` | 覆盖已存在文件 |
+| `--identifier` | `string` | `default` | capability identifier |
+
+**`capability validate` 选项**：
+
+| 名称 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--directory` / `-d` | `DirectoryInfo?` | `capabilities/` | capability JSON 目录 |
+| `--strict` | `bool` | `false` | 严格模式（警告视为错误） |
+
+**`capability init <plugin>` 选项**：
+
+| 名称 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `plugin`（参数） | `string` | 必填 | 插件短名或包名 |
+| `--output` / `-o` | `FileInfo?` | `capabilities/<plugin>.json` | 输出文件路径 |
+| `--force` | `bool` | `false` | 覆盖已存在文件 |
+
+**核心实现**：
+
+- `DefaultCapabilityGenerator`（[src/Wails.Net.Application/Security/DefaultCapabilityGenerator.cs](../../src/Wails.Net.Application/Security/DefaultCapabilityGenerator.cs)）：
+  读取 `PluginPermissionManifestRegistry` 的所有插件清单，聚合每个插件的 `<plugin>:default` 权限集，
+  输出符合 Tauri v2 capability schema 的 JSON 文件（含 `identifier` / `description` / `windows` / `permissions` / `platforms` 等字段）。
+- `CapabilityManifestValidator`（[src/Wails.Net.Application/Security/CapabilityManifestValidator.cs](../../src/Wails.Net.Application/Security/CapabilityManifestValidator.cs)）：
+  校验 JSON schema + 权限标识交叉引用（声明的权限必须在已注册插件清单中存在）。
+
+**升级路径**：R3-E 起新建项目建议在 `Program.cs` 启动后立即调用 `wails.net capability generate && wails.net capability validate`，CI 引入 `--strict` 校验。详见 [permission-migration-guide.md §3.4](../architecture/permission-migration-guide.md#34-推荐升级顺序)。
 
 ## 4. new 命令 — 项目脚手架
 
