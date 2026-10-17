@@ -58,8 +58,12 @@ public sealed class ApplicationConstructionInjectionTests
 
     /// <summary>
     /// 测试用回显服务。
+    /// <para>
+    /// 类名须与本程序集内其他绑定类区分：源生成器会为 [Binding] 方法注册
+    /// "ClassName.MethodName" 短名别名，同名类会导致别名冲突（WNET004）并使该别名不再注册。
+    /// </para>
     /// </summary>
-    public sealed class EchoService
+    public sealed class ConstructionEchoService
     {
         [Binding]
         public string Echo(string input) => input;

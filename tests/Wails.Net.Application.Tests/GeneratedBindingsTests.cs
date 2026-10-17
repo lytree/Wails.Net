@@ -193,4 +193,74 @@ public sealed class GeneratedBindingsTests
 
         await Assert.That(result["error"]).IsNotNull();
     }
+
+    /// <summary>
+    /// 验证歧义键 fail-closed：同一名称键若被不同所属类型注册（跨命名空间/跨程序集同名类，
+    /// 或重复的自定义名称），既有注册被撤销、后续注册与查询一律拒绝，
+    /// 使调用方得到 ReferenceError 而非静默分派到"最后注册"的实现。
+    /// 对应源生成器侧编译期诊断 WNET004 的运行时兜底。
+    /// </summary>
+    [Test]
+    public async Task GeneratedRegistry_AmbiguousKey_RejectedFailClosed()
+    {
+        const string key = "AmbiguityProbe.Dup.Method";
+        const string typeA = "AmbiguityProbe.NsA.Dup";
+        const string typeB = "AmbiguityProbe.NsB.Dup";
+
+        try
+        {
+            GeneratedBindingRegistry.Register(
+                key, static (_, _, _) => Task.FromResult<object?>("A"), typeA);
+            await Assert.That(GeneratedBindingRegistry.TryGetInvoker(key, out _)).IsTrue();
+
+            // 第二次由不同所属类型注册 → 标记歧义并撤销既有注册。
+            GeneratedBindingRegistry.Register(
+                key, static (_, _, _) => Task.FromResult<object?>("B"), typeB);
+
+            await Assert.That(GeneratedBindingRegistry.TryGetInvoker(key, out _)).IsFalse();
+            await Assert.That(GeneratedBindingRegistry.TryGetTypeFullName(key, out _)).IsFalse();
+
+            // 歧义信息保留，供调用失败时给出可解释的错误。
+            await Assert.That(GeneratedBindingRegistry.TryGetAmbiguity(key, out var conflictingTypes)).IsTrue();
+            await Assert.That(conflictingTypes).Contains(typeA);
+            await Assert.That(conflictingTypes).Contains(typeB);
+
+            // 歧义标记持久：后续任何注册都被拒绝，键保持不可解析。
+            GeneratedBindingRegistry.Register(
+                key, static (_, _, _) => Task.FromResult<object?>("C"), typeA);
+
+            await Assert.That(GeneratedBindingRegistry.TryGetInvoker(key, out _)).IsFalse();
+        }
+        finally
+        {
+            GeneratedBindingRegistry.Remove(key);
+        }
+    }
+
+    /// <summary>
+    /// 验证同一键由同一所属类型重复注册不视为歧义（保持幂等覆盖），
+    /// 避免模块重复初始化等场景被误判为冲突。
+    /// </summary>
+    [Test]
+    public async Task GeneratedRegistry_SameTypeReRegister_StaysResolvable()
+    {
+        const string key = "IdempotentProbe.Service.Method";
+        const string typeName = "IdempotentProbe.Service";
+
+        try
+        {
+            GeneratedBindingRegistry.Register(
+                key, static (_, _, _) => Task.FromResult<object?>("first"), typeName);
+            GeneratedBindingRegistry.Register(
+                key, static (_, _, _) => Task.FromResult<object?>("second"), typeName);
+
+            await Assert.That(GeneratedBindingRegistry.TryGetInvoker(key, out var invoker)).IsTrue();
+            var result = await invoker!(null!, Array.Empty<JsonElement>(), CancellationToken.None);
+            await Assert.That(result as string).IsEqualTo("second");
+        }
+        finally
+        {
+            GeneratedBindingRegistry.Remove(key);
+        }
+    }
 }

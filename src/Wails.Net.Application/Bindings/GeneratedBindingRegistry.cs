@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -60,6 +61,23 @@ public static class GeneratedBindingRegistry
     private static readonly Dictionary<string, IReadOnlyList<ScopeExtractor>> _methodScopeExtractors = new(StringComparer.Ordinal);
 
     /// <summary>
+    /// 已判定为歧义的名称键集合：键 → 冲突的所属类型说明
+    /// （跨命名空间 / 跨程序集的同名类，或重复的自定义名称 / 命令名）。
+    /// <para>
+    /// 歧义键一律拒绝注册与解析（fail-closed），避免"后注册覆盖先注册"导致按短名或别名调用时
+    /// 静默分派到错误实现；此类键的调用将得到 <c>ReferenceError</c>，并附带冲突类型说明。
+    /// 编译期同名（同一程序集内）由源生成器诊断 WNET004 提前拦截；本集合覆盖跨程序集场景。
+    /// </para>
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, string> _ambiguousKeys = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 保护注册写入路径的锁。注册只发生在模块初始化阶段，加锁开销可忽略，
+    /// 但可保证歧义检测的"检查—写入"序列原子，避免两个程序集并发初始化时漏判冲突。
+    /// </summary>
+    private static readonly object _registerGate = new();
+
+    /// <summary>
     /// 注册一个由源生成器生成的调用器。
     /// 通常由生成的代码在 <c>[ModuleInitializer]</c> 中调用。
     /// </summary>
@@ -84,6 +102,11 @@ public static class GeneratedBindingRegistry
     /// 方法的 Scope 提取器列表（来自 <see cref="Security.ScopeParameterAttribute"/>），可为 null。
     /// 非空时由 <see cref="Commands.CommandDispatcher"/> 在调度时提取 Scope 值并校验。
     /// </param>
+    /// <remarks>
+    /// <b>歧义键（fail-closed）</b>：同一名称键若被不同所属类型注册（跨命名空间 / 跨程序集的同名类、
+    /// 或重复的自定义名称 / 命令名），则该键被标记为歧义、既有注册被撤销，后续注册与查询一律拒绝，
+    /// 使调用方得到 <c>ReferenceError</c> 而不是静默分派到"最后注册"的实现。
+    /// </remarks>
     public static void Register(
         string fullName,
         GeneratedInvoker invoker,
@@ -91,38 +114,60 @@ public static class GeneratedBindingRegistry
         IReadOnlyList<string>? requiredCapabilities,
         IReadOnlyList<ScopeExtractor>? scopeExtractors)
     {
-        _invokers[fullName] = invoker;
-        _methodToTypeName[fullName] = typeFullName;
-
-        if (requiredCapabilities is { Count: > 0 })
+        lock (_registerGate)
         {
-            _methodCapabilities[fullName] = requiredCapabilities;
-        }
-
-        if (scopeExtractors is { Count: > 0 })
-        {
-            _methodScopeExtractors[fullName] = scopeExtractors;
-        }
-
-        // 同时维护类型到方法名的映射（仅当 fullName 是 "Type.Method" 形式时才有意义）
-        var lastDot = fullName.LastIndexOf('.');
-        if (lastDot > 0)
-        {
-            var possibleTypeName = fullName[..lastDot];
-            var methodName = fullName[(lastDot + 1)..];
-
-            // 只有当 fullName 的前缀与 typeFullName 匹配时，才登记到 _typeMethods
-            // 这样 [Command("counter.increment")] 这种短名不会污染 _typeMethods
-            if (possibleTypeName == typeFullName)
+            // 已知歧义键：拒绝一切后续注册，保持该键不可解析。
+            if (_ambiguousKeys.ContainsKey(fullName))
             {
-                if (!_typeMethods.TryGetValue(typeFullName, out var methods))
+                return;
+            }
+
+            // 冲突检测：同一键由不同所属类型注册 → 标记歧义并撤销既有注册（fail-closed）。
+            if (_methodToTypeName.TryGetValue(fullName, out var existingTypeFullName)
+                && !string.Equals(existingTypeFullName, typeFullName, StringComparison.Ordinal))
+            {
+                // 记录冲突双方，供调用失败时给出可解释的错误信息。
+                _ambiguousKeys[fullName] = $"{existingTypeFullName}、{typeFullName}";
+                _invokers.Remove(fullName);
+                _methodToTypeName.Remove(fullName);
+                _methodCapabilities.Remove(fullName);
+                _methodScopeExtractors.Remove(fullName);
+                return;
+            }
+
+            _invokers[fullName] = invoker;
+            _methodToTypeName[fullName] = typeFullName;
+
+            if (requiredCapabilities is { Count: > 0 })
+            {
+                _methodCapabilities[fullName] = requiredCapabilities;
+            }
+
+            if (scopeExtractors is { Count: > 0 })
+            {
+                _methodScopeExtractors[fullName] = scopeExtractors;
+            }
+
+            // 同时维护类型到方法名的映射（仅当 fullName 是 "Type.Method" 形式时才有意义）
+            var lastDot = fullName.LastIndexOf('.');
+            if (lastDot > 0)
+            {
+                var possibleTypeName = fullName[..lastDot];
+                var methodName = fullName[(lastDot + 1)..];
+
+                // 只有当 fullName 的前缀与 typeFullName 匹配时，才登记到 _typeMethods
+                // 这样 [Command("counter.increment")] 这种短名不会污染 _typeMethods
+                if (possibleTypeName == typeFullName)
                 {
-                    methods = new List<string>();
-                    _typeMethods[typeFullName] = methods;
-                }
-                if (!methods.Contains(methodName))
-                {
-                    methods.Add(methodName);
+                    if (!_typeMethods.TryGetValue(typeFullName, out var methods))
+                    {
+                        methods = new List<string>();
+                        _typeMethods[typeFullName] = methods;
+                    }
+                    if (!methods.Contains(methodName))
+                    {
+                        methods.Add(methodName);
+                    }
                 }
             }
         }
@@ -148,6 +193,26 @@ public static class GeneratedBindingRegistry
     public static bool TryGetTypeFullName(string fullName, out string? typeFullName)
     {
         return _methodToTypeName.TryGetValue(fullName, out typeFullName);
+    }
+
+    /// <summary>
+    /// 尝试获取指定名称键的歧义信息。
+    /// </summary>
+    /// <param name="fullName">方法全名、短名别名或命令名。</param>
+    /// <param name="conflictingTypes">
+    /// 输出参数：冲突的所属类型说明（如 <c>A.B.Service、C.D.Service</c>），非歧义键为 null。
+    /// </param>
+    /// <returns>该键已被判定为歧义时返回 true。</returns>
+    public static bool TryGetAmbiguity(string fullName, out string? conflictingTypes)
+    {
+        if (_ambiguousKeys.TryGetValue(fullName, out var description))
+        {
+            conflictingTypes = description;
+            return true;
+        }
+
+        conflictingTypes = null;
+        return false;
     }
 
     /// <summary>
@@ -202,6 +267,8 @@ public static class GeneratedBindingRegistry
         _methodToTypeName.Remove(fullName);
         _methodCapabilities.Remove(fullName);
         _methodScopeExtractors.Remove(fullName);
+        // 同时清除歧义标记，使该键在测试中可被重新注册。
+        _ambiguousKeys.TryRemove(fullName, out _);
 
         // 若该 fullName 以 "Type.Method" 形式登记过 _typeMethods，则同步移除对应方法名
         var lastDot = fullName.LastIndexOf('.');
@@ -230,6 +297,7 @@ public static class GeneratedBindingRegistry
         _typeMethods.Clear();
         _methodCapabilities.Clear();
         _methodScopeExtractors.Clear();
+        _ambiguousKeys.Clear();
     }
 }
 

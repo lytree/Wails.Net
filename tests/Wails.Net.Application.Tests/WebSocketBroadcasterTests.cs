@@ -61,6 +61,28 @@ public sealed class WebSocketBroadcasterTests
         }
     }
 
+    /// <summary>
+    /// 等待指定客户端收到至少 <paramref name="expected"/> 条消息。
+    /// <para>
+    /// R2-2 后 <see cref="ClientMailbox"/> 通过后台写入循环调用 <c>SendAsync</c>，
+    /// <see cref="WebSocketBroadcaster.BroadcastEventAsync"/> 仅完成入队即返回，
+    /// 因此断言前必须等待实际写出，不能假设入队完成等于发送完成。
+    /// </para>
+    /// </summary>
+    private static async Task WaitForMessagesAsync(TestWebSocket client, int expected, int timeoutMs = 5000)
+    {
+        var deadline = Environment.TickCount64 + timeoutMs;
+        while (client.ReceivedMessages.Count < expected)
+        {
+            if (Environment.TickCount64 >= deadline)
+            {
+                throw new TimeoutException($"等待消息投递超时（期望 {expected} 条）。");
+            }
+
+            await Task.Delay(10);
+        }
+    }
+
     [Test]
     public async Task AddClient_IncrementsClientCount()
     {
@@ -120,6 +142,7 @@ public sealed class WebSocketBroadcasterTests
 
         await broadcaster.BroadcastEventAsync("test-event", "hello");
 
+        await WaitForMessagesAsync(client, 1);
         await Assert.That(client.ReceivedMessages.Count).IsEqualTo(1);
         var json = System.Text.Encoding.UTF8.GetString(client.ReceivedMessages[0]);
         var message = JsonSerializer.Deserialize<JsonElement>(json);
@@ -139,6 +162,8 @@ public sealed class WebSocketBroadcasterTests
 
         await broadcaster.BroadcastEventAsync("event", null);
 
+        await WaitForMessagesAsync(client1, 1);
+        await WaitForMessagesAsync(client2, 1);
         await Assert.That(client1.ReceivedMessages.Count).IsEqualTo(1);
         await Assert.That(client2.ReceivedMessages.Count).IsEqualTo(1);
     }
@@ -152,6 +177,7 @@ public sealed class WebSocketBroadcasterTests
 
         await broadcaster.BroadcastEventAsync("event", null);
 
+        await WaitForMessagesAsync(client, 1);
         var json = System.Text.Encoding.UTF8.GetString(client.ReceivedMessages[0]);
         var message = JsonSerializer.Deserialize<JsonElement>(json);
         await Assert.That(message.GetProperty("data").ValueKind).IsEqualTo(JsonValueKind.Null);

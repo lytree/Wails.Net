@@ -87,6 +87,16 @@ public class BindingManager
             return await InvokeGeneratedAsync(fullName, invoker, args, cancellationToken);
         }
 
+        // 歧义键（fail-closed）：同一名称由多个类型提供时该键被拒绝注册与解析，
+        // 此处给出可解释的错误（列出冲突类型），而非笼统的"未找到绑定方法"。
+        if (GeneratedBindingRegistry.TryGetAmbiguity(fullName, out var conflictingTypes))
+        {
+            return ErrorResult(
+                $"名称 '{fullName}' 存在歧义：由多个类型提供（{conflictingTypes}），已拒绝调用。" +
+                "请改用全限定名（Namespace.ClassName.MethodName），或重命名相关类型 / 自定义名称。",
+                Errors.CallErrorKind.ReferenceError);
+        }
+
         // 未找到绑定方法时返回 ReferenceError。
         // 注意：许多合法命令（dialog.* / window.* / application.* / notification.* 等）
         // 通过 CommandDispatcher 插件路径调用，会先在此返回"未找到"再由 MessageProcessor 回退。

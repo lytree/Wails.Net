@@ -21,8 +21,12 @@ public sealed class InvocationGatewayTests
 {
     /// <summary>
     /// 测试用绑定服务：含一个命中方法。
+    /// <para>
+    /// 类名须与本程序集内其他绑定类区分：源生成器会为 [Binding] 方法注册
+    /// "ClassName.MethodName" 短名别名，同名类会导致别名冲突（WNET004）并使该别名不再注册。
+    /// </para>
     /// </summary>
-    public class TestService
+    public class GatewayTestService
     {
         [Binding]
         public string Echo(string value) => $"echo:{value}";
@@ -39,7 +43,7 @@ public sealed class InvocationGatewayTests
     private static BindingManager CreateBindings()
     {
         var b = new BindingManager();
-        b.Add(new TestService());
+        b.Add(new GatewayTestService());
         return b;
     }
 
@@ -61,7 +65,7 @@ public sealed class InvocationGatewayTests
         var args = new[] { ArgOf("\"hello\"") };
 
         var result = await gateway.InvokeAsync(
-            GeneratedBindingsMetadata.Methods.First(m => m.MethodName == "Echo" && m.ClassName == "TestService").FullName,
+            GeneratedBindingsMetadata.Methods.First(m => m.MethodName == "Echo" && m.ClassName == "GatewayTestService").FullName,
             args,
             null, null, CancellationToken.None);
 
@@ -163,7 +167,7 @@ public sealed class InvocationGatewayTests
         var bindings = CreateBindings();
         var gateway = new InvocationGateway(bindings, null, null, null);
 
-        var echoMethod = GeneratedBindingsMetadata.Methods.First(m => m.MethodName == "Echo" && m.ClassName == "TestService");
+        var echoMethod = GeneratedBindingsMetadata.Methods.First(m => m.MethodName == "Echo" && m.ClassName == "GatewayTestService");
         var args = new[] { ArgOf("\"world\"") };
 
         var result = await gateway.InvokeByIdAsync(echoMethod.Id, args, null, null, CancellationToken.None);

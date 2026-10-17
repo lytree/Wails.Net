@@ -230,16 +230,23 @@ public sealed class ServerModeEventApiTests
 
         // 添加一个桩 WebSocket 客户端
         var stubWs = Substitute.For<System.Net.WebSockets.WebSocket>();
-        var sentSegments = new List<ArraySegment<byte>>();
+        var sentMessages = new List<byte[]>();
 
         stubWs.State.Returns(System.Net.WebSockets.WebSocketState.Open);
-        stubWs.When(x => x.SendAsync(Arg.Any<ArraySegment<byte>>(),
+
+        // R2-2 后 ClientMailbox 通过 Channel<ReadOnlyMemory<byte>> 调用
+        // SendAsync 的 ReadOnlyMemory<byte> 重载（而非 ArraySegment<byte> 重载），
+        // 因此桩必须按新重载拦截，否则调用被代理吞掉、断言看到 0 条发送。
+        stubWs.When(x => x.SendAsync(Arg.Any<ReadOnlyMemory<byte>>(),
                 Arg.Any<System.Net.WebSockets.WebSocketMessageType>(),
                 Arg.Any<bool>(),
                 Arg.Any<System.Threading.CancellationToken>()))
             .Do(callInfo =>
             {
-                sentSegments.Add((ArraySegment<byte>)callInfo.Args()[0]);
+                lock (sentMessages)
+                {
+                    sentMessages.Add(((ReadOnlyMemory<byte>)callInfo.Args()[0]).ToArray());
+                }
             });
 
         broadcaster.AddClient(stubWs);
@@ -247,14 +254,21 @@ public sealed class ServerModeEventApiTests
         // 触发事件
         events.Emit("server-test-event", new { value = "data" });
 
-        // 等待异步广播完成
-        await Task.Delay(100);
+        // 等待异步广播完成：事件派发经 EventMailbox 异步串行，
+        // 且 ClientMailbox 再由后台写入循环实际发送，故需轮询等待。
+        await WaitUntilAsync(() =>
+        {
+            lock (sentMessages)
+            {
+                return sentMessages.Count > 0;
+            }
+        });
 
         // 验证至少一次发送
-        await Assert.That(sentSegments.Count).IsGreaterThan(0);
+        await Assert.That(sentMessages.Count).IsGreaterThan(0);
 
         // 解析发送的 JSON
-        var json = System.Text.Encoding.UTF8.GetString(sentSegments[0].Array!, 0, sentSegments[0].Count);
+        var json = System.Text.Encoding.UTF8.GetString(sentMessages[0]);
         using var doc = JsonDocument.Parse(json);
         await Assert.That(doc.RootElement.GetProperty("type").GetString()).IsEqualTo("event");
         await Assert.That(doc.RootElement.GetProperty("name").GetString()).IsEqualTo("server-test-event");

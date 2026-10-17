@@ -55,6 +55,33 @@ public static class TestServices
             }
         }
         """;
+
+    /// <summary>
+    /// 两个不同命名空间下的同名 [Binding] 类：短名别名（ClassName.MethodName）冲突，
+    /// 用于验证 WNET004 诊断与冲突别名的 fail-closed 跳过。
+    /// </summary>
+    public const string DuplicateShortNameServices = """
+        using System;
+        using Wails.Net.Application.Bindings;
+
+        namespace MyApp.Alpha
+        {
+            public class SyncService
+            {
+                [Binding]
+                public string Ping() => "alpha";
+            }
+        }
+
+        namespace MyApp.Beta
+        {
+            public class SyncService
+            {
+                [Binding]
+                public string Ping() => "beta";
+            }
+        }
+        """;
 }
 
 public static class GeneratorRunner
@@ -167,5 +194,62 @@ public class BindingGeneratorTests
         var first = GeneratorRunner.Run(TestServices.BindingService).GeneratedText;
         var second = GeneratorRunner.Run(TestServices.BindingService).GeneratedText;
         await Assert.That(second).IsEqualTo(first);
+    }
+
+    /// <summary>
+    /// 同名绑定类导致短名别名冲突时，生成器应报告 WNET004 警告。
+    /// </summary>
+    [Test]
+    public async Task Binding_DuplicateShortName_ReportsWnet004()
+    {
+        var (runResult, _, _) = GeneratorRunner.Run(TestServices.DuplicateShortNameServices);
+
+        var diagnostics = runResult.Diagnostics.Where(d => d.Id == "WNET004").ToArray();
+
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+        await Assert.That(diagnostics[0].Severity).IsEqualTo(DiagnosticSeverity.Warning);
+        await Assert.That(diagnostics[0].GetMessage()).Contains("SyncService.Ping");
+        await Assert.That(diagnostics[0].GetMessage()).Contains("MyApp.Alpha.SyncService");
+        await Assert.That(diagnostics[0].GetMessage()).Contains("MyApp.Beta.SyncService");
+    }
+
+    /// <summary>
+    /// 短名别名冲突时只跳过该别名，全限定名仍注册（fail-closed 且不影响正常调用路径）。
+    /// </summary>
+    [Test]
+    public async Task Binding_DuplicateShortName_SkipsAliasButKeepsFullNames()
+    {
+        var (_, _, generated) = GeneratorRunner.Run(TestServices.DuplicateShortNameServices);
+
+        // 全限定名仍注册
+        await Assert.That(generated).Contains("MyApp.Alpha.SyncService.Ping");
+        await Assert.That(generated).Contains("MyApp.Beta.SyncService.Ping");
+
+        // 冲突短名别名不再生成任何注册调用
+        await Assert.That(generated.Contains("\"SyncService.Ping\"", StringComparison.Ordinal)).IsFalse();
+    }
+
+    /// <summary>
+    /// 短名唯一时仍照常注册别名，保证非冲突场景行为不变。
+    /// </summary>
+    [Test]
+    public async Task Binding_UniqueShortName_StillRegistersAlias()
+    {
+        var (_, _, generated) = GeneratorRunner.Run(TestServices.BindingService);
+
+        await Assert.That(generated).Contains("\"GreetingService.Greet\"");
+    }
+
+    /// <summary>
+    /// 同名类的方法名不重复时，冲突仅限重复键，其余短名别名不受影响。
+    /// </summary>
+    [Test]
+    public async Task Binding_DuplicateShortName_OtherKeysUnaffected()
+    {
+        var (_, _, generated) = GeneratorRunner.Run(TestServices.DuplicateShortNameServices);
+
+        // 两个类的全限定名键均不同且都注册
+        await Assert.That(generated.Contains("\"MyApp.Alpha.SyncService.Ping\"", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(generated.Contains("\"MyApp.Beta.SyncService.Ping\"", StringComparison.Ordinal)).IsTrue();
     }
 }

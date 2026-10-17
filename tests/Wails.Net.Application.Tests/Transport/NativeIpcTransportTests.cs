@@ -217,8 +217,13 @@ public sealed class NativeIpcTransportTests
         var (impl, _, posted) = CreateStub();
         transport.RegisterWindow(1u, impl);
 
+        // 本程序集内有两个 [Binding] EchoService（Hosting 与 Transport 命名空间各一），
+        // 仅按 ClassName/MethodName 过滤会命中 Hosting 那个（其实例未注册，调用会返回
+        // ReferenceError），因此必须同时限定命名空间。
         var methodName = GeneratedBindingsMetadata.Methods
-            .First(m => m.ClassName == "EchoService" && m.MethodName == "Echo").FullName;
+            .First(m => m.Namespace == "Wails.Net.Application.Tests.Transport"
+                        && m.ClassName == "EchoService"
+                        && m.MethodName == "Echo").FullName;
         var json = BuildCallMessageJson("call-1", methodName, "hi");
 
         await transport.HandleIncomingAsync(1u, json);
@@ -386,7 +391,9 @@ public sealed class NativeIpcTransportTests
 
         // 模拟前端通过原生 postMessage 发送的消息
         var methodName = GeneratedBindingsMetadata.Methods
-            .First(m => m.ClassName == "EchoService" && m.MethodName == "Echo").FullName;
+            .First(m => m.Namespace == "Wails.Net.Application.Tests.Transport"
+                        && m.ClassName == "EchoService"
+                        && m.MethodName == "Echo").FullName;
         var json = BuildCallMessageJson("via-handler", methodName, "from-frontend");
 
         // 通过注册的 handler 触发（与平台层调用路径一致）

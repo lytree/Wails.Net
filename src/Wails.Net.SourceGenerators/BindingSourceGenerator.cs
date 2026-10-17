@@ -16,6 +16,24 @@ namespace Wails.Net.SourceGenerators;
 public sealed class BindingSourceGenerator : IIncrementalGenerator
 {
     /// <summary>
+    /// WNET004：同一注册键（短名别名 <c>ClassName.MethodName</c> 或自定义名称）由多个类型提供。
+    /// <para>
+    /// 生成代码会为每个键生成一条 <c>GeneratedBindingRegistry.Register</c> 调用；键重复时运行时
+    /// 后注册覆盖先注册，导致前端按短名/别名调用时静默分派到"最后生成"的那个实现（跨命名空间
+    /// 同名类尤其危险）。因此冲突键一律不再注册（fail-closed：调用得到 ReferenceError），
+    /// 并在编译期报告本诊断，要求开发者改用全限定名或重命名。
+    /// </para>
+    /// 发射 <c>WNET004</c> 警告（在 <c>Directory.Build.props</c> 的 <c>TreatWarningsAsErrors=true</c> 下即构建失败）。
+    /// </summary>
+    private static readonly DiagnosticDescriptor Wnet004AmbiguousAlias = new(
+        id: "WNET004",
+        title: "绑定短名/别名冲突",
+        messageFormat: "注册名 \"{0}\" 由多个类型提供（{1}），已跳过该名称的注册以避免运行时静默分派到错误实现；请改用全限定名，或重命名相关类型 / 自定义名称",
+        category: "Wails.Net.Bindings",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    /// <summary>
     /// 标记方法的信息，用于在生成器管道中传递。
     /// </summary>
     private sealed record MethodMarker(
@@ -112,7 +130,7 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
                 return;
             }
 
-            var generatedCode = GenerateCode(distinctMarkers);
+            var generatedCode = GenerateCode(distinctMarkers, spc);
             if (!string.IsNullOrEmpty(generatedCode))
             {
                 spc.AddSource("WailsGeneratedBindings.g.cs", generatedCode);
@@ -223,7 +241,9 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
     /// <summary>
     /// 生成调用器类代码。
     /// </summary>
-    private static string GenerateCode(List<MethodMarker> markers)
+    /// <param name="markers">扫描到的 [Binding] / [Command] 标记方法。</param>
+    /// <param name="spc">源生成上下文，用于上报 WNET004 别名冲突诊断。</param>
+    private static string GenerateCode(List<MethodMarker> markers, SourceProductionContext spc)
     {
         var methodInfos = new List<MethodSymbolInfo>();
         var usedNames = new HashSet<string>(StringComparer.Ordinal);
@@ -311,38 +331,63 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
         sb.AppendLine("        public static void Register()");
         sb.AppendLine("        {");
 
+        // 别名冲突检测（WNET004）：
+        // 短名别名（ClassName.MethodName）或自定义名称可能被多个类型重复使用，生成代码会为同一键
+        // 生成多条 Register 调用，运行时后注册覆盖先注册，使前端按该名称调用时静默分派到
+        // "最后生成"的那个实现。因此冲突键一律不再注册（fail-closed：调用得到 ReferenceError），
+        // 并在编译期报告 WNET004 要求开发者消歧。
+        var keyOwners = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var info in methodInfos)
+        {
+            var owner = StripGlobalPrefix(info.FullTypeName);
+            foreach (var key in EnumerateRegistrationKeys(info))
+            {
+                if (!keyOwners.TryGetValue(key, out var owners))
+                {
+                    owners = new List<string>();
+                    keyOwners[key] = owners;
+                }
+
+                if (!owners.Contains(owner, StringComparer.Ordinal))
+                {
+                    owners.Add(owner);
+                }
+            }
+        }
+
+        var reportedConflicts = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var info in methodInfos)
+        {
+            foreach (var key in EnumerateRegistrationKeys(info))
+            {
+                if (keyOwners[key].Count < 2 || !reportedConflicts.Add(key))
+                {
+                    continue;
+                }
+
+                spc.ReportDiagnostic(Diagnostic.Create(
+                    Wnet004AmbiguousAlias,
+                    info.MethodSymbol.ContainingType.Locations.FirstOrDefault() ?? Location.None,
+                    key,
+                    string.Join("、", keyOwners[key])));
+            }
+        }
+
         foreach (var info in methodInfos)
         {
             // 类型全名（Namespace.ClassName），用于运行时查找实例
-            var typeFullNameStr = info.NamespaceName.Length > 0
-                ? $"{info.NamespaceName}.{info.TypeName}"
-                : info.TypeName;
+            var typeFullNameStr = GetTypeFullNameStr(info);
 
-            // 全限定名注册（携带元数据）
-            AppendBindingRegistration(sb, info.FullName, info.InvokerMethodName, typeFullNameStr, info.Metadata);
-
-            // 对于 [Binding] 特性的方法，同时注册短名称作为别名
-            if (!info.IsCommand && info.ShortName != info.FullName)
+            // 按确定性顺序注册：全限定名（或 [Command] 命令名）→ 短名别名 → 自定义名别名。
+            // 冲突键跳过注册，避免运行时静默覆盖。
+            foreach (var key in EnumerateRegistrationKeys(info))
             {
-                AppendBindingRegistration(sb, info.ShortName, info.InvokerMethodName, typeFullNameStr, info.Metadata);
-            }
+                if (keyOwners[key].Count > 1)
+                {
+                    continue;
+                }
 
-            // 对于 [Command] 特性的方法，命令名已与 fullName 相同（直接使用自定义名）。
-            // 仅当命令显式指定了名称（CustomName 非 null）且与短名称不同时，
-            // 同时注册 "ClassName.MethodName" 短名称作为别名。
-            if (info.IsCommand && info.CustomName is not null && info.CustomName != info.ShortName)
-            {
-                AppendBindingRegistration(sb, info.ShortName, info.InvokerMethodName, typeFullNameStr, info.Metadata);
-            }
-
-            // 对于 [Binding(Name = "custom.name")] 特性的方法，自定义名称与
-            // 全限定名和短名称都不同时，额外注册自定义名称作为别名，
-            // 使前端可通过自定义名称调用。
-            if (!info.IsCommand && info.CustomName is not null
-                && info.CustomName != info.FullName
-                && info.CustomName != info.ShortName)
-            {
-                AppendBindingRegistration(sb, info.CustomName, info.InvokerMethodName, typeFullNameStr, info.Metadata);
+                AppendBindingRegistration(sb, key, info.InvokerMethodName, typeFullNameStr, info.Metadata);
             }
 
             // 同步注册元数据（供 BindingAnalyzer / TypeScriptGenerator 使用，替代运行时反射分析）
@@ -829,6 +874,63 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
         bool IsCommand,
         string InvokerMethodName,
         MethodMetadata Metadata);
+
+    /// <summary>
+    /// 枚举某方法在 <c>GeneratedBindingRegistry</c> 中注册的全部名称键（按注册顺序）。
+    /// 生成代码、冲突检测与跳过逻辑共用此顺序，避免两处判定不一致。
+    /// </summary>
+    /// <param name="info">方法符号信息。</param>
+    /// <returns>该方法注册的键序列。</returns>
+    private static IEnumerable<string> EnumerateRegistrationKeys(MethodSymbolInfo info)
+    {
+        // 全限定名（[Binding] 为 Namespace.ClassName.MethodName；[Command] 即命令名）
+        yield return info.FullName;
+
+        if (info.IsCommand)
+        {
+            // [Command]：仅当显式指定命令名且与短名不同时，额外注册 "ClassName.MethodName" 短名别名。
+            if (info.CustomName is not null && info.CustomName != info.ShortName)
+            {
+                yield return info.ShortName;
+            }
+
+            yield break;
+        }
+
+        // [Binding]：短名别名（ClassName.MethodName）
+        if (info.ShortName != info.FullName)
+        {
+            yield return info.ShortName;
+        }
+
+        // [Binding(Name = "custom.name")]：自定义名别名
+        if (info.CustomName is not null
+            && info.CustomName != info.FullName
+            && info.CustomName != info.ShortName)
+        {
+            yield return info.CustomName;
+        }
+    }
+
+    /// <summary>
+    /// 类型全名（Namespace.ClassName）。注册时作为"所属类型"传给注册表，运行时用于查找实例。
+    /// </summary>
+    /// <param name="info">方法符号信息。</param>
+    /// <returns>类型全名。</returns>
+    private static string GetTypeFullNameStr(MethodSymbolInfo info)
+        => info.NamespaceName.Length > 0
+            ? $"{info.NamespaceName}.{info.TypeName}"
+            : info.TypeName;
+
+    /// <summary>
+    /// 去掉 <c>global::</c> 前缀，便于在诊断消息中展示可读类型名。
+    /// </summary>
+    /// <param name="fullyQualifiedTypeName">完全限定类型名。</param>
+    /// <returns>去掉前缀后的类型名。</returns>
+    private static string StripGlobalPrefix(string fullyQualifiedTypeName)
+        => fullyQualifiedTypeName.StartsWith("global::", StringComparison.Ordinal)
+            ? fullyQualifiedTypeName["global::".Length..]
+            : fullyQualifiedTypeName;
 
     /// <summary>
     /// 生成单个 GeneratedBindingRegistry.Register 调用，根据元数据决定使用哪个重载。

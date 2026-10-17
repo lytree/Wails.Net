@@ -227,7 +227,9 @@ public sealed class DesktopApplicationBuilderTests
         var plugin = Substitute.For<IPlugin>();
         plugin.When(x => x.Configure(Arg.Any<IPluginContext>()))
             .Do(callInfo => callInfo.Arg<IPluginContext>()
-                .Commands.MapCommand("test.middleware", () => "ok"));
+                // R3-B（WNET003）后 Strict 模式拒绝无安全声明的命令，
+                // 故测试命令须显式声明为公开命令（与 40 个内置插件的迁移约定一致）。
+                .Commands.MapCommand("test.middleware", () => "ok", CommandSecurity.Public()));
         var addPluginMethod = typeof(DesktopApplicationBuilder)
             .GetMethod("AddPlugin", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
         addPluginMethod!.Invoke(builder, new object[] { plugin });
