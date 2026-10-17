@@ -264,25 +264,46 @@
 
 ### 9.5 回归验证基线（2026-10-17）
 
-非 UI 测试类回归结果（`Wails.Net.Application.Tests`，按类名过滤）：
+非 UI 测试类回归结果（`Wails.Net.Application.Tests`，按类名过滤，修复后重跑）：
 
 | 测试类 | 结果 |
 |--------|------|
 | 新增 P0-1 测试（Mailbox / 队列 / 存储 / 端点） | 44 通过 |
-| `*Event*` | 119 项，1 项失败（既存） |
-| `*Transport*` | 37 项，2 项失败（既存） |
-| `*Broadcaster*` | 12 项，2 项失败（既存） |
-| `*Application*` | 104 项，1 项失败（既存） |
-| `*Shutdown*` / `*Window*` / `*Registry*` | 全部通过 |
+| `*Event*` | 119 通过 |
+| `*Transport*` | 37 通过 |
+| `*Broadcaster*` | 12 通过 |
+| `*Application*` | 104 通过 |
+| `*Shutdown*` / `*Window*` / `*Registry*` | 7 / 96 / 40 全部通过 |
 
-经 `git stash` 对照 HEAD 复现确认，下列 6 项失败在本次改动前即已存在，与 P0 改动无关：
+本次改动前即存在、现已一并修复的 6 项失败及其根因：
 
-1. `ServerModeEventApiTests.EndToEnd_EventEmit_ThroughWebSocketTransport_DeliversToClients`
-2. `NativeIpcTransportTests.RegisterWindow_InstallsHandlerThatCallsHandleIncomingAsync`
-3. `NativeIpcTransportTests.HandleIncomingAsync_ValidCallMessage_PostsResponseBack`
-4. `WebSocketBroadcasterTests.BroadcastEventAsync_DeliversMessageToClient`
-5. `WebSocketBroadcasterTests.BroadcastEventAsync_DeliversToMultipleClients`
-6. `ApplicationApiAlignmentTests.Build_CollectsCommandMiddlewares_FromDI`
+| 测试 | 根因 |
+|------|------|
+| `WebSocketBroadcasterTests.BroadcastEventAsync_DeliversMessageToClient` / `..._DeliversToMultipleClients` | R2-2 后 `ClientMailbox` 由后台写入循环实际 `SendAsync`，`BroadcastEventAsync` 仅完成入队即返回；测试断言过早。改为轮询等待写出 |
+| `ServerModeEventApiTests.EndToEnd_EventEmit_ThroughWebSocketTransport_DeliversToClients` | 同上；且 NSubstitute 桩只拦截 `SendAsync(ArraySegment<byte>)` 重载，而生产代码调用 `SendAsync(ReadOnlyMemory<byte>)` 重载（代理吞掉调用）。桩改为按新重载拦截 |
+| `NativeIpcTransportTests.RegisterWindow_InstallsHandlerThatCallsHandleIncomingAsync` / `HandleIncomingAsync_ValidCallMessage_PostsResponseBack` | 测试用 `GeneratedBindingsMetadata.Methods.First(m => m.ClassName == "EchoService" ...)` 过滤，但程序集内存在两个 `[Binding] EchoService`（Hosting 与 Transport 命名空间各一），`.First` 命中 Hosting 那个（其实例未注册 → `ReferenceError`）。改为同时限定命名空间 |
+| `ApplicationApiAlignmentTests.Build_CollectsCommandMiddlewares_FromDI` | R3-B（WNET003）后 Strict 模式拒绝无安全声明的命令；测试内联插件命令未声明安全元数据。改为 `CommandSecurity.Public()` |
+
+### 9.6 短名别名覆盖风险修复（2026-10-17）
+
+源生成器为 `[Binding]` / `[Command]` 额外注册 `<ClassName>.<MethodName>` 短名别名与自定义名别名；
+当同一名称键由多个类型提供时（跨命名空间同名类、重复的自定义名 / 命令名），生成代码会为同一键
+生成多条 `GeneratedBindingRegistry.Register` 调用，运行时"后注册覆盖先注册"，按该名称调用会
+静默分派到"最后生成"的那个实现。修复分两层：
+
+| 层 | 措施 |
+|----|------|
+| 编译期（生成器） | 新增诊断 **WNET004**（Warning）：同一注册键由多个类型提供时报告冲突类型并**跳过**该键的注册（`Directory.Build.props` 的 `TreatWarningsAsErrors=true` 下即构建失败，强制消歧） |
+| 运行期（注册表） | `GeneratedBindingRegistry.Register` 检测"同键不同所属类型"→ 标记歧义并撤销既有注册，该键拒绝后续注册与查询（fail-closed）；`BindingManager.Call` 对歧义键返回带冲突类型说明的 `ReferenceError`。覆盖跨程序集场景（编译期不可见） |
+
+**行为变更**：跨程序集同名短名调用（例如应用与插件各有一个 `GreetingService.Greet`）由原先
+"静默解析到某一个"改为**拒绝并返回可解释的 ReferenceError**；全限定名调用
+（`Namespace.ClassName.MethodName`）不受影响。测试程序集内原有的两处同名绑定类
+（`EchoService`、`TestService`）已重命名消歧。
+
+相关测试：`BindingGeneratorTests` 新增 4 项（WNET004 诊断、冲突别名跳过、全限定名保留、唯一短名不受影响）；
+`GeneratedBindingsTests` 新增 2 项（歧义键 fail-closed、同类型重复注册仍可解析）。
 
 另：P0-1 使前端派发由同步改为异步邮箱串行，2 个既有测试（`EventSenderWindowPropagationTests.Emit_OneListenerThrows_OtherListenerStillReceivesSenderWindowID`、`ServerModeEventApiTests.BroadcastEvent_NotifiesRegisteredTransportListener`）已改为等待派发完成后断言。
+
 
