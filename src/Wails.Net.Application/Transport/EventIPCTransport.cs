@@ -1,5 +1,7 @@
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Wails.Net.Application.Events;
 using Wails.Net.Application.Windows;
 
 namespace Wails.Net.Application.Transport;
@@ -49,9 +51,20 @@ public sealed class EventIPCTransport : IWailsEventListener
     private readonly ILogger<EventIPCTransport>? _logger;
 
     /// <summary>
+    /// 每窗口有序事件投递队列（事件投递硬化 P0-1，对应 Wails v3 PR #5934）。
+    /// <para>
+    /// ExecJS 注入此前在 <see cref="NotifyEvent"/> 中同步逐窗口执行，且并发 <c>Emit</c>
+    /// 之间会交错。改由本队列按窗口串行：既保证「每窗口 FIFO」，又避免慢窗口阻塞
+    /// <see cref="Events.EventMailbox{T}"/> 之外的其他窗口投递。
+    /// </para>
+    /// </summary>
+    private readonly PerWindowEventQueue _eventQueue;
+
+    /// <summary>
     /// 构造默认 EventIPCTransport 实例（无日志）。
     /// </summary>
     public EventIPCTransport()
+        : this(null, PerWindowEventQueue.DefaultCapacity)
     {
     }
 
@@ -60,8 +73,19 @@ public sealed class EventIPCTransport : IWailsEventListener
     /// </summary>
     /// <param name="logger">日志记录器实例。</param>
     public EventIPCTransport(ILogger<EventIPCTransport> logger)
+        : this(logger, PerWindowEventQueue.DefaultCapacity)
+    {
+    }
+
+    /// <summary>
+    /// 构造 EventIPCTransport 实例（可指定每窗口事件队列容量，供测试使用）。
+    /// </summary>
+    /// <param name="logger">日志记录器，可为 null。</param>
+    /// <param name="eventQueueCapacity">每窗口事件队列容量。</param>
+    internal EventIPCTransport(ILogger<EventIPCTransport>? logger, int eventQueueCapacity)
     {
         _logger = logger;
+        _eventQueue = new PerWindowEventQueue(eventQueueCapacity, logger);
     }
 
     /// <summary>
@@ -125,7 +149,7 @@ public sealed class EventIPCTransport : IWailsEventListener
             return;
         }
 
-        // 构造注入脚本：window._wailsEmitEvent(name, data, senderWindowId);
+        // 构造注入脚本：window._wailsEmitEvent(name, data, senderWindowId, targetWindowId)。
         // 使用 JSON 序列化数据，避免拼接字符串时的转义问题。
         // P1-2：senderWindowId 作为第三个参数传递，前端可据此识别事件来源窗口。
         // OPT-EVENT-002：targetWindowId 作为第四个参数传递（可空），前端可据此识别定向事件。
@@ -135,7 +159,11 @@ public sealed class EventIPCTransport : IWailsEventListener
             : JsonSerializer.Serialize(data, data.GetType(), JsonOptions);
         var senderJson = senderWindowId is null ? "null" : senderWindowId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var targetJson = targetWindowId is null ? "null" : targetWindowId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        var js = $"window._wailsEmitEvent && window._wailsEmitEvent({nameJson}, {dataJson}, {senderJson}, {targetJson});";
+
+        // 待派发的事件载荷（与内联/引用两种投递形式共用同一份字节）。
+        var payloadJson = $"{{\"name\":{nameJson},\"data\":{dataJson},\"senderWindowId\":{senderJson},\"targetWindowId\":{targetJson}}}";
+        var payloadBytes = Encoding.UTF8.GetBytes(payloadJson);
+        var oversized = payloadBytes.Length > EventPayloadStore.MaxInlinePayloadBytes;
 
         // 对应 Wails v3 EventIPCTransport.DispatchWailsEvent：
         //   for _, window := range windows {
@@ -143,6 +171,13 @@ public sealed class EventIPCTransport : IWailsEventListener
         //       window.DispatchWailsEvent(event)
         //   }
         // OPT-EVENT-002：定向事件仅注入目标窗口，广播则遍历所有窗口。
+        // 事件投递硬化 P0-1（对应 Wails v3 PR #5934）：注入统一进入目标窗口的有序队列，
+        // 由每窗口单消费者按 FIFO 串行执行 ExecJS。
+        // 事件投递硬化 P0-1 / Layer 3（对应 PR #5930）：超过 8192 字节的载荷停放宿主侧，
+        // 注入一段只做 fetch 的脚本，避免大载荷经 eval 触发 WebKit 共享内存滞留。
+        // 特大载荷需要宿主侧存储；一次性解析，避免每个窗口重复取全局应用。
+        var payloadStore = oversized ? Application.Get()?.EventPayloads : null;
+
         foreach (var window in windows)
         {
             // 定向过滤：目标窗口 ID 非空时仅派发到该窗口
@@ -151,19 +186,54 @@ public sealed class EventIPCTransport : IWailsEventListener
                 continue;
             }
 
-            try
+            var target = window;
+            string js;
+            if (payloadStore is not null && payloadStore.TryPut(target.ID, payloadBytes, out var payloadId))
             {
-                // WebviewWindow.ExecJS 内部会调用平台实现的 ExecuteScriptAsync。
-                // 失败的窗口（已关闭、已释放）不应影响其他窗口的事件推送，
-                // 异常会被 catch 捕获并记录日志。
-                window.ExecJS(js);
+                js = BuildRefEventScript(payloadId);
             }
-            catch (Exception ex)
+            else
             {
-                // 单个窗口注入失败仅记录日志，不影响其他窗口。
-                _logger?.LogDebug(ex, "向窗口 {WindowId} 派发事件 {EventName} 失败",
-                    window.ID, eventName);
+                // 载荷不大，或存储已满/已关闭：回退内联投递（代价是恢复共享内存滞留，但优于丢弃）。
+                js = BuildInlineEventScript(payloadJson);
             }
+
+            // WebviewWindow.ExecJS 内部会调用平台实现的 ExecuteScriptAsync。
+            // 投递失败（窗口已关闭、已释放）由队列消费者捕获并记录日志，不影响其他窗口。
+            _eventQueue.Enqueue(target.ID, () =>
+            {
+                target.ExecJS(js);
+                return Task.CompletedTask;
+            });
         }
     }
+
+    /// <summary>
+    /// 构造内联投递脚本：直接调用 <c>window._wailsEmitEvent</c> 派发载荷。
+    /// <para>
+    /// 若该窗口已有一次引用投递（<c>fetch</c>）在进行中，则本次派发排队其后再执行，
+    /// 避免内联事件越过尚未取回的引用事件（保持每窗口到达顺序）。
+    /// 派发异常被 <c>catch</c> 吞掉，避免单个抛异常的监听器让队列 Promise 永久 rejected。
+    /// </para>
+    /// </summary>
+    /// <param name="payloadJson">事件载荷 JSON（<c>{name,data,senderWindowId,targetWindowId}</c>）。</param>
+    private static string BuildInlineEventScript(string payloadJson)
+        => "if(window._wailsEmitEvent){var g=window,e=" + payloadJson + ";" +
+           "var c=function(){g._wailsEmitEvent(e.name,e.data,e.senderWindowId,e.targetWindowId);};" +
+           "if(g.__wailsEventQueue){g.__wailsEventQueue=g.__wailsEventQueue.then(c).catch(function(){});}else{c();}}";
+
+    /// <summary>
+    /// 构造引用投递脚本：从 <c>GET /wails/eventpayload/&lt;id&gt;</c> 取回停放载荷后再派发。
+    /// <para>
+    /// 建立 <c>window.__wailsEventQueue</c> 是让该窗口后续事件排队其后的关键。
+    /// </para>
+    /// </summary>
+    /// <param name="payloadId">停放载荷的 id。</param>
+    private static string BuildRefEventScript(string payloadId)
+        => "if(window._wailsEmitEvent){var g=window;" +
+           "g.__wailsEventQueue=(g.__wailsEventQueue||Promise.resolve()).then(function(){" +
+           "return fetch('" + EventPayloadStore.PathPrefix + payloadId + "',{cache:'no-store'})" +
+           ".then(function(r){return r.json();})" +
+           ".then(function(e){g._wailsEmitEvent(e.name,e.data,e.senderWindowId,e.targetWindowId);});" +
+           "}).catch(function(){});}";
 }

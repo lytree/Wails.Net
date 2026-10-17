@@ -50,6 +50,18 @@ public sealed class WebviewResponse
         };
 
     /// <summary>
+    /// 创建 405 响应（方法不允许）。
+    /// </summary>
+    public static WebviewResponse MethodNotAllowed() =>
+        new()
+        {
+            StatusCode = 405,
+            StatusText = "Method Not Allowed",
+            ContentType = "text/plain; charset=utf-8",
+            Body = "Method Not Allowed"u8.ToArray()
+        };
+
+    /// <summary>
     /// 创建 500 响应。
     /// </summary>
     public static WebviewResponse InternalError(string message) =>

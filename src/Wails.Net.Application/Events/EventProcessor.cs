@@ -62,6 +62,76 @@ public class EventProcessor
     private int _nextListenerId = 1;
 
     /// <summary>
+    /// 前端事件投递邮箱（事件投递硬化 P0-1，对应 Wails v3 的
+    /// <c>EventProcessor.frontendEvents</c>，见 PR #5851）。
+    /// <para>
+    /// 前端派发统一经由本邮箱串行执行，使到达前端的顺序等于 <see cref="Emit"/> 的调用顺序；
+    /// 同时保证下游（<see cref="Transport.PerWindowEventQueue"/>）的阻塞式背压只落在
+    /// 邮箱排空任务上，应用侧调用 <see cref="Emit"/> 永不阻塞（含 UI 线程）。
+    /// </para>
+    /// </summary>
+    private readonly EventMailbox<FrontendEventDelivery> _frontendMailbox;
+
+    /// <summary>
+    /// 构造事件处理器。
+    /// </summary>
+    public EventProcessor()
+    {
+        _frontendMailbox = new EventMailbox<FrontendEventDelivery>(DeliverFrontendEventAsync);
+    }
+
+    /// <summary>
+    /// 前端事件投递载荷：一次 <see cref="Emit"/> 对应的前端派发请求。
+    /// </summary>
+    /// <param name="Name">事件名称。</param>
+    /// <param name="Data">事件数据。</param>
+    /// <param name="SenderWindowId">事件来源窗口 ID。</param>
+    /// <param name="TargetWindowId">定向目标窗口 ID。</param>
+    private readonly record struct FrontendEventDelivery(
+        string Name,
+        object? Data,
+        uint? SenderWindowId,
+        uint? TargetWindowId);
+
+    /// <summary>
+    /// 邮箱单消费者：按 FIFO 顺序把事件串行派发给传输层监听器。
+    /// 监听器列表在派发时快照，避免长时间持锁与并发修改冲突。
+    /// </summary>
+    /// <param name="delivery">投递载荷。</param>
+    private Task DeliverFrontendEventAsync(FrontendEventDelivery delivery)
+    {
+        List<IWailsEventListener>? snapshot;
+        lock (_listenersLock)
+        {
+            snapshot = _wailsEventListeners.Count == 0
+                ? null
+                : new List<IWailsEventListener>(_wailsEventListeners);
+        }
+
+        if (snapshot is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        foreach (var listener in snapshot)
+        {
+            try
+            {
+                // P1-2：将 senderWindowID 传递给传输层监听器，使前端可识别事件来源窗口。
+                // OPT-EVENT-002：定向事件透传 targetWindowID，传输层按目标过滤。
+                listener.NotifyEvent(delivery.Name, delivery.Data, delivery.SenderWindowId, delivery.TargetWindowId);
+            }
+            catch
+            {
+                // 单个监听器异常不应影响其他监听器。
+                // 对应 Wails v3 Go 版本 dispatchEventToWindows 中每个窗口独立 dispatch 的容错语义。
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
     /// 设置传输层事件监听器，用于将事件广播到前端。
     /// <para>
     /// <b>兼容性说明</b>：此方法清除已有监听器列表后只保留单个监听器。
@@ -264,43 +334,13 @@ public class EventProcessor
             return;
         }
 
-        // 通知传输层监听器（广播到前端）。
-        // OPT-EVENT-002：定向事件将 targetWindowID 传递给传输层，由各传输层按目标过滤分发。
-        // 对应 Wails v3 Go 版本 application.go 中的并行 goroutine 派发：
-        //   go dispatchEventToListeners(event)
-        //   go dispatchEventToWindows(event)
-        // 此处采用同步遍历保持简单，监听器实现应自行处理线程安全与异步派发。
-        // 拷贝一份列表避免在锁外枚举时被并发修改。
-        List<IWailsEventListener> snapshot;
-        lock (_listenersLock)
-        {
-            if (_wailsEventListeners.Count == 0)
-            {
-                snapshot = null!;
-            }
-            else
-            {
-                snapshot = new List<IWailsEventListener>(_wailsEventListeners);
-            }
-        }
-
-        if (snapshot is not null)
-        {
-            foreach (var listener in snapshot)
-            {
-                try
-                {
-                    // P1-2：将 senderWindowID 传递给传输层监听器，使前端可识别事件来源窗口。
-                    // OPT-EVENT-002：定向事件透传 targetWindowID，传输层按目标过滤。
-                    listener.NotifyEvent(evt.Name, evt.Data, evt.SenderWindowID, evt.TargetWindowID);
-                }
-                catch
-                {
-                    // 单个监听器异常不应影响其他监听器或本地订阅者。
-                    // 对应 Wails v3 Go 版本 dispatchEventToWindows 中每个窗口独立 dispatch 的容错语义。
-                }
-            }
-        }
+        // 通知传输层监听器（广播到前端）：入队到前端邮箱，由单消费者按 FIFO 顺序串行派发。
+        // 事件投递硬化 P0-1（对应 Wails v3 PR #5851）：
+        //   - 并发 Emit 之间不再交错，到达前端的顺序等于 Emit 调用顺序；
+        //   - Send 永不阻塞，UI 线程调用 Emit 不会被下游背压拖住。
+        // 监听器列表快照在邮箱消费侧完成（见 DeliverFrontendEventAsync）。
+        _frontendMailbox.Send(new FrontendEventDelivery(
+            evt.Name, evt.Data, evt.SenderWindowID, evt.TargetWindowID));
 
         // 通知本地订阅者：先精确匹配，再匹配通配符模式（OPT-EVENT-001）。
         // 定向事件（TargetWindowID 非空）不影响本地订阅者——本地订阅者始终收到事件，

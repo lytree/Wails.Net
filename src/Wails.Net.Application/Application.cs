@@ -623,6 +623,17 @@ public class Application
     public INativeIpcTransport? NativeIpcTransport { get; private set; }
 
     /// <summary>
+    /// 获取超大事件载荷的宿主侧有界存储（事件投递硬化 P0-1 / Layer 3，
+    /// 对应 Wails v3 Go 版本 <c>App.eventPayloads</c>）。
+    /// <para>
+    /// 超过 <see cref="Events.EventPayloadStore.MaxInlinePayloadBytes"/> 字节的事件载荷在此停放，
+    /// 前端通过 <c>GET /wails/eventpayload/&lt;id&gt;</c> 一次性取回，避免大载荷经过 eval 通道
+    /// 触发 WebKit 的进程外共享内存滞留（macOS 宿主 / WebKitGTK Web 进程膨胀）。
+    /// </para>
+    /// </summary>
+    internal Events.EventPayloadStore EventPayloads { get; } = new();
+
+    /// <summary>
     /// 获取或设置是否启用原生 IPC 传输通道（P0-C2）。
     /// <para>
     /// 默认为 <c>true</c>：桌面端默认启用原生 postMessage 副通道，降低小消息延迟。
@@ -1255,6 +1266,10 @@ public class Application
 
         // 触发 OnShutdown 回调
         _options.OnShutdown?.Invoke();
+
+        // 停止超大事件载荷存储的清扫器并释放停放条目。
+        // 对应 Wails v3 Go 版本 application.go 中 OnShutdown(a.eventPayloads.close)。
+        EventPayloads.Dispose();
 
         // 关闭所有窗口
         // R1-2：委托给 WindowManager 单一注册表，避免重复维护 _windows。

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Wails.Net.Application.Bindings;
 using Wails.Net.Application.Windows;
 
@@ -40,12 +41,29 @@ public sealed class NativeIpcTransport : INativeIpcTransport
     private readonly ConcurrentDictionary<uint, IWebviewWindowImpl> _windowImpls = new();
 
     /// <summary>
+    /// 每窗口有序事件投递队列（事件投递硬化 P0-1，对应 Wails v3 PR #5934）。
+    /// <para>
+    /// 事件此前以 fire-and-forget 方式 <c>_ = PostToWindowAsync(...)</c> 发出，同一窗口的
+    /// 多次投递可能在 Task 调度上交错、乱序。改由本队列保证「每窗口 FIFO」：入队顺序
+    /// 即前端接收顺序；队列满时阻塞生产者（实际为 <see cref="Events.EventMailbox{T}"/> 的
+    /// 排空任务），形成有界背压。
+    /// </para>
+    /// </summary>
+    private readonly PerWindowEventQueue _eventQueue;
+
+    /// <summary>
     /// 使用指定消息处理器构造 <see cref="NativeIpcTransport"/> 实例。
     /// </summary>
     /// <param name="processor">消息处理器实例，用于解析与路由 IPC 消息。</param>
-    public NativeIpcTransport(MessageProcessor processor)
+    /// <param name="logger">可选日志记录器。</param>
+    /// <param name="eventQueueCapacity">每窗口事件队列容量；&lt;= 0 时取默认值。</param>
+    public NativeIpcTransport(
+        MessageProcessor processor,
+        ILogger<NativeIpcTransport>? logger = null,
+        int eventQueueCapacity = PerWindowEventQueue.DefaultCapacity)
     {
         _processor = processor ?? throw new ArgumentNullException(nameof(processor));
+        _eventQueue = new PerWindowEventQueue(eventQueueCapacity, logger);
     }
 
     /// <inheritdoc />
@@ -81,6 +99,10 @@ public sealed class NativeIpcTransport : INativeIpcTransport
             // 解绑消息回调，恢复默认路由（回到 Application.HandleMessageFromFrontend 路径）
             impl.SetNativeMessageHandler(null);
         }
+
+        // 事件投递硬化 P0-1：关闭该窗口的事件队列，丢弃未投递事件并唤醒被阻塞的生产者。
+        // 对应 Wails v3 窗口销毁时的 closeEventQueue 语义。
+        _ = _eventQueue.CloseWindowAsync(windowId);
     }
 
     /// <inheritdoc />
@@ -218,19 +240,23 @@ public sealed class NativeIpcTransport : INativeIpcTransport
         var payload = new EventPayload(eventName, data, senderWindowId, targetWindowId);
         var json = JsonSerializer.Serialize(payload, JsonOptions.DefaultSerializerOptions);
 
-        // OPT-EVENT-002：定向事件仅推送目标窗口；广播则推送所有已注册窗口
+        // OPT-EVENT-002：定向事件仅推送目标窗口；广播则推送所有已注册窗口。
+        // 事件投递硬化 P0-1（对应 Wails v3 PR #5934）：投递统一进入目标窗口的有序队列，
+        // 由每窗口单消费者按 FIFO 串行调用 PostNativeMessageAsync，保证同窗口事件不乱序。
         if (targetWindowId is not null)
         {
-            if (_windowImpls.ContainsKey(targetWindowId.Value))
+            var target = targetWindowId.Value;
+            if (_windowImpls.ContainsKey(target))
             {
-                _ = PostToWindowAsync(targetWindowId.Value, json);
+                _eventQueue.Enqueue(target, () => PostToWindowAsync(target, json));
             }
             return;
         }
 
         foreach (var windowId in _windowImpls.Keys)
         {
-            _ = PostToWindowAsync(windowId, json);
+            var id = windowId;
+            _eventQueue.Enqueue(id, () => PostToWindowAsync(id, json));
         }
     }
 

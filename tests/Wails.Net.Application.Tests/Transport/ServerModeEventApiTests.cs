@@ -32,6 +32,26 @@ public sealed class ServerModeEventApiTests
     }
 
     /// <summary>
+    /// 轮询等待条件成立。
+    /// 事件投递硬化 P0-1（对应 Wails v3 PR #5851）后，事件对监听器的派发经
+    /// <see cref="Wails.Net.Application.Events.EventMailbox{T}"/> 异步串行执行，
+    /// 因此断言前需等待派发完成，不能再假设 <c>Emit</c> 返回时已同步完成。
+    /// </summary>
+    private static async Task WaitUntilAsync(Func<bool> predicate, int timeoutMs = 5000)
+    {
+        var deadline = Environment.TickCount64 + timeoutMs;
+        while (!predicate())
+        {
+            if (Environment.TickCount64 >= deadline)
+            {
+                throw new TimeoutException("等待条件超时。");
+            }
+
+            await Task.Delay(10);
+        }
+    }
+
+    /// <summary>
     /// 验证 Application.BroadcastEvent 等价于 Events.Emit。
     /// 通过 EventProcessor.On 订阅事件并触发 BroadcastEvent，确认回调被调用。
     /// </summary>
@@ -85,6 +105,7 @@ public sealed class ServerModeEventApiTests
 
         app.BroadcastEvent("ws-event", new { payload = 42 });
 
+        await WaitUntilAsync(() => received.Count == 1);
         await Assert.That(received.Count).IsEqualTo(1);
         await Assert.That(received[0].Name).IsEqualTo("ws-event");
     }

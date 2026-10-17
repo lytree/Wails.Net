@@ -14,6 +14,32 @@ namespace Wails.Net.Application.Tests.Transport;
 [NotInParallel]
 public sealed class EventSenderWindowPropagationTests
 {
+    /// <summary>
+    /// 轮询等待条件成立。
+    /// 事件投递硬化 P0-1（对应 Wails v3 PR #5851）后，事件对监听器的派发经
+    /// <see cref="Wails.Net.Application.Events.EventMailbox{T}"/> 异步串行执行，
+    /// 因此断言前需等待派发完成，不能再假设 <c>Emit</c> 返回时已同步完成。
+    /// </summary>
+    private static async Task WaitUntilAsync(Func<bool> predicate, int timeoutMs = 5000)
+    {
+        var deadline = Environment.TickCount64 + timeoutMs;
+        while (!predicate())
+        {
+            if (Environment.TickCount64 >= deadline)
+            {
+                throw new TimeoutException("等待条件超时。");
+            }
+
+            await Task.Delay(10);
+        }
+    }
+
+    /// <summary>
+    /// 等待指定桩监听器收到至少一次 <see cref="IWailsEventListener.NotifyEvent"/> 调用。
+    /// </summary>
+    private static async Task WaitForCallAsync(IWailsEventListener listener)
+        => await WaitUntilAsync(() => listener.ReceivedCalls().Any());
+
     // ---------------------------------------------------------------------
     // EventProcessor → IWailsEventListener 传播
     // ---------------------------------------------------------------------
@@ -26,6 +52,8 @@ public sealed class EventSenderWindowPropagationTests
         processor.AddWailsEventListener(listener);
 
         processor.Emit("test.event", new { payload = 1 }, senderWindowID: 42u);
+
+        await WaitForCallAsync(listener);
 
         // 验证第三个参数 senderWindowId 被原样传递
         listener.Received(1).NotifyEvent(
@@ -42,6 +70,8 @@ public sealed class EventSenderWindowPropagationTests
         processor.AddWailsEventListener(listener);
 
         processor.Emit("app.event", null, senderWindowID: null);
+
+        await WaitForCallAsync(listener);
 
         // 验证第三个参数为 null（应用级事件）
         listener.Received(1).NotifyEvent(
@@ -60,6 +90,8 @@ public sealed class EventSenderWindowPropagationTests
         // 不传 senderWindowID 时，默认应为 null
         processor.Emit("default.event");
 
+        await WaitForCallAsync(listener);
+
         listener.Received(1).NotifyEvent(
             "default.event",
             null,
@@ -76,6 +108,9 @@ public sealed class EventSenderWindowPropagationTests
         processor.AddWailsEventListener(listener2);
 
         processor.Emit("multi.listener", "data", senderWindowID: 7u);
+
+        await WaitForCallAsync(listener1);
+        await WaitForCallAsync(listener2);
 
         // 两个监听器都应收到相同的 senderWindowId
         listener1.Received(1).NotifyEvent("multi.listener", Arg.Any<object?>(), 7u);
@@ -116,6 +151,9 @@ public sealed class EventSenderWindowPropagationTests
         processor.AddWailsEventListener(healthyListener);
 
         processor.Emit("resilient.event", null, senderWindowID: 5u);
+
+        // 第一个监听器抛异常不应中断邮箱；等待健康监听器收到同一次派发。
+        await WaitForCallAsync(healthyListener);
 
         healthyListener.Received(1).NotifyEvent("resilient.event", null, 5u);
     }

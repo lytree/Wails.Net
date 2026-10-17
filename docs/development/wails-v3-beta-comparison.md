@@ -1,8 +1,8 @@
 # Wails.Net × Wails v3 最新开发分支对比：可参考项确认
 
-> 分析日期：2026-08-07
-> 对比对象：wailsapp/wails **master 分支 v3/ 目录**（Wails v3 的实际开发流），当前版本 **v3.0.0-beta.4**（2026-08-05）
-> 基线：Wails.Net 的 AGENTS.md 标注参考 `wails v3.0.0-*`（alpha 时代）
+> 分析日期：2026-08-07（beta.4 基线）；**2026-10-17 再确认：Wails v3 已演进至 v3.0.0-beta.28（2026-10-05），差异与待实现项复核见 §9**
+> 对比对象：wailsapp/wails **master 分支 v3/ 目录**（Wails v3 的实际开发流）
+> 基线：AGENTS.md 参考版本 `v3.0.0-beta.4`（§1/§8 时点）；是否升级至 beta.28 待决策（见 §9.5）
 
 ---
 
@@ -178,3 +178,111 @@
 **构建验证说明**：代码改动已全部落地；本机环境存在文件锁问题（NuGet 漏洞审计缓存 `vuln_index.dat-new` 与部分 obj 产物写入被拒，被 TreatWarningsAsErrors 升级为 error，且 `dotnet build-server shutdown` 后仍间歇复现），CLI 构建验证受阻。建议在正常终端验证：
 `dotnet build src/Wails.Net.Application.Windows/Wails.Net.Application.Windows.csproj`、`dotnet build src/Wails.Net.Cli/Wails.Net.Cli.csproj`、`dotnet build src/Wails.Net.SourceGenerators/Wails.Net.SourceGenerators.csproj`、`dotnet build src/Wails.Net.Generator/Wails.Net.Generator.csproj`
 （若遇 NU1900 审计缓存错误：删除 `%LocalAppData%\NuGet\v3-cache` 下残留 `*.dat-new` 文件后重试。）
+
+---
+
+## 9. 2026-10-17 再确认：基线升级至 v3.0.0-beta.28
+
+> 复核方式：官方 changelog（v3.wails.io/changelog，beta.4 → beta.28 共 24 个版本）+ 本仓库代码逐项验证。
+> Wails.Net 侧时点：最后提交 2026-08-20（R0-R3 运行时/安全重构、SDK-4 多 RID 构建已落地）。
+
+### 9.1 原文档待实现项复核
+
+| 项 | 原状态（08-07） | 现状确认（10-17） |
+|----|----------------|------------------|
+| P0-1 插件前后端一体双包模型 | 规划 M1-M4 | ✅ **已完成**：`src/Wails.Net.Plugins.*` 43 个 NuGet 插件项目 + `packages/` 43 个 npm 包（`wails-net-plugin-*` + `wails-net-runtime`）+ CLI `plugin new` 双包脚手架（[PluginCommand.cs](../../src/Wails.Net.Cli/Commands/PluginCommand.cs)）+ R3-B 权限声明 |
+| P0-2 Updater `wails://` 协议层 + endpoint provider | 挂起 | ⏸ **仍挂起**（`src/Wails.Net.Plugins.Updater` 无 `wails://`/endpoint 命中）；资产匹配器 ✅ 已落地（[UpdateAssetMatcher.cs](../../src/Wails.Net.Plugins.Updater/Services/Updater/UpdateAssetMatcher.cs)，GitHub/GitLab provider 已接入） |
+| P1 Linux 外部 resize/minimise 事件 | 受阻于 GirCore | ⏸ **仍受阻**：程序化 Minimise/UnMinimise 已派发事件（[LinuxWebviewWindow.cs](../../src/Wails.Net.Application.Linux/LinuxWebviewWindow.cs) L1123-1141、L1542-1573），外部 WM 触发需 surface layout API；**GirCore 仍为 0.8.0**（Directory.Packages.props） |
+| P2 macOS 细节优化 | 推迟（stub） | ✅ **平台已完成**：完整 AppKit + WKWebView 实现（MacOSWebviewWindow.cs 1600+ 行，含 DidResize/DidMiniaturize 事件、MacUiDelegate；AGENTS.md §1 已标注）；细节优化转入 §9.3 P1/P2 项 |
+
+### 9.2 beta.5–beta.28 新增差异项（按优先级）
+
+**P0（机制级，架构影响）**
+
+| # | v3 特性（版本） | Wails.Net 现状 |
+|---|----------------|----------------|
+| 1 | **Streams 双向字节流**（beta.8）：Go↔JS WebSocket 形态双向流，`app.HandleStream(name, handler)` + 前端 `Stream(name)`，不绑 TCP 端口、不走 evalJS；server 构建走真实 WebSocket，应用代码跨构建一致 | ❌ 未实现。注意：现有 `Wails.Net.Plugins.Websocket` 是**前端 WS 客户端**（Tauri 式连接外部服务器），不是 in-app 双向流，二者不等价 |
+| 2 | **事件投递硬化**（beta.6 #5930 / beta.7 #5934 / beta.8 #5851）：每窗口有序 JS 事件队列 + 背压 + 超大事件宿主侧有界存储 + 通用异步 FIFO mailbox | ❌ 未实现（src/ 无 backpressure/oversized event 处理；R2-2 WebSocketBroadcaster 单写者茧有有序性，但无背压与上界） |
+| 3 | **WebView2 进程故障恢复**（beta.26 #6002、beta.28 #6220/#6222/#6184）：WebView2 崩溃后恢复而非白窗/卡死；回调保持存活至原生释放 | ❌ 未实现（`Wails.Net.Application.Windows` 无 ProcessFailed/恢复处理） |
+
+**P1（功能/安全对齐）**
+
+| # | v3 特性（版本） | Wails.Net 现状 |
+|---|----------------|----------------|
+| 4 | `wails3 mcp` 安全 MCP 服务器（beta.9 #5896）+ origin/token 认证硬化（beta.19 #6092） | ❌ CLI 无 mcp 命令（现有 19 个命令：build/dev/pack/publish/check/capability/doctor/setup/plugin 等） |
+| 5 | macOS 媒体权限：WKUIDelegate media-capture 方法（beta.27），`PermissionAllow/Deny` 覆盖摄像头/麦克风 | ❌ MacUiDelegate 已存在但无 media-capture 方法 |
+| 6 | macOS notch 通知窗口 + NSPanel 窗口类型（beta.12 #6010/#6008） | ❌ 未实现 |
+| 7 | Linux GTK application ID 覆盖（beta.23 #5972）+ single-instance 以应用自身 ID 占用 bus name（#5973） | ⚠️ single-instance 已有（跨平台 13 文件，含 LinuxPlatformApp）；GTK app ID 覆盖与 D-Bus 命名规范未核对到 |
+| 8 | 运行时请求 64 MiB 上限 → HTTP 413（beta.19 #6091） | ❌ 未实现 |
+| 9 | 自定义 scheme 请求中止/取消：Windows（beta.20 #5963/#5969）、Linux（beta.23 #6126）、macOS/iOS 请求上下文转发 | ⚠️ R2-4 WebviewRequestPipeline 已统一管线，取消语义需核对（Linux `OnWailsSchemeRequest` 未见 abort 处理） |
+| 10 | Windows 托盘 ICO 图标 + 任务栏主题跟随（beta.14 #6016） | ⚠️ Tray 插件已有，此细节未核对 |
+
+**P2（细节/质量）**
+
+| # | v3 特性（版本） | 说明 |
+|---|----------------|------|
+| 11 | watcher 对前端 dev server 的 HTTP 就绪检查（beta.26 #6150） | DevCommand 无 readiness 探测 |
+| 12 | `wails3 dev` 退出清理（beta.25 #6048）+ dev 资产代理 TCP churn 修复（beta.8） | dev 模式质量 |
+| 13 | macOS 细节：autoplay 偏好（beta.7）、Dock bounce（beta.6）、注册快捷键优先于 webview（beta.9 #5902）、Control- 键命名（beta.14）、modal loop 期间主线程工作（beta.13 #6026）、app 菜单回调替换崩溃修复（beta.6） | macOS 平台已完整，可按需逐项对齐 |
+| 14 | Updater 备份失败后清除 helper 环境变量并重启原目标（beta.21 #6080） | UpdaterPlugin 健壮性 |
+| 15 | Windows 菜单 nil 菜单/资源释放/菜单栏重绘（beta.21 #6112） | Win32 菜单健壮性 |
+| 16 | MSIX 打包恢复（beta.21 #6115） | PackCommand 需核对 MSIX 支持 |
+| 17 | JS/TS 绑定生成：泛型模型创建器引用后置声明 + 相互依赖泛型栈溢出修复（beta.21 #6062） | `Wails.Net.Generator` 需对照是否存在同类排序/递归问题 |
+| 18 | Linux 托盘右击同时触发 click handler 与菜单修复（beta.28 #6018） | Tray 插件 Linux 行为 |
+| 19 | WebView2 初始化 deadline + 消息泵（beta.8 #5952）、embed 超时 60s（beta.15 #6043） | Windows 启动健壮性 |
+| 20 | Linux 旧式 GTK3 service-only 应用 screen discovery 崩溃防护（beta.9 #5966） | ServerMode 启动时序守卫 |
+| 21 | App.Run 期间启动默认信号处理器（beta.21 #6098） | .NET Generic Host 原生处理 SIGTERM/SIGINT，预期等价，待确认 |
+| 22 | setup 向导完善（beta.28 #6224 系统详情；beta.24 仅批准的包管理器命令——安全约束） | SetupCommand 增强项 |
+| 23 | macOS app 输出保持在 file provider 之外（beta.28 #6225） | macOS 打包细节 |
+
+### 9.3 不适用项（.NET 移植天然豁免）
+
+| v3 项 | 豁免原因 |
+|-------|---------|
+| 移除原生 WebView2Loader.dll、纯 Go loader（beta.20 #6031） | Wails.Net 用托管 `Microsoft.Web.WebView2` 包，无嵌入 DLL 问题 |
+| Cgo Calloc 内存泄漏 pointer receiver 修复（beta.18 #6083） | Go/Cgo 特有 |
+| macOS 私有 API build tag 门控（beta.19 #6087） | Go build tag 机制；.NET 需要时可用 MSBuild 条件 + #if 等价，当前无使用需求 |
+| `go install` 分发 / 桌面二进制发布管线移除（beta.8 #5946） | Wails.Net 走 dotnet tool / NuGet 分发 |
+| 文档站点、CI、changelog 自动化类 PR | 非运行时功能 |
+
+### 9.4 建议行动顺序（2026-10-17）
+
+1. ✅ **P0（已完成 2026-10-17）**：事件投递硬化（有序队列 + 背压 + 超大事件有界存储）
+   - Layer 1 `EventMailbox<T>`（PR #5851）：`EventProcessor` 前端派发改为单一消费者 FIFO 邮箱，`Emit` 永不阻塞
+   - Layer 2 `PerWindowEventQueue`（PR #5934）：每窗口 FIFO 队列，容量 64，溢出阻塞（背压）而非丢弃
+   - Layer 3 `EventPayloadStore` + `GET /wails/eventpayload/<id>`（PR #5930）：>8192 字节载荷停放宿主侧（64 MiB 上限 / TTL 30s / 读取即删 / 按窗口绑定），经 `EventIPCTransport` 注入 fetch 脚本取回
+   - 测试：44 个 TUnit 单元测试覆盖三层（`EventMailboxTests` / `PerWindowEventQueueTests` / `EventPayloadStoreTests` / `EventPayloadEndpointTests`）
+2. ✅ **P0（已完成 2026-10-17）**：Windows WebView2 进程故障恢复
+   - 运行时可用性预检（`GetAvailableBrowserVersionString`）与控制器创建超时 `EmbedTimeout`（30s，对应 PR #6002）
+   - 抽取 `AttachController` 使初始化与重建共用同一路径；订阅 `CoreWebView2.ProcessFailed`，浏览器进程退出后经 `DispatchOnMainThread` 重建控制器（对应 PR #6222）
+   - `Close`/`ExecJS`/`LoadURL`/`SetHTML` 增加「已关闭」守卫（对应 PR #6222 的 nil/shuttingDown 守卫）；PR #6184（COM AddRef/Release）为上游自研绑定层问题，不适用于托管 SDK
+   - 注：该部分为 Win32/COM 互操作代码，无 GUI 环境下无法单元测试，以构建通过 + 代码审查验收
+3. **P1**：64 MiB 请求上限（413）、自定义 scheme 取消语义、macOS 媒体权限（WKUIDelegate）
+4. **P1**：评估 Streams 机制与 `wails mcp` 子命令的产品定位（机制大、决策先行）
+5. **P2**：macOS/Linux/Windows 细节按平台测试机会跟进
+6. ✅ **基线维护（已完成 2026-10-17）**：AGENTS.md 参考版本已由 `v3.0.0-beta.4` 升级至 `v3.0.0-beta.28`（§1 参考版本、§1.1.1 参考基线、§8 资源链接同步）
+
+### 9.5 回归验证基线（2026-10-17）
+
+非 UI 测试类回归结果（`Wails.Net.Application.Tests`，按类名过滤）：
+
+| 测试类 | 结果 |
+|--------|------|
+| 新增 P0-1 测试（Mailbox / 队列 / 存储 / 端点） | 44 通过 |
+| `*Event*` | 119 项，1 项失败（既存） |
+| `*Transport*` | 37 项，2 项失败（既存） |
+| `*Broadcaster*` | 12 项，2 项失败（既存） |
+| `*Application*` | 104 项，1 项失败（既存） |
+| `*Shutdown*` / `*Window*` / `*Registry*` | 全部通过 |
+
+经 `git stash` 对照 HEAD 复现确认，下列 6 项失败在本次改动前即已存在，与 P0 改动无关：
+
+1. `ServerModeEventApiTests.EndToEnd_EventEmit_ThroughWebSocketTransport_DeliversToClients`
+2. `NativeIpcTransportTests.RegisterWindow_InstallsHandlerThatCallsHandleIncomingAsync`
+3. `NativeIpcTransportTests.HandleIncomingAsync_ValidCallMessage_PostsResponseBack`
+4. `WebSocketBroadcasterTests.BroadcastEventAsync_DeliversMessageToClient`
+5. `WebSocketBroadcasterTests.BroadcastEventAsync_DeliversToMultipleClients`
+6. `ApplicationApiAlignmentTests.Build_CollectsCommandMiddlewares_FromDI`
+
+另：P0-1 使前端派发由同步改为异步邮箱串行，2 个既有测试（`EventSenderWindowPropagationTests.Emit_OneListenerThrows_OtherListenerStillReceivesSenderWindowID`、`ServerModeEventApiTests.BroadcastEvent_NotifiesRegisteredTransportListener`）已改为等待派发完成后断言。
+

@@ -1,6 +1,7 @@
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.Web.WebView2.Core;
 using Wails.Net.Application.Webview;
 using Wails.Net.Application.Options;
@@ -237,6 +238,25 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     /// WebView2 异步初始化任务源，用于等待初始化完成。
     /// </summary>
     private readonly TaskCompletionSource<bool> _initTcs = new();
+
+    /// <summary>
+    /// WebView2 运行时环境实例，初始化成功后缓存，供浏览器进程故障后重建控制器使用。
+    /// 对应 Wails v3 PR #6002 中在 <c>Chromium</c> 上保留 environment 引用的做法。
+    /// </summary>
+    private CoreWebView2Environment? _environment;
+
+    /// <summary>
+    /// WebView2 控制器初始化/重建的等待超时。
+    /// 对应 Wails v3 PR #6002 的 <c>embedTimeout</c>：
+    /// <c>CreateCoreWebView2ControllerAsync</c> 在无交互窗口站等环境下可能永不回调，
+    /// 无超时会让窗口永久挂起且不产生任何日志。
+    /// </summary>
+    private static readonly TimeSpan EmbedTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// 标记浏览器进程故障后的控制器重建是否正在进行，防止 <c>ProcessFailed</c> 重入。
+    /// </summary>
+    private int _recovering;
 
     /// <summary>
     /// 窗口是否已关闭。
@@ -546,93 +566,18 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         try
         {
             var hwndPtr = (IntPtr)_hwnd;
+
+            // P0-2：在启动异步环境创建之前先确认 WebView2 Runtime 可用。
+            // 对应 Wails v3 PR #6002 中在 Embed 开头调用
+            // webviewloader.GetAvailableCoreWebView2BrowserVersionString 的预检，
+            // 让「未安装 Runtime」这类问题尽早以明确异常暴露，而不是异步挂起。
+            EnsureRuntimeAvailable();
+
             var environment = await CreateEnvironmentAsync().ConfigureAwait(true);
-            var controller = await environment.CreateCoreWebView2ControllerAsync(hwndPtr).ConfigureAwait(true);
-            _controller = controller;
-            _webview = controller.CoreWebView2;
+            _environment = environment;
 
-            // 设置 WebView2 边界为窗口客户区大小。
-            UpdateBounds();
-
-            // 设置初始缩放。
-            if (_options.Zoom != 1.0)
-            {
-                _controller.ZoomFactor = _options.Zoom;
-            }
-
-            // 设置调试模式。
-            _webview.Settings.AreDevToolsEnabled = _options.ShowDevmodeEnabled;
-
-            // 注册 WebResourceRequested 过滤器，拦截 wails.localhost 的所有请求。
-            // 对应 Wails v3 Go 版本 webview_window_windows.go 中的 AddWebResourceRequestedFilter 调用。
-            _webview.AddWebResourceRequestedFilter(
-                "http://wails.localhost/*", CoreWebView2WebResourceContext.All);
-            _webview.AddWebResourceRequestedFilter(
-                "https://wails.localhost/*", CoreWebView2WebResourceContext.All);
-            _webview.WebResourceRequested += OnWebResourceRequested;
-
-            // 注册 WebMessageReceived 事件，接收前端 postMessage 消息。
-            // 对应 Wails v3 Go 版本中的 WebMessageReceived 事件处理。
-            _webview.WebMessageReceived += OnWebMessageReceived;
-
-            // 注册 NavigationCompleted 事件，导航完成后注入拖拽区域等辅助脚本。
-            // 对应 Wails v3 Go 版本中的 NavigationCompleted 事件处理。
-            _webview.NavigationCompleted += OnNavigationCompleted;
-
-            // P1-3-4：注入 console 拦截脚本，将前端 console 调用通过 postMessage 转发到后端。
-            // WebView2 1.0.3240.44 未提供 CoreWebView2.ConsoleMessage 事件，
-            // 这里通过 AddScriptToExecuteOnDocumentCreatedAsync 注入一段 JS 拦截脚本，
-            // 重写 console.log/info/warn/error/debug 方法，将消息通过 WebMessage 通道回传。
-            // OnWebMessageReceived 中识别 __wails_console 消息类型并转发到 _consoleMessageHandler。
-            InjectConsoleHookScript();
-
-            // 注入 Wails 运行时 JS（必须在导航之前！）
-            // 使用 AddScriptToExecuteOnDocumentCreatedAsync 注册的脚本会在页面脚本执行前运行，
-            // 确保 window.wails 在页面脚本中可用。
-            // 若放在导航之后，页面脚本已执行完，wails 会是 undefined。
-            InjectRuntimeJs();
-
-            // 设置 URL（若有）。
-            if (!string.IsNullOrEmpty(_options.URL))
-            {
-                _webview.Navigate(_options.URL);
-                _currentUrl = _options.URL;
-            }
-            else if (!string.IsNullOrEmpty(_options.HTML))
-            {
-                _webview.NavigateToString(_options.HTML);
-            }
-            else
-            {
-                // 未设置 URL 或 HTML 时，若 Application 已配置 AssetServer，
-                // 自动导航到 http://wails.localhost/ 加载静态资源（仿 Wails v3）。
-                // 避免使用 file:// 协议导致的权限问题。
-                var app = Application.Get();
-                if (app?.AssetServer is not null)
-                {
-                    const string wailsUrl = "http://wails.localhost/";
-                    _webview.Navigate(wailsUrl);
-                    _currentUrl = wailsUrl;
-                }
-            }
-
-            // 注入 JS（若有）。
-            if (!string.IsNullOrEmpty(_options.JS))
-            {
-                _ = _webview.ExecuteScriptAsync(_options.JS);
-            }
-
-            // 注入 CSS（若有）。
-            if (!string.IsNullOrEmpty(_options.CSS))
-            {
-                InjectCSS(_options.CSS);
-            }
-
-            // 设置背景色（若有）。
-            if (_options.BackgroundColour is { } bg)
-            {
-                _controller.DefaultBackgroundColor = Color.FromArgb(bg.A, bg.R, bg.G, bg.B);
-            }
+            var controller = await CreateControllerWithTimeoutAsync(environment, hwndPtr).ConfigureAwait(true);
+            AttachController(controller, recovering: false);
 
             _initTcs.TrySetResult(true);
         }
@@ -640,6 +585,285 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         {
             _initTcs.TrySetException(ex);
         }
+    }
+
+    /// <summary>
+    /// 预检 WebView2 Runtime 是否可用。
+    /// 对应 Wails v3 上游 <c>embedTimeout</c> 同一 PR（#6002）中的运行时版本探测：
+    /// 探测失败时抛出 <see cref="InvalidOperationException"/>，由调用方转入
+    /// <see cref="_initTcs"/> 的错误路径，避免窗口在无 Runtime 时静默挂起。
+    /// </summary>
+    /// <exception cref="InvalidOperationException">WebView2 Runtime 不可用时抛出。</exception>
+    private void EnsureRuntimeAvailable()
+    {
+        var browserExecutableFolder =
+            _windowsOptions is { WebviewBrowserPath.Length: > 0 } options
+                ? options.WebviewBrowserPath
+                : null;
+
+        string version;
+        try
+        {
+            version = CoreWebView2Environment.GetAvailableBrowserVersionString(browserExecutableFolder);
+        }
+        catch (WebView2RuntimeNotFoundException ex)
+        {
+            throw new InvalidOperationException(
+                "未检测到可用的 WebView2 Runtime，请先安装 WebView2 Runtime 再启动应用。", ex);
+        }
+
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            throw new InvalidOperationException("WebView2 Runtime 版本信息为空，运行时不可用。");
+        }
+    }
+
+    /// <summary>
+    /// 创建 WebView2 控制器，并施加等待超时。
+    /// 对应 Wails v3 PR #6002 的 <c>embedTimeout</c> —— 上游观察到
+    /// <c>CreateCoreWebView2Controller</c> 在某些会话（如无交互窗口站）下会返回成功、
+    /// 不上报错误、也永不回调；仅以「是否已初始化」为条件的等待会永久阻塞。
+    /// </summary>
+    /// <param name="environment">已创建的 WebView2 运行时环境。</param>
+    /// <param name="hwnd">宿主窗口句柄。</param>
+    /// <returns>已就绪的 WebView2 控制器。</returns>
+    /// <exception cref="TimeoutException">超过 <see cref="EmbedTimeout"/> 仍未完成初始化时抛出。</exception>
+    private static async Task<CoreWebView2Controller> CreateControllerWithTimeoutAsync(
+        CoreWebView2Environment environment, IntPtr hwnd)
+    {
+        var createTask = environment.CreateCoreWebView2ControllerAsync(hwnd);
+        var completed = await Task.WhenAny(createTask, Task.Delay(EmbedTimeout)).ConfigureAwait(true);
+        if (completed != createTask)
+        {
+            throw new TimeoutException(
+                $"等待 WebView2 控制器初始化超时（{EmbedTimeout.TotalSeconds:0} 秒）：" +
+                "WebView2 运行时未能完成初始化。");
+        }
+
+        return await createTask.ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// 将 WebView2 控制器接入窗口：设置边界、订阅事件、注入脚本并执行初始导航。
+    /// 初始化与浏览器进程故障后的重建共用此路径，保证两条路径行为一致。
+    /// </summary>
+    /// <param name="controller">已就绪的 WebView2 控制器。</param>
+    /// <param name="recovering">
+    /// 是否为故障重建路径。为 true 时优先恢复最近一次导航的 URL，
+    /// 以免重建后回到窗口初始内容、丢失用户当前位置。
+    /// </param>
+    private void AttachController(CoreWebView2Controller controller, bool recovering)
+    {
+        _controller = controller;
+        _webview = controller.CoreWebView2;
+
+        // 重建时新 WebView 需要重新注入运行时脚本，重置注入标记。
+        _runtimeInjected = false;
+
+        // 设置 WebView2 边界为窗口客户区大小。
+        UpdateBounds();
+
+        // 设置初始缩放。
+        if (_options.Zoom != 1.0)
+        {
+            _controller.ZoomFactor = _options.Zoom;
+        }
+
+        // 设置调试模式。
+        _webview.Settings.AreDevToolsEnabled = _options.ShowDevmodeEnabled;
+
+        // 注册 WebResourceRequested 过滤器，拦截 wails.localhost 的所有请求。
+        // 对应 Wails v3 Go 版本 webview_window_windows.go 中的 AddWebResourceRequestedFilter 调用。
+        _webview.AddWebResourceRequestedFilter(
+            "http://wails.localhost/*", CoreWebView2WebResourceContext.All);
+        _webview.AddWebResourceRequestedFilter(
+            "https://wails.localhost/*", CoreWebView2WebResourceContext.All);
+        _webview.WebResourceRequested += OnWebResourceRequested;
+
+        // P0-2：订阅 ProcessFailed，浏览器进程崩溃后可尝试重建控制器。
+        // 对应 Wails v3 PR #6222 中 webview 崩溃后的恢复处理。
+        _webview.ProcessFailed += OnProcessFailed;
+
+        // 注册 WebMessageReceived 事件，接收前端 postMessage 消息。
+        // 对应 Wails v3 Go 版本中的 WebMessageReceived 事件处理。
+        _webview.WebMessageReceived += OnWebMessageReceived;
+
+        // 注册 NavigationCompleted 事件，导航完成后注入拖拽区域等辅助脚本。
+        // 对应 Wails v3 Go 版本中的 NavigationCompleted 事件处理。
+        _webview.NavigationCompleted += OnNavigationCompleted;
+
+        // P1-3-4：注入 console 拦截脚本，将前端 console 调用通过 postMessage 转发到后端。
+        // WebView2 1.0.3240.44 未提供 CoreWebView2.ConsoleMessage 事件，
+        // 这里通过 AddScriptToExecuteOnDocumentCreatedAsync 注入一段 JS 拦截脚本，
+        // 重写 console.log/info/warn/error/debug 方法，将消息通过 WebMessage 通道回传。
+        // OnWebMessageReceived 中识别 __wails_console 消息类型并转发到 _consoleMessageHandler。
+        InjectConsoleHookScript();
+
+        // 注入 Wails 运行时 JS（必须在导航之前！）
+        // 使用 AddScriptToExecuteOnDocumentCreatedAsync 注册的脚本会在页面脚本执行前运行，
+        // 确保 window.wails 在页面脚本中可用。
+        // 若放在导航之后，页面脚本已执行完，wails 会是 undefined。
+        InjectRuntimeJs();
+
+        // 执行初始导航。
+        NavigateInitialContent(recovering);
+
+        // 注入 JS（若有）。
+        if (!string.IsNullOrEmpty(_options.JS))
+        {
+            _ = _webview.ExecuteScriptAsync(_options.JS);
+        }
+
+        // 注入 CSS（若有）。
+        if (!string.IsNullOrEmpty(_options.CSS))
+        {
+            InjectCSS(_options.CSS);
+        }
+
+        // 设置背景色（若有）。
+        if (_options.BackgroundColour is { } bg)
+        {
+            _controller.DefaultBackgroundColor = Color.FromArgb(bg.A, bg.R, bg.G, bg.B);
+        }
+    }
+
+    /// <summary>
+    /// 执行控制器接入后的首次导航。
+    /// 重建（<paramref name="recovering"/> 为 true）时优先回到最近一次导航的 URL。
+    /// </summary>
+    /// <param name="recovering">是否为浏览器进程故障后的重建路径。</param>
+    private void NavigateInitialContent(bool recovering)
+    {
+        if (_webview is null)
+        {
+            return;
+        }
+
+        if (recovering && !string.IsNullOrEmpty(_currentUrl))
+        {
+            _webview.Navigate(_currentUrl);
+            return;
+        }
+
+        // 设置 URL（若有）。
+        if (!string.IsNullOrEmpty(_options.URL))
+        {
+            _webview.Navigate(_options.URL);
+            _currentUrl = _options.URL;
+        }
+        else if (!string.IsNullOrEmpty(_options.HTML))
+        {
+            _webview.NavigateToString(_options.HTML);
+        }
+        else
+        {
+            // 未设置 URL 或 HTML 时，若 Application 已配置 AssetServer，
+            // 自动导航到 http://wails.localhost/ 加载静态资源（仿 Wails v3）。
+            // 避免使用 file:// 协议导致的权限问题。
+            var app = Application.Get();
+            if (app?.AssetServer is not null)
+            {
+                const string wailsUrl = "http://wails.localhost/";
+                _webview.Navigate(wailsUrl);
+                _currentUrl = wailsUrl;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 处理 WebView2 进程故障事件。
+    /// 对应 Wails v3 PR #6002/#6222 的进程故障处理语义：
+    /// 浏览器进程退出时整个 WebView2 已不可用，需要重建控制器；
+    /// 渲染进程退出/无响应由 WebView2 自行恢复，仅记录日志。
+    /// </summary>
+    /// <param name="sender">事件发送者。</param>
+    /// <param name="args">进程故障事件参数。</param>
+    private void OnProcessFailed(object? sender, CoreWebView2ProcessFailedEventArgs args)
+    {
+        if (_closed)
+        {
+            return;
+        }
+
+        var kind = args.ProcessFailedKind;
+        Application.Get()?.Logger?.LogWarning(
+            "WebView2 进程故障：窗口 {WindowId} 的 {Kind}（退出码 {ExitCode}），进程描述：{Description}",
+            _id, kind, args.ExitCode, args.ProcessDescription);
+
+        if (kind == CoreWebView2ProcessFailedKind.BrowserProcessExited)
+        {
+            // 浏览器进程已退出，整个 WebView2 实例失效，尝试重建控制器。
+            TryRecoverWebView();
+        }
+    }
+
+    /// <summary>
+    /// 尝试在浏览器进程故障后重建 WebView2 控制器。
+    /// <para>
+    /// 重建流程被投递到主线程执行（<see cref="Application.DispatchOnMainThread"/>），
+    /// 因为创建控制器要求线程持有消息循环；同时用 <see cref="_recovering"/> 防止重入。
+    /// </para>
+    /// </summary>
+    private void TryRecoverWebView()
+    {
+        if (Interlocked.CompareExchange(ref _recovering, 1, 0) != 0)
+        {
+            return;
+        }
+
+        var app = Application.Get();
+        if (app is null)
+        {
+            Interlocked.Exchange(ref _recovering, 0);
+            return;
+        }
+
+        app.DispatchOnMainThread(async () =>
+        {
+            try
+            {
+                await RecoverWebViewAsync().ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                app.Logger?.LogError(ex, "WebView2 控制器重建失败：窗口 {WindowId}", _id);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _recovering, 0);
+            }
+        });
+    }
+
+    /// <summary>
+    /// 重建 WebView2 控制器并向应用层报告恢复结果。
+    /// </summary>
+    private async Task RecoverWebViewAsync()
+    {
+        var environment = _environment;
+        if (_closed || environment is null || _hwnd.IsNull)
+        {
+            return;
+        }
+
+        // 释放已失效的旧控制器/WebView 引用。旧实例随浏览器进程退出而失效，
+        // 关闭失败属预期情况（对应 PR #6222 中 Chromium.Close 的可安全重复调用语义）。
+        try
+        {
+            _controller?.Close();
+        }
+        catch (Exception ex)
+        {
+            Application.Get()?.Logger?.LogDebug(ex, "关闭失效的 WebView2 控制器时出错：窗口 {WindowId}", _id);
+        }
+
+        _controller = null;
+        _webview = null;
+
+        var controller = await CreateControllerWithTimeoutAsync(environment, (IntPtr)_hwnd).ConfigureAwait(true);
+        AttachController(controller, recovering: true);
+
+        Application.Get()?.Logger?.LogInformation("WebView2 控制器已重建：窗口 {WindowId}", _id);
     }
 
     /// <summary>
@@ -2012,9 +2236,20 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
             _hwnd = default;
         }
 
-        _controller?.Close();
+        // P0-2：控制器可能已随浏览器进程退出而失效，关闭失败属预期情况
+        // （对应 Wails v3 PR #6222 中 Chromium.Close 的可安全重复调用语义）。
+        try
+        {
+            _controller?.Close();
+        }
+        catch (Exception ex)
+        {
+            Application.Get()?.Logger?.LogDebug(ex, "关闭 WebView2 控制器时出错：窗口 {WindowId}", _id);
+        }
+
         _controller = null;
         _webview = null;
+        _environment = null;
     }
 
     /// <inheritdoc />
@@ -2336,6 +2571,14 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     /// <inheritdoc />
     public void ExecJS(string js)
     {
+        // P0-2：窗口已关闭或 WebView 尚未就绪/已失效时不再注入脚本。
+        // 对应 Wails v3 PR #6222 中 Navigate/ExecuteScript 在 webview==nil 或
+        // shuttingDown 时提前返回的守卫。
+        if (_closed)
+        {
+            return;
+        }
+
         _ = _webview?.ExecuteScriptAsync(js);
     }
 
@@ -2393,6 +2636,12 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     /// <inheritdoc />
     public void SetHTML(string html)
     {
+        // P0-2：窗口已关闭时不再导航，避免操作已失效的 WebView。
+        if (_closed)
+        {
+            return;
+        }
+
         if (_webview is not null)
         {
             _webview.NavigateToString(html);
@@ -3064,6 +3313,12 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     /// <inheritdoc />
     public void LoadURL(string url)
     {
+        // P0-2：窗口已关闭时不再导航，避免操作已失效的 WebView。
+        if (_closed)
+        {
+            return;
+        }
+
         if (_webview is not null)
         {
             _webview.Navigate(url);

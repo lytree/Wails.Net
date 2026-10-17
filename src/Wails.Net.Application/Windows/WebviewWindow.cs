@@ -71,10 +71,16 @@ public class WebviewWindow
 
     /// <summary>
     /// 关闭窗口并触发 OnClose 事件。
+    /// <para>
+    /// 事件投递硬化 P0-1 / Layer 3：关闭时立即丢弃停放给本窗口的超大事件载荷
+    /// （对应 Wails v3 Go 版本 <c>WebviewWindow.markAsDestroyed</c> 中的
+    /// <c>eventPayloads.dropWindow(w.id)</c>），避免等待 TTL 到期。
+    /// </para>
     /// </summary>
     public void Close()
     {
         ImplRequired.Close();
+        Application.Get()?.EventPayloads.DropWindow(ID);
         OnClose?.Invoke(ID);
     }
 

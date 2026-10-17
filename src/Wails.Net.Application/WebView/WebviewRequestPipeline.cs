@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Wails.Net.Application.Bindings;
+using Wails.Net.Application.Events;
 
 namespace Wails.Net.Application.Webview;
 
@@ -69,6 +70,14 @@ public sealed class WebviewRequestPipeline
 
         try
         {
+            // 事件投递硬化 P0-1 / Layer 3：超大事件载荷取回端点
+            // （对应 Wails v3 Go 版本 application.go 中对 eventPayloadPath 前缀的特判）。
+            // 必须早于 IsIpcRequest 判定——该请求为 GET，否则会落入静态资源路径并 404。
+            if (request.Path.StartsWith(EventPayloadStore.PathPrefix, StringComparison.Ordinal))
+            {
+                return HandleEventPayload(request);
+            }
+
             if (request.IsIpcRequest)
             {
                 return await HandleIpcAsync(request, cancellationToken).ConfigureAwait(false);
@@ -98,6 +107,39 @@ public sealed class WebviewRequestPipeline
             return WebviewResponse.JsonEmpty();
         }
         return WebviewResponse.Json(response);
+    }
+
+    /// <summary>
+    /// 处理超大事件载荷取回请求：<c>GET /wails/eventpayload/&lt;id&gt;</c>。
+    /// <para>
+    /// 对应 Wails v3 Go 版本 <c>App.serveEventPayload</c>：载荷为一次性（读取即删）且绑定到
+    /// 派发时指定的窗口，因此陈旧 id 或跨窗口取回一律 404。仅接受 GET/HEAD。
+    /// </para>
+    /// </summary>
+    /// <param name="request">平台无关的 WebView 请求。</param>
+    /// <returns>载荷 JSON 响应，或 404 / 405。</returns>
+    private WebviewResponse HandleEventPayload(WebviewRequest request)
+    {
+        if (!string.Equals(request.Method, "GET", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(request.Method, "HEAD", StringComparison.OrdinalIgnoreCase))
+        {
+            return WebviewResponse.MethodNotAllowed();
+        }
+
+        var id = request.Path[EventPayloadStore.PathPrefix.Length..];
+        if (!EventPayloadStore.IsValidId(id))
+        {
+            return WebviewResponse.NotFound();
+        }
+
+        // 载荷绑定到派发时所在窗口（request.WindowId 由平台请求拦截层填充）。
+        var data = Application.Get()?.EventPayloads.Take(id, request.WindowId);
+        if (data is null)
+        {
+            return WebviewResponse.NotFound();
+        }
+
+        return WebviewResponse.Ok("application/json", data);
     }
 
     /// <summary>
