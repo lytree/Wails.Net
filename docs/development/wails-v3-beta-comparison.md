@@ -668,8 +668,20 @@ Wails.Net `HelperProcess.cs` 对齐：
 
 ### 9.13.5 验证
 
-- **构建**：`Wails.Net.Application`、`.Windows`、`.Linux`、`.MacOS`、`Wails.Net.Cli`、`Wails.Net.Application.Tests`、`.Windows.Tests` 均 **0 错误**（Windows 存在既有 `MSB3277` WindowsBase 版本冲突警告，与本批无关）。**Android 项目未构建**（本机未安装 `android` 工作负载）。
-- **测试**：`Wails.Net.Application.Tests` 全量 **1555 项、17 失败**（较本批前基线 1540 项 +15，17 失败与基线完全一致，均为 `Plugins/Mobile` 既有问题，**无新增失败**）；`Wails.Net.Cli.Tests` 488 项（**485 通过 / 3 跳过 / 0 失败**）；`Wails.Net.Application.Windows.Tests` 179 项（**46 通过 / 133 跳过 / 0 失败**）；`Wails.Net.Application.Linux.Tests` 纯逻辑用例通过（2 项 `PlatformFactoryLinuxTests` 失败系 **Windows 主机环境**所致，需在 Linux/WSL 运行）。
+- **构建**：`Wails.Net.Application`、`.Windows`、`.Linux`、`.MacOS`、`Wails.Net.Cli`、`Wails.Net.Application.Tests`、`.Windows.Tests` 及**全部 40 个 `Wails.Net.Plugins.*` 项目**均 **0 错误**（Windows 存在既有 `MSB3277` WindowsBase 版本冲突警告，与本批无关）。**Android 项目未构建**（本机未安装 `android` 工作负载）。
+- **测试**：`Wails.Net.Application.Tests` 全量 **1558 项、0 失败**（较本批前 +18 项；并修复既有 17 项 `Plugins` 失败，见 §9.13.6）；`Wails.Net.Cli.Tests` 488 项（**485 通过 / 3 跳过 / 0 失败**）；`Wails.Net.Application.Windows.Tests` 179 项（**46 通过 / 133 跳过 / 0 失败**）；`Wails.Net.Application.Linux.Tests` 纯逻辑用例通过（2 项 `PlatformFactoryLinuxTests` 失败系 **Windows 主机环境**所致，需在 Linux/WSL 运行）。
 - **未验证**：dev 资产代理端到端（真实 vite + GUI 会话）；Windows CDP 端到端（无 GUI 会话）；macOS Dock bounce 实跑、`NSUrl.Query`（无 mac 主机，`#if MACOS` 分支未编译）；Android `Uri.Query`（缺 workload）；D-Bus bus name 实际占位（无 session bus 环境）。
+
+### 9.13.6 修复：MapCommand 的 ICommandContext 注入重载缺失（17 项既有测试失败）
+
+**根因**：`MapCommandExtensions` 缺少 `MapCommand<TResult>(Func<ICommandContext, TResult>, CommandSecurity?)` 重载。凡以 `(Func<ICommandContext, TResult>)…` + `CommandSecurity` 注册的**无业务参数**命令，都被错误绑定到 `MapCommand<T, TResult>(Func<T, TResult>, CommandSecurity?)` —— 把 `ICommandContext` 当作业务参数反序列化，向 `handler` 传入 `null`。命令内使用 `ctx.Services` 者运行期抛 `NullReferenceException`（**生产代码同样受影响，非仅测试**）。
+
+**修复**：在 [MapCommandExtensions.cs](../../src/Wails.Net.Application/Commands/MapCommandExtensions.cs) 补齐该重载。它与既有的 `MapCommand<T, TResult>` 并存；因参数类型更具特异性（首参 `ICommandContext` 为具体类型而非类型参数），C# 重载解析优先选中它，**无 CS0121 歧义**（已全量构建 40 个插件项目验证）。
+
+**修复的 17 项既有失败**：`CameraPluginTests`×2、`GeolocationPluginTests`×2、`BiometricPluginTests`×2、`BarcodeScannerPluginTests`×4、`DpiScalePluginTests`×3、`CliPluginTests`×2、`NfcPluginTests`×2。
+
+**回归测试**：`tests/Wails.Net.Application.Tests/Commands/MapCommandContextInjectionTests.cs`（3 项：同步 / 异步 ctx 注入非 null、注入实例与调用方一致）。
+
+**验证**：`Wails.Net.Application.Tests` 全量 **1558 项、0 失败**；全部 **40 个 `Wails.Net.Plugins.*` 项目 0 错误**。
 
 

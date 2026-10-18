@@ -1031,6 +1031,35 @@ public static class MapCommandExtensions
     }
 
     /// <summary>
+    /// 注册注入 <see cref="ICommandContext"/> 的有返回值命令并指定命令安全声明。
+    /// <para><b>修复（P1 缺陷）</b>：本重载与上方
+    /// <see cref="MapCommand{T, TResult}(CommandRegistry, string, Func{T, TResult}, CommandSecurity?)"/> 并存。
+    /// 缺失时，<c>Func&lt;ICommandContext, TResult&gt;</c> + <see cref="CommandSecurity"/> 的调用会被错误绑定到
+    /// <c>MapCommand&lt;T, TResult&gt;</c>（把 <see cref="ICommandContext"/> 当作业务参数反序列化），
+    /// 使 <c>handler</c> 收到 <c>null</c> 上下文——凡命令内使用 <c>ctx.Services</c> 者运行期
+    /// <see cref="NullReferenceException"/>（mobile/camera/geolocation 等插件）。</para>
+    /// </summary>
+    /// <typeparam name="TResult">返回值类型。</typeparam>
+    /// <param name="registry">命令注册表。</param>
+    /// <param name="name">命令名称。</param>
+    /// <param name="handler">命令处理委托；参数为运行时 <see cref="ICommandContext"/>。</param>
+    /// <param name="security">命令安全声明；为 null 时不附加任何安全元数据。</param>
+    /// <returns>命令注册表，用于链式调用。</returns>
+    public static CommandRegistry MapCommand<TResult>(
+        this CommandRegistry registry,
+        string name,
+        Func<ICommandContext, TResult> handler,
+        CommandSecurity? security)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        return registry.Register(name, (instance, parameters, ctx) =>
+        {
+            var result = handler(ctx!);
+            return Task.FromResult<object?>(result);
+        }, System.Array.Empty<Type>(), security);
+    }
+
+    /// <summary>
     /// 注册无参数有返回值的命令并指定命令安全声明。
     /// </summary>
     /// <typeparam name="TResult">返回值类型。</typeparam>
