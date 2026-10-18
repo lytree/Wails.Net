@@ -491,6 +491,8 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
             {
                 Method = request.GetHttpMethod(),
                 Path = request.GetPath(),
+                // P2-12：WebKitGTK 的 URISchemeRequest 不暴露查询串 API，无法透传 HMR 查询（保持 null）。
+                Query = null,
                 RequestBody = bodyBytes.Length == 0 ? "{}" : System.Text.Encoding.UTF8.GetString(bodyBytes),
                 RequestBodyBytes = bodyBytes,
                 WindowId = _id,

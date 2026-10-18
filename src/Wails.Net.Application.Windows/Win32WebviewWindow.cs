@@ -1082,6 +1082,8 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
             {
                 Method = method,
                 Path = path,
+                // P2-12：携带查询串，供 dev 资产反向代理向 vite 透传 HMR 查询（如 ?import / ?t=）。
+                Query = uri.Query,
                 RequestBody = requestBody.Length == 0 ? string.Empty : Encoding.UTF8.GetString(requestBody),
                 RequestBodyBytes = requestBody,
                 WindowId = _id,

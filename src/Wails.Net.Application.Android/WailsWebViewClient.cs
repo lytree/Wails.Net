@@ -114,6 +114,8 @@ public sealed class WailsWebViewClient : WebViewClient
         {
             Method = request.Method ?? "GET",
             Path = path,
+            // P2-12：携带查询串（Android.Uri.Query 不含前导 '?'，由代理补齐），供 dev 代理透传 HMR 查询。
+            Query = url.Query,
             RequestBody = null,
             WindowId = _windowId,
             WindowName = _windowName,

@@ -112,6 +112,12 @@ public class Application
     private Wails.Net.AssetServer.AssetServer? _assetServer;
 
     /// <summary>
+    /// dev 模式资产反向代理（P2-12）。宿主配置了 <c>DevServerUrl</c> 时创建并注入；
+    /// 窗口请求管线（<see cref="Webview.WebviewRequestPipeline"/>）在处理资源请求时优先委托它。
+    /// </summary>
+    private Webview.DevAssetProxy? _devAssetProxy;
+
+    /// <summary>
     /// 待挂载的服务路由列表（P1-6 新增）。
     /// 当服务在 AssetServer 注入前注册且配置了 <see cref="Services.ServiceOptions.Route"/> 时，
     /// 暂存到此处；待 <see cref="AssetServer"/> setter 触发时统一挂载。
@@ -501,6 +507,17 @@ public class Application
                 _pendingServiceRoutes.Clear();
             }
         }
+    }
+
+    /// <summary>
+    /// dev 模式资产反向代理（P2-12）。
+    /// 仅在宿主配置了 <c>DevServerUrl</c> 时由 <see cref="Hosting.DesktopApplicationBuilder"/> 注入；
+    /// 为 null 时不影响任何请求路径（生产模式行为与改造前一致）。
+    /// </summary>
+    internal Webview.DevAssetProxy? DevAssetProxy
+    {
+        get => _devAssetProxy;
+        set => _devAssetProxy = value;
     }
 
     /// <summary>
@@ -1413,6 +1430,10 @@ public class Application
                 // 停止资源服务器的异常不应中断关闭流程
             }
         }
+
+        // 释放 dev 资产反向代理（P2-12；仅 dev 模式存在）。
+        _devAssetProxy?.Dispose();
+        _devAssetProxy = null;
 
         // 关闭所有插件（调用 IPlugin.ShutdownAsync，按注册逆序）。
         // 对应 Wails v3 的 Shutdown() 和 Tauri v2 的 on_drop 钩子。

@@ -16,6 +16,13 @@ public sealed class WebviewRequest
     /// <summary>绝对路径（如 <c>/wails/call</c>、<c>/app.js</c>）。</summary>
     public required string Path { get; init; }
 
+    /// <summary>
+    /// 请求查询串（含前导 <c>?</c>，如 <c>?t=123&amp;import</c>）；无查询时为 null。
+    /// 供 dev 模式资产反向代理（P2-12）向 vite dev server 透传 HMR 所需查询参数
+    /// （如 <c>?import</c> / <c>?t=</c>）；平台不支持读取查询时保持 null。
+    /// </summary>
+    public string? Query { get; init; }
+
     /// <summary>POST 请求体（IPC 消息）；GET 请求为 null。</summary>
     public string? RequestBody { get; init; }
 

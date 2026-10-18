@@ -1377,6 +1377,8 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
             {
                 Method = httpMethod,
                 Path = path,
+                // P2-12：携带查询串，供 dev 资产反向代理向 vite 透传 HMR 查询（如 ?import / ?t=）。
+                Query = request.Url?.Query,
                 RequestBody = rawBody.Text,
                 RequestBodyBytes = rawBody.Bytes,
                 WindowId = _id,

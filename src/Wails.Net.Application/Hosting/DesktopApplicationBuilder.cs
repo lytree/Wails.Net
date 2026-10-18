@@ -10,6 +10,7 @@ using Wails.Net.Application.Plugins;
 using Wails.Net.Application.Security;
 using Wails.Net.Application.Bindings;
 using Wails.Net.Application.Events;
+using Wails.Net.Application.Webview;
 using Wails.Net.AssetServer;
 
 namespace Wails.Net.Application.Hosting;
@@ -282,6 +283,17 @@ public sealed class DesktopApplicationBuilder
                     defaultDocument: desktopOpts.Assets.DefaultDocument);
                 application.AssetServer = fileAssetServer;
             }
+        }
+
+        // P2-12：dev 模式资产反向代理 —— 配置了有效的 DevServerUrl 时创建并注入，
+        // 使窗口资源请求转发到前端 dev server（vite），对齐 Wails v3 的 dev 代理。
+        // 生产模式（未配置 DevServerUrl）不创建，行为与改造前一致。
+        if (!string.IsNullOrWhiteSpace(desktopOpts.DevServerUrl) &&
+            Uri.TryCreate(desktopOpts.DevServerUrl, UriKind.Absolute, out var devServerUri) &&
+            (devServerUri.Scheme == Uri.UriSchemeHttp || devServerUri.Scheme == Uri.UriSchemeHttps))
+        {
+            application.DevAssetProxy = new DevAssetProxy(
+                devServerUri, host.Services.GetService<ILogger<DevAssetProxy>>());
         }
 
         // 注入全局 CSP 到 AssetServer（P0-4：原为死代码，现统一接入）

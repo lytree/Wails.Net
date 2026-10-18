@@ -244,5 +244,3 @@ public static class LinuxApplicationId
         return c is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or >= '0' and <= '9' or '_' or '-';
     }
 }
-</static_reminder>
-</invoke>

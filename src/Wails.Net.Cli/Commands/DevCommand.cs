@@ -147,6 +147,10 @@ internal sealed class DevCommand : CliCommandBase
             Info($"加载配置：{configPath}");
         }
 
+        // P2-12：解析前端 dev server URL（用于启动前的就绪探测，并在启动应用前导出给应用进程）。
+        // 取值优先级：FRONTEND_DEVSERVER_URL → wails.json 的 frontend.devServerUrl。
+        var devServerUrl = ResolveFrontendDevServerUrl(config);
+
         // 输出当前模式（参照 Tauri v2 / Wails v3 的 `tauri dev` / `wails dev` 行为）
         Info("================================================================");
         Info(" Wails.Net Debug 模式（参照 Tauri v2 / Wails v3 的 dev 命令）");
@@ -278,7 +282,6 @@ internal sealed class DevCommand : CliCommandBase
         // 仅在真正启动了前端 dev server 时探测；未配置 URL 时跳过（保持既有启动行为不变）。
         if (startFrontend && toolchain is not null)
         {
-            var devServerUrl = ResolveFrontendDevServerUrl(config);
             if (devServerUrl is null)
             {
                 Info("未配置前端 dev server URL（wails.json 的 frontend.devServerUrl），跳过就绪探测。");
@@ -321,6 +324,14 @@ internal sealed class DevCommand : CliCommandBase
                     return 0;
                 }
             }
+        }
+
+        // P2-12：仅在真正启动了前端 dev server 时才把其 URL 导出给应用进程（Program.cs 读取
+        // WAILS_DEV_SERVER_URL → options.DevServerUrl → 启用 dev 资产反向代理）。
+        // --backend-only / 无前端目录 / 无 URL 时不导出，避免应用对不存在的 dev server 反复重试。
+        if (startFrontend && toolchain is not null && devServerUrl is not null)
+        {
+            Environment.SetEnvironmentVariable("WAILS_DEV_SERVER_URL", devServerUrl);
         }
 
         var args = new List<string> { "watch", "--project", projectPath.FullName };

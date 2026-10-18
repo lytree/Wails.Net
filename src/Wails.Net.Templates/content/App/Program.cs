@@ -23,7 +23,7 @@ using Company.AppName.Services;
 //  │ Debug（开发）     │ • 启动前端 dev server（vite dev）          │
 //  │                  │ • dotnet watch 自动重启                     │
 //  │                  │ • WebView2 自动打开 DevTools                 │
-//  │                  │ • 前端资源由 FileAssetServer 提供（dist/） │
+//  │                  │ • 前端资源经 dev 反向代理转发到 vite（P2-12） │
 //  ├──────────────────┼────────────────────────────────────────────┤
 //  │ Release（发布）   │ • 前端构建（pnpm build → dist/）          │
 //  │                  │ • dotnet build -c Release                  │
@@ -65,9 +65,10 @@ builder.Configure(options =>
     options.Assets.DefaultDocument = "index.html";
     options.Assets.EnableSpaFallback = true;
 
-    // 可选：开发服务器 URL（wails dev 使用，未来可启用代理 AssetServer）
-    // 当前实现：Wails.Net 仍由本地 AssetServer 提供资源，vite dev 进程并行运行以提供 HMR
-    // 完整 Tauri 风格的 dev server 代理将在后续版本提供。
+    // 开发服务器 URL（wails dev 使用，P2-12）。
+    // 设置后应用在 dev 模式启用资产反向代理：http://wails.localhost/ 的资源请求转发到该前端
+    // dev server（vite），对齐 Wails v3 的 dev 代理；未设置时不启用（生产模式行为不变）。
+    // 由 `wails dev` 通过 WAILS_DEV_SERVER_URL 注入（取值：FRONTEND_DEVSERVER_URL → wails.json frontend.devServerUrl）。
     if (isDebugMode &&
         !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WAILS_DEV_SERVER_URL")))
     {

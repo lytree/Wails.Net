@@ -157,6 +157,20 @@ public sealed class WebviewRequestPipeline
     private async Task<WebviewResponse> HandleAssetAsync(WebviewRequest request, CancellationToken cancellationToken)
     {
         var path = NormalizeAssetPath(request.Path);
+
+        // P2-12：dev 模式资产反向代理 —— 配置了 DevServerUrl 时优先把资源请求转发到前端
+        // dev server（对应 Wails v3 internal/assetserver/build_dev.go 的 dev 代理）。
+        // 仅对 GET 生效；转发结束后成功即返回上游响应，失败（重试耗尽）返回 null 时回退本地资源。
+        var devProxy = Application.Get()?.DevAssetProxy;
+        if (devProxy is not null && string.Equals(request.Method, "GET", StringComparison.OrdinalIgnoreCase))
+        {
+            var proxied = await devProxy.TryGetAsync(request.Path, request.Query, cancellationToken).ConfigureAwait(false);
+            if (proxied is not null)
+            {
+                return proxied;
+            }
+        }
+
         var content = await _assetHandler(path, request.WindowName, cancellationToken).ConfigureAwait(false);
         if (content is not null && content.Length > 0)
         {

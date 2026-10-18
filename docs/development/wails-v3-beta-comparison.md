@@ -223,7 +223,7 @@
 | # | v3 特性（版本） | 说明 |
 |---|----------------|------|
 | 11 | watcher 对前端 dev server 的 HTTP 就绪检查（beta.26 #6150） | ✅ **已实现（2026-10-18）**：`DevCommand` 在启动 `dotnet watch` 前对前端 URL 做 HTTP 就绪探测（默认 60s / 250ms 轮询；连接被拒/超时/4xx/5xx 继续重试；超时→报错并不启动应用）。URL 取值：`FRONTEND_DEVSERVER_URL` → `wails.json` 的 `frontend.devServerUrl`；未配置则跳过。见 §9.12 |
-| 12 | `wails3 dev` 退出清理（beta.25 #6048）+ dev 资产代理 TCP churn 修复（beta.8） | dev 模式质量 |
+| 12 | `wails3 dev` 退出清理（beta.25 #6048）+ dev 资产代理 TCP churn 修复（beta.8） | ✅ **已实现（2026-10-18）**：退出清理 `DevProcessCleanup`（终止 `dotnet watch` 进程树 + 前端 dev server）+ **dev 资产反向代理** `DevAssetProxy`（`MaxConnectionsPerServer=512` + 重试）。见 §9.13 |
 | 13 | macOS 细节：autoplay 偏好（beta.7）、Dock bounce（beta.6）、注册快捷键优先于 webview（beta.9 #5902）、Control- 键命名（beta.14）、modal loop 期间主线程工作（beta.13 #6026）、app 菜单回调替换崩溃修复（beta.6） | macOS 平台已完整，可按需逐项对齐 |
 | 14 | Updater 备份失败后清除 helper 环境变量并重启原目标（beta.21 #6080） | ✅ **已实现（2026-10-18）**：`ClearHelperEnv()` 提前到备份**之前**执行；备份失败时重启原目标（`TryLaunch`）后再退出 12，与 Go `launch(target)` 一致。见 §9.11 |
 | 15 | Windows 菜单 nil 菜单/资源释放/菜单栏重绘（beta.21 #6112） | ✅ **已实现**（§9.7 核对）：nil 菜单守卫 `Win32WebviewWindow.cs:2723-2729`、`DrawMenuBar` 重绘 `:2000/2015/2270/2280`、释放 `Win32Menu.cs:109/201` |
@@ -366,13 +366,13 @@
 | P1-4 MCP | ❌ 未实现 | `Cli/Commands/` 无 mcp 命令（现有 19 命令） |
 | P1-5 macOS 媒体权限 | ✅ **已实现（2026-10-18）** | `MacOSWebviewWindow.cs` `MacUiDelegate.RequestMediaCapturePermission` + `ResolveMediaCapturePermission/CaptureDecisionFor/StrictestCaptureDecision`；`WebviewWindowMacOptions.CameraPermission/MicrophonePermission`（MACOS 原生未本机编译验证） |
 | P1-6 notch/NSPanel | ❌ 未实现 | MacOS 项目无 `notch`/`NSPanel` |
-| P1-7 GTK app ID/single-instance | ⚠️ 部分 | `LinuxPlatformApp.cs:410-428` 锁文件 + Unix socket（非 D-Bus bus name）；无 app-id 覆盖 |
+| P1-7 GTK app ID/single-instance | ✅ **已实现（2026-10-18）** | `LinuxApplicationId.cs`（id 推导/校验/覆盖 + 程序名）、`LinuxDbusSingleInstance.cs`/`LinuxSingleInstanceNames.cs`（经 `org.freedesktop.DBus.RequestName` 以 `uniqueID+".SingleInstance"` 占 bus name，`DO_NOT_QUEUE`）；`LinuxPlatformApp.AcquireSingleInstanceLock` 占位、`Run()` 经 `GLib.Functions.SetPrgname` 应用程序名；D-Bus 不可用降级锁文件+socket。见 §9.13 |
 | P1-8 64MiB→413 | ✅ **已实现（2026-10-18）** | `Transport/HttpTransport.cs` `MaxRuntimeBodyBytes = 64 MiB`；`HandleMessageAsync` Content-Length 预判 + 限量读取 → 413；分块单块 1 MiB → 422 |
-| P1-9 scheme 取消 | ⚠️ **部分（2026-10-18）** | macOS：每 task CTS + `MarkStopped` 取消且不再回调；Windows：每请求 CTS + 窗口关闭取消（无 CDP 中止）；Linux：无取消钩子（已注释）；管线令牌已透传 |
+| P1-9 scheme 取消 | ✅ **已实现（2026-10-18）** | macOS：每 task CTS + `MarkStopped` 取消且不再回调；Windows：`WindowsRequestCancellation.cs`（CDP `Fetch`/`Network` 逐请求中止，`X-Wails-Request-Id` 桥接头）+ 窗口关闭取消；Linux：WebKitGTK 无钩子（已注释）；管线令牌已透传。见 §9.13 |
 | P1-10 托盘主题 | ✅ **已实现（2026-10-18）** | `Win32SystemTray.cs`：`_lightModeIcon`/`_darkModeIcon`(+Owned)、`GetEffectiveIcon`、`ApplyEffectiveIcon`、`SubscribeThemeChanged`/`UnsubscribeThemeChanged`、`ReleaseIcon`；新增 `PlatformMessageWindow.cs`（平台层顶层消息窗口）在无窗口时也发主题事件 |
 | P2-11 前端就绪 | ✅ **已实现（2026-10-18）** | `src/Wails.Net.Cli/Build/FrontendDevServerReadiness.cs`；`DevCommand.cs` L263-313 启动前探测、L401-422 `ResolveFrontendDevServerUrl`；测试 10 项 |
-| P2-12 dev 清理 | ⚠️ 部分 | `DevCommand.cs:304-316` 仅 `devCts.Cancel()`；无反向代理（churn 不适用） |
-| P2-13 macOS 细节 | ⚠️ 部分 | autoplay `MacOSWebviewWindow.cs:305`、快捷键 `MacOSKeyBindingManager.cs:283`、Control `:25`、菜单 `MacOSMenu.cs:416` ✅；**Dock bounce 未实现**；主线程用 `InvokeOnMainThread`（`MacOSPlatformApp.cs:425`，非 CFRunLoop） |
+| P2-12 dev 清理 + 资产代理 | ✅ **已实现（2026-10-18）** | 退出清理：`DevProcessCleanup.cs` + `DevCommand` finally 统一终止 `dotnet watch` 进程树 + 前端 dev server；**dev 资产反向代理**：`WebView/DevAssetProxy.cs`（转发资源请求到前端 dev server，`MaxConnectionsPerServer=512` + 重试），`DesktopApplicationBuilder` 在配置 `DevServerUrl` 时注入、`WebviewRequestPipeline` 资源请求优先委托，`wails dev` 经 `WAILS_DEV_SERVER_URL` 注入。见 §9.13 |
+| P2-13 macOS 细节 | ✅ **已实现** | autoplay `MacOSWebviewWindow.cs:305`、快捷键 `MacOSKeyBindingManager.cs:283`、Control `:25`、菜单 `MacOSMenu.cs:416`；**Dock bounce** `MacOSWebviewWindow.Flash` → `NSApplication.RequestUserAttention(InformationalRequest)`；主线程用 `InvokeOnMainThread`（`MacOSPlatformApp.cs:425`，非 CFRunLoop）。见 §9.13 |
 | P2-14 Updater 备份失败 | ✅ **已实现（2026-10-18）** | `HelperProcess.cs`：`ClearHelperEnv()` 移至备份前；备份失败 → `TryLaunch(target)` 重启原目标 + `Exit(12)`；覆盖 `IOException`/`UnauthorizedAccessException` |
 | P2-15 Windows 菜单 | ✅ 已实现 | `Win32WebviewWindow.cs:2000/2015/2270/2280`、`:2723-2729`、`Win32Menu.cs:109/201` |
 | P2-16 MSIX | ✅ **已实现（2026-10-18）** | `src/Wails.Net.Cli/Build/MsixPackageOptions.cs`/`MsixPackager.cs`；`PackCommand.cs` 新增 `--format msix`/`appx` 与 `--publisher/--cert/--cert-password/--use-msix-tool`；测试 18 项（含真实 `MakeAppx` 端到端，工具缺失时跳过） |
@@ -397,7 +397,7 @@
 6. ~~**P2-11**~~ ✅、~~**P2-16**~~ ✅、~~**P2-22**~~ ✅、~~**P2-23**~~ ✅ 已于 2026-10-18 实现 —— 见 §9.12
 7. ~~**待实现 A**~~ ✅ `EndpointUpdateProvider`（`wails://` 非 updater 协议；appcast 未实现）—— 见 §9.12
 8. ~~**待实现 B**~~ ✅ Linux 外部 WM 最小化/缩放事件（原 GirCore 受阻结论已推翻）—— 见 §9.12
-9. **剩余细节项**（§9.7.3 中仍标「⚠️ 部分」者）：**P2-12** dev 资产代理 / **P2-13** macOS Dock bounce / **P1-7** GTK app ID / **P1-9** Windows CDP 中止
+9. ~~**P2-12** dev 清理 + 资产反向代理 / **P2-13** macOS Dock bounce / **P1-7** GTK app ID / **P1-9** Windows CDP~~ ✅ 已于 2026-10-18 实现 —— 见 §9.13
 
 > 说明：§9.2/§9.7 中标注「✅ 已实现」「⊘ 不适用」的条目无需再跟进；上表仅为仍需实现/对齐的剩余项。
 
@@ -513,7 +513,7 @@ Go `SignalHandler.Start()` 在首个信号分支 `break` 出监听循环，使 `
 | Windows | 每请求链接式 CTS（链接窗口级源）贯穿管线；窗口关闭 / Dispatcher 释放时取消，使在途长轮询尽快结束；异常路径同样释放；**取消以 `204 No Content` 收尾（不返回 500）**（[Win32WebviewWindow.cs](../../src/Wails.Net.Application.Windows/Win32WebviewWindow.cs)） |
 | Linux | WebKitGTK `URISchemeRequest`(libsoup) 无取消/中止钩子，保持原行为并加注释说明 |
 
-**未实现**：Windows 的 CDP `Fetch`/`Network` 逐请求中止（依赖 DevTools 会话，本环境无法验证）、Linux 取消。
+**（2026-10-18 更新）**：Windows 的 CDP `Fetch`/`Network` 逐请求中止**已实现**（`WindowsRequestCancellation.cs`，见 §9.13）；Linux 仍无取消钩子（WebKitGTK 限制）。
 **硬约束已满足**：未取消路径的行为与改造前完全一致。
 
 ### 9.10.3 P1-5 macOS 媒体权限
@@ -620,5 +620,56 @@ Wails.Net `HelperProcess.cs` 对齐：
 - **构建**：`Wails.Net.Cli`、`Wails.Net.Plugins.Updater`、`Wails.Net.Application.Linux` 及三个测试项目全部通过（0 警告）。
 - **测试**：`Wails.Net.Cli.Tests` 479 项（**476 通过 / 3 跳过 / 0 失败**）；`Wails.Net.Plugins.Updater.Tests` **28/28 通过**；`Wails.Net.Application.Tests` 全量 1540 项、17 失败（与基线 worktree 完全一致，**无新增失败**）。
 - **未验证**：MSIX 签名实跑（无 pfx 证书）、macOS 真实挂载探测与符号链接效果、Linux GUI 运行时的事件时机、Updater 自托管端到端。
+
+---
+
+## 9.13 细节项实现记录：P1-7 / P1-9 / P2-13 / P2-12（2026-10-18）
+
+依据 Wails v3 `v3.0.0-beta.28`。本节收尾 §9.7.4 的剩余细节项（代码主体随提交 `5c695ca` 落地，此处补全验证与文档说明）。
+
+### 9.13.1 P1-7 Linux GTK application id + single-instance bus name（beta.23 #5972 / #5973）
+
+- **id 推导/校验（纯逻辑）**：`LinuxApplicationId.cs` —— `SanitizeAppName`（非法字符→`_`、折叠连续下划线、trim 首尾、前导数字加 `_`、转小写、空回退 `wailsapp`）、`ValidateApplicationId`（对齐 `g_application_id_is_valid()`：≥2 个 `.` 元素、元素不以数字开头、仅 `A-Za-z0-9_-`、≤255）、`ResolveApplicationId`（推导 `org.wails.<name>`，覆盖非法时回退并输出 `error`）、`ResolveProgramName`（设置覆盖时程序名继承实际 id）。
+- **覆盖来源**：静态属性 `ApplicationIdOverride` / `ProgramNameOverride`（核心库 `LinuxOptions` 未新增字段，故置于平台项目）。
+- **single-instance bus name**：`LinuxSingleInstanceNames.TryDerive` → `uniqueID + ".SingleInstance"`；`LinuxDbusSingleInstance.TryClaim` 经 `org.freedesktop.DBus.RequestName`（`DO_NOT_QUEUE`，`PRIMARY_OWNER`/`ALREADY_OWNER`→首实例、`EXISTS`→第二实例）；D-Bus 不可用降级为「锁文件 + UNIX socket」。
+- **落地**：`LinuxPlatformApp` 构造期解析 id/程序名；`Run()` 经 `GLib.Functions.SetPrgname(ProgramName)` 应用程序名。
+- **与 Go 的差异**：Wails.Net Linux 用 `GLib.MainLoop` 而非 `Gtk.Application`，id 无法挂到 `gtk_application_new()`，仅经程序名（`g_set_prgname()`，Wayland surface app_id）间接体现；D-Bus 不可用视为可降级（Go 为致命错误）。
+- 测试：`LinuxApplicationIdTests.cs`、`LinuxSingleInstanceNamesTests.cs`、`LinuxPlatformAppTests.cs`。
+
+### 9.13.2 P1-9 Windows scheme 请求逐请求取消（CDP Fetch/Network）
+
+- `WindowsRequestCancellation.cs`：`Fetch.enable` 仅拦截 `http://wails.localhost/*` 的 Request 阶段；`Fetch.requestPaused` 时登记 `networkId → token` 并经 `Fetch.continueRequest` 注入桥接头 `X-Wails-Request-Id` 后立即放行；`Network.loadingFailed`/`loadingFinished` 按 `requestId` 取消对应令牌。
+- 接入（`Win32WebviewWindow.cs`）：初始导航前 `StartRequestCancellationCdp()`；`OnWebResourceRequested` 读取并移除桥接头 → `Consume(token)` 取得跟踪令牌 → 与窗口级令牌 `CreateLinkedTokenSource` 传入管线；快/慢/异常三路径统一以 **204** 收尾；`Close` 释放。
+- 降级：任一 CDP 能力不可用（含运行时未支持 `Fetch` 域）→ 静默退回既有「窗口级取消 + 204」语义，不向用户暴露错误。
+- **未覆盖**：Go 的 Keepalive 绑定脚本与 `Target.setAutoAttach` 子会话（worker）跟踪未实现；本机无 GUI，**以构建 + 代码审查验收**（无单元测试，`Consume` 等纯逻辑虽可测但依赖 `CoreWebView2` 构造）。
+
+### 9.13.3 P2-13 macOS Dock bounce（beta.6）
+
+`MacOSWebviewWindow.Flash(bool enabled)`：`enabled` 时 `NSApplication.SharedApplication.RequestUserAttention(NSRequestUserAttentionType.InformationalRequest)`（Dock 图标弹跳），禁用为 no-op（对齐 Go `windowFlash` 不调 cancel）。`WebviewWindow.Flash` 委托到平台实现，委托已由 `WebviewWindowStateToggleTests` 覆盖。
+
+### 9.13.4 P2-12 dev 退出清理（beta.25 #6048）+ dev 资产反向代理（beta.8）
+
+**退出清理**：
+
+- `DevProcessCleanup.cs`：`IDevProcessHandle`（`HasExited`/`KillTree`/`WaitForExitAsync`，均保证不抛）+ `ProcessTreeHandle`（`Kill(entireProcessTree: true)`）；`TerminateAsync` 跳过已退出、终止在运行、`Task.WhenAll` 限时等待（默认 1s，落在 System.CommandLine 退出宽限期内），返回 `DevCleanupResult(Killed, AlreadyExited, TimedOut)`。
+- `DevCommand` `finally`：终止 `dotnet watch` 进程树（Cancel 路径不会自动终止，必须显式 Kill）+ `StopFrontendDevServerAsync`（取消前端源并限时等待），避免孤儿进程。
+- 测试：`DevProcessCleanupTests.cs`。
+
+**dev 资产反向代理**（对齐 Go `internal/assetserver/build_dev.go`：`devProxyMaxIdleConnsPerHost=512` + `retryTransport`）：
+
+- 新增 `src/Wails.Net.Application/WebView/DevAssetProxy.cs`：把资源请求（GET）转发到前端 dev server。
+  - 保留上游 `Content-Type`（vite 对 `.ts` / 模块返回的 MIME 与本地「按扩展名推断」不同，透传可避免 ES module 因 MIME 不符被拒）；同时透传 `Cache-Control`/`ETag`/`Last-Modified`/`Vary`/`Expires`。
+  - 连接池 `MaxConnectionsPerServer=512`（对齐 `devProxyMaxIdleConnsPerHost=512`）；瞬时失败按指数退避重试（默认 3 次），耗尽后返回 `null` → 回退本地资源（不中断页面加载）；请求 `Accept-Encoding: identity` 避免二次解压。
+- 接线：`Application.DevAssetProxy`（internal）→ `DesktopApplicationBuilder` 在 `DesktopHostOptions.DevServerUrl` 为合法 http(s) 时创建并注入 → [WebviewRequestPipeline.HandleAssetAsync](../../src/Wails.Net.Application/WebView/WebviewRequestPipeline.cs) 对 GET 资源请求优先委托代理，命中即返回，未命中 / 失败回退既有本地路径。
+- `WebviewRequest.Query`：新增字段，Windows（`uri.Query`）/ macOS（`NSUrl.Query`）/ Android（`Uri.Query`）透传查询串（HMR 的 `?import` / `?t=`）；**Linux WebKitGTK `URISchemeRequest` 不暴露查询 API，保持 null**（限制）。
+- CLI：`wails dev` 在启动 `dotnet watch` 前把解析到的前端 URL 导出为 `WAILS_DEV_SERVER_URL`；模板 [Program.cs](../../src/Wails.Net.Templates/content/App/Program.cs) 据此设置 `options.DevServerUrl`。
+- **生产模式行为不变**：未配置 `DevServerUrl` 时不创建代理，资源请求仍走本地 AssetServer。
+- 测试：`DevAssetProxyTests.cs`（12 项：URL 拼接 / 状态码·Content-Type·缓存头映射 / 重试 / 失败回退 / 取消 / Dispose）、`DevAssetProxyPipelineTests.cs`（3 项：有代理时转发且跳过本地、无代理走本地、IPC 不经代理）。
+
+### 9.13.5 验证
+
+- **构建**：`Wails.Net.Application`、`.Windows`、`.Linux`、`.MacOS`、`Wails.Net.Cli`、`Wails.Net.Application.Tests`、`.Windows.Tests` 均 **0 错误**（Windows 存在既有 `MSB3277` WindowsBase 版本冲突警告，与本批无关）。**Android 项目未构建**（本机未安装 `android` 工作负载）。
+- **测试**：`Wails.Net.Application.Tests` 全量 **1555 项、17 失败**（较本批前基线 1540 项 +15，17 失败与基线完全一致，均为 `Plugins/Mobile` 既有问题，**无新增失败**）；`Wails.Net.Cli.Tests` 488 项（**485 通过 / 3 跳过 / 0 失败**）；`Wails.Net.Application.Windows.Tests` 179 项（**46 通过 / 133 跳过 / 0 失败**）；`Wails.Net.Application.Linux.Tests` 纯逻辑用例通过（2 项 `PlatformFactoryLinuxTests` 失败系 **Windows 主机环境**所致，需在 Linux/WSL 运行）。
+- **未验证**：dev 资产代理端到端（真实 vite + GUI 会话）；Windows CDP 端到端（无 GUI 会话）；macOS Dock bounce 实跑、`NSUrl.Query`（无 mac 主机，`#if MACOS` 分支未编译）；Android `Uri.Query`（缺 workload）；D-Bus bus name 实际占位（无 session bus 环境）。
 
 
