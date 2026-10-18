@@ -438,32 +438,82 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     ///    支持 SPA 路由回退：当资源不存在且路径无扩展名时，回退到 index.html。
     /// 使用 <see cref="URISchemeResponse"/> 设置状态码与 Content-Type，
     /// 避免直接构造 <see cref="GLib.Error"/>（GirCore 0.8.0 未公开便利构造器）。
+    /// <para>
+    /// Streams 长轮询：<c>/wails/stream/poll</c> 会挂起等待，若用同步包装会阻塞 GTK 主线程约 20s。
+    /// 因此不再使用 <c>RunOnThreadPool</c> 同步包装，而是 <c>await</c> 管线任务（内部使用
+    /// <c>ConfigureAwait(false)</c> 不捕获上下文），完成后在 GTK 主线程延续里写响应。
+    /// 非流式请求（IPC / 静态资源）通常已同步完成，行为与改造前一致。
+    /// </para>
+    /// <para>
+    /// 注意：此处将 <paramref name="request"/> 捕获进异步延续以保持托管包装存活；WebKitGTK 在
+    /// 请求被 finish 或取消前持有原生请求引用，故可安全延迟完成。
+    /// </para>
     /// </summary>
     /// <param name="request">URI scheme 请求对象。</param>
-    private void OnWailsSchemeRequest(URISchemeRequest request)
+    private async void OnWailsSchemeRequest(URISchemeRequest request)
     {
         try
         {
             // R2-4：统一委托给 WebviewRequestPipeline。
-            // Linux GTK MainLoop 存在同步上下文，因此同步包装使用 WebviewPipelineSync.RunOnThreadPool
-            // 通过 Task.Run 强制不捕获调用方上下文，避免死锁。
+            // Streams 控制数据通过 HTTP header（x-wails-stream-*）传递，需一并透传；
+            // 二进制帧负载经 RequestBodyBytes 传递（batch / chunk 重组体无法用字符串承载）。
+            // P1-9（未实现）：WebKitGTK 的 URISchemeRequest（libsoup）不暴露请求取消/中止钩子——
+            // 仅提供 FinishWithResponse / FinishWithError，无对应 macOS 的 stopURLSchemeTask 回调，
+            // 也无 Windows WebView2 的 CDP Fetch/Network 中止（见 request_cancellation_windows.go）。
+            // 因此此处保持原行为，未接独立 CancellationTokenSource；如后续 GirCore 暴露取消信号可在此接入。
             var pipeline = GetOrCreatePipeline();
+            var bodyBytes = ReadRequestBodyBytes(request);
             var webviewRequest = new WebviewRequest
             {
                 Method = request.GetHttpMethod(),
                 Path = request.GetPath(),
-                RequestBody = ReadRequestBody(request),
+                RequestBody = bodyBytes.Length == 0 ? "{}" : System.Text.Encoding.UTF8.GetString(bodyBytes),
+                RequestBodyBytes = bodyBytes,
                 WindowId = _id,
                 WindowName = _options.Name,
-                Origin = null
+                Origin = null,
+                Headers = ReadRequestHeaders(request)
             };
-            var response = pipeline.HandleAsync(webviewRequest).RunOnThreadPool();
+            var response = await pipeline.HandleAsync(webviewRequest, CancellationToken.None).ConfigureAwait(true);
             FinishWithResponse(request, response);
         }
         catch (Exception ex)
         {
-            FinishWithStatus(request, 500, ex.Message);
+            try
+            {
+                FinishWithStatus(request, 500, ex.Message);
+            }
+            catch
+            {
+                // 请求可能已被取消/销毁，忽略。
+            }
         }
+    }
+
+    /// <summary>
+    /// 读取 WebKit URI scheme 请求头（<c>Soup.MessageHeaders</c>）为大小写不敏感字典。
+    /// 供 Streams 双向字节流通过 HTTP header（<c>x-wails-stream-*</c>）传递控制数据。
+    /// GirCore 0.8.0 的 <c>Soup.MessageHeaders.Foreach</c> 以 (name, value) 回调枚举全部请求头。
+    /// </summary>
+    /// <param name="request">URI scheme 请求对象。</param>
+    /// <returns>大小写不敏感的请求头字典。</returns>
+    private static IReadOnlyDictionary<string, string> ReadRequestHeaders(URISchemeRequest request)
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var soupHeaders = request.GetHttpHeaders();
+        if (soupHeaders is null)
+        {
+            return headers;
+        }
+
+        soupHeaders.Foreach((name, value) =>
+        {
+            if (!string.IsNullOrEmpty(name))
+            {
+                headers[name] = value ?? string.Empty;
+            }
+        });
+        return headers;
     }
 
 
@@ -533,29 +583,30 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     }
 
     /// <summary>
-    /// R2-4：同步读取 Linux URI scheme 请求体（POST）。
-    /// 保留原 HandleIpcRequest 中的 GInputStream → GLib.Bytes → Marshal.Copy 流程。
+    /// R2-4：读取 Linux URI scheme 请求体（POST）为原始字节。
+    /// 保留原 HandleIpcRequest 中的 GInputStream → GLib.Bytes → Marshal.Copy 流程；
+    /// 返回原始字节以便 Streams 二进制帧负载完整承载。
     /// </summary>
-    private static string ReadRequestBody(URISchemeRequest request)
+    private static byte[] ReadRequestBodyBytes(URISchemeRequest request)
     {
         var bodyStream = request.GetHttpBody();
         if (bodyStream is null)
         {
-            return "{}";
+            return [];
         }
         var gBytes = bodyStream.ReadBytes(4 * 1024 * 1024, null);
         if (gBytes is null)
         {
-            return "{}";
+            return [];
         }
         var dataPtr = GBytesGetData(gBytes.Handle.DangerousGetHandle(), out var size);
         if (dataPtr == IntPtr.Zero || size <= 0)
         {
-            return "{}";
+            return [];
         }
         var data = new byte[(int)size];
         Marshal.Copy(dataPtr, data, 0, (int)size);
-        return System.Text.Encoding.UTF8.GetString(data);
+        return data;
     }
 
     /// <summary>

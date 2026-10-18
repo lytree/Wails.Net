@@ -104,6 +104,11 @@ public sealed class WailsWebViewClient : WebViewClient
         // R2-4：统一委托给 WebviewRequestPipeline。
         // Android 主线程存在同步上下文，同步包装使用 WebviewPipelineSync.RunOnThreadPool
         // 通过 Task.Run 强制不捕获调用方上下文，避免死锁。
+        //
+        // 注意：Android 不支持桌面版 Streams 长轮询。ShouldInterceptRequest 的契约要求在同一回调内
+        // 同步返回 WebResourceResponse，无法像 Windows/Linux/macOS 那样延迟完成，
+        // 因此这里保持同步实现。Android 端的 Streams 依赖事件通道（或后续方案）传输，
+        // 目标前端不应向 /wails/stream/poll 发起长轮询请求，否则会阻塞当前拦截线程。
         var pipeline = GetOrCreatePipeline();
         var webviewRequest = new WebviewRequest
         {
@@ -112,7 +117,8 @@ public sealed class WailsWebViewClient : WebViewClient
             RequestBody = null,
             WindowId = _windowId,
             WindowName = _windowName,
-            Origin = request.RequestHeaders != null && request.RequestHeaders.TryGetValue("Referer", out var referer) ? referer : null
+            Origin = request.RequestHeaders != null && request.RequestHeaders.TryGetValue("Referer", out var referer) ? referer : null,
+            Headers = ReadRequestHeaders(request)
         };
         var response = pipeline.HandleAsync(webviewRequest).RunOnThreadPool();
 
@@ -150,6 +156,29 @@ public sealed class WailsWebViewClient : WebViewClient
             },
             mimeTypeResolver: path => _assetServer?.GetMimeType(path) ?? "application/octet-stream");
         return _pipeline;
+    }
+
+    /// <summary>
+    /// 读取 Android WebView 请求头（Java <c>Map&lt;String,String&gt;</c>，绑定为
+    /// <see cref="IDictionary{TKey,TValue}"/>）为大小写不敏感字典。
+    /// 供 Streams 双向字节流通过 HTTP header（<c>x-wails-stream-*</c>）传递控制数据。
+    /// </summary>
+    /// <param name="request">Web 资源请求。</param>
+    /// <returns>大小写不敏感的请求头字典。</returns>
+    private static IReadOnlyDictionary<string, string> ReadRequestHeaders(IWebResourceRequest request)
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var source = request.RequestHeaders;
+        if (source is null)
+        {
+            return headers;
+        }
+
+        foreach (var pair in source)
+        {
+            headers[pair.Key] = pair.Value ?? string.Empty;
+        }
+        return headers;
     }
 
     /// <summary>

@@ -33,6 +33,8 @@
     <!-- 以链接方式将共享契约测试基类的源文件编译到本项目，使 TUnit 源生成器能够发现基类的 [Test] 方法。 -->
     <Compile Include="..\Wails.Net.Application.GuiContract.Tests\IWebviewWindowFixture.cs" Link="GuiContract\IWebviewWindowFixture.cs" />
     <Compile Include="..\Wails.Net.Application.GuiContract.Tests\WebviewWindowContractTests.cs" Link="GuiContract\WebviewWindowContractTests.cs" />
+    <!-- GUI 测试开关与 RequiresGuiEnvironmentAttribute（与 Linux/Android 共享的跳过特性）。 -->
+    <Compile Include="..\Wails.Net.Application.GuiContract.Tests\GuiTestSwitch.cs" Link="GuiContract\GuiTestSwitch.cs" />
   </ItemGroup>
 
 </Project>

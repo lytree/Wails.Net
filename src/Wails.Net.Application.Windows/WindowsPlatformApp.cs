@@ -95,7 +95,7 @@ public sealed class WindowsPlatformApp : IPlatformApp
 
     /// <summary>
     /// 主线程托管 ID，用于 IsOnMainThread 判断。
-    /// 在 <see cref="Run"/> 方法启动时设置，因为 UI 线程可能不是构造时的线程。
+    /// 构造时记录捕获的线程 ID；<see cref="Run"/> 启动时重新记录，因为 UI 线程可能不是构造时的线程。
     /// </summary>
     private int _mainThreadId;
 
@@ -151,6 +151,12 @@ public sealed class WindowsPlatformApp : IPlatformApp
     private SystemEventWatcher? _systemEventWatcher;
 
     /// <summary>
+    /// 平台层顶层隐藏消息窗口，用于接收系统广播（如 <c>WM_SETTINGCHANGE</c>）并在
+    /// 无 webview 窗口时也能发出主题变化事件（P1-10 补全）。
+    /// </summary>
+    private PlatformMessageWindow? _platformMessageWindow;
+
+    /// <summary>
     /// 构造 WindowsPlatformApp 实例。
     /// 在构造时设置进程 DPI 感知，确保后续窗口按高 DPI 正确缩放。
     /// </summary>
@@ -162,6 +168,11 @@ public sealed class WindowsPlatformApp : IPlatformApp
         _version = options.Version;
         _windowsOptions = options.Windows;
         s_current = this;
+
+        // 记录构造线程为主线程 ID，供 IsOnMainThread 判断使用。
+        // Run() 未启动时以构造线程为准（与 Linux / macOS 实现一致），
+        // 避免 _mainThreadId 保持默认值 0 导致 IsOnMainThread 恒返回 false。
+        _mainThreadId = Environment.CurrentManagedThreadId;
 
         // 设置进程 DPI 感知，必须在创建任何窗口之前完成。
         SetDpiAwareness();
@@ -271,6 +282,14 @@ public sealed class WindowsPlatformApp : IPlatformApp
         _systemEventWatcher = new SystemEventWatcher();
         _systemEventWatcher.Start();
 
+        // P1-10 补全：创建平台层顶层隐藏消息窗口。WM_SETTINGCHANGE 等系统消息只广播给
+        // 顶层窗口，而托盘（message-only）与 webview 窗口并非始终存在；本窗口保证主题变化
+        // 事件在任何情况下都能发出（托盘据此切换 light/dark 图标）。
+        // 对应 Wails v3 application_windows.go 中 mainThreadWindow 的 WM_SETTINGCHANGE 处理。
+        // 必须在消息循环前、于本 UI 线程创建。
+        _platformMessageWindow = new PlatformMessageWindow();
+        _platformMessageWindow.Create();
+
         // 标准 Win32 消息循环：GetMessage 阻塞等待消息，TranslateMessage 转换键盘消息，
         // DispatchMessage 分发到窗口过程。GetMessage 返回 0 表示收到 WM_QUIT，退出循环。
         // 线程级热键消息（WM_HOTKEY，hwnd == NULL）不通过 DispatchMessage 分发，
@@ -299,6 +318,10 @@ public sealed class WindowsPlatformApp : IPlatformApp
         // 停止系统级事件监听器。
         _systemEventWatcher?.Dispose();
         _systemEventWatcher = null;
+
+        // 销毁平台层消息窗口。
+        _platformMessageWindow?.Dispose();
+        _platformMessageWindow = null;
 
         // 销毁应用菜单。
         _applicationMenu?.Destroy();

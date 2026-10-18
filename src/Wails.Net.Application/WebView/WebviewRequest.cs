@@ -19,6 +19,20 @@ public sealed class WebviewRequest
     /// <summary>POST 请求体（IPC 消息）；GET 请求为 null。</summary>
     public string? RequestBody { get; init; }
 
+    /// <summary>
+    /// 原始请求体字节。供需要二进制 body 的端点（如 Streams 的 <c>/wails/stream/send</c>）使用，
+    /// 以便平台在不经 UTF-8 文本转换的情况下传递任意字节。
+    /// 为 null 时回退到 <see cref="RequestBody"/> 的 Latin-1 字节。
+    /// </summary>
+    public byte[]? RequestBodyBytes { get; init; }
+
+    /// <summary>
+    /// 请求头（大小写不敏感，默认空字典）。
+    /// 供 Streams 等以 header 承载协议元数据的端点使用；键为原始 header 名。
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Headers { get; init; } =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>发起请求的窗口 ID（用于消息路由）。</summary>
     public required uint WindowId { get; init; }
 

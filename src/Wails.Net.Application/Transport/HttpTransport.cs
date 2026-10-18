@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Net;
 using System.Text.Json;
 using Wails.Net.Application.Bindings;
@@ -37,6 +38,14 @@ public class HttpTransport : ITransport, IWailsEventListener, ITransportHttpHand
     /// WebSocket 端点路径。
     /// </summary>
     public const string WebSocketEndpoint = "/wails/ws";
+
+    /// <summary>
+    /// 普通 IPC 消息请求体的最大字节数（64 MiB）。
+    /// 对应 Wails v3 Go 版本 transport_http.go 中的
+    /// <c>maxRuntimeBodyBytes = maxAssembledBytes = 64 * 1024 * 1024</c>。
+    /// 超过此上限的 POST body 会在读取时被拒绝，并返回 HTTP 413。
+    /// </summary>
+    public const long MaxRuntimeBodyBytes = 64 * 1024 * 1024;
 
     /// <summary>
     /// HTTP 监听器。
@@ -393,6 +402,14 @@ public class HttpTransport : ITransport, IWailsEventListener, ITransportHttpHand
     /// <summary>
     /// 处理 IPC 消息请求。
     /// 从请求流读取完整 body，再委托给 <see cref="HandleMessageFromBytesAsync"/> 处理。
+    /// <para>
+    /// <b>P1-8：请求体上限（64 MiB → HTTP 413）</b>。
+    /// 对应 Wails v3 Go 版本 transport_http.go <c>handleRuntimeRequest</c> 中
+    /// <c>r.Body = http.MaxBytesReader(rw, r.Body, int64(maxRuntimeBodyBytes))</c>：
+    /// 先通过 <see cref="HttpListenerRequest.ContentLength64"/> 预判以拒绝已知超大请求，
+    /// 再边读边计数覆盖 Content-Length 缺失（如 chunked）的场景，避免先完整缓冲再判断。
+    /// 超限时返回 413，响应体文本与 Go 一致。
+    /// </para>
     /// </summary>
     /// <param name="context">HTTP 上下文。</param>
     /// <param name="cancellationToken">取消令牌。</param>
@@ -400,10 +417,27 @@ public class HttpTransport : ITransport, IWailsEventListener, ITransportHttpHand
     private async Task HandleMessageAsync(HttpListenerContext context, CancellationToken cancellationToken)
     {
         var request = context.Request;
-        using var reader = new StreamReader(request.InputStream);
+
+        // 预判：Content-Length 已知且超过上限时直接拒绝，不读取 body。
+        if (request.ContentLength64 > MaxRuntimeBodyBytes)
+        {
+            await WriteRequestEntityTooLargeAsync(context.Response, MaxRuntimeBodyBytes, cancellationToken);
+            return;
+        }
+
+        // 边读边计数：覆盖 Content-Length 缺失（chunked）等场景。
+        var bodyBytes = await ReadBodyWithLimitAsync(request.InputStream, MaxRuntimeBodyBytes, cancellationToken);
+        if (bodyBytes is null)
+        {
+            await WriteRequestEntityTooLargeAsync(context.Response, MaxRuntimeBodyBytes, cancellationToken);
+            return;
+        }
+
+        // 保持与既有 StreamReader 一致的 UTF-8 / BOM 解码语义（未超限请求行为不变）。
+        using var reader = new StreamReader(new MemoryStream(bodyBytes, writable: false));
         var body = await reader.ReadToEndAsync(cancellationToken);
-        var bodyBytes = System.Text.Encoding.UTF8.GetBytes(body);
-        await HandleMessageFromBytesAsync(context, bodyBytes, cancellationToken);
+        var reEncodedBytes = System.Text.Encoding.UTF8.GetBytes(body);
+        await HandleMessageFromBytesAsync(context, reEncodedBytes, cancellationToken);
     }
 
     /// <summary>
@@ -490,16 +524,24 @@ public class HttpTransport : ITransport, IWailsEventListener, ITransportHttpHand
             return;
         }
 
-        // 3. 读取 chunk body（限制单 chunk ≤ 1MB）
-        using var ms = new MemoryStream();
-        await request.InputStream.CopyToAsync(ms, 81920, cancellationToken);
-        if (ms.Length > ChunkStore.MaxChunkBodyBytes)
+        // 3. 读取 chunk body（限制单 chunk ≤ 1MB）。
+        // 对应 Wails v3 Go 版本 transport_http.go handleChunkedRequest 中
+        // r.Body = http.MaxBytesReader(rw, r.Body, int64(maxChunkBodyBytes))：
+        // 先按 Content-Length 预判，再边读边计数，避免先完整缓冲再判断。
+        if (request.ContentLength64 > ChunkStore.MaxChunkBodyBytes)
         {
             await WriteChunkedErrorAsync(response, 422,
                 $"chunk body 超过最大限制 {ChunkStore.MaxChunkBodyBytes} 字节", cancellationToken);
             return;
         }
-        var chunk = ms.ToArray();
+
+        var chunk = await ReadBodyWithLimitAsync(request.InputStream, ChunkStore.MaxChunkBodyBytes, cancellationToken);
+        if (chunk is null)
+        {
+            await WriteChunkedErrorAsync(response, 422,
+                $"chunk body 超过最大限制 {ChunkStore.MaxChunkBodyBytes} 字节", cancellationToken);
+            return;
+        }
 
         // 4. 原子获取或创建会话，校验 total 一致性
         var pc = _chunkStore!.GetOrAdd(chunkId, total);
@@ -568,6 +610,70 @@ public class HttpTransport : ITransport, IWailsEventListener, ITransportHttpHand
         response.ContentType = "application/json; charset=utf-8";
         var errorPayload = JsonSerializer.Serialize(new { error = message }, JsonOptions.DefaultSerializerOptions);
         var bytes = System.Text.Encoding.UTF8.GetBytes(errorPayload);
+        response.ContentLength64 = bytes.Length;
+        await response.OutputStream.WriteAsync(bytes, cancellationToken);
+    }
+
+    /// <summary>
+    /// 从请求流读取全部字节，读入字节数超过 <paramref name="maxBytes"/> 时返回 <c>null</c>。
+    /// 边读边计数，避免先完整缓冲再判断，对应 Wails v3 Go 版本
+    /// transport_http.go 中 <c>http.MaxBytesReader</c> 的限流读取语义。
+    /// <para>
+    /// 声明为 <c>internal</c> 以便测试在不构造超大实体的情况下验证边界行为。
+    /// </para>
+    /// </summary>
+    /// <param name="stream">要读取的请求流。</param>
+    /// <param name="maxBytes">允许的最大字节数。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>读取到的字节数组；超过上限时返回 <c>null</c>。</returns>
+    internal static async Task<byte[]?> ReadBodyWithLimitAsync(
+        Stream stream,
+        long maxBytes,
+        CancellationToken cancellationToken)
+    {
+        using var ms = new MemoryStream();
+        var buffer = ArrayPool<byte>.Shared.Rent(81920);
+        try
+        {
+            long total = 0;
+            int read;
+            while ((read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken)) > 0)
+            {
+                total += read;
+                if (total > maxBytes)
+                {
+                    return null;
+                }
+
+                ms.Write(buffer, 0, read);
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// 写入请求体超限响应（HTTP 413 Request Entity Too Large）。
+    /// 响应体文本对齐 Wails v3 Go 版本 transport_http.go <c>handleRuntimeRequest</c> 中
+    /// <c>http.Error(rw, "runtime request body exceeds "+N+" MiB", http.StatusRequestEntityTooLarge)</c>。
+    /// </summary>
+    /// <param name="response">HTTP 响应对象。</param>
+    /// <param name="limitBytes">触发的上限字节数，用于生成 <c>N MiB</c> 文案。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>表示写入操作的异步任务。</returns>
+    private static async Task WriteRequestEntityTooLargeAsync(
+        HttpListenerResponse response,
+        long limitBytes,
+        CancellationToken cancellationToken)
+    {
+        response.StatusCode = (int)HttpStatusCode.RequestEntityTooLarge;
+        response.ContentType = "text/plain; charset=utf-8";
+        var message = $"runtime request body exceeds {limitBytes / (1024 * 1024)} MiB";
+        var bytes = System.Text.Encoding.UTF8.GetBytes(message);
         response.ContentLength64 = bytes.Length;
         await response.OutputStream.WriteAsync(bytes, cancellationToken);
     }

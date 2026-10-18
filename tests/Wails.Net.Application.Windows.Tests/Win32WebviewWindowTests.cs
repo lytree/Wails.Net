@@ -1,5 +1,6 @@
 using System.Threading;
 using TUnit.Core;
+using Wails.Net.Application.GuiContract.Tests;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform;
 
@@ -9,8 +10,13 @@ namespace Wails.Net.Application.Windows.Tests;
 /// Win32WebviewWindow 的单元测试（TUnit）。
 /// 测试 Win32 原生窗口创建、属性访问、基本窗口操作。
 /// 注意：Win32 窗口创建需要 STA 线程，因此不并行执行。
+/// <para>
+/// 本类创建真实 Win32 原生窗口，属于 GUI 相关测试，默认禁用
+/// （设置环境变量 <c>WAILS_RUN_GUI_TESTS=1</c> 后启用）。
+/// </para>
 /// </summary>
 [NotInParallel]
+[RequiresGuiEnvironment]
 public sealed class Win32WebviewWindowTests
 {
     /// <summary>

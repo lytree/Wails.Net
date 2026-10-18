@@ -82,6 +82,10 @@ public static class HelperProcess
             Environment.Exit(17);
         }
 
+        // 父进程已退出。在备份/替换之前清除 helper 模式，使新应用与（可能）恢复的原应用都能正常启动。
+        // 对应 Go helper.go 中在 backup 之前调用的 `clearHelperEnv()`（beta.21 #6080）。
+        ClearHelperEnv();
+
         // 备份目标文件
         var backup = target + ".bak";
         try
@@ -93,16 +97,16 @@ public static class HelperProcess
         }
         catch (IOException) { /* 忽略备份清理错误 */ }
 
-        if (File.Exists(target))
+        try
         {
-            try
-            {
-                File.Copy(target, backup, overwrite: true);
-            }
-            catch (IOException)
-            {
-                Environment.Exit(12);
-            }
+            File.Copy(target, backup, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // 原文件未被改动：重启原目标，而不是恢复可能不完整的备份。
+            // 对应 Go helper.go 备份失败分支的 `l.launch(target)` 后返回 12（beta.21 #6080）。
+            TryLaunch(target);
+            Environment.Exit(12);
         }
 
         // 重试替换目标文件（OS 可能短暂持有文件锁）
@@ -135,10 +139,7 @@ public static class HelperProcess
         // Linux 上恢复可执行权限
         SetExecutablePermissions(target);
 
-        // 清除 helper 环境变量，防止重启的进程再次进入 helper 模式
-        ClearHelperEnv();
-
-        // 重启应用
+        // 重启应用（helper 环境变量已在备份前清除，见上，避免重启的进程再次进入 helper 模式）
         try
         {
             var psi = new ProcessStartInfo
@@ -248,6 +249,28 @@ public static class HelperProcess
         {
             // 进程不可访问，视为已退出
             return true;
+        }
+    }
+
+    /// <summary>
+    /// 尽力启动指定路径的进程（失败时忽略，不抛出）。
+    /// 用于备份失败后重启原目标，对应 Go helper.go 中的 <c>l.launch(target)</c>。
+    /// </summary>
+    /// <param name="executablePath">要启动的可执行文件路径。</param>
+    private static void TryLaunch(string executablePath)
+    {
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo
+            {
+                FileName = executablePath,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            });
+        }
+        catch (Exception)
+        {
+            // 启动失败非致命：helper 仍以既有退出码结束。
         }
     }
 

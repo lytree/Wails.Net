@@ -1312,9 +1312,26 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
 
     /// <summary>
     /// 处理 wails:// 自定义协议请求。
+    /// <para>
+    /// 支持异步完成（WKURLSchemeTask 允许延迟调用 DidReceiveResponse/DidReceiveData/DidFinish）：
+    /// IPC / 静态资源请求的管线任务通常同步完成，立即写响应；
+    /// <c>/wails/stream/poll</c> 长轮询会挂起等待，此时 <c>await</c> 管线任务（不阻塞 RunLoop），
+    /// 完成后若任务未被 WebKit 停止则写响应，避免对已停止任务回调导致崩溃。
+    /// </para>
     /// </summary>
     /// <param name="urlSchemeTask">URL scheme 任务。</param>
-    internal void HandleSchemeTask(IWKUrlSchemeTask urlSchemeTask)
+    /// <param name="owner">发起该任务的协议处理器，用于检测任务是否已被 WebKit 停止；可为 null。</param>
+    internal void HandleSchemeTask(IWKUrlSchemeTask urlSchemeTask, MacUrlSchemeHandler? owner = null)
+    {
+        HandleSchemeTaskAsync(urlSchemeTask, owner);
+    }
+
+    /// <summary>
+    /// 异步完成 wails:// 协议请求（<see cref="HandleSchemeTask"/> 的异步实现）。
+    /// </summary>
+    /// <param name="urlSchemeTask">URL scheme 任务。</param>
+    /// <param name="owner">协议处理器，用于检测任务是否已被停止；可为 null。</param>
+    private async void HandleSchemeTaskAsync(IWKUrlSchemeTask urlSchemeTask, MacUrlSchemeHandler? owner)
     {
         try
         {
@@ -1323,25 +1340,73 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
             var httpMethod = request.HttpMethod ?? "GET";
 
             // R2-4：统一委托给 WebviewRequestPipeline。
-            // macOS RunLoop 存在同步上下文，同步包装使用 WebviewPipelineSync.RunOnThreadPool
-            // 通过 Task.Run 强制不捕获调用方上下文，避免死锁。
+            // Streams 控制数据通过 HTTP header（x-wails-stream-*）传递，需一并透传；
+            // 二进制帧负载经 RequestBodyBytes 传递（batch / chunk 重组体无法用字符串承载）。
+            // P1-9：为每个 scheme task 建立独立取消源；StopUrlSchemeTask 会取消它，
+            // 从而中止在途管线任务（如 /wails/stream/poll 长轮询），令牌同时贯穿到管线内部。
+            var cancellationToken = owner?.TrackTask(urlSchemeTask) ?? CancellationToken.None;
             var pipeline = GetOrCreatePipeline();
+            var rawBody = ReadRequestBody(request);
             var webviewRequest = new WebviewRequest
             {
                 Method = httpMethod,
                 Path = path,
-                RequestBody = ReadRequestBody(request),
+                RequestBody = rawBody.Text,
+                RequestBodyBytes = rawBody.Bytes,
                 WindowId = _id,
                 WindowName = _options.Name,
-                Origin = null
+                Origin = null,
+                Headers = ReadRequestHeaders(request)
             };
-            var response = pipeline.HandleAsync(webviewRequest).RunOnThreadPool();
+            var response = await pipeline.HandleAsync(webviewRequest, cancellationToken).ConfigureAwait(true);
+
+            if (owner?.IsStopped(urlSchemeTask) == true)
+            {
+                return; // 任务已被 WebKit 停止，不能再回调避免 crash
+            }
             CompleteTask(urlSchemeTask, (nint)response.StatusCode, response.ContentType, response.Body);
+        }
+        catch (OperationCanceledException)
+        {
+            // 任务已被取消（页面导航/刷新）：不再回调任务，避免 crash。
         }
         catch
         {
-            CompleteTask(urlSchemeTask, 500, "text/plain", Encoding.UTF8.GetBytes("internal error"));
+            if (owner?.IsStopped(urlSchemeTask) != true)
+            {
+                CompleteTask(urlSchemeTask, 500, "text/plain", Encoding.UTF8.GetBytes("internal error"));
+            }
         }
+        finally
+        {
+            owner?.ClearStopped(urlSchemeTask);
+        }
+    }
+
+    /// <summary>
+    /// 读取 wails:// 请求头（<c>NSUrlRequest.AllHTTPHeaderFields</c>）为大小写不敏感字典。
+    /// 供 Streams 双向字节流通过 HTTP header（<c>x-wails-stream-*</c>）传递控制数据。
+    /// </summary>
+    /// <param name="request">URL 请求。</param>
+    /// <returns>大小写不敏感的请求头字典。</returns>
+    private static IReadOnlyDictionary<string, string> ReadRequestHeaders(NSUrlRequest request)
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var allHeaders = request.AllHTTPHeaderFields;
+        if (allHeaders is null)
+        {
+            return headers;
+        }
+
+        foreach (KeyValuePair<NSObject, NSObject> pair in allHeaders)
+        {
+            var name = pair.Key?.ToString();
+            if (!string.IsNullOrEmpty(name))
+            {
+                headers[name] = pair.Value?.ToString() ?? string.Empty;
+            }
+        }
+        return headers;
     }
 
 
@@ -1412,14 +1477,14 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
     /// 读取请求体。
     /// </summary>
     /// <param name="request">请求。</param>
-    /// <returns>请求体字符串。</returns>
-    private static string ReadRequestBody(NSUrlRequest request)
+    /// <returns>请求体字符串与其原始字节（Streams 二进制帧负载需原始字节）。</returns>
+    private static (string Text, byte[] Bytes) ReadRequestBody(NSUrlRequest request)
     {
         try
         {
             if (request.Body is { } body && body.Length > 0)
             {
-                return body.ToString();
+                return (body.ToString(), body.ToArray());
             }
 
             if (request.BodyStream is { } stream)
@@ -1438,7 +1503,8 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
                     ms.Write(buffer, 0, read);
                 }
 
-                return Encoding.UTF8.GetString(ms.ToArray());
+                var bytes = ms.ToArray();
+                return (Encoding.UTF8.GetString(bytes), bytes);
             }
         }
         catch
@@ -1446,7 +1512,7 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
             // 读取失败返回空体。
         }
 
-        return "{}";
+        return ("{}", []);
     }
 
     /// <summary>
@@ -1462,6 +1528,73 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
         }
 
         return screens[0].Frame.Height;
+    }
+
+    /// <summary>
+    /// 解析 getUserMedia 媒体捕获权限请求（相机 / 麦克风）。
+    /// 对应 Wails v3 Go 版本 <c>permissions_darwin.go</c> 中的
+    /// <c>mediaCaptureDecision</c> / <c>resolveMediaCapturePermission</c> /
+    /// <c>strictestCaptureDecision</c>：按窗口选项的权限策略分别判定相机与麦克风，
+    /// 取更严格者（Deny &gt; Prompt &gt; Grant）作为 WebKit 的最终决定。
+    /// <para>
+    /// 未覆写该代理方法时 WebKit 走默认行为（Cocoa 上即其自带的授权弹窗），
+    /// 因此 <see cref="Permission.Default"/> 保持该弹窗，<see cref="Permission.Allow"/> /
+    /// <see cref="Permission.Deny"/> 才赋予二者明确含义（与 Go 语义一致）。
+    /// </para>
+    /// </summary>
+    /// <param name="needAudio">请求是否包含麦克风（音频）。</param>
+    /// <param name="needVideo">请求是否包含相机（视频）。</param>
+    /// <returns>WebKit 权限决定。</returns>
+    internal WKPermissionDecision ResolveMediaCapturePermission(bool needAudio, bool needVideo)
+    {
+        if (!needAudio && !needVideo)
+        {
+            return WKPermissionDecision.Prompt;
+        }
+
+        var decision = WKPermissionDecision.Grant;
+        if (needAudio)
+        {
+            decision = StrictestCaptureDecision(
+                decision,
+                CaptureDecisionFor(_macWindowOptions?.MicrophonePermission ?? Permission.Default));
+        }
+        if (needVideo)
+        {
+            decision = StrictestCaptureDecision(
+                decision,
+                CaptureDecisionFor(_macWindowOptions?.CameraPermission ?? Permission.Default));
+        }
+        return decision;
+    }
+
+    /// <summary>
+    /// 将窗口级权限策略映射为 WebKit 权限决定。
+    /// 对应 Go <c>captureDecisionFor</c>。
+    /// </summary>
+    private static WKPermissionDecision CaptureDecisionFor(Permission permission) => permission switch
+    {
+        Permission.Allow => WKPermissionDecision.Grant,
+        Permission.Deny => WKPermissionDecision.Deny,
+        // 对应 Go PermissionDefault：交由 WebKit 默认弹窗处理。
+        _ => WKPermissionDecision.Prompt,
+    };
+
+    /// <summary>
+    /// 相机与麦克风同时被请求时只有一个答案，且不得比任一单项更宽松。
+    /// 对应 Go <c>strictestCaptureDecision</c>：Deny 优先于 Prompt，Prompt 优先于 Grant。
+    /// </summary>
+    private static WKPermissionDecision StrictestCaptureDecision(WKPermissionDecision a, WKPermissionDecision b)
+    {
+        if (a == WKPermissionDecision.Deny || b == WKPermissionDecision.Deny)
+        {
+            return WKPermissionDecision.Deny;
+        }
+        if (a == WKPermissionDecision.Prompt || b == WKPermissionDecision.Prompt)
+        {
+            return WKPermissionDecision.Prompt;
+        }
+        return WKPermissionDecision.Grant;
     }
 #endif
 
@@ -1709,6 +1842,32 @@ internal sealed class MacUiDelegate : WKUIDelegate
             completionHandler(result == 1000 ? textField.StringValue : null!);
         });
     }
+
+    /// <summary>
+    /// 处理 getUserMedia 相机 / 麦克风捕获权限请求（macOS 12.0+）。
+    /// 对应 Wails v3 Go 版本 webview_window_darwin.m 中的
+    /// <c>webView:requestMediaCapturePermissionForOrigin:initiatedByFrame:type:decisionHandler:</c>，
+    /// 决定由 <see cref="MacOSWebviewWindow.ResolveMediaCapturePermission"/> 依据窗口权限策略给出。
+    /// </summary>
+    /// <param name="webView">发起请求的 WebView。</param>
+    /// <param name="origin">请求来源安全域（Go 实现同样不参与判定）。</param>
+    /// <param name="frame">发起请求的 frame（Go 实现同样不参与判定）。</param>
+    /// <param name="type">媒体捕获类型（相机 / 麦克风 / 二者）。</param>
+    /// <param name="decisionHandler">权限决定回调。</param>
+    public override void RequestMediaCapturePermission(
+        WKWebView webView,
+        WKSecurityOrigin origin,
+        WKFrameInfo frame,
+        WKMediaCaptureType type,
+        Action<WKPermissionDecision> decisionHandler)
+    {
+        // 对照 Go webview_window_darwin.m：由 type 推导是否请求音频 / 视频后交给窗口策略判定。
+        var needAudio = type == WKMediaCaptureType.Microphone
+            || type == WKMediaCaptureType.CameraAndMicrophone;
+        var needVideo = type == WKMediaCaptureType.Camera
+            || type == WKMediaCaptureType.CameraAndMicrophone;
+        decisionHandler(_window.ResolveMediaCapturePermission(needAudio, needVideo));
+    }
 }
 
 /// <summary>
@@ -1722,6 +1881,26 @@ internal sealed class MacUrlSchemeHandler : NSObject, IWKUrlSchemeHandler
     private readonly MacOSWebviewWindow _window;
 
     /// <summary>
+    /// 记录已被 WebKit 停止（取消）的 scheme task，供异步完成时检测任务是否失效。
+    /// 长轮询等延迟完成场景下，若任务已被停止则不能再回调，否则会崩溃。
+    /// </summary>
+    private readonly HashSet<IWKUrlSchemeTask> _stoppedTasks = new();
+
+    /// <summary>
+    /// 每个 URL scheme task 独立的取消源（P1-9 请求取消/上下文转发）。
+    /// <c>StopUrlSchemeTask</c> 触发 <see cref="CancellationTokenSource.Cancel"/>，
+    /// 使在途管线任务（如 <c>/wails/stream/poll</c> 长轮询）尽快结束，
+    /// 并将同一令牌贯穿到 <see cref="WebviewRequestPipeline.HandleAsync"/>。
+    /// </summary>
+    private readonly Dictionary<IWKUrlSchemeTask, CancellationTokenSource> _taskCancellations = new();
+
+    /// <summary>
+    /// 保护 <see cref="_stoppedTasks"/> 与 <see cref="_taskCancellations"/> 的锁
+    /// （Stop 回调与完成延续可能并发）。
+    /// </summary>
+    private readonly object _stoppedLock = new();
+
+    /// <summary>
     /// 构造协议处理器。
     /// </summary>
     /// <param name="window">关联窗口。</param>
@@ -1730,18 +1909,98 @@ internal sealed class MacUrlSchemeHandler : NSObject, IWKUrlSchemeHandler
         _window = window;
     }
 
+    /// <summary>
+    /// 记录某个 scheme task 已被 WebKit 停止，并取消其独立取消源（若有）。
+    /// </summary>
+    /// <param name="task">被停止的任务。</param>
+    internal void MarkStopped(IWKUrlSchemeTask task)
+    {
+        CancellationTokenSource? cts;
+        lock (_stoppedLock)
+        {
+            _stoppedTasks.Add(task);
+            _taskCancellations.TryGetValue(task, out cts);
+        }
+
+        // 先记录 stopped 再取消，确保取消引发的 OperationCanceledException
+        // 在完成延续里观察到 IsStopped 为真，从而不再回调任务（避免 crash）。
+        if (cts is not null)
+        {
+            try
+            {
+                cts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // 任务已完成并释放取消源，忽略。
+            }
+        }
+    }
+
+    /// <summary>
+    /// 为某个 scheme task 建立独立的 <see cref="CancellationTokenSource"/> 并返回其令牌。
+    /// 若该任务此前已被停止，则返回已取消的令牌，管线可立即结束。
+    /// </summary>
+    /// <param name="task">正在启动的任务。</param>
+    /// <returns>该任务的取消令牌。</returns>
+    internal CancellationToken TrackTask(IWKUrlSchemeTask task)
+    {
+        lock (_stoppedLock)
+        {
+            var cts = new CancellationTokenSource();
+            if (_stoppedTasks.Contains(task))
+            {
+                // 任务在注册前已被停止：立即取消，使管线尽快结束。
+                cts.Cancel();
+            }
+            _taskCancellations[task] = cts;
+            return cts.Token;
+        }
+    }
+
+    /// <summary>
+    /// 判断某个 scheme task 是否已被 WebKit 停止。
+    /// </summary>
+    /// <param name="task">待检测的任务。</param>
+    /// <returns>已停止返回 true；否则返回 false。</returns>
+    internal bool IsStopped(IWKUrlSchemeTask task)
+    {
+        lock (_stoppedLock)
+        {
+            return _stoppedTasks.Contains(task);
+        }
+    }
+
+    /// <summary>
+    /// 清除停止记录并释放该任务的取消源（任务完成后调用，避免集合无限增长）。
+    /// </summary>
+    /// <param name="task">已完成的任务。</param>
+    internal void ClearStopped(IWKUrlSchemeTask task)
+    {
+        lock (_stoppedLock)
+        {
+            _stoppedTasks.Remove(task);
+            if (_taskCancellations.Remove(task, out var cts))
+            {
+                cts.Dispose();
+            }
+        }
+    }
+
     /// <inheritdoc />
     [Export("webView:startURLSchemeTask:")]
     public void StartUrlSchemeTask(WKWebView webView, IWKUrlSchemeTask urlSchemeTask)
     {
-        _window.HandleSchemeTask(urlSchemeTask);
+        _window.HandleSchemeTask(urlSchemeTask, this);
     }
 
     /// <inheritdoc />
     [Export("webView:stopURLSchemeTask:")]
     public void StopUrlSchemeTask(WKWebView webView, IWKUrlSchemeTask urlSchemeTask)
     {
-        // 任务被取消（页面导航/刷新），无需处理。
+        // 任务被取消（页面导航/刷新）。记录该任务，供长轮询等异步完成场景检测，
+        // 避免对已停止的任务调用 DidReceiveResponse/DidFinish 导致崩溃。
+        MarkStopped(urlSchemeTask);
     }
 }
 #endif

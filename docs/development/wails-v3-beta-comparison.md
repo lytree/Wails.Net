@@ -1,6 +1,7 @@
 # Wails.Net × Wails v3 最新开发分支对比：可参考项确认
 
 > 分析日期：2026-08-07（beta.4 基线）；**2026-10-17 再确认：Wails v3 已演进至 v3.0.0-beta.28（2026-10-05），差异与待实现项复核见 §9**
+> **2026-10-17 源码级复核**：§9.2/§9.1 各项已对照 Wails v3 `v3.0.0-beta.28` 官方 Go 源码（tag `v3.0.0-beta.28`，`v3/` 目录）逐项确认，结论与更正见 **§9.7**。
 > 对比对象：wailsapp/wails **master 分支 v3/ 目录**（Wails v3 的实际开发流）
 > 基线：AGENTS.md 参考版本 `v3.0.0-beta.4`（§1/§8 时点）；是否升级至 beta.28 待决策（见 §9.5）
 
@@ -193,7 +194,7 @@
 | P0-1 插件前后端一体双包模型 | 规划 M1-M4 | ✅ **已完成**：`src/Wails.Net.Plugins.*` 43 个 NuGet 插件项目 + `packages/` 43 个 npm 包（`wails-net-plugin-*` + `wails-net-runtime`）+ CLI `plugin new` 双包脚手架（[PluginCommand.cs](../../src/Wails.Net.Cli/Commands/PluginCommand.cs)）+ R3-B 权限声明 |
 | P0-2 Updater `wails://` 协议层 + endpoint provider | 挂起 | ⏸ **仍挂起**（`src/Wails.Net.Plugins.Updater` 无 `wails://`/endpoint 命中）；资产匹配器 ✅ 已落地（[UpdateAssetMatcher.cs](../../src/Wails.Net.Plugins.Updater/Services/Updater/UpdateAssetMatcher.cs)，GitHub/GitLab provider 已接入） |
 | P1 Linux 外部 resize/minimise 事件 | 受阻于 GirCore | ⏸ **仍受阻**：程序化 Minimise/UnMinimise 已派发事件（[LinuxWebviewWindow.cs](../../src/Wails.Net.Application.Linux/LinuxWebviewWindow.cs) L1123-1141、L1542-1573），外部 WM 触发需 surface layout API；**GirCore 仍为 0.8.0**（Directory.Packages.props） |
-| P2 macOS 细节优化 | 推迟（stub） | ✅ **平台已完成**：完整 AppKit + WKWebView 实现（MacOSWebviewWindow.cs 1600+ 行，含 DidResize/DidMiniaturize 事件、MacUiDelegate；AGENTS.md §1 已标注）；细节优化转入 §9.3 P1/P2 项 |
+| P2 macOS 细节优化 | 推迟（stub） | ✅ **平台已完成**：完整 AppKit + WKWebView 实现（`src/Wails.Net.Application.MacOS/` 共 12 个 `.cs`、约 4289 行，`MacOSWebviewWindow.cs` 1545 行含 DidResize/DidMiniaturize 事件；AGENTS.md §1 已标注）；细节优化转入 §9.3 P1/P2 项（源码级核对见 §9.7 待实现项 C） |
 
 ### 9.2 beta.5–beta.28 新增差异项（按优先级）
 
@@ -210,12 +211,12 @@
 | # | v3 特性（版本） | Wails.Net 现状 |
 |---|----------------|----------------|
 | 4 | `wails3 mcp` 安全 MCP 服务器（beta.9 #5896）+ origin/token 认证硬化（beta.19 #6092） | ❌ CLI 无 mcp 命令（现有 19 个命令：build/dev/pack/publish/check/capability/doctor/setup/plugin 等） |
-| 5 | macOS 媒体权限：WKUIDelegate media-capture 方法（beta.27），`PermissionAllow/Deny` 覆盖摄像头/麦克风 | ❌ MacUiDelegate 已存在但无 media-capture 方法 |
+| 5 | macOS 媒体权限：WKUIDelegate media-capture 方法（beta.27），`PermissionAllow/Deny` 覆盖摄像头/麦克风 | ✅ **已实现（2026-10-18）**：`WebviewWindowOptions.Mac.CameraPermission/MicrophonePermission`（`Permission.Default/Allow/Deny`）+ `MacUiDelegate.RequestMediaCapturePermission` 覆写；相机/麦克风分别判定、取更严格者。macOS 原生代码未在本机编译验证（见 §9.10） |
 | 6 | macOS notch 通知窗口 + NSPanel 窗口类型（beta.12 #6010/#6008） | ❌ 未实现 |
 | 7 | Linux GTK application ID 覆盖（beta.23 #5972）+ single-instance 以应用自身 ID 占用 bus name（#5973） | ⚠️ single-instance 已有（跨平台 13 文件，含 LinuxPlatformApp）；GTK app ID 覆盖与 D-Bus 命名规范未核对到 |
-| 8 | 运行时请求 64 MiB 上限 → HTTP 413（beta.19 #6091） | ❌ 未实现 |
-| 9 | 自定义 scheme 请求中止/取消：Windows（beta.20 #5963/#5969）、Linux（beta.23 #6126）、macOS/iOS 请求上下文转发 | ⚠️ R2-4 WebviewRequestPipeline 已统一管线，取消语义需核对（Linux `OnWailsSchemeRequest` 未见 abort 处理） |
-| 10 | Windows 托盘 ICO 图标 + 任务栏主题跟随（beta.14 #6016） | ⚠️ Tray 插件已有，此细节未核对 |
+| 8 | 运行时请求 64 MiB 上限 → HTTP 413（beta.19 #6091） | ✅ **已实现（2026-10-18）**：`HttpTransport.MaxRuntimeBodyBytes = 64 MiB`，Content-Length 预判 + 边读边计数 → 413（文案 `runtime request body exceeds 64 MiB`）；分块路径单块 1 MiB → 422。见 §9.10 |
+| 9 | 自定义 scheme 请求中止/取消：Windows（beta.20 #5963/#5969）、Linux（beta.23 #6126）、macOS/iOS 请求上下文转发 | ⚠️ **部分（2026-10-18）**：macOS 每 URL scheme task 独立 CTS，`StopUrlSchemeTask` 取消且不再回调；Windows 每请求 CTS + 窗口关闭取消（未做 CDP `Fetch` 级中止）；Linux WebKitGTK 无取消钩子，保持原行为；令牌已贯穿管线。见 §9.10 |
+| 10 | Windows 托盘 ICO 图标 + 任务栏主题跟随（beta.14 #6016） | ✅ **已实现（2026-10-18）**：`Win32SystemTray` 双图标（light/dark）+ 按 `Application.IsDarkMode()` 选择生效图标 + 订阅 `KnownEvents.ThemeChanged` 切换；**新增平台层顶层消息窗口 `PlatformMessageWindow`**，使无 webview 窗口时也能发出主题事件（限制已补全）。ICO 仍由 `IconCommand` 生成。见 §9.11 |
 
 **P2（细节/质量）**
 
@@ -224,14 +225,14 @@
 | 11 | watcher 对前端 dev server 的 HTTP 就绪检查（beta.26 #6150） | DevCommand 无 readiness 探测 |
 | 12 | `wails3 dev` 退出清理（beta.25 #6048）+ dev 资产代理 TCP churn 修复（beta.8） | dev 模式质量 |
 | 13 | macOS 细节：autoplay 偏好（beta.7）、Dock bounce（beta.6）、注册快捷键优先于 webview（beta.9 #5902）、Control- 键命名（beta.14）、modal loop 期间主线程工作（beta.13 #6026）、app 菜单回调替换崩溃修复（beta.6） | macOS 平台已完整，可按需逐项对齐 |
-| 14 | Updater 备份失败后清除 helper 环境变量并重启原目标（beta.21 #6080） | UpdaterPlugin 健壮性 |
-| 15 | Windows 菜单 nil 菜单/资源释放/菜单栏重绘（beta.21 #6112） | Win32 菜单健壮性 |
-| 16 | MSIX 打包恢复（beta.21 #6115） | PackCommand 需核对 MSIX 支持 |
-| 17 | JS/TS 绑定生成：泛型模型创建器引用后置声明 + 相互依赖泛型栈溢出修复（beta.21 #6062） | `Wails.Net.Generator` 需对照是否存在同类排序/递归问题 |
-| 18 | Linux 托盘右击同时触发 click handler 与菜单修复（beta.28 #6018） | Tray 插件 Linux 行为 |
-| 19 | WebView2 初始化 deadline + 消息泵（beta.8 #5952）、embed 超时 60s（beta.15 #6043） | Windows 启动健壮性 |
-| 20 | Linux 旧式 GTK3 service-only 应用 screen discovery 崩溃防护（beta.9 #5966） | ServerMode 启动时序守卫 |
-| 21 | App.Run 期间启动默认信号处理器（beta.21 #6098） | .NET Generic Host 原生处理 SIGTERM/SIGINT，预期等价，待确认 |
+| 14 | Updater 备份失败后清除 helper 环境变量并重启原目标（beta.21 #6080） | ✅ **已实现（2026-10-18）**：`ClearHelperEnv()` 提前到备份**之前**执行；备份失败时重启原目标（`TryLaunch`）后再退出 12，与 Go `launch(target)` 一致。见 §9.11 |
+| 15 | Windows 菜单 nil 菜单/资源释放/菜单栏重绘（beta.21 #6112） | ✅ **已实现**（§9.7 核对）：nil 菜单守卫 `Win32WebviewWindow.cs:2723-2729`、`DrawMenuBar` 重绘 `:2000/2015/2270/2280`、释放 `Win32Menu.cs:109/201` |
+| 16 | MSIX 打包恢复（beta.21 #6115） | ❌ **未实现**（§9.7 核对）：`PackCommand` 仅支持 zip/targz/nsis/appimage/deb/rpm（L414-441）；v3 有 `internal/commands/msix.go` + `internal/flags/msix.go` |
+| 17 | JS/TS 绑定生成：泛型模型创建器引用后置声明 + 相互依赖泛型栈溢出修复（beta.21 #6062） | ⊘ **不适用**（§9.7 核对）：`TypeScriptGenerator` 仅生成方法签名 + id 映射，无「模型创建器」与依赖排序概念（泛型映射见 `TypeScriptTypeMapper.cs:73-124`）；v3 该修复针对 `internal/generator/render/renderer.go:90-127` 的 Models() 拓扑排序 |
+| 18 | Linux 托盘右击同时触发 click handler 与菜单修复（beta.28 #6018） | ✅ **已实现**（§9.7 核对，架构不同）：`LinuxSystemTray.cs:242-244` 右击独立触发菜单、`:256-258` 左键独立；v3 `systemtray_linux.go:720-728` |
+| 19 | WebView2 初始化 deadline + 消息泵（beta.8 #5952）、embed 超时 60s（beta.15 #6043） | ✅ **超时已对齐（2026-10-18）**：`EmbedTimeout` 由 30s 改为 **60s**（对齐 v3 `chromium.go:283`）；初始化 deadline / 控制器创建超时已实现；仍**无自建消息泵**（交由 WebView2 SDK）。见 §9.11 |
+| 20 | Linux 旧式 GTK3 service-only 应用 screen discovery 崩溃防护（beta.9 #5966） | ✅ **已实现（等价）**（§9.7 核对）：`LinuxPlatformApp.cs:267-270` display 为 null 时返回空数组；ServerMode 不触 GTK |
+| 21 | App.Run 期间启动默认信号处理器（beta.21 #6098） | ✅ **已实现（2026-10-18）**：`Hosting.DefaultSignalHandler`（`PosixSignalRegistration` 监听 SIGINT/SIGTERM），`Application.Run` 主循环前安装、`ShutdownAsync` 释放；新增 `ApplicationOptions.DisableDefaultSignalHandler`（对应 Go `Options.DisableDefaultSignalHandler`）。详见 §9.9 |
 | 22 | setup 向导完善（beta.28 #6224 系统详情；beta.24 仅批准的包管理器命令——安全约束） | SetupCommand 增强项 |
 | 23 | macOS app 输出保持在 file provider 之外（beta.28 #6225） | macOS 打包细节 |
 
@@ -305,5 +306,273 @@
 `GeneratedBindingsTests` 新增 2 项（歧义键 fail-closed、同类型重复注册仍可解析）。
 
 另：P0-1 使前端派发由同步改为异步邮箱串行，2 个既有测试（`EventSenderWindowPropagationTests.Emit_OneListenerThrows_OtherListenerStillReceivesSenderWindowID`、`ServerModeEventApiTests.BroadcastEvent_NotifiesRegisteredTransportListener`）已改为等待派发完成后断言。
+
+---
+
+## 9.7 源码级复核（2026-10-17）
+
+> 方法：以 Wails v3 官方 Go 源码 tag **`v3.0.0-beta.28`**（`v3/` 目录）为唯一权威依据，对 §9.1/§9.2 各项逐条核对「v3 特性是否真实存在」与「Wails.Net 现状」，均给文件:行证据。相比 §9.2 基于 changelog 的判断，本节为源码级确认，并更正下列条目。
+
+### 9.7.1 对 §9.2 的更正
+
+| §9.2 条目 | 原判断 | 源码级确认 |
+|-----------|--------|-----------|
+| #17 JS/TS 泛型模型创建器排序/环修复 | 「需对照是否存在同类排序/递归问题」（隐含风险） | ⊘ **不适用**：Wails.Net `TypeScriptGenerator` 只产出方法签名 + id 映射，不存在「模型创建器/依赖排序」，与 v3 `internal/generator/render/renderer.go` 的 Models() 拓扑排序不是同一机制 |
+| #21 App.Run 信号处理器 | 「.NET Generic Host 预期等价，待确认」 | ❌ **未实现**：`src/` 全仓无 `PosixSignalRegistration`/`SignalHandler`/`IHostLifetime`/`UseConsoleLifetime`；「等价」假设不成立，应列入待实现 |
+| #19 WebView2 embed 超时 | 「Windows 启动健壮性」（未量化） | ⚠️ **部分 + 数值偏差**：`EmbedTimeout=30s`，v3 为 `60s`（`internal/webview2/pkg/edge/chromium.go:283`）；无自建消息泵 |
+| #16 MSIX 打包 | 「需核对 MSIX 支持」 | ❌ **未实现**：`PackCommand` 仅 zip/targz/nsis/appimage/deb/rpm |
+| #15 Windows 菜单健壮性 | 「Win32 菜单健壮性」（未判定） | ✅ **已实现** |
+| #20 GTK3 screen discovery 防护 | 「ServerMode 启动时序守卫」（未判定） | ✅ **已实现（等价）** |
+| #18 Linux 托盘右击 | 「Tray 插件 Linux 行为」（未判定） | ✅ **已实现（架构不同）** |
+| #10 托盘 ICO + 主题跟随 | 「此细节未核对」 | ⚠️ **部分**：`SetDarkModeIcon` 为简化桩，不随主题切换 |
+
+### 9.7.2 v3 侧特性存在性（Go 源码证据）
+
+| # | 特性 | v3 源码证据（`v3.0.0-beta.28`） |
+|---|------|-------------------------------|
+| P0-1 | Streams 双向字节流 | `pkg/application/stream.go`（L54-118 边界/有界队列、L701-725 `WailsApp.HandleStream`）；`stream_server.go:13-29` server 走真实 WebSocket；`stream_prelude_server.go` 注入 WS factory；`stream_prelude_desktop.go` 桌面轮询 |
+| P0-2 | 事件投递硬化 | `event_payload_store.go:9-56`（64MB 上限 + TTL）、`events.go:100-118`（`mailbox.Mailbox`）、`internal/mailbox/mailbox.go:6-50`（异步 FIFO）、`events.go:78-84`（按 emit 顺序串行契约） |
+| P0-3 | WebView2 进程故障恢复 | `internal/webview2/pkg/edge/chromium.go:93-100/677-680/938-942`（ProcessFailed 回调注册与转发）、`:160-175`（ShuttingDown 清回调，防释放期悬挂） |
+| P1-4 | MCP 安全服务器 | `internal/commands/mcp.go:75-95`（token 来源：`--token`/`WAILS_MCP_TOKEN`/随机）、`:125-149`（loopback + Bearer verifier）、`pkg/application/mcp_protocol_enabled.go:62-98`（Origin 校验 + 401） |
+| P1-5 | macOS 媒体权限 | `permissions_darwin.go:32 resolveMediaCapturePermission`、`webview_window_darwin.m:1010` |
+| P1-6 | notch/NSPanel | `notch_window.go`、`webview_panel_darwin.m`、`webview_notch_window_darwin.m` |
+| P1-7 | GTK app ID + single-instance bus name | `application_linux_appid.go`、`single_instance_linux.go:43-67`（busName=`uniqueID+".SingleInstance"`） |
+| P1-8 | 请求 64MiB → 413 | `transport_http.go:186-190`（`MaxBytesReader` + `StatusRequestEntityTooLarge`） |
+| P1-9 | scheme 请求取消/上下文转发 | `request_cancellation_windows.go:40-64`（CDP Fetch/Network 中止）、`asset_request_context_test.go` |
+| P1-10 | Windows 托盘 light/dark 双图标 | `systemtray_windows.go:30-33`（lightIcon/darkModeIcon + 主题切换） |
+| P2-11 | watcher 前端就绪检查 | `internal/commands/watcher.go:83-98`（`process.Readiness{HTTP:frontendURL,Timeout:"60s"}`）、`dev.go:50-52`（`FRONTEND_DEVSERVER_URL`） |
+| P2-12 | dev 退出清理 + TCP churn | `internal/assetserver/build_dev.go:20-32`（`devProxyMaxIdleConnsPerHost=512`、`retryTransport`） |
+| P2-13 | macOS 细节 | autoplay `webview_window_darwin.go:166/1604`；Dock `:883 windowFlash`；快捷键 `global_shortcut_darwin.go:41`；Control `keys_darwin.go:7`；modal 主线程 `mainthread_darwin.go:13-24`；菜单 `menuitem_darwin.go:73-83` |
+| P2-14 | Updater 备份失败清环境变量并重启 | `pkg/updater/helper.go:139 clearHelperEnv()`、`:147-155`（失败 → `launch(target)` relaunch 原目标） |
+| P2-15 | Windows 菜单健壮性 | `webview_window_windows.go:129-186`（nil 菜单、释放前菜单/位图、`DrawMenuBar`） |
+| P2-16 | MSIX 打包 | `internal/commands/msix.go`、`internal/flags/msix.go` |
+| P2-17 | 泛型模型创建器排序/环 | `internal/generator/render/renderer.go:90-127`（Models() 后置/拓扑排序）、testcase `generic_class_type_deps` |
+| P2-18 | Linux 托盘右击 | `systemtray_linux.go:720-728`（`opened` 不再触发 click）、`systemtray_linux_event_test.go:43-76` |
+| P2-19 | WebView2 deadline/消息泵/60s | `internal/webview2/pkg/edge/chromium.go:283`（`embedTimeout=60s`）、`:261 pumpUntilInited`、`:288` 自建消息泵 |
+| P2-20 | GTK3 screen discovery 防护 | `linux_cgo_gtk3.go:1121`、`screen_linux_gtk3_test.go:10-20` |
+| P2-21 | 默认信号处理器 | `signal_handler_desktop.go:12-20`（`signal.NewSignalHandler(a.Quit)`）、`application_options.go:72-73`（开关） |
+| P2-22 | setup 向导 | `internal/setupwizard/wizard.go:222 SystemInfo`、`:433-451 initSystemInfo`、`:1208-1336 safeInstallers` |
+| P2-23 | macOS app 输出避开 file provider | `internal/commands/tool_prepare_macos_output.go:22/:100`（探测 `com.apple.fileprovider.fpfs`） |
+| 待实现 A | Updater endpoint provider | `pkg/updater/providers/endpoint/endpoint.go`（+ `appcast`） |
+| 待实现 B | Linux 外部 WM 事件 | `linux_cgo_gtk3.go` GDK surface/notify |
+
+### 9.7.3 Wails.Net 现状（源码级确认）
+
+| # | Wails.Net 判定 | 证据 |
+|---|---------------|------|
+| P0-1 Streams | ✅ **已实现（2026-10-17）** | `src/Wails.Net.Application/Streams/`（StreamManager/StreamConn/StreamSession/StreamChunkStore/StreamFrameCodec/StreamEndpoints + PulseGate）；`Application.Streams`/`HandleStream`；`WebviewRequestPipeline` 路由 `/wails/stream/*`；`WebviewRequest.Headers`+`RequestBodyBytes`；四平台透传 header + Windows/Linux/macOS 长轮询延迟完成（Android 不支持）；server 模式 `WebSocketTransport` 新增 `/wails/stream/ws`；前端 `packages/wails-net-runtime` `Stream(name)`。详见 §9.8 |
+| P0-2 事件硬化 | ✅ 已实现 | `Events/EventMailbox.cs:31`、`Transport/PerWindowEventQueue.cs:31`、`Events/EventPayloadStore.cs:30`、`WebView/WebviewRequestPipeline.cs:76/121/136`；接入 `EventProcessor.cs:73/342`、`EventIPCTransport.cs:166-203` |
+| P0-3 WebView2 恢复 | ✅ 已实现 | `Win32WebviewWindow.cs:254 EmbedTimeout`、`:655 AttachController`、`:685 ProcessFailed 订阅`、`:781 OnProcessFailed`、`:809 _recovering` |
+| P1-4 MCP | ❌ 未实现 | `Cli/Commands/` 无 mcp 命令（现有 19 命令） |
+| P1-5 macOS 媒体权限 | ✅ **已实现（2026-10-18）** | `MacOSWebviewWindow.cs` `MacUiDelegate.RequestMediaCapturePermission` + `ResolveMediaCapturePermission/CaptureDecisionFor/StrictestCaptureDecision`；`WebviewWindowMacOptions.CameraPermission/MicrophonePermission`（MACOS 原生未本机编译验证） |
+| P1-6 notch/NSPanel | ❌ 未实现 | MacOS 项目无 `notch`/`NSPanel` |
+| P1-7 GTK app ID/single-instance | ⚠️ 部分 | `LinuxPlatformApp.cs:410-428` 锁文件 + Unix socket（非 D-Bus bus name）；无 app-id 覆盖 |
+| P1-8 64MiB→413 | ✅ **已实现（2026-10-18）** | `Transport/HttpTransport.cs` `MaxRuntimeBodyBytes = 64 MiB`；`HandleMessageAsync` Content-Length 预判 + 限量读取 → 413；分块单块 1 MiB → 422 |
+| P1-9 scheme 取消 | ⚠️ **部分（2026-10-18）** | macOS：每 task CTS + `MarkStopped` 取消且不再回调；Windows：每请求 CTS + 窗口关闭取消（无 CDP 中止）；Linux：无取消钩子（已注释）；管线令牌已透传 |
+| P1-10 托盘主题 | ✅ **已实现（2026-10-18）** | `Win32SystemTray.cs`：`_lightModeIcon`/`_darkModeIcon`(+Owned)、`GetEffectiveIcon`、`ApplyEffectiveIcon`、`SubscribeThemeChanged`/`UnsubscribeThemeChanged`、`ReleaseIcon`；新增 `PlatformMessageWindow.cs`（平台层顶层消息窗口）在无窗口时也发主题事件 |
+| P2-11 前端就绪 | ❌ 未实现 | `DevCommand.cs:263-292` 无 HTTP 探测 |
+| P2-12 dev 清理 | ⚠️ 部分 | `DevCommand.cs:304-316` 仅 `devCts.Cancel()`；无反向代理（churn 不适用） |
+| P2-13 macOS 细节 | ⚠️ 部分 | autoplay `MacOSWebviewWindow.cs:305`、快捷键 `MacOSKeyBindingManager.cs:283`、Control `:25`、菜单 `MacOSMenu.cs:416` ✅；**Dock bounce 未实现**；主线程用 `InvokeOnMainThread`（`MacOSPlatformApp.cs:425`，非 CFRunLoop） |
+| P2-14 Updater 备份失败 | ✅ **已实现（2026-10-18）** | `HelperProcess.cs`：`ClearHelperEnv()` 移至备份前；备份失败 → `TryLaunch(target)` 重启原目标 + `Exit(12)`；覆盖 `IOException`/`UnauthorizedAccessException` |
+| P2-15 Windows 菜单 | ✅ 已实现 | `Win32WebviewWindow.cs:2000/2015/2270/2280`、`:2723-2729`、`Win32Menu.cs:109/201` |
+| P2-16 MSIX | ❌ 未实现 | `PackCommand.cs:414-441` 无 msix |
+| P2-17 泛型生成器 | ⊘ 不适用 | `TypeScriptGenerator.cs:20/71/131`、`TypeScriptTypeMapper.cs:73-124` 无模型创建器 |
+| P2-18 Linux 托盘右击 | ✅ 已实现 | `LinuxSystemTray.cs:242-244`（右击）`/256-258`（左键） |
+| P2-19 WebView2 超时 | ✅ **已对齐（2026-10-18）** | `Win32WebviewWindow.cs:273` `EmbedTimeout = 60s`（原 30s）；初始化 deadline 与 `Task.WhenAny(createTask, Delay(EmbedTimeout))` 已存在；无自建消息泵 |
+| P2-20 GTK3 screen guard | ✅ 已实现（等价） | `LinuxPlatformApp.cs:267-270` |
+| P2-21 信号处理器 | ✅ **已实现（2026-10-18）** | `Hosting/DefaultSignalHandler.cs`；`Application.cs:1200 SetupSignalHandler()`（主循环前）、`:1316` Shutdown 释放；`ApplicationOptions.DisableDefaultSignalHandler` |
+| P2-22 setup 向导 | ⚠️ 部分 | `Cli/Commands/SetupCommand.cs:36-104` 仅回放诊断 + 安装提示 |
+| P2-23 macOS 输出 | ❌ 未实现 | `PackCommand.cs:47` 仅 RID 列表提及 macOS |
+| 待实现 A | ⏸ 未实现 | 无 `wails://`、无 `EndpointUpdateProvider`；provider 仅 GitHub/GitLab/Http（`UpdaterService.cs:311-317`）；资产匹配器已接入（`GitHubUpdateProvider.cs:132`、`GitLabUpdateProvider.cs:127`） |
+| 待实现 B | ⚠️ 部分 | 程序化 `Minimise()`→`WindowMinimised`（`LinuxWebviewWindow.cs:1122-1130`）、`UnMinimise()`→`WindowUnminimised`（`:1133-1141`）；`OnWindowNotify`（`:912-955`）仅 `is-active/is-maximized/is-fullscreen`，外部 WM 最小化/缩放受 Gtk4 无 `is-minimised` 属性 + GirCore 0.8.0（`Directory.Packages.props`）限制 |
+| 待实现 C | ✅ 已完成 | `src/Wails.Net.Application.MacOS/` 12 个 `.cs`、约 4289 行（`MacOSWebviewWindow.cs` 1545、`MacOSPlatformApp.cs` 943），`#if MACOS` 原生 / `#else` 降级 |
+
+### 9.7.4 源码级复核后的待实现项（按优先级）
+
+1. ~~**P0-1 Streams 双向字节流**（机制级）~~ ✅ **已于 2026-10-17 实现**，见 §9.8
+2. ~~**P2-21 App.Run 信号处理器**~~ ✅ **已于 2026-10-18 实现**，见 §9.9
+3. ~~**P1-8 请求 64MiB 上限 → 413**~~ ✅ 已于 2026-10-18 实现；~~**P1-5 macOS 媒体权限**~~ ✅ 已于 2026-10-18 实现；**P1-9 scheme 请求取消/上下文转发** ⚠️ 部分实现（macOS 完整、Windows 无 CDP 中止、Linux 无钩子）—— 见 §9.10
+4. **P1-4 MCP 服务器**（本期按决策暂缓，需先定实现方式：手写最小 MCP vs 引入 SDK）
+5. ~~**P2-14 Updater 备份失败恢复语义**~~ ✅ 已于 2026-10-18 实现；~~**P2-19 embed 超时对齐 60s**~~ ✅ 已于 2026-10-18 实现；~~**P1-10 托盘 light/dark 双图标**~~ ✅ 已于 2026-10-18 实现 —— 见 §9.11
+6. **P2-11 dev 前端就绪检查**、**P2-16 MSIX 打包**、**P2-22 setup 向导增强**、**P2-23 macOS 输出重定位**
+7. **待实现 A** Updater `wails://` 协议层 + endpoint/appcast provider（挂起，按自托管更新需求评估）
+8. **待实现 B** Linux 外部 WM 最小化/缩放事件（受阻于 GirCore 0.8.0）
+
+> 说明：§9.2/§9.7 中标注「✅ 已实现」「⊘ 不适用」的条目无需再跟进；上表仅为仍需实现/对齐的剩余项。
+
+---
+
+## 9.8 P0-1 Streams 双向字节流实现记录（2026-10-17）
+
+依据 Wails v3 `v3.0.0-beta.28`（`pkg/application/stream.go` / `stream_session.go` / `stream_transport.go` / `stream_server.go` / `stream_prelude_*.go`，以及前端 `internal/runtime/desktop/@wailsio/runtime/src/stream.ts`）1:1 移植「WebSocket 编程模型但不绑 TCP 端口」的双向字节流。
+
+### 9.8.1 交付内容
+
+| 层 | 内容 | 位置 |
+|----|------|------|
+| 核心 | 常量/帧编解码/StreamConn/StreamSession/StreamManager/chunk 重组/HTTP 端点/异步条件变量 `PulseGate` | `src/Wails.Net.Application/Streams/`（9 个文件） |
+| 应用 | `Application.Streams`、`Application.HandleStream(name, handler)`；Shutdown 时 Dispose；server 模式在 `GenerateRuntimeJs` 注入 `window._wails.streamFactory`（对应 Go `stream_prelude_server.go`） | [Application.cs](../../src/Wails.Net.Application/Application.cs) |
+| 请求 | `WebviewRequest.Headers`（大小写不敏感）、`RequestBodyBytes`（二进制体）；`WebviewResponse` 扩展状态码/自定义 header 工厂 | `src/Wails.Net.Application/WebView/` |
+| 路由 | `WebviewRequestPipeline` 在 `EventPayloadStore` 特判之后、`IsIpcRequest` 判定**之前**插入 `/wails/stream/*` 分支 | [WebviewRequestPipeline.cs](../../src/Wails.Net.Application/WebView/WebviewRequestPipeline.cs) |
+| 平台 | 四平台透传 `x-wails-stream-*` header 与 body 原始字节；Windows（`GetDeferral` 异步完成）/ Linux（`FinishWithResponse` 延迟）/ macOS（`WKURLSchemeTask` 延迟）实现长轮询 | `src/Wails.Net.Application.{Windows,Linux,MacOS,Android}/` |
+| Server | `WebSocketTransport` 新增 `/wails/stream/ws`（query `?name=`，Origin 同源校验） | [WebSocketTransport.cs](../../src/Wails.Net.Application/Transport/WebSocketTransport.cs) |
+| 前端 | `Stream(name)` / `JSONStream(name)` / `WailsSocket`（held-poll、batch、chunk、退避重试、`"WS1\0"` 解码） | `packages/wails-net-runtime/src/internal/stream.ts`、`nanoid.ts`；`index.ts` 导出 |
+
+### 9.8.2 线协议（与 v3 一致）
+
+- 端点：`GET /wails/stream/poll`（HEAD → 405 + `Allow: GET`）、`POST /wails/stream/send`、server `/wails/stream/ws?name=`。
+- 控制数据全部走 header：`x-wails-stream-{session,generation,conn,kind,name,batch,chunk,chunk-index,chunk-total}`。
+- 帧格式：`connID(u32 BE) + kind(u8) + len(u32 BE)`；kind `Data=0 / Open=1 / Close=2 / Error=3`。
+- poll 响应体：`"WS1\0" + flags(bit0=more) + count(u32 BE) + count×(connID + kind + len + payload)`。
+- batch 体：`count(u32 BE) + count×(len u32 BE + payload)`。
+- 状态码：`204/200/400/403/405/409/410/429(RETRY-AFTER: 0)`。
+
+### 9.8.3 上界与生命周期（对齐 v3）
+
+单窗口出站 256 帧 / 8 MiB；单连接入站 256 帧 / 8 MiB；单 session 连接 256；每窗口 session 16；全局 session 1024；单帧 64 MiB；全局出站/入站各 256 MiB + 8192 帧；连接/close/控制帧额度各 4096；chunk 128 MiB / 4096 片。hold 20s、session TTL 60s、sweep 20s、grace 10min、poll 单响应 1 MiB。**仅 poll 可 supersede** 旧 generation session；缺 `x-wails-stream-generation` → 410；控制帧/close 拥有独立额度，不受数据背压影响。
+
+### 9.8.4 测试
+
+- `tests/Wails.Net.Application.Tests/Streams/`（8 个文件）：**74 个 TUnit 测试全部通过**，覆盖帧编解码 round-trip、并发顺序性、背压（depth/bytes/单帧超限）、全局额度、TTL 与 generation 水位、reload supersede 窗口隔离、超大帧边界、drain 响应上限、控制帧/close 独立额度、端点状态码、chunk 乱序/重试/冲突/重复、close 语义、pipeline 路由；以及端到端：桌面全链路（open → poll ack → send data → handler 回送 → poll 收到数据帧 + close 帧）、server 模式 `/wails/stream/ws?name=` 真实 WebSocket 回环（含 NormalClosure 关闭握手）、全局 session 上限 1024、`GenerateRuntimeJs` 在 server/桌面模式的 `streamFactory` 注入差异。
+- 修复（由 server WS 端到端测试暴露）：server 模式 `StreamConn.Close()` 先取消连接令牌再排队 close 帧，而 `WsStreamSink` 的关闭判定会因令牌已取消而拒绝**所有**帧，导致 close 帧永不写出、关闭握手未完成。已按 Go `streamSession.enqueue` 的控制帧豁免修正：控制帧（open ack / error / close）在连接令牌取消后仍可入队，仅数据帧受此限制。
+- 前端 `packages/wails-net-runtime`：`tsc --noEmit` 通过；`stream.test.ts` 15 用例通过。
+
+### 9.8.5 已知限制 / 未覆盖
+
+- **Android 不支持桌面长轮询**：`ShouldInterceptRequest` 契约要求同一回调内同步返回，无法延迟完成；Android 端 Streams 需后续经事件通道方案支持（已在 `WailsWebViewClient.cs` 拦截器注释中说明）。
+- 本机未安装 `android` 工作负载，**Android 平台改动未经编译验证**（改动仅为 header 透传，风险低）。
+- 服务端 `/wails/stream/ws` 已有 WebSocket 回环单元测试；但**各平台长轮询（Windows `GetDeferral` / Linux 延迟 `FinishWithResponse` / macOS 延迟 `WKURLSchemeTask`）与前端 `Stream(name)` 的真实浏览器/设备端到端行为未验证**（平台「延迟完成」逻辑为代码审查验收）。
+- Windows 长轮询慢路径按 Go 语义在**线程池线程**设置 `args.Response` 并 `Complete()`（WebView2 deferral 允许跨线程完成，与 Go handler goroutine 行为一致）；未在真实 Windows 运行验证。若实测要求 UI 线程，改用 `Application.DispatchOnMainThread` 派发。
+
+### 9.8.6 回归
+
+`Wails.Net.Application.Tests` 全量：1526 项、17 失败。经 `git worktree` 在 HEAD（不含本次改动）复现**完全相同的 17 项失败**，均属 `Plugins/`（Mobile Nfc/Camera、DpiScale、Cli 等，因 `ctx.Services` 为空触发 NRE）的**既有问题**，与本次改动无关。本次新增 Streams 74 项全部通过。
+
+---
+
+## 9.9 P2-21 默认信号处理器实现记录（2026-10-18）
+
+依据 Wails v3 `v3.0.0-beta.28`：`pkg/application/signal_handler_desktop.go`（`App.setupSignalHandler`）+ `internal/signal/signal.go`（`SignalHandler`）。原判断为「未实现」（`src/` 无 `PosixSignalRegistration`/`SignalHandler`，「Generic Host 预期等价」不成立），本次补齐。
+
+### 9.9.1 交付内容
+
+| 内容 | 位置 |
+|------|------|
+| `DefaultSignalHandler`：监听 SIGINT/SIGTERM；首个信号 → 退出回调；重复信号逐级提示；达到上限（默认 3）→ 强制退出 | [Hosting/DefaultSignalHandler.cs](../../src/Wails.Net.Application/Hosting/DefaultSignalHandler.cs) |
+| `Application.Run` 进入平台主循环前安装（对应 Go `a.setupSignalHandler(a.options)` 紧跟 `a.impl.run()` 的时序） | [Application.cs](../../src/Wails.Net.Application/Application.cs) |
+| `Application.ShutdownAsync` 释放处理器，恢复系统默认信号处置 | 同上 |
+| 新增 `ApplicationOptions.DisableDefaultSignalHandler`（默认 false；置 true 时不安装，Ctrl+C 沿用系统默认终止） | [ApplicationOptions.cs](../../src/Wails.Net.Application/Options/ApplicationOptions.cs) |
+
+### 9.9.2 信号语义
+
+- **首个信号**：日志「收到信号 X，正在退出应用……」，随后经 **`ShouldQuit()`** 判定 —— true → `Quit()`；false → 应用继续运行（与 Wails.Net `ShouldQuit` 既有文档语义一致）。
+- **未达上限的重复信号**：日志提示「再按 N 次可强制退出」，不重复触发退出。
+- **达到上限**（`MaxSignal`，默认 3）：日志「强制退出」+ `Environment.Exit(1)`。
+- 注册使用 `PosixSignalRegistration`（Windows 与 Unix 通用，.NET 6+），并置 `ctx.Cancel = true` 抑制默认处置（等价 Go `signal.Notify`）；`Dispose` 恢复默认处置。
+
+### 9.9.3 与 Go 的差异
+
+Go `SignalHandler.Start()` 在首个信号分支 `break` 出监听循环，使 `i < MaxSignal`（逐级提示）与 `i == MaxSignal`（强制退出）两个分支**不可达**；本移植按这两个可见分支的设计意图实现完整阶梯（首个退出 → 提示 → 强制退出）。
+
+### 9.9.4 测试
+
+`tests/Wails.Net.Application.Tests/Hosting/DefaultSignalHandlerTests.cs`（**9 项全部通过**）：首个信号触发一次退出回调且不强制退出；重复信号未达上限不退出；达上限强制退出一次；`Start`/`Dispose` 幂等；`maxSignal` 参数校验；`DisableDefaultSignalHandler` 默认 false；`Application` 默认安装 / 禁用时跳过；`ShouldQuit` 返回 false 时不退出。
+
+回归：全量 1535 项、17 失败（与基线 worktree 一致，均为 `Plugins/` 既有问题），无新增失败。
+
+### 9.9.5 未覆盖
+
+- 未做真实进程级信号注入测试（Go 通过子进程 `syscall.Kill` 验证端到端）；本移植以 internal 触发点覆盖分级逻辑，真实信号仅靠 `PosixSignalRegistration` 注册正确性保证。
+- Windows 上 SIGTERM 由 `PosixSignalRegistration` 映射为控制台关闭/注销事件，未在真实关机/注销场景验证。
+
+---
+
+## 9.10 P1-8 / P1-9 / P1-5 实现记录（2026-10-18）
+
+依据 Wails v3 `v3.0.0-beta.28`。本期完成 **P1-8**、**P1-5**，**P1-9** 部分完成；**P1-4 MCP** 按决策暂缓（需先定实现方式）。
+
+### 9.10.1 P1-8 运行时请求 64 MiB 上限 → HTTP 413
+
+| 内容 | 位置 |
+|------|------|
+| `HttpTransport.MaxRuntimeBodyBytes = 64 MiB`；`HandleMessageAsync` 先按 `ContentLength64` 预判、再边读边计数（覆盖 chunked 无长度场景），超限返回 **413** | [Transport/HttpTransport.cs](../../src/Wails.Net.Application/Transport/HttpTransport.cs) |
+| 413 响应体文案 `runtime request body exceeds 64 MiB`（对齐 Go `http.Error`），`text/plain; charset=utf-8` | 同上 |
+| 分块上传路径单块上限 1 MiB（`maxChunkBodyBytes`）→ **422**（对齐 Go） | 同上 |
+| 未超限请求解码语义不变（保留 UTF-8 / BOM 行为） | 同上 |
+
+测试：`tests/Wails.Net.Application.Tests/Transport/HttpTransportRequestBodyLimitTests.cs`（**5 项全部通过**）：超限 `Content-Length` → 413（不发实体，避免 64 MiB 分配）、未超限正常 IPC 成功、`ReadBodyWithLimitAsync` 以小上限验证「等于放行 / 超 1 字节拒绝」、常量值断言。
+未覆盖：未端到端发送真实 64 MiB 实体；`WebSocketTransport` 的 IPC 走 WS 帧，Go 侧无对应 runtime body 上限，未改动。
+
+### 9.10.2 P1-9 自定义 scheme 请求取消 / 上下文转发
+
+| 平台 | 实现 |
+|------|------|
+| 管线 | `WebviewRequestPipeline.HandleAsync(request, ct)` 取消时 `throw;`（未改动）；令牌已传至 IPC / 资源处理器 |
+| macOS | 每个 URL scheme task 建独立 `CancellationTokenSource`；`StopUrlSchemeTask` → `MarkStopped` 记录并 `Cancel()`；取消后不再回调 `DidReceiveResponse/DidReceiveData/DidFinish`（[MacOSWebviewWindow.cs](../../src/Wails.Net.Application.MacOS/MacOSWebviewWindow.cs)） |
+| Windows | 每请求链接式 CTS（链接窗口级源）贯穿管线；窗口关闭 / Dispatcher 释放时取消，使在途长轮询尽快结束；异常路径同样释放；**取消以 `204 No Content` 收尾（不返回 500）**（[Win32WebviewWindow.cs](../../src/Wails.Net.Application.Windows/Win32WebviewWindow.cs)） |
+| Linux | WebKitGTK `URISchemeRequest`(libsoup) 无取消/中止钩子，保持原行为并加注释说明 |
+
+**未实现**：Windows 的 CDP `Fetch`/`Network` 逐请求中止（依赖 DevTools 会话，本环境无法验证）、Linux 取消。
+**硬约束已满足**：未取消路径的行为与改造前完全一致。
+
+### 9.10.3 P1-5 macOS 媒体权限
+
+| 内容 | 位置 |
+|------|------|
+| 策略选项 `WebviewWindowOptions.Mac.CameraPermission` / `MicrophonePermission`（`Permission.Default / Allow / Deny`） | [Options/WebviewWindowMacOptions.cs](../../src/Wails.Net.Application/Options/WebviewWindowMacOptions.cs) |
+| `MacUiDelegate.RequestMediaCapturePermission` 覆写；相机 / 麦克风分别判定并取更严格者（Deny > Prompt > Grant），对齐 Go `mediaCaptureDecision` / `strictestCaptureDecision` | [MacOSWebviewWindow.cs](../../src/Wails.Net.Application.MacOS/MacOSWebviewWindow.cs) |
+
+默认策略 `Permission.Default` 与 Go `PermissionDefault` 一致（交由 WebKit 原生提示）；origin / frame 与 Go 一样不参与判定。
+**未编译验证**：本机为 Windows、无 macos workload，`#if MACOS` 分支不参与编译；`net10.0` 骨架路径编译通过。
+
+### 9.10.4 回归
+
+`Wails.Net.Application.Tests` 全量：1540 项、17 失败（与基线 worktree 一致，均为 `Plugins/` 既有问题），无新增失败；本期新增 P1-8 测试 5 项全部通过。核心 / Windows / Linux / macOS 四个项目均编译通过（0 警告）。
+
+### 9.10.5 待复核
+
+1. macOS `RequestMediaCapturePermission` 覆写签名与 `WKMediaCaptureType` / `WKPermissionDecision` 成员名需在 mac 主机编译确认。
+2. `Permission` 枚举位于 `Options` 命名空间，如与后续跨平台权限类型命名冲突可更名。
+3. ~~Windows 取消路径下被取消的在途请求会返回 500~~ ✅ **已修复（2026-10-18）**：取消以 **204 No Content** 收尾（不记为错误），快路径 / 慢路径延续 / 外层异常路径三处统一处理。
+
+---
+
+## 9.11 P2-14 / P2-19 / P1-10 实现记录（2026-10-18）
+
+依据 Wails v3 `v3.0.0-beta.28`。本期完成 P2-14、P2-19、P1-10。
+
+### 9.11.1 P2-14 Updater 备份失败恢复语义（beta.21 #6080）
+
+Go `pkg/updater/helper.go`：父进程退出后、**备份之前**调用 `clearHelperEnv()`（使新应用与恢复的原应用都能正常启动）；备份失败 → `l.launch(target)` 重启原目标 + 返回 12。
+
+Wails.Net `HelperProcess.cs` 对齐：
+- `ClearHelperEnv()` 由「替换成功后」提前到「父进程退出后、备份前」，并移除成功后那处重复清除。
+- 备份失败（`IOException` / `UnauthorizedAccessException`）→ `TryLaunch(target)` 重启原目标后再 `Environment.Exit(12)`；原先只 `Exit(12)` 且未重启。
+- 新增 `TryLaunch`（非致命启动，对应 Go `l.launch`）；备份不再受 `File.Exists(target)` 静默跳过保护（与 Go `copyAny` 失败即恢复语义一致）。
+
+未覆盖：无单元测试（`Environment.Exit` 使进程内测试不可行），建议在真实更新流程回归。
+
+### 9.11.2 P2-19 WebView2 embed 超时对齐 60s
+
+`Win32WebviewWindow.cs` `EmbedTimeout` 由 30s 改为 **60s**，对齐 v3 `internal/webview2/pkg/edge/chromium.go:283`（`embedTimeout = 60 * time.Second`）。初始化 deadline 与 `Task.WhenAny(createTask, Task.Delay(EmbedTimeout))` 已存在；**仍未自建消息泵**（交由 WebView2 SDK）。
+
+### 9.11.3 P1-10 Windows 托盘 light/dark 双图标 + 主题跟随（beta.14 #6016）
+
+`Win32SystemTray.cs`：
+- 字段由单一 `_hicon` 改为 `_lightModeIcon` / `_darkModeIcon`（各带 Owned 标志）。
+- `SetIcon` / `SetDarkModeIcon` 各自独立加载与保存，并按 Go 的「共享句柄同步」规则处理（另一模式未设置或与旧句柄相同时跟随、`Owned=false`）。
+- `GetEffectiveIcon()` 依 `Application.IsDarkMode()` 选择（暗色优先 dark、缺失回退 light，反之亦然，皆空返回 NULL 不崩溃）；`CreateNotifyIconData` 使用生效图标。
+- 订阅 `KnownEvents.ThemeChanged` → `ApplyEffectiveIcon()`（仅 `_visible` 时 `NIM_MODIFY`）；`Destroy` 时 `Events.Off` 取消订阅（`_themeListenerId` 守卫保证幂等）。
+- `ReleaseIcon` 语义对齐 Go（仅 Owned 且未被其它字段引用时 `DestroyIcon`），避免泄漏与重复销毁；`Destroy` 释放双句柄。
+
+**补全（2026-10-18）**：新增平台层**顶层隐藏消息窗口** `PlatformMessageWindow`（`src/Wails.Net.Application.Windows/PlatformMessageWindow.cs`），由 `WindowsPlatformApp.Run` 在消息循环前创建、`Destroy` 时销毁。该类窗口可接收系统广播 `WM_SETTINGCHANGE`，在类别为 `ImmersiveColorSet` 时发出 `KnownEvents.ThemeChanged` —— **无 webview 窗口时托盘同样跟随主题**，与 Go 在应用级消息窗口（`application_windows.go:280-296`，发出 `events.Windows.SystemThemeChanged`）一致。
+保留说明：`Win32WebviewWindow` 仍会在自身收到 `WM_SETTINGCHANGE` 时发出同一事件，故**存在 webview 窗口时同一次主题切换可能发出 2 次 `ThemeChanged`**（托盘处理幂等，重复应用无副作用）。若要与 Go 完全一致（仅应用级发出），可移除窗口侧的发出。
+
+### 9.11.4 验证
+
+- `Wails.Net.Application.Windows`、`Wails.Net.Plugins.Updater`、测试项目均编译通过（0 警告）。
+- 全量测试 1540 项、17 失败（与基线 worktree 一致，`Plugins/` 既有问题），**无新增失败**；本期 P2-14/P2-19 无新增测试（`Environment.Exit` 与 Win32 行为）。
+- **P1-10 补全新增测试** `tests/Wails.Net.Application.Windows.Tests/PlatformMessageWindowTests.cs`（4 项）：纯逻辑 2 项（`ImmersiveColorSet` 发出 / 其它类别不发出）默认执行；窗口创建与销毁 2 项标记 `[RequiresGuiEnvironment]`（按 AGENTS §4.4 默认跳过）。设置 `WAILS_RUN_GUI_TESTS=1` 后 **4/4 通过**；Windows 测试项目整体 179 项（46 通过 / 133 跳过）。
+- 托盘主题切换与 Updater helper 的端到端行为仍未在本环境验证（无真实桌面会话与更新流程）。
 
 

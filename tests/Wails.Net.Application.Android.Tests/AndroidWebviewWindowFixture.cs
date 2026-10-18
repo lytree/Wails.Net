@@ -83,9 +83,14 @@ public sealed class AndroidWebviewWindowFixture : IWebviewWindowFixture
 /// 通过 <see cref="AndroidWebviewWindowFixture"/> 提供 Android 平台实例。
 /// TUnit 会通过 <see cref="InheritsTestsAttribute"/> 自动发现并执行本类继承的所有 [Test] 方法。
 /// </para>
+/// <para>
+/// 契约测试针对 Android 原生 WebView 窗口，属于 GUI 相关测试，默认禁用
+/// （设置环境变量 <c>WAILS_RUN_GUI_TESTS=1</c> 后启用）。
+/// </para>
 /// </summary>
 [NotInParallel]
 [InheritsTests]
+[RequiresGuiEnvironment]
 public sealed class AndroidWebviewWindowContractTests : WebviewWindowContractTests
 {
     private static readonly AndroidWebviewWindowFixture _fixture = new();

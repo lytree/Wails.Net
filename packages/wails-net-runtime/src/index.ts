@@ -41,6 +41,7 @@ import {
 
 // 底层 / 错误
 import { CallError, toCallError } from "./internal/call-error.js";
+import { JSONStream, Stream, WailsSocket, type JSONSocket } from "./internal/stream.js";
 import { bindingId, transport, unpack, type CancellablePromise } from "./internal/transport.js";
 import { fnv1a } from "./internal/fnv1a.js";
 import type {
@@ -53,7 +54,15 @@ import type {
 } from "./internal/types.js";
 
 /** 命名空间集合（核心 API）。 */
-const namespaces = {};
+const namespaces = {
+  /**
+   * 打开一个在 Go 端用 `app.HandleStream(name, handler)` 声明的双向字节流。
+   * server 构建下返回真实 WebSocket，其余情况返回 {@link WailsSocket}。
+   */
+  Stream,
+  /** {@link Stream} 的 JSON 编解码封装（对应 Go 侧 `SendJSON` / `ReceiveJSON`）。 */
+  JSONStream,
+};
 
 /** Wails.Net 前端 SDK 完整类型。 */
 export type WailsSdk = WailsRuntime & typeof namespaces;
@@ -72,6 +81,9 @@ export type { PackMode } from "./core/commands.js";
 export { CallError, toCallError };
 export { transport, unpack, bindingId, fnv1a };
 export { installContextMenu, openContextMenu };
+// Streams（Wails v3 beta Streams 机制的前端客户端）
+export { Stream, JSONStream, WailsSocket };
+export type { JSONSocket };
 export type {
   ContextMenuPayload,
   ContextMenuOptions,

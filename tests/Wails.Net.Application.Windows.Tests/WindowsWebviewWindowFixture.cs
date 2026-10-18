@@ -114,9 +114,14 @@ public sealed class WindowsWebviewWindowFixture : IWebviewWindowFixture
 /// 通过 <see cref="WindowsWebviewWindowFixture"/> 提供 Windows 平台实例。
 /// TUnit 会通过 <see cref="InheritsTestsAttribute"/> 自动发现并执行本类继承的所有 [Test] 方法。
 /// </para>
+/// <para>
+/// 契约测试创建真实 Win32 原生窗口，属于 GUI 相关测试，默认禁用
+/// （设置环境变量 <c>WAILS_RUN_GUI_TESTS=1</c> 后启用）。
+/// </para>
 /// </summary>
 [NotInParallel]
 [InheritsTests]
+[RequiresGuiEnvironment]
 public sealed class WindowsWebviewWindowContractTests : WebviewWindowContractTests
 {
     private static readonly WindowsWebviewWindowFixture _fixture = new();

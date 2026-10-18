@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Web.WebView2.Core;
@@ -213,6 +214,20 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     private WebviewRequestPipeline? _pipeline;
 
     /// <summary>
+    /// P1-9：窗口级请求取消源。每个请求在 <see cref="OnWebResourceRequested"/> 中
+    /// 链接出一个独立取消源并传入请求管线；窗口关闭（<see cref="Close"/>/<see cref="Dispose"/>，
+    /// 应用关闭时经 Dispose 触发）时取消本源，从而一并取消所有在途请求管线
+    /// （如 <c>/wails/stream/poll</c> 长轮询）。
+    /// <para>
+    /// 仅在窗口关闭时取消，正常请求不受影响（不会多一次取消/失败）。
+    /// 未实现 Wails v3 Go 版本 <c>request_cancellation_windows.go</c> 的 CDP
+    /// <c>Fetch</c>/<c>Network</c> 逐请求中止（依赖 DevTools 会话，工作量与验证成本高，
+    /// 作为已知未实现项记录）。
+    /// </para>
+    /// </summary>
+    private readonly CancellationTokenSource _requestCancellation = new();
+
+    /// <summary>
     /// Windows 平台特定应用级选项，用于配置 WebView2 运行时环境。
     /// 对应 Wails v3 Go 版本 <c>Options.Windows</c>，全局生效于所有窗口共享的浏览器环境。
     /// 为 null 时使用系统默认 WebView2 Runtime 和用户数据目录。
@@ -247,11 +262,15 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
 
     /// <summary>
     /// WebView2 控制器初始化/重建的等待超时。
-    /// 对应 Wails v3 PR #6002 的 <c>embedTimeout</c>：
+    /// 对应 Wails v3 PR #6002 / beta.15 #6043 的 <c>embedTimeout</c>（60 秒）：
     /// <c>CreateCoreWebView2ControllerAsync</c> 在无交互窗口站等环境下可能永不回调，
     /// 无超时会让窗口永久挂起且不产生任何日志。
+    /// <para>
+    /// P2-19（2026-10-18）：由 30 秒对齐为 Go 的 60 秒
+    /// （v3 <c>internal/webview2/pkg/edge/chromium.go:283</c> <c>embedTimeout = 60*time.Second</c>）。
+    /// </para>
     /// </summary>
-    private static readonly TimeSpan EmbedTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan EmbedTimeout = TimeSpan.FromSeconds(60);
 
     /// <summary>
     /// 标记浏览器进程故障后的控制器重建是否正在进行，防止 <c>ProcessFailed</c> 重入。
@@ -969,16 +988,24 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     /// 对应 Wails v3 Go 版本 webview_window_windows.go 中的 onWebResourceRequested。
     /// 拦截 http(s)://wails.localhost/* 的请求：
     /// - /wails/call、/wails/event、/wails/drag：转发到 MessageProcessor 进行 IPC 消息处理。
+    /// - /wails/stream/*：Streams 双向字节流（长轮询 poll / 发送 send）。
     /// - 其他路径：由 AssetServer 提供静态资源服务。
-    /// 重要：必须使用同步方法（非 async/await），因为 Win32 消息循环无 SynchronizationContext，
-    /// await 后的 continuation 会在线程池线程运行，而 WebView2 要求 CoreWebView2 成员
-    /// 只能在 UI 线程访问（否则抛出 InvalidOperationException）。
+    /// <para>
+    /// 使用 <see cref="CoreWebView2WebResourceRequestedEventArgs.GetDeferral"/> 延迟完成响应：
+    /// IPC / 静态资源等请求的管线任务通常在同一调用内同步完成，走快路径立即写响应；
+    /// <c>/wails/stream/poll</c> 长轮询会挂起等待，管线任务不会立即完成，此时保持 deferral 存活，
+    /// 待任务完成后在线程池延续里写入响应并完成 deferral，**不阻塞 Win32 消息循环**。
+    /// 非流式请求的响应行为与改造前完全一致（仍同步完成）。
+    /// </para>
     /// </summary>
     /// <param name="sender">事件发送者。</param>
     /// <param name="args">WebResourceRequested 事件参数。</param>
     private void OnWebResourceRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs args)
     {
         var deferral = args.GetDeferral();
+        // P1-9：每请求取消源在 try 外声明，确保异常路径也能释放，
+        // 避免在窗口级取消源上遗留悬挂的注册。
+        CancellationTokenSource? requestCancellation = null;
         try
         {
             var uri = new Uri(args.Request.Uri);
@@ -989,49 +1016,144 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
             {
                 args.Response = _webview?.Environment.CreateWebResourceResponse(
                     null, 500, "Internal Server Error", string.Empty);
+                deferral.Complete();
                 return;
             }
 
             // R2-4：构建平台无关请求并委托给 WebviewRequestPipeline。
-            // 同步通过 WebviewPipelineSync.RunOnThreadPool（Task.Run 包装）避免 UI 同步上下文死锁。
+            // Streams 控制数据通过 HTTP header（x-wails-stream-*）传递，需一并透传；
+            // 二进制帧负载经 RequestBodyBytes 传递（batch / chunk 重组体无法用字符串承载）。
             var requestBody = ReadRequestBodySync(args.Request);
             var request = new WebviewRequest
             {
                 Method = method,
                 Path = path,
-                RequestBody = requestBody,
+                RequestBody = requestBody.Length == 0 ? string.Empty : Encoding.UTF8.GetString(requestBody),
+                RequestBodyBytes = requestBody,
                 WindowId = _id,
                 WindowName = _options.Name,
-                Origin = null /* TODO: extract from Referer header */
+                Origin = null /* TODO: extract from Referer header */,
+                Headers = ReadRequestHeaders(args.Request)
             };
 
             var pipeline = GetOrCreatePipeline(app);
-            var response = pipeline.HandleAsync(request).RunOnThreadPool();
-            args.Response = CreateWebResourceResponse(_webview.Environment, response);
+            var environment = _webview.Environment;
+            // P1-9：为每个请求建立独立取消源，链接到窗口级取消源；窗口关闭时一并取消，
+            // 使在途管线尽快结束。正常请求期间令牌不会被取消（行为与改造前一致）。
+            requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(_requestCancellation.Token);
+            var task = pipeline.HandleAsync(request, requestCancellation.Token);
+
+            // 快路径：任务已同步完成（IPC / 静态资源等非流式请求），保持既有同步行为不变。
+            if (task.IsCompleted)
+            {
+                WebviewResponse response;
+                try
+                {
+                    response = task.GetAwaiter().GetResult();
+                }
+                catch (OperationCanceledException)
+                {
+                    // P1-9：请求在完成前被取消（典型为窗口关闭）。页面即将消失，
+                    // 以 204 收尾，不把它当作 500 错误。
+                    response = WebviewResponse.NoContent();
+                }
+                finally
+                {
+                    requestCancellation.Dispose();
+                }
+
+                args.Response = CreateWebResourceResponse(environment, response);
+                deferral.Complete();
+                return;
+            }
+
+            // 慢路径：/wails/stream/poll 长轮询等挂起请求。保持 deferral 存活，
+            // 在管线任务完成后的线程池延续里写入响应，再完成 deferral。
+            _ = task.ContinueWith(
+                completed =>
+                {
+                    try
+                    {
+                        WebviewResponse response;
+                        if (completed.Status == TaskStatus.RanToCompletion)
+                        {
+                            response = completed.Result;
+                        }
+                        else if (completed.IsCanceled)
+                        {
+                            // P1-9：请求被取消（窗口关闭等）——以 204 收尾，不作为错误。
+                            response = WebviewResponse.NoContent();
+                        }
+                        else
+                        {
+                            response = WebviewResponse.InternalError(
+                                completed.Exception?.GetBaseException().Message ?? "流式请求处理失败");
+                        }
+
+                        args.Response = CreateWebResourceResponse(environment, response);
+                    }
+                    catch
+                    {
+                        // 忽略：无论如何都必须完成 deferral，避免 WebView2 请求永久挂起。
+                    }
+                    finally
+                    {
+                        requestCancellation.Dispose();
+                        deferral.Complete();
+                    }
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+        }
+        catch (OperationCanceledException)
+        {
+            // P1-9：请求被取消（窗口关闭等）——以 204 收尾，不返回 500。
+            requestCancellation?.Dispose();
+            args.Response = _webview?.Environment.CreateWebResourceResponse(
+                null, 204, "No Content", string.Empty);
+            deferral.Complete();
         }
         catch
         {
             // 异常时返回 500 错误响应
+            requestCancellation?.Dispose();
             args.Response = _webview?.Environment.CreateWebResourceResponse(
                 null, 500, "Internal Server Error", string.Empty);
-        }
-        finally
-        {
             deferral.Complete();
         }
     }
 
     /// <summary>
-    /// 同步读取 WebView2 请求体（POST）。
+    /// 读取 WebView2 请求头（<see cref="CoreWebView2HttpRequestHeaders"/>）为大小写不敏感字典。
+    /// 供 Streams 双向字节流通过 HTTP header（<c>x-wails-stream-*</c>）传递控制数据。
     /// </summary>
-    private static string ReadRequestBodySync(CoreWebView2WebResourceRequest request)
+    /// <param name="request">WebView2 请求。</param>
+    /// <returns>大小写不敏感的请求头字典。</returns>
+    private static IReadOnlyDictionary<string, string> ReadRequestHeaders(CoreWebView2WebResourceRequest request)
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (KeyValuePair<string, string> header in request.Headers)
+        {
+            headers[header.Key] = header.Value;
+        }
+        return headers;
+    }
+
+    /// <summary>
+    /// 同步读取 WebView2 请求体（POST）为原始字节。
+    /// 返回原始字节而非字符串，以便 Streams 的二进制帧负载（batch / chunk）完整承载；
+    /// 字符串形态由调用方按 UTF-8 还原（与改造前 <see cref="StreamReader"/> 行为一致）。
+    /// </summary>
+    private static byte[] ReadRequestBodySync(CoreWebView2WebResourceRequest request)
     {
         if (request.Content is not { } contentStream)
         {
-            return string.Empty;
+            return [];
         }
-        using var reader = new StreamReader(contentStream);
-        return reader.ReadToEnd();
+        using var buffer = new MemoryStream();
+        contentStream.CopyTo(buffer);
+        return buffer.ToArray();
     }
 
     /// <summary>
@@ -2223,6 +2345,17 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         }
 
         _closed = true;
+
+        // P1-9：取消窗口级请求令牌，使在途请求管线（长轮询等）尽快结束，避免对已关闭窗口继续处理。
+        // 应用关闭时各窗口经 Dispose → Close 走同一路径。
+        try
+        {
+            _requestCancellation.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // 重复关闭/已释放，忽略。
+        }
 
         // P0-C2：从 NativeIpcTransport 注销窗口，避免向已销毁窗口投递消息。
         // 对应 Wails v3 runtime_windows.go 中关闭窗口时移除 postMessage 路由。

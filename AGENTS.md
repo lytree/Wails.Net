@@ -345,6 +345,23 @@ dotnet build tests/Wails.Net.Application.Tests/Wails.Net.Application.Tests.cspro
 dotnet run --project tests/Wails.Net.Application.Tests/Wails.Net.Application.Tests.csproj --no-build
 ```
 
+#### GUI 相关测试默认禁用
+
+需要真实 GUI 环境（原生窗口 / 对话框 / 消息循环）的单元测试**默认跳过**，仅当显式设置环境变量 `WAILS_RUN_GUI_TESTS=1`（或 `true`）时才执行：
+
+```bash
+# 默认：GUI 用例标记为“已跳过”
+dotnet run --project tests/Wails.Net.Application.Windows.Tests/Wails.Net.Application.Windows.Tests.csproj
+
+# PowerShell：显式启用 GUI 用例（需桌面会话）
+$env:WAILS_RUN_GUI_TESTS='1'; dotnet run --project tests/Wails.Net.Application.Windows.Tests/Wails.Net.Application.Windows.Tests.csproj
+```
+
+- 开关实现 `tests/Wails.Net.Application.GuiContract.Tests/GuiTestSwitch.cs` 中的 `RequiresGuiEnvironmentAttribute`（`SkipAttribute` 派生）。
+- 已标注：`Win32WebviewWindowTests`、Windows / Linux / Android 的契约测试执行器（`*WebviewWindowContractTests`），以及 `WindowsPlatformAppTests` 中创建真实对话框/运行消息循环的用例。
+- 纯逻辑与降级用例（剪贴板、环境变量、平台工厂、自动启动、macOS 骨架等）不受影响，照常执行。
+- 新增 GUI 用例时请在测试类或方法上标注 `[RequiresGuiEnvironment]`。
+
 #### 平台特定测试
 
 - **Windows 测试**：必须在 Windows 上运行（依赖 Win32 API、注册表、WinForms 剪贴板）

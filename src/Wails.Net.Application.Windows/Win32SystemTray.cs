@@ -4,6 +4,7 @@ using Wails.Net.Application.Menus;
 using Wails.Net.Application.Platform;
 using Wails.Net.Application.Screens;
 using Wails.Net.Application.Windows;
+using Wails.Net.Events;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Gdi;
@@ -11,6 +12,7 @@ using Windows.Win32.UI.WindowsAndMessaging;
 using Menu = Wails.Net.Application.Menus.Menu;
 using Rect = Wails.Net.Application.Screens.Rect;
 using Screen = Wails.Net.Application.Screens.Screen;
+using WailsApplication = Wails.Net.Application.Application;
 
 namespace Wails.Net.Application.SystemTray;
 
@@ -135,9 +137,40 @@ public sealed class Win32SystemTray : ISystemTrayImpl, IDisposable
     private HWND _hwnd;
 
     /// <summary>
-    /// 当前托盘图标句柄。
+    /// 亮色模式图标句柄。
+    /// 对应 Go systemtray_windows.go 中 windowsSystemTray.lightModeIcon。
     /// </summary>
-    private HICON _hicon;
+    private HICON _lightModeIcon;
+
+    /// <summary>
+    /// 亮色模式图标句柄是否由本实例创建（拥有所有权，可 DestroyIcon）。
+    /// 共享句柄（如系统默认图标）为 false，不得销毁。
+    /// 对应 Go systemtray_windows.go 中 windowsSystemTray.lightModeIconOwned。
+    /// </summary>
+    private bool _lightModeIconOwned;
+
+    /// <summary>
+    /// 暗色模式图标句柄。
+    /// 对应 Go systemtray_windows.go 中 windowsSystemTray.darkModeIcon。
+    /// </summary>
+    private HICON _darkModeIcon;
+
+    /// <summary>
+    /// 暗色模式图标句柄是否由本实例创建（拥有所有权，可 DestroyIcon）。
+    /// 对应 Go systemtray_windows.go 中 windowsSystemTray.darkModeIconOwned。
+    /// </summary>
+    private bool _darkModeIconOwned;
+
+    /// <summary>
+    /// 无主题监听器标记。对应 Go systemtray_windows.go 中 <c>cancelTheme</c> 为 nil 的状态。
+    /// </summary>
+    private const int NoThemeListener = -1;
+
+    /// <summary>
+    /// 主题变化监听器 ID，用于销毁时取消订阅。
+    /// 对应 Go systemtray_windows.go 中 windowsSystemTray.cancelTheme。
+    /// </summary>
+    private int _themeListenerId = NoThemeListener;
 
     /// <summary>
     /// 关联的上下文菜单。
@@ -201,6 +234,7 @@ public sealed class Win32SystemTray : ISystemTrayImpl, IDisposable
         // 确保共享窗口类已注册（与 WebviewWindow 共用同一 WndProc）。
         Win32WebviewWindow.EnsureWindowClassRegistered();
         CreateTrayWindow();
+        SubscribeThemeChanged();
     }
 
     /// <summary>
@@ -233,20 +267,32 @@ public sealed class Win32SystemTray : ISystemTrayImpl, IDisposable
             return;
         }
 
-        // 销毁旧图标。
-        if (!_hicon.IsNull)
+        var newIcon = WindowsPlatformApp.LoadIconFromBytes(iconData);
+        if (newIcon.IsNull)
         {
-            PInvoke.DestroyIcon(_hicon);
-            _hicon = default;
+            // 加载失败：保持当前图标不变。
+            return;
         }
 
-        _hicon = WindowsPlatformApp.LoadIconFromBytes(iconData);
+        var oldLight = _lightModeIcon;
+        var oldLightOwned = _lightModeIconOwned;
 
-        // 若已可见，更新托盘图标。
-        if (_visible)
+        _lightModeIcon = newIcon;
+        _lightModeIconOwned = true;
+
+        // 暗色图标未设置或与旧亮色图标共享句柄时，同步跟随新的亮色图标（不再独立拥有）。
+        // 对应 Go systemtray_windows.go setIcon 中 darkModeIcon 的同步逻辑。
+        if (_darkModeIcon.IsNull || SameHandle(_darkModeIcon, oldLight))
         {
-            ModifyTrayIcon();
+            _darkModeIcon = newIcon;
+            _darkModeIconOwned = false;
         }
+
+        // 先让 shell 切换到新的生效图标（可见时），再释放旧句柄，避免句柄被提前销毁。
+        ApplyEffectiveIcon();
+
+        // 仅释放本实例拥有且不再被双图标字段引用的旧句柄。
+        ReleaseIcon(oldLight, oldLightOwned, _lightModeIcon, _darkModeIcon);
     }
 
     /// <inheritdoc />
@@ -269,6 +315,9 @@ public sealed class Win32SystemTray : ISystemTrayImpl, IDisposable
         {
             return;
         }
+
+        // 应用可能在本实例构造后才就绪，此处兜底补订阅（幂等，已订阅时为 no-op）。
+        SubscribeThemeChanged();
 
         _visible = true;
         AddTrayIcon();
@@ -296,16 +345,29 @@ public sealed class Win32SystemTray : ISystemTrayImpl, IDisposable
 
         _disposed = true;
 
+        // 先取消主题订阅，避免销毁期间回调仍触发 ModifyTrayIcon。
+        // 对应 Go systemtray_windows.go destroy 中的 cancelTheme。
+        UnsubscribeThemeChanged();
+
         DeleteTrayIcon();
 
         _contextMenu?.Dispose();
         _contextMenu = null;
 
-        if (!_hicon.IsNull)
-        {
-            PInvoke.DestroyIcon(_hicon);
-            _hicon = default;
-        }
+        // 释放双图标句柄：仅销毁本实例拥有的句柄（共享句柄只释放一次）。
+        // 对应 Go systemtray_windows.go destroy 中的图标句柄清理。
+        var lightIcon = _lightModeIcon;
+        var lightIconOwned = _lightModeIconOwned;
+        var darkIcon = _darkModeIcon;
+        var darkIconOwned = _darkModeIconOwned;
+
+        _lightModeIcon = default;
+        _lightModeIconOwned = false;
+        _darkModeIcon = default;
+        _darkModeIconOwned = false;
+
+        ReleaseIcon(lightIcon, lightIconOwned);
+        ReleaseIcon(darkIcon, darkIconOwned, lightIcon);
 
         if (!_hwnd.IsNull)
         {
@@ -328,10 +390,45 @@ public sealed class Win32SystemTray : ISystemTrayImpl, IDisposable
     /// <inheritdoc />
     public void SetDarkModeIcon(byte[] iconData)
     {
-        // 简化实现：直接覆盖当前图标。完整实现可在主题切换时切换图标。
-        if (iconData is not null && iconData.Length > 0)
+        if (iconData is null || iconData.Length == 0)
         {
-            SetIcon(iconData);
+            return;
+        }
+
+        var newIcon = WindowsPlatformApp.LoadIconFromBytes(iconData);
+        if (newIcon.IsNull)
+        {
+            // 加载失败：保持当前图标不变。
+            return;
+        }
+
+        var oldDark = _darkModeIcon;
+        var oldDarkOwned = _darkModeIconOwned;
+        var oldLight = _lightModeIcon;
+        var oldLightOwned = _lightModeIconOwned;
+
+        _darkModeIcon = newIcon;
+        _darkModeIconOwned = true;
+
+        var lightReplaced = false;
+
+        // 亮色图标未设置或与旧暗色图标共享句柄时，同步跟随新的暗色图标（不再独立拥有）。
+        // 对应 Go systemtray_windows.go setDarkModeIcon 中 lightModeIcon 的同步逻辑。
+        if (_lightModeIcon.IsNull || SameHandle(_lightModeIcon, oldDark))
+        {
+            _lightModeIcon = newIcon;
+            _lightModeIconOwned = false;
+            lightReplaced = true;
+        }
+
+        // 先让 shell 切换到新的生效图标（可见时），再释放旧句柄。
+        ApplyEffectiveIcon();
+
+        // 仅释放本实例拥有且不再被双图标字段引用的旧句柄。
+        ReleaseIcon(oldDark, oldDarkOwned, _lightModeIcon, _darkModeIcon);
+        if (lightReplaced)
+        {
+            ReleaseIcon(oldLight, oldLightOwned, _lightModeIcon, _darkModeIcon);
         }
     }
 
@@ -375,6 +472,7 @@ public sealed class Win32SystemTray : ISystemTrayImpl, IDisposable
 
     /// <summary>
     /// 创建并填充 NOTIFYICONDATAW 结构。
+    /// hIcon 使用当前主题对应的「生效图标」，而非固定句柄。
     /// </summary>
     private NOTIFYICONDATAW CreateNotifyIconData()
     {
@@ -385,11 +483,125 @@ public sealed class Win32SystemTray : ISystemTrayImpl, IDisposable
             uID = TrayIconId,
             uFlags = NifMessage | NifIcon | NifTip,
             uCallbackMessage = WmTrayCallback,
-            hIcon = (IntPtr)_hicon,
+            hIcon = (IntPtr)GetEffectiveIcon(),
             szTip = _tooltip ?? string.Empty,
         };
 
         return data;
+    }
+
+    /// <summary>
+    /// 选择当前主题对应的生效图标。
+    /// 依据 <c>Application.IsDarkMode()</c>：暗色模式优先取暗色图标，
+    /// 缺失时回退亮色图标；亮色模式反之。两者都缺失时返回 NULL（保持现状，不崩溃）。
+    /// 对应 Go systemtray_windows.go updateIcon 中按 IsSystemCurrentlyDarkMode 选取图标。
+    /// </summary>
+    /// <returns>生效图标句柄；无可用图标时返回 NULL。</returns>
+    private HICON GetEffectiveIcon()
+    {
+        var dark = WailsApplication.Get()?.IsDarkMode() ?? false;
+
+        if (dark)
+        {
+            if (!_darkModeIcon.IsNull)
+            {
+                return _darkModeIcon;
+            }
+
+            return _lightModeIcon;
+        }
+
+        if (!_lightModeIcon.IsNull)
+        {
+            return _lightModeIcon;
+        }
+
+        return _darkModeIcon;
+    }
+
+    /// <summary>
+    /// 应用当前主题对应的生效图标：仅在托盘可见时向 shell 发送 NIM_MODIFY。
+    /// 不可见时不操作，待 Show 时以最新图标注册。
+    /// 对应 Go systemtray_windows.go updateIcon（内部仅在图标变化时发送 NIM_MODIFY）。
+    /// </summary>
+    private void ApplyEffectiveIcon()
+    {
+        if (_visible)
+        {
+            ModifyTrayIcon();
+        }
+    }
+
+    /// <summary>
+    /// 判断两个图标句柄是否指向同一句柄。
+    /// </summary>
+    /// <param name="a">图标句柄 a。</param>
+    /// <param name="b">图标句柄 b。</param>
+    /// <returns>相同返回 true。</returns>
+    private static bool SameHandle(HICON a, HICON b)
+    {
+        return (IntPtr)a == (IntPtr)b;
+    }
+
+    /// <summary>
+    /// 释放图标句柄：仅当本实例拥有该句柄、句柄非空且未被其它图标字段引用时才调用 DestroyIcon。
+    /// 共享句柄（如 LoadIcon 返回的句柄）不得销毁。
+    /// 对应 Go systemtray_windows.go releaseIcon。
+    /// </summary>
+    /// <param name="handle">待释放的图标句柄。</param>
+    /// <param name="owned">是否由本实例拥有该句柄。</param>
+    /// <param name="keep1">仍需保留引用的句柄 1（若与之相同则不释放）。</param>
+    /// <param name="keep2">仍需保留引用的句柄 2（若与之相同则不释放）。</param>
+    private static void ReleaseIcon(HICON handle, bool owned, HICON keep1 = default, HICON keep2 = default)
+    {
+        if (!owned || handle.IsNull)
+        {
+            return;
+        }
+
+        if (SameHandle(handle, keep1) || SameHandle(handle, keep2))
+        {
+            return;
+        }
+
+        PInvoke.DestroyIcon(handle);
+    }
+
+    /// <summary>
+    /// 订阅系统主题变化事件，用于在明暗主题切换时更新托盘图标。
+    /// 幂等：已订阅时直接返回，避免重复订阅。
+    /// 对应 Go systemtray_windows.go run 中的 OnApplicationEvent(SystemThemeChanged)。
+    /// </summary>
+    private void SubscribeThemeChanged()
+    {
+        if (_themeListenerId != NoThemeListener)
+        {
+            return;
+        }
+
+        var events = WailsApplication.Get()?.Events;
+        if (events is null)
+        {
+            // 应用尚未就绪时无法订阅；Show 时会重试。
+            return;
+        }
+
+        _themeListenerId = events.On(KnownEvents.ThemeChanged, _ => ApplyEffectiveIcon());
+    }
+
+    /// <summary>
+    /// 取消系统主题变化事件订阅。
+    /// 对应 Go systemtray_windows.go destroy 中的 cancelTheme。
+    /// </summary>
+    private void UnsubscribeThemeChanged()
+    {
+        if (_themeListenerId == NoThemeListener)
+        {
+            return;
+        }
+
+        WailsApplication.Get()?.Events.Off(_themeListenerId);
+        _themeListenerId = NoThemeListener;
     }
 
     /// <summary>

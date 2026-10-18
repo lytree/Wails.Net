@@ -131,6 +131,20 @@ public class ApplicationOptions
     public Func<bool>? ShouldQuit { get; set; }
 
     /// <summary>
+    /// 是否禁用默认信号处理器（SIGINT / SIGTERM）。
+    /// <para>
+    /// 为 false（默认）时，<see cref="Application.Run"/> 在进入平台主循环前安装默认信号处理器：
+    /// 首个信号经 <see cref="ShouldQuit"/> 判定后触发退出；重复信号逐级提示，达到次数上限后强制退出。
+    /// 为 true 时不安装，进程沿用操作系统默认处置（Ctrl+C 直接终止）。
+    /// </para>
+    /// <para>
+    /// 对应 Wails v3 Go 版本 application_options.go 中的 <c>Options.DisableDefaultSignalHandler</c>
+    /// （iOS/Android 构建默认置为 true）。
+    /// </para>
+    /// </summary>
+    public bool DisableDefaultSignalHandler { get; set; } = false;
+
+    /// <summary>
     /// 服务列表。
     /// </summary>
     public List<object> Services { get; set; } = new();

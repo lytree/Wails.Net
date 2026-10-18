@@ -351,6 +351,13 @@ public async Task SetTitle_DoesNotThrow_ForValidString()
 
 ### 7.2 无 GUI 环境自动降级
 
+> **全局开关（默认禁用 GUI 测试）**：需要真实 GUI 环境（原生窗口 / 对话框 / 消息循环）的测试**默认跳过**，
+> 仅当环境变量 `WAILS_RUN_GUI_TESTS=1`（或 `true`）时才执行。开关由共享特性
+> `RequiresGuiEnvironmentAttribute` 实现（`tests/Wails.Net.Application.GuiContract.Tests/GuiTestSwitch.cs`），
+> 当前应用于 `Win32WebviewWindowTests`、Windows / Linux / Android 的契约测试执行器，
+> 以及 `WindowsPlatformAppTests` 中创建真实对话框与运行消息循环的用例。
+> 纯逻辑用例（剪贴板、环境变量、平台工厂、自动启动等）不受开关影响，照常执行。
+
 基类提供两种保护机制，避免无桌面会话的 CI 容器（Linux 无 `DISPLAY`、Android 单元测试无 Activity）出现假性失败：
 
 1. **早退**：L2/L3 测试方法体内第一行写 `if (!fixture.HasRealGuiEnvironment) return;` —— 测试被记为通过。

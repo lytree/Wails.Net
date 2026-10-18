@@ -63,4 +63,42 @@ public class WebviewWindowMacOptions
     /// 标题栏选项。为 null 时回退到应用级 <see cref="MacOptions.TitleBar"/>。
     /// </summary>
     public MacTitleBarOptions? TitleBar { get; set; }
+
+    /// <summary>
+    /// 相机（视频）媒体捕获权限策略。仅在 macOS（WKWebView media-capture）生效。
+    /// 对应 Wails v3 Go 版本 <c>WebviewWindowOptions.Permissions</c> 中
+    /// <c>PermissionType: PermissionCamera</c> 项；未设置时为 <see cref="Permission.Default"/>。
+    /// </summary>
+    public Permission CameraPermission { get; set; } = Permission.Default;
+
+    /// <summary>
+    /// 麦克风（音频）媒体捕获权限策略。仅在 macOS（WKWebView media-capture）生效。
+    /// 对应 Wails v3 Go 版本 <c>WebviewWindowOptions.Permissions</c> 中
+    /// <c>PermissionType: PermissionMicrophone</c> 项；未设置时为 <see cref="Permission.Default"/>。
+    /// </summary>
+    public Permission MicrophonePermission { get; set; } = Permission.Default;
+}
+
+/// <summary>
+/// 能力请求（相机/麦克风媒体捕获）的权限策略。
+/// 对应 Wails v3 Go 版本 <c>webview_window_options.go</c> 中的 <c>Permission</c> 类型：
+/// 成员语义与 <c>PermissionDefault</c> / <c>PermissionAllow</c> / <c>PermissionDeny</c> 一一对应。
+/// </summary>
+public enum Permission
+{
+    /// <summary>
+    /// 使用平台原生处理（对应 Go <c>PermissionDefault</c>）。
+    /// macOS 上 WebKit 会弹出其自带的相机/麦克风授权提示。
+    /// </summary>
+    Default = 0,
+
+    /// <summary>
+    /// 无需提示直接授权（对应 Go <c>PermissionAllow</c>）。
+    /// </summary>
+    Allow = 1,
+
+    /// <summary>
+    /// 无需提示直接拒绝（对应 Go <c>PermissionDeny</c>）。
+    /// </summary>
+    Deny = 2,
 }

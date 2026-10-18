@@ -30,6 +30,18 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
     public const string WebSocketPath = "/wails/ws";
 
     /// <summary>
+    /// Streams 双向字节流的 WebSocket 端点路径。
+    /// 与 <see cref="WebSocketPath"/>（IPC 调用通道）分离，前端通过 <c>?name=&lt;流名&gt;</c> 指定目标流。
+    /// 对应 Wails v3 Go 版本 <c>pkg/application/stream_server.go</c> 中 server 构建注册的真实 WebSocket 流端点。
+    /// </summary>
+    public const string StreamWebSocketPath = "/wails/stream/ws";
+
+    /// <summary>
+    /// Streams 端点的流名最大长度（对齐 Go 侧边界校验）。
+    /// </summary>
+    private const int MaxStreamNameLength = 256;
+
+    /// <summary>
     /// HTTP 监听器。
     /// </summary>
     private HttpListener? _listener;
@@ -326,6 +338,14 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
         // WebSocket 升级请求
         if (string.Equals(request.Headers["Upgrade"], "websocket", StringComparison.OrdinalIgnoreCase))
         {
+            // Streams 双向字节流端点：与 /wails/ws（IPC 通道）分流处理，
+            // 不影响既有 IPC WebSocket 行为与资源回退逻辑。
+            if (string.Equals(path, StreamWebSocketPath, StringComparison.Ordinal))
+            {
+                await HandleStreamWebSocketAsync(context, cancellationToken);
+                return;
+            }
+
             // IPC 来源校验：若设置了 OriginValidator 且校验失败则拒绝连接。
             // 对应主题 C：IpcOriginValidator 接入传输层。
             if (OriginValidator is not null && !OriginValidator.Validate(request.Headers["Origin"]))
@@ -420,6 +440,133 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
             _clientTasks.TryRemove(clientId, out _);
             webSocket.Dispose();
         }
+    }
+
+    /// <summary>
+    /// 处理 Streams 双向字节流的 WebSocket 连接。
+    /// 校验来源（<see cref="IsStreamOriginAllowed"/>）与流名后升级连接，
+    /// 并把 socket 独占交给 <c>Application.Streams</c>（StreamManager）承载读写。
+    /// 对应 Wails v3 Go 版本 <c>pkg/application/stream_server.go</c> 中 server 构建的流 WebSocket 服务。
+    /// </summary>
+    /// <param name="context">HTTP 上下文。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>表示处理操作的异步任务。</returns>
+    private async Task HandleStreamWebSocketAsync(HttpListenerContext context, CancellationToken cancellationToken)
+    {
+        var request = context.Request;
+        var response = context.Response;
+
+        // 来源校验：请求 host 恒允许，跨源默认拒绝（403）。
+        // 复用既有传输层 OriginValidator（本地源恒允许 + 白名单）；未装配时回退到同源判定。
+        if (!IsStreamOriginAllowed(request))
+        {
+            response.StatusCode = 403;
+            response.Close();
+            return;
+        }
+
+        // 流名来自查询参数 ?name=...；HttpListener 已对查询字符串做百分号解码。
+        // 名称为空或超过 256 字符 → 400（对齐 Go 侧边界校验）。
+        var name = request.QueryString["name"];
+        if (string.IsNullOrEmpty(name) || name.Length > MaxStreamNameLength)
+        {
+            response.StatusCode = 400;
+            response.ContentType = "text/plain; charset=utf-8";
+            var badBody = Encoding.UTF8.GetBytes("400 Bad Request: invalid stream name");
+            response.ContentLength64 = badBody.Length;
+            await response.OutputStream.WriteAsync(badBody, cancellationToken).ConfigureAwait(false);
+            response.Close();
+            return;
+        }
+
+        // streams == nil（未启用 Streams 子系统）→ 503（对齐 Go：streams==nil → 503）。
+        var streams = Application.Get()?.Streams;
+        if (streams is null)
+        {
+            response.StatusCode = 503;
+            response.ContentType = "text/plain; charset=utf-8";
+            var unavailableBody = Encoding.UTF8.GetBytes("503 Service Unavailable: streams not enabled");
+            response.ContentLength64 = unavailableBody.Length;
+            await response.OutputStream.WriteAsync(unavailableBody, cancellationToken).ConfigureAwait(false);
+            response.Close();
+            return;
+        }
+
+        HttpListenerWebSocketContext? wsContext;
+        try
+        {
+            wsContext = await context.AcceptWebSocketAsync(subProtocol: null).ConfigureAwait(false);
+        }
+        catch (WebSocketException)
+        {
+            // 升级失败（客户端异常断开），按正常断开处理。
+            response.StatusCode = 400;
+            response.Close();
+            return;
+        }
+
+        var socket = wsContext.WebSocket;
+        // 注意：服务端（HttpListener 升级得到）的 WebSocket 抽象类型不暴露 Options，
+        // 无法设置 KeepAliveInterval，沿用平台默认心跳；保活由客户端 ping 维持。
+
+        // 注意（任务约束 6）：socket 交出后由 StreamManager 独占读写，
+        // 传输层不再注册广播器与接收循环，也不在其后重复关闭/释放该 socket。
+        try
+        {
+            await streams.HandleWebSocketAsync(socket, name, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // 应用停止或调用取消：正常断开，不记录为错误。
+        }
+        catch (IOException)
+        {
+            // 网络中断：正常断开，不记录为错误。
+        }
+        catch (WebSocketException)
+        {
+            // WebSocket 异常断开：正常断开，不记录为错误。
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "处理流 \"{Name}\" 的 WebSocket 会话时发生未处理异常", name);
+        }
+    }
+
+    /// <summary>
+    /// 判定 Streams 端点的请求来源是否允许。
+    /// 对齐 Go 简化策略：请求 host 恒允许，跨源默认拒绝（403）。
+    /// 若传输层已装配 <see cref="OriginValidator"/> 则复用其白名单校验；
+    /// 否则回退到「Origin 为空（非浏览器跨源上下文 / 同进程客户端）或与请求 host 同源」。
+    /// 对应 Wails v3 Go 版本 <c>pkg/application/stream_server.go</c> 的 origin 校验逻辑。
+    /// </summary>
+    /// <param name="request">HTTP 请求。</param>
+    /// <returns>若允许返回 true；否则返回 false。</returns>
+    private bool IsStreamOriginAllowed(HttpListenerRequest request)
+    {
+        var origin = request.Headers["Origin"];
+
+        // 无 Origin：非浏览器跨源上下文，请求 host 恒允许。
+        if (string.IsNullOrEmpty(origin))
+        {
+            return true;
+        }
+
+        // 复用既有传输层来源校验（本地源恒允许 + 白名单）。
+        if (OriginValidator is { } validator)
+        {
+            return validator.Validate(origin);
+        }
+
+        // 回退：仅允许与请求 host 同源。
+        if (!Uri.TryCreate(origin, UriKind.Absolute, out var originUri))
+        {
+            return false;
+        }
+
+        var host = request.Url?.Host;
+        return host is not null
+            && string.Equals(originUri.Host, host, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

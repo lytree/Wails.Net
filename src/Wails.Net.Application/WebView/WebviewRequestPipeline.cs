@@ -78,6 +78,15 @@ public sealed class WebviewRequestPipeline
                 return HandleEventPayload(request);
             }
 
+            // Streams 双向字节流端点（对应 Wails v3 Go 版本 application.go 中对 streamPath 前缀的特判）。
+            // 必须早于 IsIpcRequest 判定——send 端点为 POST /wails/stream/send，会被 IsIpcRequest 命中；
+            // 且 poll 为 GET，否则会落入静态资源路径并 404。
+            var streams = Application.Get()?.Streams;
+            if (streams is not null && request.Path.StartsWith("/wails/stream/", StringComparison.Ordinal))
+            {
+                return await streams.HandleAsync(request, cancellationToken).ConfigureAwait(false);
+            }
+
             if (request.IsIpcRequest)
             {
                 return await HandleIpcAsync(request, cancellationToken).ConfigureAwait(false);

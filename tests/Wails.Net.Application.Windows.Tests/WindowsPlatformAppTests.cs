@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using TUnit.Core;
 using Wails.Net.Application.Dialogs;
+using Wails.Net.Application.GuiContract.Tests;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform;
 
@@ -11,6 +12,11 @@ namespace Wails.Net.Application.Windows.Tests;
 /// WindowsPlatformApp 的单元测试（TUnit）。
 /// 测试线程身份判断、主题、强调色、标志位、对话框、屏幕信息等平台属性。
 /// 注意：此类测试线程身份和 GUI 操作，因此不并行执行。
+/// <para>
+/// 其中创建真实对话框/运行消息循环的用例属于 GUI 相关测试，默认禁用
+/// （标记 <see cref="RequiresGuiEnvironmentAttribute"/>，设置环境变量
+/// <c>WAILS_RUN_GUI_TESTS=1</c> 后启用）；纯逻辑用例保持默认执行。
+/// </para>
 /// </summary>
 [NotInParallel]
 public sealed class WindowsPlatformAppTests
@@ -113,16 +119,20 @@ public sealed class WindowsPlatformAppTests
     }
 
     [Test]
-    public async Task GetFlags_ReturnsEmptyDictionary()
+    public async Task GetFlags_ReturnsWindowsPlatformFlags()
     {
         // 安排
         var app = new WindowsPlatformApp(new ApplicationOptions { Name = "TestApp" });
 
-        // 操作
+        // 操作：传入默认选项
         var flags = app.GetFlags(new ApplicationOptions());
 
-        // 断言：返回空字典
-        await Assert.That(flags.Count).IsEqualTo(0);
+        // 断言：返回 Windows 平台特定标志（平台标识 / 窗口类名 / 单实例开关）
+        await Assert.That(flags.Count).IsEqualTo(3);
+        await Assert.That(flags["Platform"]).IsEqualTo("windows");
+        await Assert.That(flags["WinClass"]).IsEqualTo(Win32WebviewWindow.WindowClassName);
+        await Assert.That(flags["SingleInstance"]).IsTypeOf<bool>();
+        await Assert.That((bool)flags["SingleInstance"]!).IsFalse();
     }
 
     [Test]
@@ -152,6 +162,7 @@ public sealed class WindowsPlatformAppTests
     }
 
     [Test]
+    [RequiresGuiEnvironment]
     public async Task Run_ExitsGracefully_WhenDestroyCalled()
     {
         // 安排
@@ -200,6 +211,7 @@ public sealed class WindowsPlatformAppTests
     }
 
     [Test]
+    [RequiresGuiEnvironment]
     public async Task ShowMessageDialog_ReturnsValidIndex()
     {
         // 安排
@@ -225,6 +237,7 @@ public sealed class WindowsPlatformAppTests
     }
 
     [Test]
+    [RequiresGuiEnvironment]
     public async Task OpenFileDialog_ReturnsNull_WhenCancelled()
     {
         // 安排
@@ -250,6 +263,7 @@ public sealed class WindowsPlatformAppTests
     }
 
     [Test]
+    [RequiresGuiEnvironment]
     public async Task SaveFileDialog_ReturnsNull_WhenCancelled()
     {
         // 安排
@@ -275,6 +289,7 @@ public sealed class WindowsPlatformAppTests
     }
 
     [Test]
+    [RequiresGuiEnvironment]
     public async Task OpenMultipleFilesDialog_ReturnsNull_WhenCancelled()
     {
         // 安排
@@ -300,6 +315,7 @@ public sealed class WindowsPlatformAppTests
     }
 
     [Test]
+    [RequiresGuiEnvironment]
     public async Task ShowAboutDialog_DoesNotThrow()
     {
         // 安排

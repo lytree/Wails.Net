@@ -15,6 +15,7 @@ using Wails.Net.Application.Platform;
 using Wails.Net.Application.Plugins;
 using Wails.Net.Application.Screens;
 using Wails.Net.Application.Services;
+using Wails.Net.Application.Streams;
 using Wails.Net.Application.Transport;
 using Wails.Net.Application.Windows;
 using Wails.Net.Events;
@@ -62,6 +63,17 @@ public class Application
     /// 测试/遗留模式下为构造期局部创建。
     /// </summary>
     public EventProcessor Events { get; }
+
+    /// <summary>
+    /// Streams 双向字节流管理器（对应 Wails v3 Go 版本 application.go 中 <c>App.streams</c>）。
+    /// <para>
+    /// 提供「WebSocket 编程模型」而不绑定 TCP 端口：Go→JS 走持锁 poll
+    /// （<c>GET /wails/stream/poll</c>），JS→Go 走普通 POST（<c>POST /wails/stream/send</c>）；
+    /// Server 模式下为真实 WebSocket（<c>/wails/stream/ws</c>）。
+    /// 由构造函数创建，随 <see cref="Application"/> 生命周期（<see cref="ShutdownAsync"/>）Dispose。
+    /// </para>
+    /// </summary>
+    public Streams.StreamManager Streams { get; }
 
     /// <summary>
     /// 传输层实例。
@@ -122,6 +134,12 @@ public class Application
     /// 是否正在运行。
     /// </summary>
     private volatile bool _isRunning;
+
+    /// <summary>
+    /// 默认信号处理器（P2-21）：SIGINT / SIGTERM → 经 ShouldQuit 判定后退出应用。
+    /// 仅在 <see cref="ApplicationOptions.DisableDefaultSignalHandler"/> 为 false 时安装。
+    /// </summary>
+    private Hosting.DefaultSignalHandler? _signalHandler;
 
     /// <summary>
     /// 平台启动就绪信号（OPT-RUNTIME-002，2026-08-15 新增）。
@@ -823,6 +841,11 @@ public class Application
         _shutdownTasks.AddRange(options.ShutdownTasks);
         _runtimeServices = new RuntimeServicesCoordinator(_serviceRegistry);
 
+        // Streams 管理器在构造期创建，随 Application 生命周期（ShutdownAsync）Dispose。
+        // 日志记录器可从 DI 获取；不可用时允许空日志（对应 Go 中 streams==nil 的降级语义不存在，
+        // 因为 .NET 侧 Streams 恒非 null）。
+        Streams = new StreamManager(services?.GetService<ILogger<StreamManager>>());
+
         // R1-1：构造期不自动调用 InitializeFromServiceProvider，避免与
         // DesktopApplicationBuilder.Build() 中的显式调用重复（双调用会触发
         // EventIPCTransport/PluginManager 等组件重复初始化乃至 stack overflow）。
@@ -834,6 +857,15 @@ public class Application
         // SetPlatformApp 时通过 SetPlatformApp(...) 注入 platformApp。
         _windowManager = new WindowManager(_platformApp, this);
     }
+
+    /// <summary>
+    /// 为命名流注册 handler（Streams 双向字节流）。
+    /// 前端按该名称连接，handler 每个连接运行一次；返回即关闭连接。
+    /// 对应 Wails v3 Go 版本 <c>App.HandleStream</c>。
+    /// </summary>
+    /// <param name="name">流名（非空，长度 ≤ 256）。</param>
+    /// <param name="handler">连接处理委托。</param>
+    public void HandleStream(string name, StreamHandler handler) => Streams.HandleStream(name, handler);
 
     /// <summary>
     /// 注册服务。同时将服务的公共方法注册到绑定管理器。
@@ -1087,6 +1119,50 @@ public class Application
     }
 
     /// <summary>
+    /// 安装默认信号处理器（P2-21）。对应 Wails v3 Go 版本 <c>App.setupSignalHandler</c>。
+    /// <para>
+    /// <see cref="ApplicationOptions.DisableDefaultSignalHandler"/> 为 true 时跳过，
+    /// 进程沿用操作系统默认处置（Ctrl+C 直接终止）。
+    /// </para>
+    /// <para>
+    /// 首个信号先经 <see cref="ShouldQuit"/> 判定：返回 false 时应用继续运行（不退出）。
+    /// </para>
+    /// </summary>
+    private void SetupSignalHandler()
+    {
+        if (_options.DisableDefaultSignalHandler)
+        {
+            return;
+        }
+
+        _signalHandler = new Hosting.DefaultSignalHandler(
+            cleanup: () =>
+            {
+                if (ShouldQuit())
+                {
+                    Quit();
+                }
+                else
+                {
+                    _logger?.LogInformation("收到退出信号，但 ShouldQuit 返回 false，应用继续运行。");
+                }
+            },
+            logger: _logger);
+        _signalHandler.Start();
+    }
+
+    /// <summary>
+    /// 测试用：直接安装信号处理器并返回结果（不进入平台主循环）。
+    /// <see cref="ApplicationOptions.DisableDefaultSignalHandler"/> 为 true 时返回 null。
+    /// </summary>
+    /// <returns>已安装的信号处理器；被禁用时为 null。</returns>
+    internal Hosting.DefaultSignalHandler? SetupSignalHandlerForTest()
+    {
+        SetupSignalHandler();
+        return _signalHandler;
+    }
+
+    /// <summary>
     /// 运行应用主循环。
     /// 执行单实例检查、启动服务（按注册顺序）、启动资源服务器、启动传输层，
     /// 然后进入平台主循环（阻塞）。主循环退出后执行清理。
@@ -1161,6 +1237,12 @@ public class Application
         // OPT-RUNTIME-002：进入主循环前设置 PlatformStarted 就绪信号——
         // 所有启动准备（服务、资源服务器、传输层、窗口创建回调）均已完成，
         // 使 Hosting.DesktopHostedService.StartAsync 的返回语义与 UI 就绪对齐。
+        // P2-21：进入平台主循环前安装默认信号处理器（SIGINT / SIGTERM），
+        // 首个信号经 ShouldQuit 判定后退出应用；重复信号逐级提示，达到上限强制退出。
+        // 必须在应用已就绪（服务/窗口已起）之后再装，与 Go application.go 中
+        // `a.setupSignalHandler(a.options)` 紧跟 `a.impl.run()` 的时序一致。
+        SetupSignalHandler();
+
         if (_platformApp is not null)
         {
             LifecycleState = Hosting.ApplicationLifecycleState.PlatformStarted;
@@ -1242,6 +1324,10 @@ public class Application
         // 取消应用级取消令牌
         _cts.Cancel();
 
+        // P2-21：停止默认信号处理器，恢复 SIGINT / SIGTERM 的操作系统默认处置。
+        _signalHandler?.Dispose();
+        _signalHandler = null;
+
         // R1-4：组合外部 CancellationToken 与 ApplicationOptions.ShutdownTimeout，
         // 任一触发即取消后续清理路径，确保 ShutdownTimeout 真正贯穿整条关闭链。
         using var shutdownCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -1270,6 +1356,10 @@ public class Application
         // 停止超大事件载荷存储的清扫器并释放停放条目。
         // 对应 Wails v3 Go 版本 application.go 中 OnShutdown(a.eventPayloads.close)。
         EventPayloads.Dispose();
+
+        // 关闭 Streams 管理器：拒绝后续预留、清空所有会话（关闭其连接，解除阻塞在 Receive/Send 的 handler）、
+        // 停止清扫器。对应 Wails v3 Go 版本 application.go 中 shutdown 对 a.streams.close() 的调用。
+        Streams.Dispose();
 
         // 关闭所有窗口
         // R1-2：委托给 WindowManager 单一注册表，避免重复维护 _windows。
@@ -1786,6 +1876,21 @@ public class Application
         var assetServerUrlJson = JsonSerializer.Serialize(assetServerUrl);
         var ipcTokenJson = JsonSerializer.Serialize(ipcToken);
 
+        // P0-1 Streams：server 模式注入真 WebSocket factory，使前端 @wails-net/runtime 的
+        // Stream(name) 直接返回真实 WebSocket（而非走桌面 held-poll）。
+        // 对应 Wails v3 Go 版本 stream_prelude_server.go 的 streamPrelude()：在 runtime
+        // bundle 之前预置 window._wails.streamFactory，保证模块作用域的 Stream(...) 可用。
+        // 端点与桌面 poll 共用同一 asset server 主机，故按 location 推导 URL（与 Go 一致）。
+        var streamFactoryJs = isServerMode
+            ? "\n          // Streams（P0-1）：server 模式注入真 WebSocket factory（对应 Go stream_prelude_server.go）。\n"
+              + "          window._wails.streamFactory = function(name) {\n"
+              + "            var p = location.protocol === 'https:' ? 'wss:' : 'ws:';\n"
+              + "            var sock = new WebSocket(p + '//' + location.host + '/wails/stream/ws?name=' + encodeURIComponent(name));\n"
+              + "            sock.binaryType = 'arraybuffer';\n"
+              + "            return sock;\n"
+              + "          };"
+            : string.Empty;
+
         return $$"""
         // Wails.NET Runtime Flags - 由 Application.GenerateRuntimeJs() 自动生成，请勿手动修改。
         // 前端运行时 JS（wails 对象、传输层、contextmenu 钩子等）已迁至 npm 包 @wails-net/runtime，
@@ -1801,7 +1906,7 @@ public class Application
             webSocketUrl: {{webSocketUrlJson}},
             assetServerUrl: {{assetServerUrlJson}},
             ipcToken: {{ipcTokenJson}}
-          };
+          };{{streamFactoryJs}}
           if (!window.__wailsRuntimeSkippedNotice && !window.__wailsRuntimeLoaded) {
             window.__wailsRuntimeSkippedNotice = true;
             console.info("[Wails.NET] window._wails 已注入。前端请 import { wails } from \"@wails-net/runtime\"; 加载完整运行时。");

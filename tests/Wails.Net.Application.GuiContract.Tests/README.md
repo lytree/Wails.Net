@@ -117,6 +117,10 @@ public async Task GetMinSize_Reflects_SetMinSize()
 
 ## 5. 怎么跑
 
+> **默认禁用**：契约测试创建真实原生窗口，属于 GUI 相关测试，**默认被跳过**。
+> 需显式设置环境变量 `WAILS_RUN_GUI_TESTS=1`（或 `true`）才会执行；未设置时全部标记为"已跳过"。
+> 开关实现见 `GuiTestSwitch.cs`（`RequiresGuiEnvironmentAttribute`）。
+
 ```bash
 # Windows（需桌面会话）
 dotnet run --project tests/Wails.Net.Application.Windows.Tests/Wails.Net.Application.Windows.Tests.csproj
@@ -126,6 +130,9 @@ wsl -d kali-linux -- bash -c "cd /mnt/f/Code/Dotnet/Wails.Net && dotnet run --pr
 
 # Android（仅 L1，无 Activity 时跳过 L2/L3）
 dotnet run --project tests/Wails.Net.Application.Android.Tests/Wails.Net.Application.Android.Tests.csproj
+
+# 启用 GUI 契约测试（PowerShell）
+$env:WAILS_RUN_GUI_TESTS='1'; dotnet run --project tests/Wails.Net.Application.Windows.Tests/...
 ```
 
 按级别过滤（TUnit MTP 过滤语法）：

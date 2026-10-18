@@ -29,6 +29,10 @@ coverage/
 *.log
 logs/
 
+# 例外：插件源码目录名为 Wails.Net.Plugins.Log，会被上面的 *.log 规则误伤
+# （Windows 下 git 目录匹配不区分大小写），必须重新纳入，否则该插件项目整包被忽略。
+!src/Wails.Net.Plugins.Log/
+
 # 操作系统
 Thumbs.db
 .Desktop
