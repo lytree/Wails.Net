@@ -668,6 +668,32 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// 请求用户注意：通过 <c>NSApp.requestUserAttention:</c> 让应用 Dock 图标弹跳（bounce），
+    /// 把用户注意力拉回需要处理的窗口。对应 Wails v3 Go 版本
+    /// <c>webview_window_darwin.go</c> 中的 <c>windowFlash</c>。
+    /// <para>
+    /// 对齐 Go 语义：仅当 <paramref name="enabled"/> 为 true 时发起一次
+    /// <c>NSInformationalRequest</c>（信息性请求，图标弹跳一次，窗口参数在原生实现中未使用）；
+    /// 该请求会自行结束，因此禁用（false）为 no-op，不调用 cancel。原生调用返回的令牌仅供
+    /// <c>cancelUserAttentionRequest</c> 取消使用，信息性请求无需取消，故与 Go 一致地忽略返回值。
+    /// </para>
+    /// <para>
+    /// 注意：需在 AppKit 主线程调用（由平台事件循环保证）；非 macOS 目标下为 no-op 骨架。
+    /// </para>
+    /// </remarks>
+    public void Flash(bool enabled)
+    {
+#if MACOS
+        if (enabled)
+        {
+            // NSApplication.SharedApplication 为 NSApp 的托管映射。
+            NSApplication.SharedApplication.RequestUserAttention(NSRequestUserAttentionType.InformationalRequest);
+        }
+#endif
+    }
+
+    /// <inheritdoc />
     public void ShowMenuBar()
     {
         // macOS 菜单栏由 NSApp.MainMenu 管理，窗口级菜单栏 no-op。

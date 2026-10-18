@@ -188,6 +188,19 @@ internal sealed class DevCommand : CliCommandBase
             }
         }
 
+        // 说明（Wails v3 beta.8「dev 资产代理 TCP churn」修复在本项目「不适用」）：
+        // Go 版本的 dev 资产由 assetserver 反向代理转发到前端 dev server
+        // （internal/assetserver/build_dev.go：devProxyMaxIdleConnsPerHost=512 的连接池与
+        // retryTransport 均作用于该代理自身的 *http.Transport*，用于缓解 Vite 大量动态 import
+        // 并发连接导致的 TIME_WAIT 端口耗尽）。
+        // Wails.Net 当前 dev 路径为「直连 + 并行」：WebView 加载本地 AssetServer
+        // （http://wails.localhost/）提供的静态资源，vite dev 进程仅并行提供 HMR；
+        // src/ 内不存在任何反向代理（无 ReverseProxy / DevServerUrl 消费方，
+        // AssetServer 亦无 dev 代理处理），因此不存在可对齐的连接池。
+        // 依据：src/Wails.Net.Application/Hosting/DesktopHostOptions.cs（DevServerUrl 仅被校验）
+        // 与 docs/architecture/refactor-and-hardening-plan.md（AssetServer 无 Proxy 处理）。
+        // 结论：本项无需实现，不引入不存在的代理层。
+        //
         // 前端开发服务器（vite dev）与 dotnet watch 并行运行。
         // 任一结束（正常退出或 Ctrl+C）时统一终止另一个，避免孤立进程。
         var frontendDir = config?.Frontend is { } fe ? Path.Combine(workingDir, fe.Dir) : null;
@@ -260,6 +273,56 @@ internal sealed class DevCommand : CliCommandBase
             return 0;
         }
 
+        // 前端 dev server HTTP 就绪探测（对应 Wails v3 beta.28 watcher.go 的 applyFrontendReadiness：
+        // 注入 process.Readiness{HTTP: FRONTEND_DEVSERVER_URL, Timeout:"60s"}，在启动应用前等待前端就绪）。
+        // 仅在真正启动了前端 dev server 时探测；未配置 URL 时跳过（保持既有启动行为不变）。
+        if (startFrontend && toolchain is not null)
+        {
+            var devServerUrl = ResolveFrontendDevServerUrl(config);
+            if (devServerUrl is null)
+            {
+                Info("未配置前端 dev server URL（wails.json 的 frontend.devServerUrl），跳过就绪探测。");
+            }
+            else if (!Uri.TryCreate(devServerUrl, UriKind.Absolute, out var devServerUri)
+                     || (devServerUri.Scheme != Uri.UriSchemeHttp && devServerUri.Scheme != Uri.UriSchemeHttps))
+            {
+                Warn($"前端 dev server URL 非法，跳过就绪探测：{devServerUrl}（应为 http/https 绝对 URL）");
+            }
+            else
+            {
+                Info($"等待前端开发服务器就绪：{devServerUri}（超时 {FrontendDevServerReadiness.DefaultTimeout.TotalSeconds:0}s）…");
+                try
+                {
+                    // Timeout 设为无限，单次请求超时由 ProbeHttpOnceAsync 控制（DefaultPerAttemptTimeout）。
+                    using var probeClient = new HttpClient { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
+                    var readiness = await FrontendDevServerReadiness.WaitForReadyAsync(
+                        ct => FrontendDevServerReadiness.ProbeHttpOnceAsync(
+                            probeClient, devServerUri, FrontendDevServerReadiness.DefaultPerAttemptTimeout, ct),
+                        FrontendDevServerReadiness.DefaultTimeout,
+                        FrontendDevServerReadiness.DefaultPollInterval,
+                        cancellationToken);
+
+                    if (!readiness.Ready)
+                    {
+                        Error($"前端开发服务器未就绪：{readiness.Message}");
+                        Error($"目标地址：{devServerUri}");
+                        Error("已取消应用启动。请检查前端 dev server（pnpm/npm dev）是否已在该地址提供服务。");
+                        // 终止前端 dev server，避免孤立进程（与既有退出清理路径一致）。
+                        await StopFrontendDevServerAsync(devCts, devServerTask);
+                        return 5;
+                    }
+
+                    Info($"前端开发服务器已就绪（{readiness.Message}）。");
+                }
+                catch (OperationCanceledException)
+                {
+                    Warn("开发模式已停止");
+                    await StopFrontendDevServerAsync(devCts, devServerTask);
+                    return 0;
+                }
+            }
+        }
+
         var args = new List<string> { "watch", "--project", projectPath.FullName };
 
         if (noHotReload)
@@ -273,6 +336,8 @@ internal sealed class DevCommand : CliCommandBase
         }
 
         var exitCode = 0;
+        Process? watchProcess = null;
+        var watchStarted = false;
         try
         {
             var psi = new ProcessStartInfo
@@ -286,10 +351,11 @@ internal sealed class DevCommand : CliCommandBase
                 psi.ArgumentList.Add(a);
             }
 
-            using var proc = new Process { StartInfo = psi };
-            proc.Start();
-            await proc.WaitForExitAsync(cancellationToken);
-            exitCode = proc.ExitCode;
+            watchProcess = new Process { StartInfo = psi };
+            watchProcess.Start();
+            watchStarted = true;
+            await watchProcess.WaitForExitAsync(cancellationToken);
+            exitCode = watchProcess.ExitCode;
         }
         catch (OperationCanceledException)
         {
@@ -303,16 +369,20 @@ internal sealed class DevCommand : CliCommandBase
         }
         finally
         {
-            // dotnet watch 结束（正常或 Ctrl+C）→ 终止前端开发服务器
-            try
-            {
-                devCts.Cancel();
-                await Task.WhenAny(devServerTask, Task.Delay(2000, CancellationToken.None));
-            }
-            catch
-            {
-                /* ignore */
-            }
+            // 统一退出清理（对应 Wails v3 beta.28 dev 退出清理完善 / PR #6048）：
+            //   1) 终止 dotnet watch 进程树（含其派生的应用进程）。Cancel 路径下
+            //      WaitForExitAsync 抛出 OperationCanceledException 并不会终止进程，
+            //      必须显式 Kill(entireProcessTree: true)，否则应用进程会残留为孤儿。
+            //   2) 取消 devCts 终止前端 dev server（FrontendToolchain 在取消回调中
+            //      以 Kill(entireProcessTree: true) 终止其进程树）。
+            // 均采用有限等待 + 超时兜底：已退出进程直接跳过，不在正常路径上额外拖慢退出。
+            await DevProcessCleanup.TerminateAsync(
+                new IDevProcessHandle[] { new ProcessTreeHandle(watchProcess, watchStarted) },
+                DevProcessCleanup.DefaultTerminationTimeout);
+
+            await StopFrontendDevServerAsync(devCts, devServerTask);
+
+            watchProcess?.Dispose();
         }
 
         // 执行 afterDevCommand 钩子（仅在 dotnet watch 正常退出时）
@@ -330,6 +400,28 @@ internal sealed class DevCommand : CliCommandBase
     }
 
     /// <summary>
+    /// 终止前端开发服务器：取消 dev 取消源（触发 <see cref="FrontendToolchain"/> 的
+    /// <c>Kill(entireProcessTree: true)</c>）并有限等待其结束，避免退出后残留子进程。
+    /// 对应 Wails v3 beta.28 dev 退出清理对前端 dev server 进程树的终止。
+    /// </summary>
+    /// <param name="devCts">dev 会话取消源。</param>
+    /// <param name="devServerTask">前端 dev server 运行任务（未启动时为已完成任务）。</param>
+    private static async Task StopFrontendDevServerAsync(CancellationTokenSource devCts, Task devServerTask)
+    {
+        try
+        {
+            devCts.Cancel();
+            await Task.WhenAny(
+                devServerTask,
+                Task.Delay(DevProcessCleanup.DefaultTerminationTimeout, CancellationToken.None));
+        }
+        catch
+        {
+            /* 清理期忽略异常：前端进程可能已退出或取消源已释放 */
+        }
+    }
+
+    /// <summary>
     /// 解析项目文件路径。
     /// </summary>
     /// <param name="project">用户指定的项目文件。</param>
@@ -344,5 +436,28 @@ internal sealed class DevCommand : CliCommandBase
         var currentDir = Directory.GetCurrentDirectory();
         var csprojFiles = Directory.GetFiles(currentDir, "*.csproj");
         return csprojFiles.Length == 1 ? new FileInfo(csprojFiles[0]) : null;
+    }
+
+    /// <summary>
+    /// 解析前端开发服务器 URL（就绪探测目标），为明确的内部取值点。
+    /// 取值优先级：
+    /// <list type="number">
+    /// <item>环境变量 <c>FRONTEND_DEVSERVER_URL</c> —— 对齐 Wails v3
+    /// <c>internal/commands/dev.go</c> 写入、<c>internal/commands/watcher.go</c> 读取的同名变量；</item>
+    /// <item>wails.json 的 <c>frontend.devServerUrl</c>（对应 Wails v3 的 <c>frontend:dev:serverUrl</c>）。</item>
+    /// </list>
+    /// </summary>
+    /// <param name="config">已加载的 wails.json 配置，可为 null。</param>
+    /// <returns>裁剪后的 URL 字符串；未配置时返回 null（此时跳过就绪探测）。</returns>
+    private static string? ResolveFrontendDevServerUrl(ProjectConfig? config)
+    {
+        var fromEnv = Environment.GetEnvironmentVariable("FRONTEND_DEVSERVER_URL");
+        if (!string.IsNullOrWhiteSpace(fromEnv))
+        {
+            return fromEnv.Trim();
+        }
+
+        var fromConfig = config?.Frontend?.DevServerUrl;
+        return string.IsNullOrWhiteSpace(fromConfig) ? null : fromConfig.Trim();
     }
 }

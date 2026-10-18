@@ -7,7 +7,9 @@ namespace Wails.Net.Plugins.Updater.Services;
 /// <para>
 /// 对应 Wails v3 中 updater 包的隐式 provider 概念：
 /// 默认从单个 HTTP URL 获取更新清单（<see cref="HttpUpdateProvider"/>），
-/// 用户可实现此接口以接入 GitHub Releases、GitLab Releases、自建 API 等多种来源。
+/// 用户可实现此接口以接入 GitHub Releases（<see cref="GitHubUpdateProvider"/>）、
+/// GitLab Releases（<see cref="GitLabUpdateProvider"/>）、Wails Update Manifest
+/// （<see cref="EndpointUpdateProvider"/>，对应 Go providers/endpoint）等多种来源。
 /// </para>
 /// <para>
 /// 多 Provider 模式：可在 <see cref="UpdaterService"/> 中注册多个提供者，

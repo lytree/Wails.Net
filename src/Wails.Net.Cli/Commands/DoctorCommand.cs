@@ -256,7 +256,8 @@ internal sealed class DoctorCommand : CliCommandBase
     /// 对应 Go 版 doctor-ng 中的注册表检测逻辑。
     /// </summary>
     /// <returns>版本字符串（如 "120.0.2210.91"），未找到则返回 null。</returns>
-    private static string? ReadWebView2RegistryVersion()
+    /// <remarks>internal 以便 <c>setup</c> 命令的系统详情采集复用（P2-22）。</remarks>
+    internal static string? ReadWebView2RegistryVersion()
     {
         var version = ReadRegistryValue(WebView2RegKey, "pv");
         if (string.IsNullOrEmpty(version))
@@ -273,7 +274,8 @@ internal sealed class DoctorCommand : CliCommandBase
     /// <param name="keyPath">注册表键路径（如 HKLM\SOFTWARE\...）。</param>
     /// <param name="valueName">值名称。</param>
     /// <returns>值字符串，失败返回 null。</returns>
-    private static string? ReadRegistryValue(string keyPath, string valueName)
+    /// <remarks>internal 以便 <c>setup</c> 命令的系统详情采集复用（P2-22）。</remarks>
+    internal static string? ReadRegistryValue(string keyPath, string valueName)
     {
         try
         {
@@ -609,7 +611,8 @@ internal sealed class DoctorCommand : CliCommandBase
         return string.IsNullOrEmpty(raw) ? Environment.Version.ToString() : raw.Trim();
     }
 
-    private static string ReadExecutableVersion(string name, params string[] args)
+    /// <remarks>internal 以便 <c>setup</c> 命令的系统详情采集复用（P2-22）。</remarks>
+    internal static string ReadExecutableVersion(string name, params string[] args)
     {
         try
         {
@@ -656,7 +659,8 @@ internal sealed class DoctorCommand : CliCommandBase
     /// </summary>
     /// <param name="command">完整命令字符串（如 <c>pnpm --version</c>）。</param>
     /// <returns>首行输出（已去除空白），执行失败或退出码非零时返回空字符串。</returns>
-    private static string ReadShellCommandOutput(string command)
+    /// <remarks>internal 以便 <c>setup</c> 命令的系统详情采集复用（P2-22）。</remarks>
+    internal static string ReadShellCommandOutput(string command)
     {
         try
         {

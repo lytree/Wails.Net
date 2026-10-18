@@ -363,4 +363,92 @@ public sealed class LinuxPlatformAppTests
         // 断言：动作被执行
         await Assert.That(executed).IsTrue();
     }
+
+    [Test]
+    public async Task Constructor_DerivesApplicationId_FromName()
+    {
+        // 安排与操作
+        var app = new LinuxPlatformApp(new ApplicationOptions { Name = "My App" });
+
+        // 断言：默认 id 为 "org.wails." + 清洗后的名称；未设置程序名时保持 null
+        await Assert.That(app.ApplicationId).IsEqualTo("org.wails.my_app");
+        await Assert.That(app.ApplicationIdError).IsNull();
+        await Assert.That(app.ProgramName).IsNull();
+    }
+
+    [Test]
+    public async Task Constructor_UsesApplicationIdOverride_AndInheritsProgramName()
+    {
+        // 安排
+        try
+        {
+            LinuxApplicationId.ApplicationIdOverride = "com.example.MyApp";
+
+            // 操作
+            var app = new LinuxPlatformApp(new ApplicationOptions { Name = "My App" });
+
+            // 断言：覆盖值原样使用且程序名继承该 id（Wayland 窗口分组需要）
+            await Assert.That(app.ApplicationId).IsEqualTo("com.example.MyApp");
+            await Assert.That(app.ApplicationIdError).IsNull();
+            await Assert.That(app.ProgramName).IsEqualTo("com.example.MyApp");
+        }
+        finally
+        {
+            LinuxApplicationId.ApplicationIdOverride = null;
+        }
+    }
+
+    [Test]
+    public async Task Constructor_ExplicitProgramName_WinsOverInheritance()
+    {
+        // 安排
+        try
+        {
+            LinuxApplicationId.ApplicationIdOverride = "com.example.MyApp";
+            LinuxApplicationId.ProgramNameOverride = "myapp";
+
+            // 操作
+            var app = new LinuxPlatformApp(new ApplicationOptions { Name = "My App" });
+
+            // 断言：显式程序名优先于继承 id
+            await Assert.That(app.ProgramName).IsEqualTo("myapp");
+        }
+        finally
+        {
+            LinuxApplicationId.ApplicationIdOverride = null;
+            LinuxApplicationId.ProgramNameOverride = null;
+        }
+    }
+
+    [Test]
+    public async Task Constructor_ReportsError_AndFallsBackToDerivedId_WhenOverrideInvalid()
+    {
+        // 安排
+        try
+        {
+            LinuxApplicationId.ApplicationIdOverride = "yeehaw";
+
+            // 操作
+            var app = new LinuxPlatformApp(new ApplicationOptions { Name = "My App" });
+
+            // 断言：非法覆盖被拒绝并回退到推导 id，原因可查；程序名继承的是回退后的 id
+            await Assert.That(app.ApplicationId).IsEqualTo("org.wails.my_app");
+            await Assert.That(app.ApplicationIdError).IsNotNull();
+            await Assert.That(app.ProgramName).IsEqualTo("org.wails.my_app");
+        }
+        finally
+        {
+            LinuxApplicationId.ApplicationIdOverride = null;
+        }
+    }
+
+    [Test]
+    public async Task AcquireSingleInstanceLock_EmptyUniqueId_ReturnsTrue()
+    {
+        // 安排
+        var app = new LinuxPlatformApp(new ApplicationOptions { Name = "TestApp" });
+
+        // 操作与断言：空 UniqueID 时不做任何占位，直接视为首实例（与既有行为一致）
+        await Assert.That(app.AcquireSingleInstanceLock(string.Empty)).IsTrue();
+    }
 }

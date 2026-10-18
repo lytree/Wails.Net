@@ -109,6 +109,30 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     private bool _minimised;
 
     /// <summary>
+    /// 窗口的 GDK Surface（Toplevel），用于订阅 surface 级信号（state 通知 / 尺寸布局）。
+    /// 在窗口 realize 后通过 <c>Gtk.Window.GetSurface()</c> 获取并持有引用，
+    /// 确保其原生句柄在整个窗口生命周期内有效。
+    /// 对应 Go 版 webview_window_linux.go 中从窗口取出 GdkSurface 后监听其状态与尺寸变化（PR #5830）。
+    /// </summary>
+    private Gdk.Surface? _surface;
+
+    /// <summary>
+    /// surface 级信号是否已连接。GTK4 窗口的 GdkSurface 在 realize 后才创建，
+    /// 故在首次 realize 时连接一次，避免重复连接导致重复派发。
+    /// </summary>
+    private bool _surfaceSignalsConnected;
+
+    /// <summary>
+    /// 上次已知的 surface 宽度（-1 表示尚未建立基线），用于感知外部（WM/用户）触发的缩放。
+    /// </summary>
+    private int _surfaceWidth = -1;
+
+    /// <summary>
+    /// 上次已知的 surface 高度（-1 表示尚未建立基线）。
+    /// </summary>
+    private int _surfaceHeight = -1;
+
+    /// <summary>
     /// 当前 URL。
     /// </summary>
     private string _currentUrl = string.Empty;
@@ -645,6 +669,10 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
             // 连接 close-request 信号，处理用户点击窗口关闭按钮的事件。
             // 对应 Win32 平台的 WM_CLOSE/WM_DESTROY 消息处理。
             _window.OnCloseRequest += OnWindowCloseRequest;
+            // 连接 realize 信号：GTK4 窗口的 GdkSurface 在 realize 时才创建，
+            // 在此之后才能取得 GdkSurface 并订阅其 state / layout 信号，
+            // 以感知外部（WM/用户）触发的最小化与缩放。对应 Go 版 PR #5830。
+            _window.OnRealize += OnWindowRealize;
         }
     }
 
@@ -1006,6 +1034,121 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     }
 
     /// <summary>
+    /// 处理 GTK 窗口的 realize 信号。GTK4 窗口的 <c>GdkSurface</c> 在 realize 时才创建，
+    /// 故在此取得 surface 并订阅其 <c>state</c> 与 <c>layout</c> 信号。
+    /// 仅连接一次，避免重复触发导致重复派发。
+    /// </summary>
+    /// <param name="sender">触发信号的 GTK 控件（窗口本身）。</param>
+    /// <param name="args">事件参数。</param>
+    private void OnWindowRealize(Gtk.Widget sender, EventArgs args)
+    {
+        if (_closed || _surfaceSignalsConnected || _window is null)
+        {
+            return;
+        }
+
+        var surface = _window.GetSurface();
+        if (surface is null)
+        {
+            return;
+        }
+
+        // 持有 surface 引用，确保其原生句柄在窗口生命周期内始终有效（不被 GC 回收包装）。
+        _surface = surface;
+        // GdkToplevel:state 属性变化（WM/用户触发的最大化/最小化/全屏等状态切换）。
+        surface.OnNotify += OnSurfaceNotify;
+        // Gdk.Surface::layout 信号，携带重算后的宽高（外部缩放）。
+        surface.OnLayout += OnSurfaceLayout;
+        _surfaceSignalsConnected = true;
+    }
+
+    /// <summary>
+    /// 处理 GDK Surface 的属性通知信号。仅关注 <c>state</c> 属性：
+    /// <c>GdkToplevel:state</c> 为可读属性（<c>G_PARAM_READABLE</c>，非 EXPLICIT_NOTIFY），
+    /// 窗口管理器或用户触发的最小化/恢复会更新该属性并发出 <c>notify::state</c>。
+    /// 对应 Go 版 webview_window_linux.go 中从 surface 状态发出 minimise 事件的逻辑（PR #5830）。
+    /// </summary>
+    /// <param name="sender">触发信号的 surface。</param>
+    /// <param name="args">通知事件参数，包含 Pspec。</param>
+    private void OnSurfaceNotify(GObject.Object sender, GObject.Object.NotifySignalArgs args)
+    {
+        if (_closed || args.Pspec is null)
+        {
+            return;
+        }
+
+        if (args.Pspec.GetName() == "state")
+        {
+            EvaluateToplevelState();
+        }
+    }
+
+    /// <summary>
+    /// 读取 GDK Toplevel 的状态位，检测 <c>Minimized</c> 标志变化并按需派发窗口最小化/恢复事件。
+    /// 与程序化 <see cref="Minimise"/> / <see cref="UnMinimise"/> 共用 <c>_minimised</c> 状态，
+    /// 仅在状态实际发生变化时派发，避免重复事件。
+    /// 使用 <c>Gdk.Internal.Toplevel.GetState</c>（对应 C API <c>gdk_toplevel_get_state</c>），
+    /// 与本文件 StartDrag/StartResize 使用 <c>Gdk.Internal.Toplevel</c> 的方式一致。
+    /// </summary>
+    private void EvaluateToplevelState()
+    {
+        if (_closed || _surface is null)
+        {
+            return;
+        }
+
+        var state = Gdk.Internal.Toplevel.GetState(_surface.Handle.DangerousGetHandle());
+        var minimised = state.HasFlag(Gdk.ToplevelState.Minimized);
+        if (minimised == _minimised)
+        {
+            return;
+        }
+
+        _minimised = minimised;
+        WailsApplication.Get()?.DispatchWindowEvent(
+            _id,
+            minimised
+                ? (uint)WindowEventType.WindowMinimised
+                : (uint)WindowEventType.WindowUnminimised);
+    }
+
+    /// <summary>
+    /// 处理 GDK Surface 的 layout 信号，感知外部（窗口管理器/用户拖拽）触发的尺寸变化，
+    /// 并按需派发 <see cref="WindowEventType.WindowResized"/> 事件（与 Windows 的 WM_SIZE、
+    /// macOS 的 DidResize 对齐，复用既有事件常量）。
+    /// </summary>
+    /// <param name="sender">触发信号的 surface。</param>
+    /// <param name="args">layout 事件参数，包含重算后的 Width / Height。</param>
+    private void OnSurfaceLayout(Gdk.Surface sender, Gdk.Surface.LayoutSignalArgs args)
+    {
+        if (_closed || _minimised)
+        {
+            return;
+        }
+
+        var width = args.Width;
+        var height = args.Height;
+
+        // 首次 layout 仅建立基线，不派发事件，避免窗口创建时产生冗余事件。
+        if (_surfaceWidth < 0 || _surfaceHeight < 0)
+        {
+            _surfaceWidth = width;
+            _surfaceHeight = height;
+            return;
+        }
+
+        if (width == _surfaceWidth && height == _surfaceHeight)
+        {
+            return;
+        }
+
+        _surfaceWidth = width;
+        _surfaceHeight = height;
+        WailsApplication.Get()?.DispatchWindowEvent(
+            _id, (uint)WindowEventType.WindowResized);
+    }
+
+    /// <summary>
     /// 处理 WebView 加载失败事件，分发加载失败事件供应用层处理。
     /// 对应 Wails v3 Go 版 webview_window_linux.go 中的 load-failed 信号处理。
     /// </summary>
@@ -1230,6 +1373,17 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
 
         _closed = true;
         _visible = false;
+
+        // 断开 surface 级信号（state / layout），避免窗口销毁后仍收到回调导致泄漏。
+        // 与既有信号处理一致：窗口/WebView 的托管信号随原生对象销毁由 GirCore 自动清理，
+        // 而 surface 包装需在此显式解绑并释放引用。
+        if (_surface is not null)
+        {
+            _surface.OnNotify -= OnSurfaceNotify;
+            _surface.OnLayout -= OnSurfaceLayout;
+            _surface = null;
+        }
+        _surfaceSignalsConnected = false;
 
         _window?.Close();
         _window?.Destroy();

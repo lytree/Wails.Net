@@ -25,7 +25,10 @@ namespace Wails.Net.Application.Platform;
 /// Linux 平台应用实现，对应 Go 版 application_linux.go 中的 platformApp。
 /// 通过 GTK4 提供主循环、对话框、屏幕信息和窗口管理。
 /// 主题与强调色通过 D-Bus（gsettings）读取 org.gnome.desktop.interface；
-/// 单实例通过文件锁实现；应用菜单通过 GMenu 模型构建。
+/// 单实例对齐 Go 语义：由应用自身 ID 派生并占用 D-Bus bus name（<c>uniqueID + ".SingleInstance"</c>），
+/// 同时保留锁文件 + UNIX socket 作为参数通知通道与 D-Bus 不可用时的降级路径；
+/// 应用菜单通过 GMenu 模型构建。
+/// GTK application id 覆盖（beta.23 #5972）的推导/校验见 <see cref="LinuxApplicationId"/>。
 /// 在非 Linux 平台上，GTK 相关方法返回默认值或抛出 PlatformNotSupportedException。
 /// </summary>
 public sealed class LinuxPlatformApp : IPlatformApp
@@ -90,6 +93,13 @@ public sealed class LinuxPlatformApp : IPlatformApp
     private string? _singleInstanceSocketPath;
 
     /// <summary>
+    /// 单实例占用的 D-Bus bus name 所对应的连接（由 <c>org.freedesktop.DBus.RequestName</c> 获得）。
+    /// 首实例持有期间保持存活；释放该连接即隐式释放所占用名字。
+    /// 对应 Go single_instance_linux.go 中 linuxLock 持有的 D-Bus 连接。
+    /// </summary>
+    private DBusConnection? _singleInstanceDbusConnection;
+
+    /// <summary>
     /// 应用菜单的 LinuxMenu 实例，由 SetApplicationMenu 构建。
     /// 包含 GMenu 模型与对应的 ActionGroup（含所有菜单项回调）。
     /// </summary>
@@ -114,7 +124,36 @@ public sealed class LinuxPlatformApp : IPlatformApp
         // 因此此处捕获即可，无需等待 Run() 执行（Run 在非 Linux 平台会直接抛异常，
         // 此前导致 _mainThreadId 始终为 0，IsOnMainThread 恒返回 false 的缺陷）。
         _mainThreadId = Environment.CurrentManagedThreadId;
+
+        // 解析 GTK application id 与程序名（纯逻辑，对应 Go application_linux_appid.go 的
+        // applicationID()/programName()，beta.23 #5972）。
+        // 覆盖来源为 LinuxApplicationId 的静态属性：核心库 LinuxOptions 未提供
+        // ApplicationID/ProgramName 字段（本任务约束下不修改核心库），详见该类注释。
+        ApplicationId = LinuxApplicationId.ResolveApplicationId(
+            _name, LinuxApplicationId.ApplicationIdOverride, out var applicationIdError);
+        ApplicationIdError = applicationIdError;
+        ProgramName = LinuxApplicationId.ResolveProgramName(
+            LinuxApplicationId.ProgramNameOverride, LinuxApplicationId.ApplicationIdOverride, ApplicationId);
     }
+
+    /// <summary>
+    /// 解析后的 GTK application id（对应 Go application_linux_appid.go 的 <c>applicationID()</c>）。
+    /// 未设置覆盖时为 <c>"org.wails." + SanitizeAppName(Name)</c>；设置了合法覆盖时为覆盖值；
+    /// 覆盖值非法时回退为推导 id（原因见 <see cref="ApplicationIdError"/>）。
+    /// </summary>
+    internal string ApplicationId { get; }
+
+    /// <summary>
+    /// 交给 GTK <c>g_set_prgname()</c> 的程序名（对应 Go <c>programName()</c>）。
+    /// 为 <c>null</c> 时不设置程序名，保留 GTK 从可执行文件名推断的默认值。
+    /// </summary>
+    internal string? ProgramName { get; }
+
+    /// <summary>
+    /// application id 覆盖值被 GTK 拒绝时的原因（对应 Go 的错误处理器上报）。
+    /// 无错误时为 <c>null</c>；不影响启动，应用继续使用推导出的回退 id。
+    /// </summary>
+    internal string? ApplicationIdError { get; }
 
     /// <inheritdoc />
     public string Name => _name;
@@ -338,6 +377,25 @@ public sealed class LinuxPlatformApp : IPlatformApp
         // 确保 GTK 已初始化（在 UI 线程上）。
         EnsureGtkInitialized();
 
+        // 将程序名交给 GTK 的 g_set_prgname()（薄封装原生边界调用）。
+        // 对应 Go application_linux.go 中 newPlatformApp 内的 setProgramName()。
+        // Wayland 下窗口的 surface app_id 取自 g_get_prgname()，因此设置程序名能使窗口
+        // 与 .desktop 文件匹配；ProgramName 为 null 时保持未设置，沿用可执行文件名推断值。
+        // 注意：Wails.Net Linux 未使用 Gtk.Application（而是 GLib.MainLoop），故 application id
+        // 无法挂到 gtk_application_new()，只能通过程序名间接体现（差异说明见 LinuxApplicationId）。
+        var programName = ProgramName;
+        if (!string.IsNullOrEmpty(programName))
+        {
+            try
+            {
+                GLib.Functions.SetPrgname(programName);
+            }
+            catch
+            {
+                // 原生调用失败时忽略：程序名仅影响窗口分组，不影响启动。
+            }
+        }
+
         // 启动系统级事件监听器（网络连通性变化）。
         _systemEventWatcher = new LinuxSystemEventWatcher();
         _systemEventWatcher.Start();
@@ -407,6 +465,19 @@ public sealed class LinuxPlatformApp : IPlatformApp
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Linux 单实例实现（对齐 Go 版 single_instance_linux.go，beta.23 #5973）：
+    /// <list type="number">
+    /// <item>由 <paramref name="uniqueId"/> 派生 D-Bus bus name <c>uniqueID + ".SingleInstance"</c>，
+    /// 通过 <c>org.freedesktop.DBus.RequestName</c> 以应用自身 ID 占位（<c>DO_NOT_QUEUE</c>）；</item>
+    /// <item>bus name 已被他人持有时返回 <c>false</c>：本进程为第二实例，由
+    /// <see cref="Application"/> 通知首实例后按 <c>SingleInstanceExitCode</c> 退出，语义与 Go 的
+    /// <c>alreadyRunningError</c> 一致；</item>
+    /// <item>D-Bus 不可用（无 session bus、沙箱拒绝该名字等）时降级为既有「独占锁文件 + UNIX socket」
+    /// 机制而不中断启动 —— 这是与 Go 的差异：Go 在该情形上报致命错误；</item>
+    /// <item>占位成功（首实例）时仍保留锁文件 + socket，以维持既有的参数通知通道。</item>
+    /// </list>
+    /// </remarks>
     public bool AcquireSingleInstanceLock(string uniqueId)
     {
         if (string.IsNullOrEmpty(uniqueId))
@@ -418,25 +489,62 @@ public sealed class LinuxPlatformApp : IPlatformApp
         var lockPath = Path.Combine(Path.GetTempPath(), $"wails-{safeName}.lock");
         try
         {
+            // 1) 以应用自身 ID 派生 D-Bus bus name 并尝试占位（对齐 Go single_instance_linux.go）。
+            if (LinuxSingleInstanceNames.TryDerive(uniqueId, out var busName, out _, out _, out _))
+            {
+                switch (LinuxDbusSingleInstance.TryClaim(busName, out var dbusConnection))
+                {
+                    case LinuxDbusSingleInstance.BusNameClaimResult.OwnedByOther:
+                        // bus name 已由首实例持有：本进程是第二实例。
+                        return false;
+                    case LinuxDbusSingleInstance.BusNameClaimResult.Owned:
+                        _singleInstanceDbusConnection = dbusConnection;
+                        break;
+                    case LinuxDbusSingleInstance.BusNameClaimResult.Unavailable:
+                        // D-Bus 不可用：未持有名字（TryClaim 已确保该情形下输出连接为 null），
+                        // 降级为仅锁文件 + socket。
+                        break;
+                }
+            }
+
+            // 2) 保留既有「独占锁文件 + UNIX socket」语义。
             // 以独占方式创建锁文件，若已有实例持有则抛出 IOException 表示非首实例。
             _singleInstanceLockStream = new FileStream(
                 lockPath, FileMode.Create, FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose);
             _singleInstanceLockPath = lockPath;
 
             // 启动 UNIX socket 监听，接收后续实例的实时通知。
-            // 对应 Go 版 application_single_instance_linux.go 中的 D-Bus 信号注册。
+            // 对应 Go 版 single_instance_linux.go 中的 D-Bus 导出对象通知通道。
             StartSingleInstanceSocket(safeName);
             return true;
         }
         catch
         {
+            // 获取失败：释放已占用的 D-Bus bus name，按第二实例处理。
+            ReleaseSingleInstanceDbusName();
             _singleInstanceLockStream = null;
             _singleInstanceLockPath = null;
             return false;
         }
     }
 
+    /// <summary>
+    /// 释放 single-instance 占用的 D-Bus bus name。
+    /// 对应 Go linuxLock.release()（Go 依赖连接关闭隐式释放名字，本实现显式释放连接以达到同等效果）。
+    /// </summary>
+    private void ReleaseSingleInstanceDbusName()
+    {
+        _singleInstanceDbusConnection?.Dispose();
+        _singleInstanceDbusConnection = null;
+    }
+
     /// <inheritdoc />
+    /// <remarks>
+    /// 通过 UNIX socket 向首实例投递命令行参数（失败时回退为锁文件同目录下的 <c>.args</c> 文件）。
+    /// 与 Go 的差异：Go 的 <c>linuxLock.notify</c> 通过 D-Bus 调用首实例导出的
+    /// <c>SendMessage</c> 方法后按 <c>ExitCode</c> 退出；Wails.Net 保留既有 socket 通道，
+    /// 退出码由 <see cref="Application"/> 依据 <c>SingleInstanceExitCode</c> 统一处理。
+    /// </remarks>
     public void NotifySingleInstance(string[] args)
     {
         if (!OperatingSystem.IsLinux() || _singleInstanceLockPath is null)
@@ -551,6 +659,10 @@ public sealed class LinuxPlatformApp : IPlatformApp
             try { System.IO.File.Delete(_singleInstanceSocketPath); } catch { }
         }
         _singleInstanceSocketPath = null;
+
+        // 释放 D-Bus bus name（关闭连接即释放所占用的名字，对应 Go linuxLock.release）。
+        ReleaseSingleInstanceDbusName();
+
         _singleInstanceLockStream?.Dispose();
         _singleInstanceLockStream = null;
         _singleInstanceLockPath = null;

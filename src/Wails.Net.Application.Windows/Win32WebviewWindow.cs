@@ -220,12 +220,19 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     /// （如 <c>/wails/stream/poll</c> 长轮询）。
     /// <para>
     /// 仅在窗口关闭时取消，正常请求不受影响（不会多一次取消/失败）。
-    /// 未实现 Wails v3 Go 版本 <c>request_cancellation_windows.go</c> 的 CDP
-    /// <c>Fetch</c>/<c>Network</c> 逐请求中止（依赖 DevTools 会话，工作量与验证成本高，
-    /// 作为已知未实现项记录）。
+    /// 浏览器侧中止（页面导航/取消 fetch）的逐请求取消由
+    /// <see cref="_requestCancellationCdp"/> 经 CDP <c>Fetch</c>/<c>Network</c> 提供，
+    /// 对应 Wails v3 Go 版本 <c>request_cancellation_windows.go</c>。
     /// </para>
     /// </summary>
     private readonly CancellationTokenSource _requestCancellation = new();
+
+    /// <summary>
+    /// P1-9：Windows 逐请求取消会话（CDP <c>Fetch</c>/<c>Network</c>）。
+    /// 对应 Wails v3 Go 版本 <c>request_cancellation_windows.go</c> 的 <c>windowsRequestCancellation</c>。
+    /// 窗口未初始化、无资源服务或已关闭时为 null，此时不调用 CDP，退回既有 204 语义。
+    /// </summary>
+    private WindowsRequestCancellation? _requestCancellationCdp;
 
     /// <summary>
     /// Windows 平台特定应用级选项，用于配置 WebView2 运行时环境。
@@ -724,6 +731,11 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         // 若放在导航之后，页面脚本已执行完，wails 会是 undefined。
         InjectRuntimeJs();
 
+        // P1-9：启用 CDP 逐请求取消（Fetch/Network），必须在执行初始导航之前完成，
+        // 才能覆盖首次页面加载产生的自定义 scheme 请求。
+        // 对应 Wails v3 Go 版本 startRequestCancellation（在导航前启用 DevTools 会话）。
+        StartRequestCancellationCdp();
+
         // 执行初始导航。
         NavigateInitialContent(recovering);
 
@@ -744,6 +756,38 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         {
             _controller.DefaultBackgroundColor = Color.FromArgb(bg.A, bg.R, bg.G, bg.B);
         }
+    }
+
+    /// <summary>
+    /// P1-9：启动本窗口的 CDP 逐请求取消会话。
+    /// 对应 Wails v3 Go 版本 <c>request_cancellation_windows.go</c> 的
+    /// <c>startRequestCancellation</c>：
+    /// 无资源服务（<c>globalApplication.assets == nil</c>）时不启用；
+    /// 否则在根会话启用 <c>Fetch</c>/<c>Network</c>，把「浏览器中止请求」映射为
+    /// 取消在途请求管线的令牌。
+    /// <para>
+    /// 该路径为 WebView2/COM 互操作，本机无 GUI 无法端到端验证，**以构建 + 代码审查验收**。
+    /// 任一 CDP 能力不可用时（含运行时未支持 <c>Fetch</c> 域）内部静默降级，
+    /// 退回既有「窗口级取消 + 204」语义。
+    /// </para>
+    /// </summary>
+    private void StartRequestCancellationCdp()
+    {
+        // 守卫：窗口未初始化或无资源服务时不调用 CDP。
+        var app = Application.Get();
+        if (_webview is null || app?.AssetServer is null)
+        {
+            return;
+        }
+
+        // 故障重建会换用新的 CoreWebView2 实例，旧 CDP 会话（事件接收器/登记）
+        // 属于上一个 WebView，必须先关闭再启用。
+        _requestCancellationCdp?.Close();
+
+        var cancellation = new WindowsRequestCancellation(
+            _webview, _requestCancellation.Token, app.Logger);
+        cancellation.Start();
+        _requestCancellationCdp = cancellation;
     }
 
     /// <summary>
@@ -1024,6 +1068,16 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
             // Streams 控制数据通过 HTTP header（x-wails-stream-*）传递，需一并透传；
             // 二进制帧负载经 RequestBodyBytes 传递（batch / chunk 重组体无法用字符串承载）。
             var requestBody = ReadRequestBodySync(args.Request);
+            // P1-9：取出 CDP 注入的私有标识（若存在），映射为「浏览器已中止」的取消信号；
+            // 该标识在进入请求管线前被移除，不暴露给处理器（对应 Go tracker.Wrap 的 header.Del）。
+            var headers = ReadRequestHeaders(args.Request);
+            CancellationToken? trackedToken = null;
+            if (headers.TryGetValue(WindowsRequestCancellation.RequestIdHeader, out var requestMarker))
+            {
+                headers.Remove(WindowsRequestCancellation.RequestIdHeader);
+                trackedToken = _requestCancellationCdp?.Consume(requestMarker);
+            }
+
             var request = new WebviewRequest
             {
                 Method = method,
@@ -1033,14 +1087,19 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                 WindowId = _id,
                 WindowName = _options.Name,
                 Origin = null /* TODO: extract from Referer header */,
-                Headers = ReadRequestHeaders(args.Request)
+                Headers = headers
             };
 
             var pipeline = GetOrCreatePipeline(app);
             var environment = _webview.Environment;
             // P1-9：为每个请求建立独立取消源，链接到窗口级取消源；窗口关闭时一并取消，
-            // 使在途管线尽快结束。正常请求期间令牌不会被取消（行为与改造前一致）。
-            requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(_requestCancellation.Token);
+            // 使在途管线尽快结束。若该请求带有 CDP 私有标识，则同时链接其跟踪令牌，
+            // 使浏览器中止（页面导航/取消 fetch）时也能提前结束管线。
+            // 正常请求期间令牌不会被取消（行为与改造前一致）。
+            requestCancellation = trackedToken is { } tracked
+                ? CancellationTokenSource.CreateLinkedTokenSource(_requestCancellation.Token, tracked)
+                : CancellationTokenSource.CreateLinkedTokenSource(_requestCancellation.Token);
+
             var task = pipeline.HandleAsync(request, requestCancellation.Token);
 
             // 快路径：任务已同步完成（IPC / 静态资源等非流式请求），保持既有同步行为不变。
@@ -1127,10 +1186,11 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     /// <summary>
     /// 读取 WebView2 请求头（<see cref="CoreWebView2HttpRequestHeaders"/>）为大小写不敏感字典。
     /// 供 Streams 双向字节流通过 HTTP header（<c>x-wails-stream-*</c>）传递控制数据。
+    /// P1-9：返回具体字典类型，便于在进入请求管线前剔除 CDP 注入的私有标识头。
     /// </summary>
     /// <param name="request">WebView2 请求。</param>
     /// <returns>大小写不敏感的请求头字典。</returns>
-    private static IReadOnlyDictionary<string, string> ReadRequestHeaders(CoreWebView2WebResourceRequest request)
+    private static Dictionary<string, string> ReadRequestHeaders(CoreWebView2WebResourceRequest request)
     {
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (KeyValuePair<string, string> header in request.Headers)
@@ -2345,6 +2405,11 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         }
 
         _closed = true;
+
+        // P1-9：先关闭 CDP 逐请求取消会话（Fetch.disable 释放暂停请求、退订事件），
+        // 必须在 _webview 置空之前、于 UI 线程调用。对应 Go windowsRequestCancellation.close。
+        _requestCancellationCdp?.Close();
+        _requestCancellationCdp = null;
 
         // P1-9：取消窗口级请求令牌，使在途请求管线（长轮询等）尽快结束，避免对已关闭窗口继续处理。
         // 应用关闭时各窗口经 Dispose → Close 走同一路径。

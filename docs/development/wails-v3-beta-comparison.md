@@ -192,8 +192,8 @@
 | 项 | 原状态（08-07） | 现状确认（10-17） |
 |----|----------------|------------------|
 | P0-1 插件前后端一体双包模型 | 规划 M1-M4 | ✅ **已完成**：`src/Wails.Net.Plugins.*` 43 个 NuGet 插件项目 + `packages/` 43 个 npm 包（`wails-net-plugin-*` + `wails-net-runtime`）+ CLI `plugin new` 双包脚手架（[PluginCommand.cs](../../src/Wails.Net.Cli/Commands/PluginCommand.cs)）+ R3-B 权限声明 |
-| P0-2 Updater `wails://` 协议层 + endpoint provider | 挂起 | ⏸ **仍挂起**（`src/Wails.Net.Plugins.Updater` 无 `wails://`/endpoint 命中）；资产匹配器 ✅ 已落地（[UpdateAssetMatcher.cs](../../src/Wails.Net.Plugins.Updater/Services/Updater/UpdateAssetMatcher.cs)，GitHub/GitLab provider 已接入） |
-| P1 Linux 外部 resize/minimise 事件 | 受阻于 GirCore | ⏸ **仍受阻**：程序化 Minimise/UnMinimise 已派发事件（[LinuxWebviewWindow.cs](../../src/Wails.Net.Application.Linux/LinuxWebviewWindow.cs) L1123-1141、L1542-1573），外部 WM 触发需 surface layout API；**GirCore 仍为 0.8.0**（Directory.Packages.props） |
+| P0-2 Updater `wails://` 协议层 + endpoint provider | 挂起 | ✅ **已实现（2026-10-18）**：新增 `EndpointUpdateProvider`（任意 URI/scheme → manifest，经 `AddProvider` 接入，支持 `file`/自定义 scheme 注入）；资产匹配器已落地。**实测：v3 的 `wails://` 并非 updater 协议前缀**（实为 webview/资产服务器自定义 scheme），故未实现路由层；appcast 未实现（Sparkle XML 与 `UpdateManifest` 无对应签名槽位）。见 §9.12 |
+| P1 Linux 外部 resize/minimise 事件 | 受阻于 GirCore | ✅ **已实现（2026-10-18）**：程序化 Minimise/UnMinimise 早已派发事件；**外部 WM 触发已补齐** —— `Gtk.Window.GetSurface()` + `Gdk.Surface` `notify::state`（读 `Gdk.Toplevel.GetState()` 的 `Minimized`）派发 WindowMinimised/UnMinimised，`Gdk.Surface` `layout` 派发 WindowResized。**原「受阻于 GirCore 0.8.0」结论不成立**（该 API 在 0.8.0 中已可用）。见 §9.12 |
 | P2 macOS 细节优化 | 推迟（stub） | ✅ **平台已完成**：完整 AppKit + WKWebView 实现（`src/Wails.Net.Application.MacOS/` 共 12 个 `.cs`、约 4289 行，`MacOSWebviewWindow.cs` 1545 行含 DidResize/DidMiniaturize 事件；AGENTS.md §1 已标注）；细节优化转入 §9.3 P1/P2 项（源码级核对见 §9.7 待实现项 C） |
 
 ### 9.2 beta.5–beta.28 新增差异项（按优先级）
@@ -222,19 +222,19 @@
 
 | # | v3 特性（版本） | 说明 |
 |---|----------------|------|
-| 11 | watcher 对前端 dev server 的 HTTP 就绪检查（beta.26 #6150） | DevCommand 无 readiness 探测 |
+| 11 | watcher 对前端 dev server 的 HTTP 就绪检查（beta.26 #6150） | ✅ **已实现（2026-10-18）**：`DevCommand` 在启动 `dotnet watch` 前对前端 URL 做 HTTP 就绪探测（默认 60s / 250ms 轮询；连接被拒/超时/4xx/5xx 继续重试；超时→报错并不启动应用）。URL 取值：`FRONTEND_DEVSERVER_URL` → `wails.json` 的 `frontend.devServerUrl`；未配置则跳过。见 §9.12 |
 | 12 | `wails3 dev` 退出清理（beta.25 #6048）+ dev 资产代理 TCP churn 修复（beta.8） | dev 模式质量 |
 | 13 | macOS 细节：autoplay 偏好（beta.7）、Dock bounce（beta.6）、注册快捷键优先于 webview（beta.9 #5902）、Control- 键命名（beta.14）、modal loop 期间主线程工作（beta.13 #6026）、app 菜单回调替换崩溃修复（beta.6） | macOS 平台已完整，可按需逐项对齐 |
 | 14 | Updater 备份失败后清除 helper 环境变量并重启原目标（beta.21 #6080） | ✅ **已实现（2026-10-18）**：`ClearHelperEnv()` 提前到备份**之前**执行；备份失败时重启原目标（`TryLaunch`）后再退出 12，与 Go `launch(target)` 一致。见 §9.11 |
 | 15 | Windows 菜单 nil 菜单/资源释放/菜单栏重绘（beta.21 #6112） | ✅ **已实现**（§9.7 核对）：nil 菜单守卫 `Win32WebviewWindow.cs:2723-2729`、`DrawMenuBar` 重绘 `:2000/2015/2270/2280`、释放 `Win32Menu.cs:109/201` |
-| 16 | MSIX 打包恢复（beta.21 #6115） | ❌ **未实现**（§9.7 核对）：`PackCommand` 仅支持 zip/targz/nsis/appimage/deb/rpm（L414-441）；v3 有 `internal/commands/msix.go` + `internal/flags/msix.go` |
+| 16 | MSIX 打包恢复（beta.21 #6115） | ✅ **已实现（2026-10-18）**：`--format msix`/`appx`，生成 `AppxManifest.xml`（对齐 v3 两个模板）+ Assets 占位图，`MakeAppx pack` 产出 `.msix`，可选 `signtool` 签名；工具缺失时保留 `*.structure` 目录并给出清晰错误（不静默失败）。见 §9.12 |
 | 17 | JS/TS 绑定生成：泛型模型创建器引用后置声明 + 相互依赖泛型栈溢出修复（beta.21 #6062） | ⊘ **不适用**（§9.7 核对）：`TypeScriptGenerator` 仅生成方法签名 + id 映射，无「模型创建器」与依赖排序概念（泛型映射见 `TypeScriptTypeMapper.cs:73-124`）；v3 该修复针对 `internal/generator/render/renderer.go:90-127` 的 Models() 拓扑排序 |
 | 18 | Linux 托盘右击同时触发 click handler 与菜单修复（beta.28 #6018） | ✅ **已实现**（§9.7 核对，架构不同）：`LinuxSystemTray.cs:242-244` 右击独立触发菜单、`:256-258` 左键独立；v3 `systemtray_linux.go:720-728` |
 | 19 | WebView2 初始化 deadline + 消息泵（beta.8 #5952）、embed 超时 60s（beta.15 #6043） | ✅ **超时已对齐（2026-10-18）**：`EmbedTimeout` 由 30s 改为 **60s**（对齐 v3 `chromium.go:283`）；初始化 deadline / 控制器创建超时已实现；仍**无自建消息泵**（交由 WebView2 SDK）。见 §9.11 |
 | 20 | Linux 旧式 GTK3 service-only 应用 screen discovery 崩溃防护（beta.9 #5966） | ✅ **已实现（等价）**（§9.7 核对）：`LinuxPlatformApp.cs:267-270` display 为 null 时返回空数组；ServerMode 不触 GTK |
 | 21 | App.Run 期间启动默认信号处理器（beta.21 #6098） | ✅ **已实现（2026-10-18）**：`Hosting.DefaultSignalHandler`（`PosixSignalRegistration` 监听 SIGINT/SIGTERM），`Application.Run` 主循环前安装、`ShutdownAsync` 释放；新增 `ApplicationOptions.DisableDefaultSignalHandler`（对应 Go `Options.DisableDefaultSignalHandler`）。详见 §9.9 |
-| 22 | setup 向导完善（beta.28 #6224 系统详情；beta.24 仅批准的包管理器命令——安全约束） | SetupCommand 增强项 |
-| 23 | macOS app 输出保持在 file provider 之外（beta.28 #6225） | macOS 打包细节 |
+| 22 | setup 向导完善（beta.28 #6224 系统详情；beta.24 仅批准的包管理器命令——安全约束） | ✅ **已实现（2026-10-18）**：新增系统详情收集（OS/架构/.NET SDK/WebView2/GTK 等，缺失为 `unknown`）+ `--json`；安装命令**仅由白名单包管理器常量目录构造**（任意/危险命令被拒绝），`--install` 默认仅预览、`--yes` 才执行。见 §9.12 |
+| 23 | macOS app 输出保持在 file provider 之外（beta.28 #6225） | ✅ **已实现（2026-10-18）**：`PackCommand` 新增 macOS 输出准备步骤（file provider 路径 → 重定位到本地文件系统 + 符号链接）；「路径判定/重定位决策」已抽为纯逻辑并单测，真实挂载探测为薄封装（本机未验证）。见 §9.12 |
 
 ### 9.3 不适用项（.NET 移植天然豁免）
 
@@ -370,21 +370,21 @@
 | P1-8 64MiB→413 | ✅ **已实现（2026-10-18）** | `Transport/HttpTransport.cs` `MaxRuntimeBodyBytes = 64 MiB`；`HandleMessageAsync` Content-Length 预判 + 限量读取 → 413；分块单块 1 MiB → 422 |
 | P1-9 scheme 取消 | ⚠️ **部分（2026-10-18）** | macOS：每 task CTS + `MarkStopped` 取消且不再回调；Windows：每请求 CTS + 窗口关闭取消（无 CDP 中止）；Linux：无取消钩子（已注释）；管线令牌已透传 |
 | P1-10 托盘主题 | ✅ **已实现（2026-10-18）** | `Win32SystemTray.cs`：`_lightModeIcon`/`_darkModeIcon`(+Owned)、`GetEffectiveIcon`、`ApplyEffectiveIcon`、`SubscribeThemeChanged`/`UnsubscribeThemeChanged`、`ReleaseIcon`；新增 `PlatformMessageWindow.cs`（平台层顶层消息窗口）在无窗口时也发主题事件 |
-| P2-11 前端就绪 | ❌ 未实现 | `DevCommand.cs:263-292` 无 HTTP 探测 |
+| P2-11 前端就绪 | ✅ **已实现（2026-10-18）** | `src/Wails.Net.Cli/Build/FrontendDevServerReadiness.cs`；`DevCommand.cs` L263-313 启动前探测、L401-422 `ResolveFrontendDevServerUrl`；测试 10 项 |
 | P2-12 dev 清理 | ⚠️ 部分 | `DevCommand.cs:304-316` 仅 `devCts.Cancel()`；无反向代理（churn 不适用） |
 | P2-13 macOS 细节 | ⚠️ 部分 | autoplay `MacOSWebviewWindow.cs:305`、快捷键 `MacOSKeyBindingManager.cs:283`、Control `:25`、菜单 `MacOSMenu.cs:416` ✅；**Dock bounce 未实现**；主线程用 `InvokeOnMainThread`（`MacOSPlatformApp.cs:425`，非 CFRunLoop） |
 | P2-14 Updater 备份失败 | ✅ **已实现（2026-10-18）** | `HelperProcess.cs`：`ClearHelperEnv()` 移至备份前；备份失败 → `TryLaunch(target)` 重启原目标 + `Exit(12)`；覆盖 `IOException`/`UnauthorizedAccessException` |
 | P2-15 Windows 菜单 | ✅ 已实现 | `Win32WebviewWindow.cs:2000/2015/2270/2280`、`:2723-2729`、`Win32Menu.cs:109/201` |
-| P2-16 MSIX | ❌ 未实现 | `PackCommand.cs:414-441` 无 msix |
+| P2-16 MSIX | ✅ **已实现（2026-10-18）** | `src/Wails.Net.Cli/Build/MsixPackageOptions.cs`/`MsixPackager.cs`；`PackCommand.cs` 新增 `--format msix`/`appx` 与 `--publisher/--cert/--cert-password/--use-msix-tool`；测试 18 项（含真实 `MakeAppx` 端到端，工具缺失时跳过） |
 | P2-17 泛型生成器 | ⊘ 不适用 | `TypeScriptGenerator.cs:20/71/131`、`TypeScriptTypeMapper.cs:73-124` 无模型创建器 |
 | P2-18 Linux 托盘右击 | ✅ 已实现 | `LinuxSystemTray.cs:242-244`（右击）`/256-258`（左键） |
 | P2-19 WebView2 超时 | ✅ **已对齐（2026-10-18）** | `Win32WebviewWindow.cs:273` `EmbedTimeout = 60s`（原 30s）；初始化 deadline 与 `Task.WhenAny(createTask, Delay(EmbedTimeout))` 已存在；无自建消息泵 |
 | P2-20 GTK3 screen guard | ✅ 已实现（等价） | `LinuxPlatformApp.cs:267-270` |
 | P2-21 信号处理器 | ✅ **已实现（2026-10-18）** | `Hosting/DefaultSignalHandler.cs`；`Application.cs:1200 SetupSignalHandler()`（主循环前）、`:1316` Shutdown 释放；`ApplicationOptions.DisableDefaultSignalHandler` |
-| P2-22 setup 向导 | ⚠️ 部分 | `Cli/Commands/SetupCommand.cs:36-104` 仅回放诊断 + 安装提示 |
-| P2-23 macOS 输出 | ❌ 未实现 | `PackCommand.cs:47` 仅 RID 列表提及 macOS |
-| 待实现 A | ⏸ 未实现 | 无 `wails://`、无 `EndpointUpdateProvider`；provider 仅 GitHub/GitLab/Http（`UpdaterService.cs:311-317`）；资产匹配器已接入（`GitHubUpdateProvider.cs:132`、`GitLabUpdateProvider.cs:127`） |
-| 待实现 B | ⚠️ 部分 | 程序化 `Minimise()`→`WindowMinimised`（`LinuxWebviewWindow.cs:1122-1130`）、`UnMinimise()`→`WindowUnminimised`（`:1133-1141`）；`OnWindowNotify`（`:912-955`）仅 `is-active/is-maximized/is-fullscreen`，外部 WM 最小化/缩放受 Gtk4 无 `is-minimised` 属性 + GirCore 0.8.0（`Directory.Packages.props`）限制 |
+| P2-22 setup 向导 | ✅ **已实现（2026-10-18）** | `src/Wails.Net.Cli/Setup/SetupSystemInfo.cs`/`SafeInstallerCommand.cs`/`SetupInstallerCatalog.cs`；`SetupCommand.cs` 新增 `--json`/`--system`/`--install`/`--yes`；测试覆盖白名单 23 通过 / 22 拒绝 |
+| P2-23 macOS 输出 | ✅ **已实现（2026-10-18）** | `src/Wails.Net.Cli/Build/MacOsOutputPreparer.cs`（`Decide` 纯逻辑 + `PrepareAsync` 薄封装）；`PackCommand.cs` L206-223 调用；测试 9 项（真实挂载探测未在本机验证） |
+| 待实现 A | ✅ **已实现（2026-10-18）** | `EndpointUpdateProvider.cs`（任意 URI/scheme → manifest，约 740 行）+ 28 项测试；`wails://` 经核实**非** updater 协议前缀（webview scheme），未做路由层；appcast 未实现（无签名槽位） |
+| 待实现 B | ✅ **已实现（2026-10-18）** | `LinuxWebviewWindow.cs`：`OnWindowRealize` 取 `Gtk.Window.GetSurface()`；`Gdk.Surface` `notify::state` → `Gdk.Toplevel.GetState()` 的 `Minimized` 派发 WindowMinimised/UnMinimised；`Gdk.Surface` `layout` → WindowResized。程序化路径不变；**原「受阻于 GirCore 0.8.0」结论已推翻** |
 | 待实现 C | ✅ 已完成 | `src/Wails.Net.Application.MacOS/` 12 个 `.cs`、约 4289 行（`MacOSWebviewWindow.cs` 1545、`MacOSPlatformApp.cs` 943），`#if MACOS` 原生 / `#else` 降级 |
 
 ### 9.7.4 源码级复核后的待实现项（按优先级）
@@ -392,11 +392,12 @@
 1. ~~**P0-1 Streams 双向字节流**（机制级）~~ ✅ **已于 2026-10-17 实现**，见 §9.8
 2. ~~**P2-21 App.Run 信号处理器**~~ ✅ **已于 2026-10-18 实现**，见 §9.9
 3. ~~**P1-8 请求 64MiB 上限 → 413**~~ ✅ 已于 2026-10-18 实现；~~**P1-5 macOS 媒体权限**~~ ✅ 已于 2026-10-18 实现；**P1-9 scheme 请求取消/上下文转发** ⚠️ 部分实现（macOS 完整、Windows 无 CDP 中止、Linux 无钩子）—— 见 §9.10
-4. **P1-4 MCP 服务器**（本期按决策暂缓，需先定实现方式：手写最小 MCP vs 引入 SDK）
-5. ~~**P2-14 Updater 备份失败恢复语义**~~ ✅ 已于 2026-10-18 实现；~~**P2-19 embed 超时对齐 60s**~~ ✅ 已于 2026-10-18 实现；~~**P1-10 托盘 light/dark 双图标**~~ ✅ 已于 2026-10-18 实现 —— 见 §9.11
-6. **P2-11 dev 前端就绪检查**、**P2-16 MSIX 打包**、**P2-22 setup 向导增强**、**P2-23 macOS 输出重定位**
-7. **待实现 A** Updater `wails://` 协议层 + endpoint/appcast provider（挂起，按自托管更新需求评估）
-8. **待实现 B** Linux 外部 WM 最小化/缩放事件（受阻于 GirCore 0.8.0）
+4. **P1-4 MCP 服务器**（暂缓，需先定实现方式：手写最小 MCP vs 引入 SDK）
+5. ~~**P2-14 / P2-19 / P1-10**~~ ✅ 已于 2026-10-18 实现 —— 见 §9.11
+6. ~~**P2-11**~~ ✅、~~**P2-16**~~ ✅、~~**P2-22**~~ ✅、~~**P2-23**~~ ✅ 已于 2026-10-18 实现 —— 见 §9.12
+7. ~~**待实现 A**~~ ✅ `EndpointUpdateProvider`（`wails://` 非 updater 协议；appcast 未实现）—— 见 §9.12
+8. ~~**待实现 B**~~ ✅ Linux 外部 WM 最小化/缩放事件（原 GirCore 受阻结论已推翻）—— 见 §9.12
+9. **剩余细节项**（§9.7.3 中仍标「⚠️ 部分」者）：**P2-12** dev 资产代理 / **P2-13** macOS Dock bounce / **P1-7** GTK app ID / **P1-9** Windows CDP 中止
 
 > 说明：§9.2/§9.7 中标注「✅ 已实现」「⊘ 不适用」的条目无需再跟进；上表仅为仍需实现/对齐的剩余项。
 
@@ -574,5 +575,50 @@ Wails.Net `HelperProcess.cs` 对齐：
 - 全量测试 1540 项、17 失败（与基线 worktree 一致，`Plugins/` 既有问题），**无新增失败**；本期 P2-14/P2-19 无新增测试（`Environment.Exit` 与 Win32 行为）。
 - **P1-10 补全新增测试** `tests/Wails.Net.Application.Windows.Tests/PlatformMessageWindowTests.cs`（4 项）：纯逻辑 2 项（`ImmersiveColorSet` 发出 / 其它类别不发出）默认执行；窗口创建与销毁 2 项标记 `[RequiresGuiEnvironment]`（按 AGENTS §4.4 默认跳过）。设置 `WAILS_RUN_GUI_TESTS=1` 后 **4/4 通过**；Windows 测试项目整体 179 项（46 通过 / 133 跳过）。
 - 托盘主题切换与 Updater helper 的端到端行为仍未在本环境验证（无真实桌面会话与更新流程）。
+
+---
+
+## 9.12 P2-11 / P2-16 / P2-22 / P2-23 / 待实现 A / 待实现 B 实现记录（2026-10-18）
+
+依据 Wails v3 `v3.0.0-beta.28`。本批完成 §9.7.4 的剩余 P2 项与两个挂起/受阻项。
+
+### 9.12.1 P2-11 dev 前端就绪检查（beta.26 #6150）
+
+新增 `src/Wails.Net.Cli/Build/FrontendDevServerReadiness.cs`（就绪探测纯逻辑 + HTTP 单次探测 + 状态分类）；`DevCommand.cs` 在启动 `dotnet watch`**之前**探测（默认 60s 超时 / 250ms 轮询 / 单次请求 5s；2xx·3xx=就绪，连接被拒·超时·4xx·5xx 继续重试；超时→报错并**不启动**应用）。URL 取值：`FRONTEND_DEVSERVER_URL` → `wails.json` 的 `frontend.devServerUrl`，未配置/非法则跳过（保持既有启动行为）。
+测试 `tests/Wails.Net.Cli.Tests/FrontendDevServerReadinessTests.cs` **10 项**（探测委托可注入，无真实网络）。
+
+### 9.12.2 P2-16 MSIX 打包（beta.21 #6115）
+
+新增 `src/Wails.Net.Cli/Build/MsixPackageOptions.cs` + `MsixPackager.cs`（架构映射 amd64→x64/386→x86、`AppxManifest.xml` 生成（对齐 v3 两个模板）、Assets 占位 PNG、结构化目录、`MakeAppx pack`、可选 `signtool sign`）；`PackCommand.cs` 新增 `--format msix|appx` 与 `--publisher/--cert/--cert-password/--use-msix-tool`。
+**产物与降级**：本机 `MakeAppx.exe`/`signtool.exe` 位于 Windows SDK（PATH 未命中时按 SDK 版本降序回退）；工具缺失**不静默失败**——保留 `*.structure` 目录并返回清晰错误；signtool 缺失仍产出未签名包并 Warn。已实测真实 `MakeAppx` 打包成功。
+测试 `MsixPackagerTests.cs` **18 项**（清单字段/转义、PNG 尺寸解析、架构映射、降级路径、端到端；工具缺失时跳过）。
+
+### 9.12.3 P2-22 setup 向导完善（beta.28 #6224 / beta.24）
+
+新增 `src/Wails.Net.Cli/Setup/SetupSystemInfo.cs`（系统详情：OS/架构/.NET SDK/WebView2/GTK 等，缺失统一 `unknown`；`--json` 输出）、`SafeInstallerCommand.cs`（逐条移植 Go `safeInstallers`/`getSafeCommand`：命令仅由白名单包管理器构造、无 shell、`ArgumentList` 直传 argv）、`SetupInstallerCatalog.cs`（依赖名→命令常量目录）；`SetupCommand.cs` 新增 `--json`/`--system`/`--install`（默认**仅预览**打印将执行命令）/`--yes`（确认后执行）；`DoctorCommand` 4 处 `private`→`internal` 以复用。
+测试 `SetupCommandTests.cs`：系统详情必填字段、白名单 **23 条通过 / 22 条拒绝**（含 `rm -rf /`、`curl|sh`、`sudo -n`、`apt install &&` 等）。
+
+### 9.12.4 P2-23 macOS app 输出避开 file provider（beta.28 #6225）
+
+新增 `src/Wails.Net.Cli/Build/MacOsOutputPreparer.cs`：「路径判定 + 重定位决策」抽为纯逻辑 `Decide`（file provider→Relocate / 普通→MarkLocal / 项目外→建目录 / 已链接→确保目标本地 / 已标记→AlreadyLocal），`PrepareAsync` 为薄封装（非 macOS no-op）；`PackCommand.cs` 在打包前调用。
+测试 `MacOsOutputPreparerTests.cs` **9 项**。真实挂载探测（xattr `com.apple.fileprovider.fpfs#P`/`FinderInfo`）与符号链接实际效果**未在本机验证**。
+
+### 9.12.5 待实现 A Updater endpoint provider
+
+新增 `src/Wails.Net.Plugins.Updater/Services/Updater/EndpointUpdateProvider.cs`（约 740 行，对应 Go `providers/endpoint`）：URL 模板占位符（platform/arch/version/channel）+ 未消费参数转 query；来源分发 `http/https`→HttpClient（204/404→null、非 2xx 抛错、响应 ≥8 MiB 上限）、`file`→本地文件、其它 scheme→注入的 `customSchemeLoader`；解析 `schemaVersion`(>1 拒绝)/`version`/`channel`/`artifacts`，按平台+架构选择（用户显式 `assetNamePattern` 优先），映射 Version/ReleaseNotes/DownloadURL/ContentLength/PublishedDate，sha256→Checksum、minisign→Signature，非法 base64 或签名缺 algo → `InvalidDataException`；并容忍 UTF-8 BOM（`JsonDocument.Parse` 不接受前导 BOM）。
+**结论纠正**：v3 的 `wails://` **不是** updater 协议前缀（实为 webview/资产服务器自定义 scheme），故未实现路由层而提供 scheme 注入点；appcast 未实现（Sparkle XML 的 Ed25519 签名在 `UpdateManifest` 无对应槽位，照搬会静默丢签名）。
+测试 `EndpointUpdateProviderTests.cs` **28 项全部通过**。
+
+### 9.12.6 待实现 B Linux 外部 WM 最小化/缩放事件
+
+`src/Wails.Net.Application.Linux/LinuxWebviewWindow.cs`：realize 后经 `Gtk.Window.GetSurface()` 取 `Gdk.Surface`；订阅 `Gdk.Surface` 的 **`notify::state`**，读 `Gdk.Internal.Toplevel.GetState`（`gdk_toplevel_get_state`）的 `Gdk.ToplevelState.Minimized`，与 `_minimised` 比较后派发 `WindowMinimised`/`WindowUnMinimised`（与程序化路径共用状态、不重复派发）；订阅 `Gdk.Surface` 的 **`layout`**（`LayoutSignalArgs`，含 Width/Height）派发 `WindowResized`（首次 layout 仅建基线）；`Close` 解绑信号并释放引用。
+**结论纠正**：原「受阻于 GirCore 0.8.0（无 surface layout API、Gtk4 无 `is-minimised`）」**不成立** —— `Gtk.Window.GetSurface`、`Gdk.Surface.OnLayout`、`Gdk.Toplevel.GetState` 在 0.8.0 中均可用。另：GDK4 **并无公开的 `Gdk.Toplevel::state-changed` 信号**，正确触发方式是 `notify::state`（该属性可读且默认 notify，非 EXPLICIT_NOTIFY）。
+构建：`Wails.Net.Application.Linux` 全量重建 **0 警告 0 错误**。运行时行为（X11/Wayland 各后端的 notify 时机）未在本机验证。
+
+### 9.12.7 验证与回归
+
+- **构建**：`Wails.Net.Cli`、`Wails.Net.Plugins.Updater`、`Wails.Net.Application.Linux` 及三个测试项目全部通过（0 警告）。
+- **测试**：`Wails.Net.Cli.Tests` 479 项（**476 通过 / 3 跳过 / 0 失败**）；`Wails.Net.Plugins.Updater.Tests` **28/28 通过**；`Wails.Net.Application.Tests` 全量 1540 项、17 失败（与基线 worktree 完全一致，**无新增失败**）。
+- **未验证**：MSIX 签名实跑（无 pfx 证书）、macOS 真实挂载探测与符号链接效果、Linux GUI 运行时的事件时机、Updater 自托管端到端。
 
 
