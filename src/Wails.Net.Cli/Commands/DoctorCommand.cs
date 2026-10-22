@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace Wails.Net.Cli.Commands;
 
@@ -17,11 +18,15 @@ internal sealed class DoctorCommand : CliCommandBase
     /// <returns>配置好的命令。</returns>
     public static Command Create()
     {
+        var jsonOption = new Option<bool>("--json");
+        jsonOption.Description = "以 JSON 输出诊断结果（供 MCP / 自动化使用）";
+
         var command = new Command("doctor", "诊断开发环境（.NET SDK、WebView2、GTK4 等）");
-        command.Action = AsyncAction.Create(async () =>
+        command.Options.Add(jsonOption);
+        command.Action = AsyncAction.Create(async (parseResult, _) =>
         {
             var cmd = new DoctorCommand();
-            return await cmd.ExecuteAsync();
+            return await cmd.ExecuteAsync(parseResult.GetValue(jsonOption));
         });
         return command;
     }
@@ -29,15 +34,22 @@ internal sealed class DoctorCommand : CliCommandBase
     /// <summary>
     /// 执行 doctor 命令，逐项检查环境。
     /// </summary>
+    /// <param name="json">是否以 JSON 输出（供 MCP / 自动化消费）。</param>
     /// <returns>退出码：0 表示全部通过，非零表示有缺失项。</returns>
-    private async Task<int> ExecuteAsync()
+    private async Task<int> ExecuteAsync(bool json = false)
     {
+        var checks = RunDiagnostics();
+        await Task.CompletedTask;
+
+        if (json)
+        {
+            Info(BuildJsonReport(checks));
+            return checks.Count(check => check.Status == DiagnosticStatus.Fail) == 0 ? 0 : 1;
+        }
+
         Info("Wails.Net 环境诊断");
         Info("==================");
         Info(string.Empty);
-
-        var checks = RunDiagnostics();
-        await Task.CompletedTask;
 
         var passed = 0;
         var warned = 0;
@@ -64,6 +76,66 @@ internal sealed class DoctorCommand : CliCommandBase
 
         // 仅硬性缺失（Fail）视为诊断不通过；可降级项（Warn，如缺 pnpm 回退 npm、缺 NSIS）不影响退出码
         return failed == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// 构造机器可读的诊断报告。
+    /// </summary>
+    /// <param name="checks">诊断结果列表。</param>
+    /// <returns>JSON 文本。</returns>
+    internal static string BuildJsonReport(IReadOnlyList<DiagnosticResult> checks)
+    {
+        var items = new JsonArray();
+        var passed = 0;
+        var warned = 0;
+        var failed = 0;
+        foreach (var check in checks)
+        {
+            var status = check.Status switch
+            {
+                DiagnosticStatus.Pass => "pass",
+                DiagnosticStatus.Warn => "warn",
+                _ => "fail",
+            };
+            switch (check.Status)
+            {
+                case DiagnosticStatus.Pass:
+                    passed++;
+                    break;
+                case DiagnosticStatus.Warn:
+                    warned++;
+                    break;
+                default:
+                    failed++;
+                    break;
+            }
+
+            items.Add(new JsonObject
+            {
+                ["name"] = check.Name,
+                ["status"] = status,
+                ["message"] = check.Message,
+            });
+        }
+
+        var report = new JsonObject
+        {
+            ["ok"] = failed == 0,
+            ["checks"] = items,
+            ["summary"] = new JsonObject
+            {
+                ["passed"] = passed,
+                ["warned"] = warned,
+                ["failed"] = failed,
+                ["total"] = checks.Count,
+            },
+        };
+
+        return report.ToJsonString(new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        });
     }
 
     /// <summary>

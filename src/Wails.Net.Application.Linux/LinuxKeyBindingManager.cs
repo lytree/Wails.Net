@@ -24,6 +24,11 @@ public sealed class LinuxKeyBindingManager : IKeyBindingManager, IDisposable
     private readonly ConcurrentDictionary<string, Gtk.ShortcutController> _controllers = new();
 
     /// <summary>
+    /// X11 系统级全局热键（XGrabKey）；不可用时回退到窗口内 GTK 快捷键。
+    /// </summary>
+    private readonly LinuxX11GlobalHotkeys _globalHotkeys = new();
+
+    /// <summary>
     /// 标记是否已释放。
     /// </summary>
     private bool _disposed;
@@ -45,7 +50,13 @@ public sealed class LinuxKeyBindingManager : IKeyBindingManager, IDisposable
 
         _bindings[accelerator] = callback;
 
-        // 查找当前应用的第一个窗口，将快捷键控制器附加到其上。
+        // 优先注册 X11 系统级热键（窗口失焦/最小化时仍生效）。
+        if (_globalHotkeys.TryRegister(accelerator, callback))
+        {
+            return;
+        }
+
+        // X11 不可用（原生 Wayland / 无 DISPLAY / 键已被占用）：回退窗口内 GTK 快捷键。
         var app = Application.Get();
         if (app is null)
         {
@@ -70,6 +81,12 @@ public sealed class LinuxKeyBindingManager : IKeyBindingManager, IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         _bindings.TryRemove(accelerator, out _);
+
+        // 先尝试注销 X11 系统级热键；未注册时再清理 GTK 控制器。
+        if (_globalHotkeys.TryUnregister(accelerator))
+        {
+            return;
+        }
 
         if (_controllers.TryRemove(accelerator, out var controller))
         {
@@ -160,8 +177,9 @@ public sealed class LinuxKeyBindingManager : IKeyBindingManager, IDisposable
         {
             var trimmed = part.Trim();
             var upper = trimmed.ToUpperInvariant();
-            if (upper is "CTRL" or "CONTROL")
+            if (upper is "CTRL" or "CONTROL" or "CMDORCTRL" or "CMD" or "COMMAND")
             {
+                // Linux 上 Cmd/CmdOrCtrl 统一映射为 Control（与 X11 全局快捷键一致）。
                 modifiers.Add("<Control>");
             }
             else if (upper is "ALT" or "OPTION" or "OPT")
@@ -207,6 +225,7 @@ public sealed class LinuxKeyBindingManager : IKeyBindingManager, IDisposable
 
         _controllers.Clear();
         _bindings.Clear();
+        _globalHotkeys.Dispose();
         _disposed = true;
     }
 }

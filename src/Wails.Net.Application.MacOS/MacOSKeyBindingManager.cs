@@ -229,6 +229,11 @@ public sealed class MacOSKeyBindingManager : IKeyBindingManager
     private static IntPtr s_hotKeyHandler;
 
     /// <summary>
+    /// Carbon 事件处理委托，静态持有以避免被 GC 回收（原生侧仅保存函数指针）。
+    /// </summary>
+    private static readonly CarbonEventHandlerProc s_hotKeyHandlerProc = HotKeyHandlerProc;
+
+    /// <summary>
     /// 安装全局热键事件处理器（单次）。
     /// </summary>
     private static void EnsureHotKeyHandlerInstalled()
@@ -243,17 +248,25 @@ public sealed class MacOSKeyBindingManager : IKeyBindingManager
             EventClass = KEventClassKeyboard,
             EventKind = KEventHotKeyPressed,
         };
-        InstallApplicationEventHandler(HotKeyHandlerProc, 1, ref evt, IntPtr.Zero, out s_hotKeyHandler);
+        InstallApplicationEventHandler(s_hotKeyHandlerProc, 1, ref evt, IntPtr.Zero, out s_hotKeyHandler);
     }
 
     /// <summary>
-    /// Carbon 全局热键事件处理器（由 [UnmanagedCallersOnly] 暴露为原生回调）。
+    /// Carbon 事件处理器委托签名。
     /// </summary>
     /// <param name="nextHandler">下一个处理器。</param>
     /// <param name="theEvent">事件引用。</param>
     /// <param name="userData">用户数据。</param>
     /// <returns>OSStatus。</returns>
-    [UnmanagedCallersOnly]
+    private delegate int CarbonEventHandlerProc(IntPtr nextHandler, IntPtr theEvent, IntPtr userData);
+
+    /// <summary>
+    /// Carbon 全局热键事件处理器。
+    /// </summary>
+    /// <param name="nextHandler">下一个处理器。</param>
+    /// <param name="theEvent">事件引用。</param>
+    /// <param name="userData">用户数据。</param>
+    /// <returns>OSStatus。</returns>
     private static int HotKeyHandlerProc(IntPtr nextHandler, IntPtr theEvent, IntPtr userData)
     {
         if (GetEventParameter(theEvent, KEventParamDirectObject, TypeEventHotKeyId, IntPtr.Zero,
@@ -270,7 +283,7 @@ public sealed class MacOSKeyBindingManager : IKeyBindingManager
 
     [DllImport("/System/Library/Frameworks/Carbon.framework/Carbon", EntryPoint = "InstallApplicationEventHandler")]
     private static extern int InstallApplicationEventHandler(
-        IntPtr handlerProc, uint numTypes, ref EventTypeSpec eventType,
+        CarbonEventHandlerProc handlerProc, uint numTypes, ref EventTypeSpec eventType,
         IntPtr userData, out IntPtr handlerRef);
 
     [DllImport("/System/Library/Frameworks/Carbon.framework/Carbon", EntryPoint = "GetEventParameter")]

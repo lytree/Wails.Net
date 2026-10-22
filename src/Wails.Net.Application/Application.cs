@@ -1049,6 +1049,96 @@ public class Application
     }
 
     /// <summary>
+    /// 创建 notch 窗口（挂接在 macOS 显示器顶部摄像头刘海区域的独立窗口）。
+    /// 对应 Wails v3 Go 版本 <c>notch_window.go</c> 中的
+    /// <c>WindowManager.NewNotchWindow</c>。
+    /// <para>
+    /// 原生几何、外观与动画由 macOS 平台层接管；非 macOS 平台返回空包装
+    /// （与 Go 侧 <c>notchWindowsSupported</c> 的降级语义一致）。
+    /// 多个 notch 窗口可共存，最近显示者位于最前。
+    /// </para>
+    /// </summary>
+    /// <param name="options">notch 窗口配置。</param>
+    /// <returns>notch 窗口包装实例。</returns>
+    public virtual NotchWindow CreateNotchWindow(NotchWindowOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        if (!OperatingSystem.IsMacOS())
+        {
+            return new NotchWindow(null);
+        }
+
+        return new NotchWindow(CreateWebviewWindow(BuildNotchWindowOptions(options)));
+    }
+
+    /// <summary>
+    /// 将 notch 窗口配置映射为标准窗口选项。
+    /// 对应 Wails v3 Go 版本 <c>notch_window.go</c> 的 <c>webviewOptionsForNotchWindow</c>：
+    /// 补齐原生形状边距、透明无边框、NSPanel 与非激活浮动面板等固定外观字段。
+    /// </summary>
+    /// <param name="options">notch 窗口配置。</param>
+    /// <returns>标准窗口选项。</returns>
+    internal static WebviewWindowOptions BuildNotchWindowOptions(NotchWindowOptions options)
+    {
+        // 默认值与 Wails v3 Go 版本 notch_window.go 保持一致。
+        var width = options.Width > 0 ? options.Width : 660;
+        var height = options.Height > 0 ? options.Height : 92;
+        var animationSpeed = options.AnimationSpeed > TimeSpan.Zero
+            ? options.AnimationSpeed
+            : TimeSpan.FromMilliseconds(420);
+
+        // 与 Go webviewOptionsForNotchWindow 一一对应：
+        // 原生形状边距 30pt（水平）/ 12pt（底部）。
+        const int horizontalInset = 30;
+        const int bottomInset = 12;
+
+        var windowOptions = options.WindowOptions;
+        windowOptions.Width = width + (2 * horizontalInset);
+        windowOptions.Height = height + bottomInset;
+        windowOptions.Frameless = true;
+        windowOptions.Resizable = false;
+        windowOptions.Minimisable = false;
+        windowOptions.Maximisable = false;
+        windowOptions.MinWidth = 0;
+        windowOptions.MinHeight = 0;
+        windowOptions.MaxWidth = 0;
+        windowOptions.MaxHeight = 0;
+        windowOptions.Hidden = false;
+        windowOptions.X = 0;
+        windowOptions.Y = 0;
+        windowOptions.BackgroundType = "transparent";
+        windowOptions.R = 0;
+        windowOptions.G = 0;
+        windowOptions.B = 0;
+        windowOptions.A = 0;
+
+        var mac = windowOptions.Mac ??= new WebviewWindowMacOptions();
+        mac.Backdrop = 1; // MacBackdropTransparent
+        mac.DisableShadow = true;
+        mac.CornerType = 1; // MacWindowCornerTypeSquare
+        mac.WindowClass = 1; // MacWindowClassPanel
+        mac.WindowLevel = 6; // MacWindowLevelPopUpMenu（本项目序号映射）
+        mac.PanelPreferences = new MacPanelPreferences
+        {
+            NonActivating = true,
+            FloatingPanel = true,
+        };
+        // CanJoinAllSpaces | FullScreenAuxiliary | Stationary | IgnoresCycle
+        mac.CollectionBehavior = 1 | 256 | 16 | 64;
+        mac.Notch = new NotchWindowInfo
+        {
+            ContentWidth = width,
+            ContentHeight = height,
+            Animated = options.Animated,
+            AnimationSpeedMilliseconds = (int)Math.Max(0, animationSpeed.TotalMilliseconds),
+            ScreenId = options.Screen?.Id,
+        };
+
+        return windowOptions;
+    }
+
+    /// <summary>
     /// 根据 ID 获取窗口。
     /// </summary>
     /// <param name="id">窗口 ID。</param>

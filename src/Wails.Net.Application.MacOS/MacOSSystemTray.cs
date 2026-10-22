@@ -93,7 +93,7 @@ public sealed class MacOSSystemTray : ISystemTrayImpl
         }
 
         using var data = Foundation.NSData.FromArray(iconData);
-        var image = AppKit.NSImage.FromData(data);
+        var image = new AppKit.NSImage(data);
         if (image is null)
         {
             return;
@@ -210,8 +210,9 @@ public sealed class MacOSSystemTray : ISystemTrayImpl
         }
 
         var statusItem = AppKit.NSStatusBar.SystemStatusBar.CreateStatusItem(AppKit.NSStatusItemLength.Variable);
-        statusItem.Button!.SendActionOn(
-            AppKit.NSEventMask.LeftMouseDown | AppKit.NSEventMask.RightMouseDown);
+        // .NET for macOS 将 sendActionOn: 绑定为 NSEventType（底层仍为掩码），合并左右键按下事件。
+        var actionMask = (long)AppKit.NSEventMask.LeftMouseDown | (long)AppKit.NSEventMask.RightMouseDown;
+        statusItem.Button!.SendActionOn((AppKit.NSEventType)actionMask);
         statusItem.Button.Activated += OnButtonActivated;
 
         _statusItem = statusItem;

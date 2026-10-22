@@ -2,6 +2,10 @@ using Wails.Net.Application.Services;
 using System.Diagnostics;
 using System.Text;
 using Wails.Net.Application.Options;
+#if ANDROID
+using Android.App;
+using Android.Content;
+#endif
 
 namespace Wails.Net.Plugins.Notification.Services;
 
@@ -303,6 +307,13 @@ public class NotificationService : IServiceStartup, IServiceShutdown
     {
         try
         {
+#if ANDROID
+            if (OperatingSystem.IsAndroid())
+            {
+                SendAndroidNotification(title, body);
+                return;
+            }
+#endif
             if (OperatingSystem.IsLinux())
             {
                 SendLinuxNotification(title, body, icon);
@@ -310,6 +321,10 @@ public class NotificationService : IServiceStartup, IServiceShutdown
             else if (OperatingSystem.IsWindows())
             {
                 SendWindowsNotification(title, body);
+            }
+            else if (OperatingSystem.IsMacOS())
+            {
+                SendMacOSNotification(title, body);
             }
             // 其他平台暂不调用原生通知
         }
@@ -435,6 +450,76 @@ public class NotificationService : IServiceStartup, IServiceShutdown
     }
 
     /// <summary>
+    /// 通过 Android NotificationManager 发送系统通知。
+    /// 需要应用声明通知渠道，并在 Android 13+（API 33）持有 <c>POST_NOTIFICATIONS</c> 运行时权限。
+    /// </summary>
+    /// <param name="title">通知标题。</param>
+    /// <param name="body">通知正文。</param>
+    private static void SendAndroidNotification(string title, string body)
+    {
+#if ANDROID
+        var context = global::Android.App.Application.Context;
+        if (context is null)
+        {
+            return;
+        }
+
+        // API 33+ 未授予通知权限时静默返回（系统不会展示通知）。
+        if (OperatingSystem.IsAndroidVersionAtLeast(33)
+            && context.CheckSelfPermission("android.permission.POST_NOTIFICATIONS")
+                != global::Android.Content.PM.Permission.Granted)
+        {
+            return;
+        }
+
+        var manager = context.GetSystemService(global::Android.Content.Context.NotificationService)
+            as NotificationManager;
+        if (manager is null)
+        {
+            return;
+        }
+
+        const string channelId = "wails_notifications";
+        if (OperatingSystem.IsAndroidVersionAtLeast(26))
+        {
+            // 重复创建同名渠道是幂等操作，标题/重要级不会覆盖用户修改。
+            var channel = new NotificationChannel(channelId, "Wails", NotificationImportance.Default);
+            manager.CreateNotificationChannel(channel);
+        }
+
+        global::Android.App.Notification.Builder builder =
+            OperatingSystem.IsAndroidVersionAtLeast(26)
+                ? new global::Android.App.Notification.Builder(context, channelId)
+                : new global::Android.App.Notification.Builder(context);
+        builder.SetContentTitle(title).SetContentText(body).SetAutoCancel(true);
+
+        var icon = context.ApplicationInfo?.Icon ?? 0;
+        if (icon != 0)
+        {
+            builder.SetSmallIcon(icon);
+        }
+
+        // 点击通知回到宿主 Activity。
+        var launchIntent = context.PackageManager?.GetLaunchIntentForPackage(context.PackageName ?? string.Empty);
+        if (launchIntent is not null)
+        {
+            var pending = PendingIntent.GetActivity(
+                context,
+                0,
+                launchIntent,
+                PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable);
+            if (pending is not null)
+            {
+                builder.SetContentIntent(pending);
+            }
+        }
+
+        var notificationId = (int)(DateTime.UtcNow.Ticks & 0x7FFFFFFF);
+        manager.Notify(notificationId, builder.Build());
+#endif
+    }
+
+    /// <summary>
     /// 通过 PowerShell 调用 WinRT Toast 通知 API 发送 Windows 10+ 原生 Toast 通知。
     /// 对应 Wails v3 Go 版本中通过 COM 调用 IToastNotifier 的实现。
     /// 注意：使用 PowerShell 进程调用 WinRT API 避免引入新的 NuGet 包依赖。
@@ -487,6 +572,66 @@ try {{
             process.WaitForExit(10000);
         }
     }
+
+    /// <summary>
+    /// 通过 <c>osascript</c> 调用 AppleScript <c>display notification</c> 发送 macOS 通知中心通知。
+    /// 对应 Wails v3 的 macOS 通知实现；脚本通过参数列表传递，避免 shell 注入。
+    /// </summary>
+    /// <param name="title">通知标题。</param>
+    /// <param name="body">通知正文。</param>
+    private void SendMacOSNotification(string title, string body)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = "osascript",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardError = true
+        };
+        psi.ArgumentList.Add("-e");
+        psi.ArgumentList.Add(BuildMacOSAppleScript(title, body));
+
+        try
+        {
+            using var process = Process.Start(psi);
+            if (process is null)
+            {
+                return;
+            }
+
+            // 等待 osascript 完成，最多 3 秒，超时不阻塞应用。
+            process.WaitForExit(3000);
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            // osascript 不可用时静默忽略
+        }
+    }
+
+    /// <summary>
+    /// 构造 macOS 通知的 AppleScript。
+    /// </summary>
+    /// <param name="title">通知标题。</param>
+    /// <param name="body">通知正文。</param>
+    /// <returns>可直接传给 <c>osascript -e</c> 的脚本。</returns>
+    internal static string BuildMacOSAppleScript(string title, string body)
+    {
+        var escapedTitle = EscapeAppleScript(title);
+        var escapedBody = EscapeAppleScript(body);
+        return $"display notification \"{escapedBody}\" with title \"{escapedTitle}\"";
+    }
+
+    /// <summary>
+    /// 转义 AppleScript 字符串字面量中的反斜杠、引号与换行。
+    /// </summary>
+    /// <param name="text">原始文本。</param>
+    /// <returns>转义后的文本。</returns>
+    private static string EscapeAppleScript(string text) =>
+        (text ?? string.Empty)
+            .Replace("\\", "\\\\")
+            .Replace("\"", "\\\"")
+            .Replace("\r", " ")
+            .Replace("\n", " ");
 
     /// <summary>
     /// 对字符串进行 XML 实体转义，确保可安全嵌入 XML 文本节点。

@@ -1824,6 +1824,69 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     }
 
     /// <inheritdoc />
+    public void SetTaskbarProgress(TaskbarProgressState state, ulong completed, ulong total)
+    {
+        // Linux 无统一任务栏进度 API：经 Unity LauncherEntry D-Bus 信号广播，
+        // 由桌面环境（Unity/KDE Plasma/兼容扩展）在启动器图标上绘制进度。
+        var appId = ResolveLauncherAppId();
+        if (appId is null)
+        {
+            return;
+        }
+
+        LinuxLauncherEntry.TryUpdate(appId, LinuxLauncherEntry.BuildProgressState(state, completed, total));
+    }
+
+    /// <inheritdoc />
+    public void SetBadgeCount(int count)
+    {
+        var appId = ResolveLauncherAppId();
+        if (appId is null)
+        {
+            return;
+        }
+
+        LinuxLauncherEntry.TryUpdate(appId, LinuxLauncherEntry.BuildBadgeState(count));
+    }
+
+    /// <inheritdoc />
+    public void SetBadgeLabel(string? label)
+    {
+        // Unity LauncherEntry 仅支持数字计数；空标签清除徽章，非数字文本忽略
+        // （Linux 无跨桌面文本徽章机制）。
+        if (string.IsNullOrEmpty(label))
+        {
+            SetBadgeCount(0);
+            return;
+        }
+
+        if (int.TryParse(label, System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture, out var count))
+        {
+            SetBadgeCount(count);
+        }
+    }
+
+    /// <summary>
+    /// 解析用于启动器 URI 的 application id。
+    /// 优先使用平台应用已解析的 id，退化时按应用名重新推导。
+    /// </summary>
+    /// <returns>application id；无法解析时为 null。</returns>
+    private static string? ResolveLauncherAppId()
+    {
+        var app = WailsApplication.Get();
+        if (app?.PlatformApp is LinuxPlatformApp linux)
+        {
+            return linux.ApplicationId;
+        }
+
+        return app is null
+            ? null
+            : LinuxApplicationId.ResolveApplicationId(
+                app.Options.Name, LinuxApplicationId.ApplicationIdOverride, out _);
+    }
+
+    /// <inheritdoc />
     public void SetResizable(bool resizable)
     {
         _window?.SetResizable(resizable);

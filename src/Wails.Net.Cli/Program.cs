@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Text;
 using Wails.Net.Cli.Commands;
 
 namespace Wails.Net.Cli;
@@ -16,9 +17,32 @@ public static class Program
     /// <returns>进程退出码：0 表示成功，非零表示失败。</returns>
     public static async Task<int> Main(string[] args)
     {
+        EnsureUtf8WhenRedirected();
+
         var rootCommand = BuildRootCommand();
         var parseResult = rootCommand.Parse(args);
         return await parseResult.InvokeAsync();
+    }
+
+    /// <summary>
+    /// 标准输出被重定向（管道 / 子进程采集）时统一使用 UTF-8，避免 Windows 代码页导致
+    /// 中文乱码（MCP 子进程输出经此路径回传给服务器）。
+    /// </summary>
+    private static void EnsureUtf8WhenRedirected()
+    {
+        if (!Console.IsOutputRedirected)
+        {
+            return;
+        }
+
+        try
+        {
+            Console.OutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+        }
+        catch (IOException)
+        {
+            // 无控制台或平台不支持时保持默认编码
+        }
     }
 
     /// <summary>
@@ -30,6 +54,7 @@ public static class Program
         var root = new RootCommand("Wails.Net CLI - .NET 10 桌面应用开发工具链");
         root.Subcommands.Add(GenerateCommand.Create());
         root.Subcommands.Add(DoctorCommand.Create());
+        root.Subcommands.Add(McpCommand.Create());
         root.Subcommands.Add(SetupCommand.Create());
         root.Subcommands.Add(NewCommand.Create());
         root.Subcommands.Add(CheckCommand.Create());

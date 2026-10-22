@@ -92,6 +92,24 @@ public sealed class NotificationServiceTests
     }
 
     [Test]
+    public async Task BuildMacOSAppleScript_EscapesQuotesAndBackslashes()
+    {
+        var script = NotificationService.BuildMacOSAppleScript("Ti\"tle", "Bo\\dy \"quoted\"");
+
+        await Assert.That(script)
+            .IsEqualTo("display notification \"Bo\\\\dy \\\"quoted\\\"\" with title \"Ti\\\"tle\"");
+    }
+
+    [Test]
+    public async Task BuildMacOSAppleScript_ReplacesNewlines()
+    {
+        var script = NotificationService.BuildMacOSAppleScript("Title", "line1\nline2\r\nline3");
+
+        await Assert.That(script)
+            .IsEqualTo("display notification \"line1 line2  line3\" with title \"Title\"");
+    }
+
+    [Test]
     public async Task ServiceStartup_DoesNotThrow()
     {
         // 安排

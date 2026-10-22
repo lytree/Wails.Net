@@ -21,8 +21,8 @@ public sealed class MacOSKeychain : IPlatformKeychain
     /// <param name="service">服务标识。</param>
     /// <param name="account">账户标识。</param>
     /// <returns>SecRecord 查询记录。</returns>
-    private static Security.SecRecord BuildRecord(string service, string account)
-        => new(Security.SecKind.GenericPassword)
+    private static global::Security.SecRecord BuildRecord(string service, string account)
+        => new(global::Security.SecKind.GenericPassword)
         {
             Service = service,
             Account = account,
@@ -41,8 +41,8 @@ public sealed class MacOSKeychain : IPlatformKeychain
         record.ValueData = Foundation.NSData.FromString(password, Foundation.NSStringEncoding.UTF8);
 
         // 先删除旧条目再添加，保证写入即更新（Add 在条目存在时返回 DuplicateItem）。
-        Security.SecKeyChain.Remove(record);
-        return Security.SecKeyChain.Add(record) == Security.SecStatusCode.Success;
+        global::Security.SecKeyChain.Remove(record);
+        return global::Security.SecKeyChain.Add(record) == global::Security.SecStatusCode.Success;
 #else
         return false;
 #endif
@@ -56,8 +56,8 @@ public sealed class MacOSKeychain : IPlatformKeychain
         ArgumentException.ThrowIfNullOrEmpty(account);
 
         var record = BuildRecord(service, account);
-        var data = Security.SecKeyChain.QueryAsData(record, out var status);
-        if (status != Security.SecStatusCode.Success || data is null)
+        var data = global::Security.SecKeyChain.QueryAsData(record, false, out var status);
+        if (status != global::Security.SecStatusCode.Success || data is null)
         {
             return null;
         }
@@ -76,10 +76,10 @@ public sealed class MacOSKeychain : IPlatformKeychain
         ArgumentException.ThrowIfNullOrEmpty(account);
 
         var record = BuildRecord(service, account);
-        var status = Security.SecKeyChain.Remove(record);
+        var status = global::Security.SecKeyChain.Remove(record);
         // 条目不存在（ItemNotFound）业务上视作成功。
-        return status == Security.SecStatusCode.Success
-            || status == Security.SecStatusCode.ItemNotFound;
+        return status == global::Security.SecStatusCode.Success
+            || status == global::Security.SecStatusCode.ItemNotFound;
 #else
         return false;
 #endif

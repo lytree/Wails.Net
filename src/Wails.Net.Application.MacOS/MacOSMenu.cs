@@ -232,16 +232,16 @@ public sealed class MacOSMenu : IMenuImpl, IDisposable
                     break;
 #if MACOS
                 case MenuRole.Hide:
-                    AppKit.NSApplication.SharedApplication.Hide(null);
+                    AppKit.NSApplication.SharedApplication.Hide(null!);
                     break;
                 case MenuRole.HideOthers:
-                    AppKit.NSApplication.SharedApplication.HideOtherApplications(null);
+                    AppKit.NSApplication.SharedApplication.HideOtherApplications(null!);
                     break;
                 case MenuRole.ShowAll:
-                    AppKit.NSApplication.SharedApplication.UnhideAllApplications(null);
+                    AppKit.NSApplication.SharedApplication.UnhideAllApplications(null!);
                     break;
                 case MenuRole.BringAllToFront:
-                    AppKit.NSApplication.SharedApplication.ArrangeInFront(null);
+                    AppKit.NSApplication.SharedApplication.ArrangeInFront(null!);
                     break;
                 case MenuRole.Services:
                     // Services 菜单在菜单树构建时通过 SetSubmenu 挂到 NSApp.ServicesMenu。
@@ -318,7 +318,7 @@ public sealed class MacOSMenu : IMenuImpl, IDisposable
         {
             _nsMenu = new AppKit.NSMenu
             {
-                AutoenablesItems = false,
+                AutoEnablesItems = false,
             };
         }
         else
@@ -364,7 +364,7 @@ public sealed class MacOSMenu : IMenuImpl, IDisposable
         if (item.IsSubMenu || item.Items.Count > 0)
         {
             var nsItem = new AppKit.NSMenuItem(label);
-            var submenu = new AppKit.NSMenu { AutoenablesItems = false };
+            var submenu = new AppKit.NSMenu { AutoEnablesItems = false };
             foreach (var child in item.Items)
             {
                 AppendItem(submenu, child, window);
@@ -389,7 +389,7 @@ public sealed class MacOSMenu : IMenuImpl, IDisposable
         // 复选框/单选状态。
         if (item.IsCheckbox || item.IsRadio)
         {
-            leaf.State = item.Checked ? AppKit.NSControlStateValue.On : AppKit.NSControlStateValue.Off;
+            leaf.State = item.Checked ? AppKit.NSCellStateValue.On : AppKit.NSCellStateValue.Off;
         }
 
         leaf.Enabled = !item.IsDisabled;
@@ -406,7 +406,7 @@ public sealed class MacOSMenu : IMenuImpl, IDisposable
         if (item.Bitmap is { Length: > 0 } bitmap)
         {
             using var data = Foundation.NSData.FromArray(bitmap);
-            var image = AppKit.NSImage.FromData(data);
+            var image = new AppKit.NSImage(data);
             if (image is not null)
             {
                 leaf.Image = image;
@@ -438,9 +438,8 @@ public sealed class MacOSMenu : IMenuImpl, IDisposable
 
         if (item.CallbackWithContext is not null)
         {
-            var context = new MenuContext()
-                .WithClickedMenuItem(item)
-                .WithChecked(item.Checked);
+            var context = new MenuContext().WithClickedMenuItem(item);
+            context.WithChecked(item.Checked);
             item.CallbackWithContext(context);
             return;
         }
@@ -469,19 +468,19 @@ public sealed class MacOSMenu : IMenuImpl, IDisposable
                 case "SUPER":
                 case "META":
                 case "WIN":
-                    mask |= AppKit.NSEventModifierMask.Command;
+                    mask |= AppKit.NSEventModifierMask.CommandKeyMask;
                     break;
                 case "CTRL":
                 case "CONTROL":
-                    mask |= AppKit.NSEventModifierMask.Control;
+                    mask |= AppKit.NSEventModifierMask.ControlKeyMask;
                     break;
                 case "ALT":
                 case "OPTION":
                 case "OPT":
-                    mask |= AppKit.NSEventModifierMask.Alternate;
+                    mask |= AppKit.NSEventModifierMask.AlternateKeyMask;
                     break;
                 case "SHIFT":
-                    mask |= AppKit.NSEventModifierMask.Shift;
+                    mask |= AppKit.NSEventModifierMask.ShiftKeyMask;
                     break;
                 default:
                     key = TranslateKey(part);

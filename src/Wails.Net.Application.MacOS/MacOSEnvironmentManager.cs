@@ -60,8 +60,9 @@ public sealed class MacOSEnvironmentManager : IEnvironmentManager
         {
             // 参照 DevToys ThemeListener：EffectiveAppearance.FindBestMatch 判定明暗。
             var appearance = AppKit.NSApplication.SharedApplication.EffectiveAppearance;
-            var bestMatch = appearance.FindBestMatch(new[] { AppKit.NSAppearance.NameAqua, AppKit.NSAppearance.NameDarkAqua });
-            return bestMatch == AppKit.NSAppearance.NameDarkAqua;
+            var bestMatch = appearance.FindBestMatch(
+                new[] { AppKit.NSAppearance.NameAqua.ToString(), AppKit.NSAppearance.NameDarkAqua.ToString() });
+            return bestMatch == AppKit.NSAppearance.NameDarkAqua.ToString();
         }
         catch
         {
@@ -78,8 +79,8 @@ public sealed class MacOSEnvironmentManager : IEnvironmentManager
 #if MACOS
         try
         {
-            var accent = AppKit.NSColor.ControlAccentColor;
-            using var rgb = accent.ColorUsingColorSpace(AppKit.NSColorSpace.SRGBColorSpace) ?? accent;
+            var accent = AppKit.NSColor.ControlAccent;
+            using var rgb = accent.UsingColorSpace(AppKit.NSColorSpace.SRGBColorSpace) ?? accent;
             rgb.GetRgba(out var red, out var green, out var blue, out _);
             return $"rgb({(int)(red * 255)},{(int)(green * 255)},{(int)(blue * 255)})";
         }
@@ -112,8 +113,8 @@ public sealed class MacOSEnvironmentManager : IEnvironmentManager
             }
             else if (selectFile && File.Exists(path))
             {
-                // 文件：在 Finder 中选中。
-                workspace.ActivateFileViewerSelecting(new[] { url });
+                // 文件：在 Finder 中打开（.NET for macOS 未绑定 activateFileViewerSelecting）。
+                workspace.ActivateFileViewer(new[] { url });
             }
             else
             {

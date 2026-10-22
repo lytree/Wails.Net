@@ -122,7 +122,7 @@ public sealed class MacOSPlatformApp : IPlatformApp
         // 应用级设置。
         var macOptions = _options.Mac;
         app.ActivationPolicy = (AppKit.NSApplicationActivationPolicy)(macOptions?.ActivationPolicy ?? 0);
-        app.ActivateIgnoringOtherApps(true);
+        app.Activate();
 
         // 屏幕缓存（首次访问时惰性枚举）。
         app.Run();
@@ -141,8 +141,8 @@ public sealed class MacOSPlatformApp : IPlatformApp
 #if MACOS
         try
         {
-            var tempDir = Foundation.NSTemporaryDirectory.TrimEnd('/') + "/";
-            var lockPath = tempDir + SanitizeFileName(uniqueId) + ".lock";
+            var tempDir = Path.GetTempPath();
+            var lockPath = Path.Combine(tempDir, SanitizeFileName(uniqueId) + ".lock");
             var stream = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
             _singleInstanceLock = stream;
             _singleInstanceLockPath = lockPath;
@@ -261,7 +261,7 @@ public sealed class MacOSPlatformApp : IPlatformApp
             if (icon is { Length: > 0 })
             {
                 using var data = Foundation.NSData.FromArray(icon);
-                var image = AppKit.NSImage.FromData(data);
+                var image = new AppKit.NSImage(data);
                 if (image is not null)
                 {
                     alert.Icon = image;
@@ -285,7 +285,7 @@ public sealed class MacOSPlatformApp : IPlatformApp
         }
 
         using var data = Foundation.NSData.FromArray(icon);
-        var image = AppKit.NSImage.FromData(data);
+        var image = new AppKit.NSImage(data);
         if (image is not null)
         {
             AppKit.NSApplication.SharedApplication.ApplicationIconImage = image;
@@ -320,7 +320,7 @@ public sealed class MacOSPlatformApp : IPlatformApp
     public void Hide()
     {
 #if MACOS
-        AppKit.NSApplication.SharedApplication.Hide(null);
+        AppKit.NSApplication.SharedApplication.Hide(null!);
 #else
         _stub.Hide();
 #endif
@@ -330,7 +330,7 @@ public sealed class MacOSPlatformApp : IPlatformApp
     public void Show()
     {
 #if MACOS
-        AppKit.NSApplication.SharedApplication.Unhide(null);
+        AppKit.NSApplication.SharedApplication.Unhide(null!);
 #else
         _stub.Show();
 #endif
@@ -375,8 +375,9 @@ public sealed class MacOSPlatformApp : IPlatformApp
             // 参照 DevToys ThemeListener：EffectiveAppearance 含系统/应用级外观，
             // FindBestMatch 判定明暗，比 NSUserDefaults 的 AppleInterfaceStyle 更准确。
             var appearance = AppKit.NSApplication.SharedApplication.EffectiveAppearance;
-            var bestMatch = appearance.FindBestMatch(new[] { AppKit.NSAppearance.NameAqua, AppKit.NSAppearance.NameDarkAqua });
-            return bestMatch == AppKit.NSAppearance.NameDarkAqua;
+            var bestMatch = appearance.FindBestMatch(
+                new[] { AppKit.NSAppearance.NameAqua.ToString(), AppKit.NSAppearance.NameDarkAqua.ToString() });
+            return bestMatch == AppKit.NSAppearance.NameDarkAqua.ToString();
         }
         catch
         {
@@ -393,8 +394,8 @@ public sealed class MacOSPlatformApp : IPlatformApp
 #if MACOS
         try
         {
-            var accent = AppKit.NSColor.ControlAccentColor;
-            using var rgb = accent.ColorUsingColorSpace(AppKit.NSColorSpace.SRGBColorSpace) ?? accent;
+            var accent = AppKit.NSColor.ControlAccent;
+            using var rgb = accent.UsingColorSpace(AppKit.NSColorSpace.SRGBColorSpace) ?? accent;
             rgb.GetRgba(out var red, out var green, out var blue, out _);
             return $"rgb({(int)(red * 255)},{(int)(green * 255)},{(int)(blue * 255)})";
         }
@@ -730,11 +731,13 @@ public sealed class MacOSPlatformApp : IPlatformApp
     /// <returns>按钮索引（0 起）。</returns>
     private static int GetButtonIndex(long response)
     {
+        // NSAlert 按钮返回码：FirstButtonReturn=1000、SecondButtonReturn=1001、ThirdButtonReturn=1002
+        // （.NET for macOS 未在 NSModalResponse 上提供这些成员，使用 Apple 定义的常量值）。
         return response switch
         {
-            (long)AppKit.NSModalResponse.FirstButtonReturn => 0,
-            (long)AppKit.NSModalResponse.SecondButtonReturn => 1,
-            (long)AppKit.NSModalResponse.ThirdButtonReturn => 2,
+            1000 => 0,
+            1001 => 1,
+            1002 => 2,
             _ => 3,
         };
     }
@@ -820,7 +823,11 @@ public sealed class MacOSPlatformApp : IPlatformApp
 
         if (extensions.Count > 0)
         {
-            panel.AllowedFileTypes = extensions.ToArray();
+            // AllowedFileTypes 自 macOS 12 起弃用，改用 UTType 列表。
+            panel.AllowedContentTypes = extensions
+                .Select(static ext => UniformTypeIdentifiers.UTType.CreateFromExtension(ext))
+                .Where(static type => type is not null)
+                .ToArray()!;
         }
     }
 
@@ -885,7 +892,7 @@ public sealed class MacOSPlatformApp : IPlatformApp
     /// 对应 Wails v3 Go 版本 DefaultApplicationMenu。
     /// </summary>
     /// <returns>默认菜单。</returns>
-    private static Menu BuildDefaultApplicationMenu()
+    private Menu BuildDefaultApplicationMenu()
     {
         var menu = new Menu();
 
@@ -1012,7 +1019,7 @@ public sealed class MacOSPlatformApp : IPlatformApp
         /// <param name="change">变更字典。</param>
         /// <param name="context">上下文。</param>
         [Foundation.Export("observeValueForKeyPath:ofObject:change:context:")]
-        public void ObserveValue(
+        public override void ObserveValue(
             Foundation.NSString keyPath,
             Foundation.NSObject ofObject,
             Foundation.NSDictionary change,

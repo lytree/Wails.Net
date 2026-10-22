@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Android.Content;
 using Android.Net;
+using Android.Provider;
 using Wails.Net.Application.Clipboard;
 using Uri = Android.Net.Uri;
 
@@ -80,16 +81,121 @@ public sealed class AndroidClipboard : IClipboardImpl
     /// <inheritdoc />
     public void SetImage(byte[] imageData)
     {
-        // Android 剪贴板基于 URI 而非原始字节，设置图片需先将字节写入 ContentProvider 并获取 URI。
-        // 骨架实现为 no-op，完整实现需注入 ContentResolver。
+#if ANDROID
+        if (_clipboardManager is null || imageData is null || imageData.Length == 0)
+        {
+            return;
+        }
+
+        // Android 剪贴板基于 URI：把图片写入 MediaStore 后以 content:// URI 放入剪贴板。
+        // API 29+ 使用分区存储（IS_PENDING 两阶段写入），无需 WRITE_EXTERNAL_STORAGE；
+        // 更低版本需要外部存储权限，保持 no-op（由宿主应用自行写入 URI）。
+        if (!OperatingSystem.IsAndroidVersionAtLeast(29))
+        {
+            return;
+        }
+
+        var context = global::Android.App.Application.Context;
+        var resolver = context?.ContentResolver;
+        if (resolver is null)
+        {
+            return;
+        }
+
+        using var values = new ContentValues();
+        values.Put(MediaStore.Images.Media.InterfaceConsts.DisplayName, $"wails-clipboard-{Guid.NewGuid():N}.png");
+        values.Put(MediaStore.Images.Media.InterfaceConsts.MimeType, "image/png");
+        values.Put(MediaStore.Images.Media.InterfaceConsts.RelativePath, "Pictures/WailsNet");
+        values.Put(MediaStore.Images.Media.InterfaceConsts.IsPending, 1);
+
+        var collection = MediaStore.Images.Media.ExternalContentUri;
+        if (collection is null)
+        {
+            return;
+        }
+
+        var uri = resolver.Insert(collection, values);
+        if (uri is null)
+        {
+            return;
+        }
+
+        try
+        {
+            using (var output = resolver.OpenOutputStream(uri))
+            {
+                if (output is null)
+                {
+                    resolver.Delete(uri, null, null);
+                    return;
+                }
+
+                output.Write(imageData, 0, imageData.Length);
+            }
+
+            // 完成待写入状态，使其他应用可读取。
+            using var complete = new ContentValues();
+            complete.Put(MediaStore.Images.Media.InterfaceConsts.IsPending, 0);
+            resolver.Update(uri, complete, null, null);
+
+            _clipboardManager.PrimaryClip = ClipData.NewUri(resolver, "image", uri);
+        }
+        catch
+        {
+            // 写入失败时清理半成品条目。
+            try
+            {
+                resolver.Delete(uri, null, null);
+            }
+            catch
+            {
+                // 清理失败忽略。
+            }
+        }
+#endif
     }
 
     /// <inheritdoc />
     public byte[]? GetImage()
     {
-        // Android 剪贴板图片需通过 URI + ContentResolver 读取。
-        // 骨架实现返回 null。
+#if ANDROID
+        var clip = _clipboardManager?.PrimaryClip;
+        if (clip is null || clip.ItemCount == 0)
+        {
+            return null;
+        }
+
+        var uri = clip.GetItemAt(0)?.Uri;
+        if (uri is null)
+        {
+            return null;
+        }
+
+        var resolver = global::Android.App.Application.Context?.ContentResolver;
+        if (resolver is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            using var input = resolver.OpenInputStream(uri);
+            if (input is null)
+            {
+                return null;
+            }
+
+            using var buffer = new System.IO.MemoryStream();
+            input.CopyTo(buffer);
+            return buffer.ToArray();
+        }
+        catch
+        {
+            return null;
+        }
+#else
         return null;
+#endif
     }
 
     /// <inheritdoc />

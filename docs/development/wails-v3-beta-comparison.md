@@ -1,9 +1,9 @@
 # Wails.Net × Wails v3 最新开发分支对比：可参考项确认
 
-> 分析日期：2026-08-07（beta.4 基线）；**2026-10-17 再确认：Wails v3 已演进至 v3.0.0-beta.28（2026-10-05），差异与待实现项复核见 §9**
+> 分析日期：2026-08-07（beta.4 基线）；**2026-10-17 再确认：Wails v3 已演进至 v3.0.0-beta.28（2026-10-05），差异与待实现项复核见 §9**；**2026-10-22 再确认：beta.28 仍为最新发布（changelog `Unreleased` 为空），剩余差异与 P1-4 实现见 §9.14**
 > **2026-10-17 源码级复核**：§9.2/§9.1 各项已对照 Wails v3 `v3.0.0-beta.28` 官方 Go 源码（tag `v3.0.0-beta.28`，`v3/` 目录）逐项确认，结论与更正见 **§9.7**。
 > 对比对象：wailsapp/wails **master 分支 v3/ 目录**（Wails v3 的实际开发流）
-> 基线：AGENTS.md 参考版本 `v3.0.0-beta.4`（§1/§8 时点）；是否升级至 beta.28 待决策（见 §9.5）
+> 基线：AGENTS.md 参考版本 **`v3.0.0-beta.28`**（2026-10-05，2026-10-17 升级；2026-10-22 再确认仍为最新）
 
 ---
 
@@ -210,12 +210,12 @@
 
 | # | v3 特性（版本） | Wails.Net 现状 |
 |---|----------------|----------------|
-| 4 | `wails3 mcp` 安全 MCP 服务器（beta.9 #5896）+ origin/token 认证硬化（beta.19 #6092） | ❌ CLI 无 mcp 命令（现有 19 个命令：build/dev/pack/publish/check/capability/doctor/setup/plugin 等） |
+| 4 | `wails3 mcp` 安全 MCP 服务器（beta.9 #5896）+ origin/token 认证硬化（beta.19 #6092） | ✅ **已实现（2026-10-22）**：`wails mcp`（stdio / loopback Streamable HTTP、token 常量时间比较、loopback Host/Origin 校验、路径根限制、后台任务）；见 §9.14 |
 | 5 | macOS 媒体权限：WKUIDelegate media-capture 方法（beta.27），`PermissionAllow/Deny` 覆盖摄像头/麦克风 | ✅ **已实现（2026-10-18）**：`WebviewWindowOptions.Mac.CameraPermission/MicrophonePermission`（`Permission.Default/Allow/Deny`）+ `MacUiDelegate.RequestMediaCapturePermission` 覆写；相机/麦克风分别判定、取更严格者。macOS 原生代码未在本机编译验证（见 §9.10） |
 | 6 | macOS notch 通知窗口 + NSPanel 窗口类型（beta.12 #6010/#6008） | ❌ 未实现 |
-| 7 | Linux GTK application ID 覆盖（beta.23 #5972）+ single-instance 以应用自身 ID 占用 bus name（#5973） | ⚠️ single-instance 已有（跨平台 13 文件，含 LinuxPlatformApp）；GTK app ID 覆盖与 D-Bus 命名规范未核对到 |
+| 7 | Linux GTK application ID 覆盖（beta.23 #5972）+ single-instance 以应用自身 ID 占用 bus name（#5973） | ✅ **已实现（2026-10-18）**：`LinuxApplicationId` id 推导/校验/覆盖 + 程序名；`LinuxDbusSingleInstance` 以 `uniqueID+".SingleInstance"` 占 bus name；D-Bus 不可用降级锁文件 + socket。见 §9.13 |
 | 8 | 运行时请求 64 MiB 上限 → HTTP 413（beta.19 #6091） | ✅ **已实现（2026-10-18）**：`HttpTransport.MaxRuntimeBodyBytes = 64 MiB`，Content-Length 预判 + 边读边计数 → 413（文案 `runtime request body exceeds 64 MiB`）；分块路径单块 1 MiB → 422。见 §9.10 |
-| 9 | 自定义 scheme 请求中止/取消：Windows（beta.20 #5963/#5969）、Linux（beta.23 #6126）、macOS/iOS 请求上下文转发 | ⚠️ **部分（2026-10-18）**：macOS 每 URL scheme task 独立 CTS，`StopUrlSchemeTask` 取消且不再回调；Windows 每请求 CTS + 窗口关闭取消（未做 CDP `Fetch` 级中止）；Linux WebKitGTK 无取消钩子，保持原行为；令牌已贯穿管线。见 §9.10 |
+| 9 | 自定义 scheme 请求中止/取消：Windows（beta.20 #5963/#5969）、Linux（beta.23 #6126）、macOS/iOS 请求上下文转发 | ✅ **已实现（2026-10-22 复核）**：macOS 每 task 独立 CTS + `StopUrlSchemeTask` 取消；Windows `WindowsRequestCancellation` 经 CDP `Fetch`/`Network` 逐请求中止 + 窗口关闭取消；Linux WebKitGTK 无取消钩子（平台限制，保持原行为，代码已注释说明）；令牌已贯穿管线。见 §9.10 / §9.13 |
 | 10 | Windows 托盘 ICO 图标 + 任务栏主题跟随（beta.14 #6016） | ✅ **已实现（2026-10-18）**：`Win32SystemTray` 双图标（light/dark）+ 按 `Application.IsDarkMode()` 选择生效图标 + 订阅 `KnownEvents.ThemeChanged` 切换；**新增平台层顶层消息窗口 `PlatformMessageWindow`**，使无 webview 窗口时也能发出主题事件（限制已补全）。ICO 仍由 `IconCommand` 生成。见 §9.11 |
 
 **P2（细节/质量）**
@@ -363,12 +363,12 @@
 | P0-1 Streams | ✅ **已实现（2026-10-17）** | `src/Wails.Net.Application/Streams/`（StreamManager/StreamConn/StreamSession/StreamChunkStore/StreamFrameCodec/StreamEndpoints + PulseGate）；`Application.Streams`/`HandleStream`；`WebviewRequestPipeline` 路由 `/wails/stream/*`；`WebviewRequest.Headers`+`RequestBodyBytes`；四平台透传 header + Windows/Linux/macOS 长轮询延迟完成（Android 不支持）；server 模式 `WebSocketTransport` 新增 `/wails/stream/ws`；前端 `packages/wails-net-runtime` `Stream(name)`。详见 §9.8 |
 | P0-2 事件硬化 | ✅ 已实现 | `Events/EventMailbox.cs:31`、`Transport/PerWindowEventQueue.cs:31`、`Events/EventPayloadStore.cs:30`、`WebView/WebviewRequestPipeline.cs:76/121/136`；接入 `EventProcessor.cs:73/342`、`EventIPCTransport.cs:166-203` |
 | P0-3 WebView2 恢复 | ✅ 已实现 | `Win32WebviewWindow.cs:254 EmbedTimeout`、`:655 AttachController`、`:685 ProcessFailed 订阅`、`:781 OnProcessFailed`、`:809 _recovering` |
-| P1-4 MCP | ❌ 未实现 | `Cli/Commands/` 无 mcp 命令（现有 19 命令） |
+| P1-4 MCP | ✅ **已实现（2026-10-22）** | `src/Wails.Net.Cli/Mcp/`（McpServer / McpToolCatalog / McpRootPolicy / McpJobs / McpProcessRunner / McpTransports / McpProtocol / McpToken）+ `Commands/McpCommand.cs`；`doctor --json`；见 §9.14 |
 | P1-5 macOS 媒体权限 | ✅ **已实现（2026-10-18）** | `MacOSWebviewWindow.cs` `MacUiDelegate.RequestMediaCapturePermission` + `ResolveMediaCapturePermission/CaptureDecisionFor/StrictestCaptureDecision`；`WebviewWindowMacOptions.CameraPermission/MicrophonePermission`（MACOS 原生未本机编译验证） |
-| P1-6 notch/NSPanel | ❌ 未实现 | MacOS 项目无 `notch`/`NSPanel` |
+| P1-6 notch/NSPanel | ✅ **已实现（2026-10-22）** | `NotchWindowOptions`/`NotchWindow` + `Application.CreateNotchWindow`（映射见 `BuildNotchWindowOptions`）；`WebviewWindowMacOptions.WindowClass/PanelPreferences/CollectionBehavior`；macOS `MacOSWebviewWindow` 创建 `NSPanel`（非激活/浮动/工具窗口位）、`MacNotchBackgroundView` 贝塞尔刘海形状、相机刘海定位与滑入/滑出动画、悬停取焦；见 §10.9 |
 | P1-7 GTK app ID/single-instance | ✅ **已实现（2026-10-18）** | `LinuxApplicationId.cs`（id 推导/校验/覆盖 + 程序名）、`LinuxDbusSingleInstance.cs`/`LinuxSingleInstanceNames.cs`（经 `org.freedesktop.DBus.RequestName` 以 `uniqueID+".SingleInstance"` 占 bus name，`DO_NOT_QUEUE`）；`LinuxPlatformApp.AcquireSingleInstanceLock` 占位、`Run()` 经 `GLib.Functions.SetPrgname` 应用程序名；D-Bus 不可用降级锁文件+socket。见 §9.13 |
 | P1-8 64MiB→413 | ✅ **已实现（2026-10-18）** | `Transport/HttpTransport.cs` `MaxRuntimeBodyBytes = 64 MiB`；`HandleMessageAsync` Content-Length 预判 + 限量读取 → 413；分块单块 1 MiB → 422 |
-| P1-9 scheme 取消 | ✅ **已实现（2026-10-18）** | macOS：每 task CTS + `MarkStopped` 取消且不再回调；Windows：`WindowsRequestCancellation.cs`（CDP `Fetch`/`Network` 逐请求中止，`X-Wails-Request-Id` 桥接头）+ 窗口关闭取消；Linux：WebKitGTK 无钩子（已注释）；管线令牌已透传。见 §9.13 |
+| P1-9 scheme 取消 | ✅ **已实现（2026-10-22 复核确认）** | macOS：每 task CTS + `MarkStopped` 取消且不再回调；Windows：`WindowsRequestCancellation.cs`（CDP `Fetch`/`Network` 逐请求中止，`X-Wails-Request-Id` 桥接头）+ 窗口关闭取消；Linux：WebKitGTK 无钩子（平台限制，已注释）；管线令牌已透传。见 §9.13 |
 | P1-10 托盘主题 | ✅ **已实现（2026-10-18）** | `Win32SystemTray.cs`：`_lightModeIcon`/`_darkModeIcon`(+Owned)、`GetEffectiveIcon`、`ApplyEffectiveIcon`、`SubscribeThemeChanged`/`UnsubscribeThemeChanged`、`ReleaseIcon`；新增 `PlatformMessageWindow.cs`（平台层顶层消息窗口）在无窗口时也发主题事件 |
 | P2-11 前端就绪 | ✅ **已实现（2026-10-18）** | `src/Wails.Net.Cli/Build/FrontendDevServerReadiness.cs`；`DevCommand.cs` L263-313 启动前探测、L401-422 `ResolveFrontendDevServerUrl`；测试 10 项 |
 | P2-12 dev 清理 + 资产代理 | ✅ **已实现（2026-10-18）** | 退出清理：`DevProcessCleanup.cs` + `DevCommand` finally 统一终止 `dotnet watch` 进程树 + 前端 dev server；**dev 资产反向代理**：`WebView/DevAssetProxy.cs`（转发资源请求到前端 dev server，`MaxConnectionsPerServer=512` + 重试），`DesktopApplicationBuilder` 在配置 `DevServerUrl` 时注入、`WebviewRequestPipeline` 资源请求优先委托，`wails dev` 经 `WAILS_DEV_SERVER_URL` 注入。见 §9.13 |
@@ -391,8 +391,8 @@
 
 1. ~~**P0-1 Streams 双向字节流**（机制级）~~ ✅ **已于 2026-10-17 实现**，见 §9.8
 2. ~~**P2-21 App.Run 信号处理器**~~ ✅ **已于 2026-10-18 实现**，见 §9.9
-3. ~~**P1-8 请求 64MiB 上限 → 413**~~ ✅ 已于 2026-10-18 实现；~~**P1-5 macOS 媒体权限**~~ ✅ 已于 2026-10-18 实现；**P1-9 scheme 请求取消/上下文转发** ⚠️ 部分实现（macOS 完整、Windows 无 CDP 中止、Linux 无钩子）—— 见 §9.10
-4. **P1-4 MCP 服务器**（暂缓，需先定实现方式：手写最小 MCP vs 引入 SDK）
+3. ~~**P1-8 请求 64MiB 上限 → 413**~~ ✅ 已于 2026-10-18 实现；~~**P1-5 macOS 媒体权限**~~ ✅ 已于 2026-10-18 实现；~~**P1-9 scheme 请求取消/上下文转发**~~ ✅ **已于 2026-10-22 复核确认**（macOS 完整、Windows CDP 逐请求中止、Linux WebKitGTK 无钩子属平台限制）—— 见 §9.10 / §9.13
+4. ~~**P1-4 MCP 服务器**~~ ✅ **已于 2026-10-22 实现**（手写最小 JSON-RPC 2.0，未引入 MCP C# SDK），见 §9.14
 5. ~~**P2-14 / P2-19 / P1-10**~~ ✅ 已于 2026-10-18 实现 —— 见 §9.11
 6. ~~**P2-11**~~ ✅、~~**P2-16**~~ ✅、~~**P2-22**~~ ✅、~~**P2-23**~~ ✅ 已于 2026-10-18 实现 —— 见 §9.12
 7. ~~**待实现 A**~~ ✅ `EndpointUpdateProvider`（`wails://` 非 updater 协议；appcast 未实现）—— 见 §9.12
@@ -490,7 +490,7 @@ Go `SignalHandler.Start()` 在首个信号分支 `break` 出监听循环，使 `
 
 ## 9.10 P1-8 / P1-9 / P1-5 实现记录（2026-10-18）
 
-依据 Wails v3 `v3.0.0-beta.28`。本期完成 **P1-8**、**P1-5**，**P1-9** 部分完成；**P1-4 MCP** 按决策暂缓（需先定实现方式）。
+依据 Wails v3 `v3.0.0-beta.28`。本期完成 **P1-8**、**P1-5**；**P1-9** 已补齐（Windows CDP + macOS task 取消，Linux WebKitGTK 无钩子属平台限制，见 §9.13）；**P1-4 MCP** 已于 2026-10-22 实现（见 §9.14）。
 
 ### 9.10.1 P1-8 运行时请求 64 MiB 上限 → HTTP 413
 
@@ -683,5 +683,234 @@ Wails.Net `HelperProcess.cs` 对齐：
 **回归测试**：`tests/Wails.Net.Application.Tests/Commands/MapCommandContextInjectionTests.cs`（3 项：同步 / 异步 ctx 注入非 null、注入实例与调用方一致）。
 
 **验证**：`Wails.Net.Application.Tests` 全量 **1558 项、0 失败**；全部 **40 个 `Wails.Net.Plugins.*` 项目 0 错误**。
+
+---
+
+## 9.14 基线再确认与 P1-4 MCP 实现记录（2026-10-22）
+
+### 9.14.1 基线再确认
+
+- 官方 changelog（v3.wails.io/changelog）最新发布仍为 **`v3.0.0-beta.28`（2026-10-05）**，`Unreleased` 段落为空；页面最后更新 2026-10-20，**无 beta.29**。基线保持 beta.28，无需升级。
+- 剩余差异（本次复核后仍未实现/受平台限制）：
+
+| 项 | 状态 | 说明 |
+|----|------|------|
+| P1-6 macOS notch 通知窗口 + NSPanel 窗口类型（beta.12 #6010/#6008） | ✅ **已实现（2026-10-22）** | `CreateNotchWindow` + `NSPanel`/刘海形状/定位/动画已落地并通过 macOS 参考程序集离线编译；运行时需 mac 主机实机验证。见 §10.9 |
+| P2-19 WebView2 自建消息泵 | ⚠️ 未实现 | 交由 WebView2 SDK 管理；超时（60s）与进程故障恢复已对齐 |
+| Streams Android 长轮询 | ⚠️ 平台限制 | `ShouldInterceptRequest` 要求同步返回；仅 server 模式 WebSocket 可用，Android 端待后续事件通道方案 |
+| 平台长轮询端到端验证 | ⚠️ 未验证 | Windows deferral / Linux 延迟完成 / macOS 延迟 `WKURLSchemeTask` 仅代码审查，未在真实设备/GUI 会话回归 |
+
+> 各平台逐项实现状态与待补齐清单见 **§10 四平台功能矩阵**。
+
+### 9.14.2 P1-4 实现决策
+
+- **不引入 MCP C# SDK**：CLI 支持可选 NativeAOT（`WailsAot=true`），且项目禁止生产代码运行时反射；官方 C# SDK 的约定式序列化与反射会带来 AOT/裁剪风险。改为**手写最小 JSON-RPC 2.0**（initialize / ping / tools/list / tools/call / 通知），仅使用 `System.Text.Json.Nodes`。
+- 与 Go 版本一致：CLI MCP 服务器管理**项目生命周期**（非运行中的 WebView）；stdio 模式 stdout 专用于协议流，诊断信息写 stderr；交互式运行自动选择 loopback Streamable HTTP。
+
+### 9.14.3 交付内容
+
+| 层 | 内容 | 位置 |
+|----|------|------|
+| 命令 | `wails mcp [--token] [--root] [--http] [--stdio] [--port]`；`--http`/`--stdio` 互斥；无终端时自动 stdio，交互式自动 HTTP | [McpCommand.cs](../../src/Wails.Net.Cli/Commands/McpCommand.cs) |
+| 协议 | JSON-RPC 2.0 常量、版本协商（`2024-11-05` / `2025-03-26` / `2025-06-18`，未知回退最新）、错误码、UTF-8 非转义序列化 | [McpProtocol.cs](../../src/Wails.Net.Cli/Mcp/McpProtocol.cs) |
+| 令牌 | 32 字节随机 Base64Url（43 字符）；`CryptographicOperations.FixedTimeEquals` 常量时间比较；`--token` → `WAILS_MCP_TOKEN` → 随机 | [McpToken.cs](../../src/Wails.Net.Cli/Mcp/McpToken.cs) |
+| 工具 | 8 个：`wails_project_inspect` / `wails_project_new` / `wails_project_doctor` / `wails_project_build` / `wails_project_dev_start` / `wails_project_generate_bindings` / `wails_job_status` / `wails_job_stop`；含 JSON Schema 与 `readOnlyHint`/`openWorldHint`/`destructiveHint` 注解 | [McpToolCatalog.cs](../../src/Wails.Net.Cli/Mcp/McpToolCatalog.cs) |
+| 分发 | initialize（含 instructions 携带 root + token）、ping、tools/list、tools/call；工具异常转为 `isError=true` 的文本结果；未知方法/工具返回 JSON-RPC 错误 | [McpServer.cs](../../src/Wails.Net.Cli/Mcp/McpServer.cs) |
+| 安全 | 根目录解析（绝对化 + 符号链接最长前缀解析）；路径越界拒绝；路径标志（`-p/--project`、`-o/--output`、`-d/--directory` 等）限根；参数上限 64 条 / 4096 字符 / 禁 NUL；HTTP 强制 loopback Host + `Origin`（仅 http + loopback）、Bearer 校验、请求体 4 MiB 上限 | [McpRootPolicy.cs](../../src/Wails.Net.Cli/Mcp/McpRootPolicy.cs)、[McpTransports.cs](../../src/Wails.Net.Cli/Mcp/McpTransports.cs) |
+| 任务 | 异步子进程任务（`build`/`dev`/`generate`），输出上限 2 MiB、任务上限 32 并回收最旧已完成任务；`stopping` → `stopped`，失败/成功分别 `failed`/`completed`；停止时终止进程树 | [McpJobs.cs](../../src/Wails.Net.Cli/Mcp/McpJobs.cs)、[McpProcessRunner.cs](../../src/Wails.Net.Cli/Mcp/McpProcessRunner.cs) |
+| 传输 | stdio（按行 JSON-RPC，写入门控保证响应不交错）；HTTP（`POST /mcp`，非 POST → 405 + `Allow`，非 `/mcp` → 404，未授权 → 401 + `WWW-Authenticate`，非 loopback → 403，通知 → 202，正常 → 200 JSON） | [McpTransports.cs](../../src/Wails.Net.Cli/Mcp/McpTransports.cs) |
+| 诊断 | `doctor --json`（`ok` / `checks[]` / `summary`，UTF-8 非转义），供 `wails_project_doctor` 子进程调用 | [DoctorCommand.cs](../../src/Wails.Net.Cli/Commands/DoctorCommand.cs) |
+| 编码 | 标准输出被重定向时统一 UTF-8（修复 Windows 代码页导致子进程中文输出乱码）；子进程 stdout/stderr 显式按 UTF-8 读取 | [Program.cs](../../src/Wails.Net.Cli/Program.cs)、[McpProcessRunner.cs](../../src/Wails.Net.Cli/Mcp/McpProcessRunner.cs) |
+
+### 9.14.4 与 Go 版本的差异
+
+- Go 使用 `modelcontextprotocol/go-sdk` 的 `StdioTransport` 与 `StreamableHTTPHandler`（SSE / session 支持）；本实现为**无状态 JSON 响应**模式，不支持 `GET /mcp` 的服务端推送流（返回 405）。工具调用、初始化、通知语义一致。
+- 工具命名与语义对齐，命令映射按 .NET CLI：`init → new`、`generate bindings → generate`、`task → 未提供`（.NET 无 Taskfile，改由 `build`/`dev` + `args` 覆盖）。
+- Go 的 `wails3 task ...` 工具未移植；`args` 仍受路径根限制与参数上限约束。
+
+### 9.14.5 测试与验证
+
+- 新增 **43 项** TUnit 测试：`McpProtocolTests`（13：令牌 / 版本协商 / 信封 / loopback Host·Origin / 端口 / 令牌解析 / doctor JSON）、`McpRootPolicyTests`（14：根解析 / 路径越界 / 符号链接前缀 / 参数上限与路径标志）、`McpServerTests`（16：初始化 / 通知 / ping / 未知方法 / 解析错误 / 工具清单 / inspect / 越界 / 授权 / 任务状态机 / 任务上限回收 / 输出截断）。
+- `Wails.Net.Cli.Tests` 全量 **531 项：528 通过 / 3 跳过 / 0 失败**；CLI 构建 **0 警告 0 错误**。
+- 手工冒烟：stdio 初始化 / tools/list / inspect / doctor / build（返回 jobId；错误令牌拒绝）全部正常；HTTP `POST /mcp` 200、错误 Bearer 401、非 loopback Origin 403（当前 shell 非管理员，loopback `HttpListener` 可用）。
+- 未覆盖：真实 MCP 客户端（Claude Desktop / Cursor）端到端握手；`wails_project_new` 的完整脚手架调用（子进程链路已由 doctor 覆盖）；HTTP 在启用严格 URL ACL 的 Windows 主机上可能需要 `netsh http add urlacl`（Go 使用裸 `net.Listen`，无此限制）。
+
+---
+
+## 10. 四平台功能矩阵（2026-10-22）
+
+> 依据仓库源码逐项核对（`src/Wails.Net.Application.{Windows,Linux,MacOS,Android}/`、核心 `src/Wails.Net.Application/`）。
+> 仅描述"代码是否提供实现"，不替代真实设备/GUI 回归；macOS 原生分支（`#if MACOS`）未在本机编译验证，Linux GUI 运行时行为未在 WSL 实机验证。
+>
+> 图例：**✅ 已实现** · **◐ 部分/受限** · **❌ 未实现** · **— 平台不适用**
+
+### 10.1 核心运行时与生命周期
+
+| 功能 | Windows | Linux | macOS | Android |
+|------|---------|-------|-------|---------|
+| 应用主循环 / 生命周期 | ✅ `WindowsPlatformApp` | ✅ `LinuxPlatformApp`（GLib.MainLoop） | ✅ `MacOSPlatformApp`（NSApplication） | ✅ `AndroidPlatformApp`（Activity 回调） |
+| 优雅关闭（`ShutdownAsync`） | ✅ | ✅ | ✅ | ✅ |
+| 单实例锁 + 参数转发 | ✅ Win32 Mutex + 消息窗口 | ✅ D-Bus `RequestName`（降级锁文件+socket） | ✅ 文件锁 + `NSDistributedNotificationCenter` | — 系统单进程，恒返回 true |
+| 默认信号处理器（SIGINT/SIGTERM） | ✅ | ✅ | ✅ | — 移动端不适用 |
+| 隐藏 / 显示应用 | ✅ | ✅ | ✅ | ◐ no-op（由系统管理） |
+| 应用图标 | ✅ | ✅ | ✅ | ❌ 由 `AndroidManifest.xml` 配置 |
+| 关于对话框 | ✅ WinForms | ✅ GTK4 | ✅ AppKit | ✅ AlertDialog |
+| 应用菜单 | ✅ `Win32Menu` | ✅ `LinuxMenu` | ✅ `MacOSMenu` | — 无应用菜单概念 |
+| 屏幕枚举 | ✅ WinForms Screen | ✅ Gdk.Display | ✅ NSScreen | ✅ DisplayManager |
+| 暗色模式检测 | ✅ 注册表 `AppsUseLightTheme` | ✅ gsettings `color-scheme` | ✅ `NSAppearance` | ✅ `UiMode` |
+| 系统强调色 | ✅ DWM `AccentColor` | ✅ gsettings | ✅ `NSColor.ControlAccent` | ❌ 返回空字符串 |
+| 主题变化事件 | ✅ `PlatformMessageWindow` | ✅ `LinuxSystemEventWatcher` | ✅ NSAppearance KVO | ◐ 事件映射存在，依赖宿主 Activity 触发 |
+| 原生父窗口嵌入（`SetParent`） | ✅ Win32 `SetParent` | ❌ 默认 no-op | — 无该概念 | — 无该概念 |
+
+### 10.2 窗口系统
+
+| 功能 | Windows | Linux | macOS | Android |
+|------|---------|-------|-------|---------|
+| 创建/显示/隐藏/关闭/聚焦 | ✅ | ✅ | ✅ | ✅ |
+| 尺寸/位置/最小·最大尺寸 | ✅ | ✅ | ✅ | ◐ 仅缓存，实际由系统管理 |
+| 最大化/最小化/恢复/全屏 | ✅ | ✅ | ✅ | — 由 Activity 全屏策略管理 |
+| 置顶（AlwaysOnTop） | ✅ | ✅ | ✅ | — 无该概念 |
+| 无边框 / 标题栏样式 | ✅ | ✅ | ✅ | ◐ no-op |
+| 半透明 / 不透明度 | ✅ | ✅ | ✅ | ❌ |
+| 窗口效果（Mica/Acrylic/Vibrancy） | ✅ `SetEffects` | ❌ | ❌ | ❌ |
+| 窗口阴影 | ◐ 不支持单独控制 | ✅ | ✅ | — |
+| 任务栏进度 / 覆盖图标 | ✅ `ITaskbarList3` | ◐ Unity LauncherEntry（D-Bus，兼容 Unity/Plasma/扩展） | ✅ Dock 进度（`NSDockTile.ContentView` + 自定义进度视图） | — |
+| 徽章（Badge） | ✅ | ◐ Unity LauncherEntry `count`（仅数字） | ✅ `NSDockTile.BadgeLabel` | — |
+| 任务栏/Dock 提醒（Flash） | ✅ | ❌ | ✅ Dock bounce | — |
+| 跳过任务栏 / 所有工作区 | ✅ | ❌ | ✅ `CanJoinAllSpaces` | — |
+| 模态窗口（AttachAsModal） | ✅ | ✅ | ✅ sheet 形式（`BeginSheet`） | ❌ no-op |
+| 窗口拖动 / 调整（StartDrag/StartResize） | ✅ | ✅ | ◐ `StartDrag` 已实现（`PerformWindowDrag`），`StartResize` 系统原生 | ❌ no-op |
+| 文件拖放（WindowFileDropped） | ✅ | ✅ Gtk.DropTarget | ✅ `MacDropView`（`NSDraggingDestination`） | ❌ |
+| 截图（CapturePreview） | ✅ | ◐ 返回 null | ✅ `WKWebView.TakeSnapshot` | ❌ |
+| 打印 | ✅ | ◐ WebKitGTK 打印受限 | ✅ `NSPrintOperation` | ✅ `PrintManager`（系统打印/另存为 PDF） |
+| 导出 PDF | ✅ | ◐ 依赖 GTK 打印对话框 | ✅ `WKWebView.CreatePdf` | ◐ 仅系统“另存为 PDF”，无 UI 导出不支持 |
+| 内容保护（防截屏） | ✅ | ✅ | ✅ | — 由 Activity `FLAG_SECURE` 管理 |
+| 窗口级菜单栏 | ✅ | ✅ | — 由应用菜单统一管理 | — |
+| 上下文菜单 | ✅ `Win32ContextMenu` | ✅ `LinuxContextMenu` | ✅ `NSMenu.PopUpMenu`（`MacOSMenu` 复用） | — |
+| NSPanel 辅助面板 | — 无该概念 | — 无该概念 | ✅ `WindowClass=Panel` + `PanelPreferences`（非激活/浮动/工具窗口） | — |
+| notch 窗口（相机刘海） | — 无该概念 | — 无该概念 | ✅ `Application.CreateNotchWindow`（刘海形状/定位/滑入滑出动画/悬停取焦） | — |
+
+### 10.3 WebView 与传输
+
+| 功能 | Windows | Linux | macOS | Android |
+|------|---------|-------|-------|---------|
+| URL/HTML 加载、前进/后退/刷新 | ✅ WebView2 | ✅ WebKitGTK | ✅ WKWebView | ✅ Android WebView |
+| 执行 JS（ExecJS） | ✅ | ✅ | ✅ | ✅ |
+| 注入 CSS | ✅ | ✅ | ✅ | ❌ 无覆盖实现 |
+| 缩放 / 缩放级别 | ✅ | ✅ | ✅ | ✅ |
+| DevTools | ✅ | ✅ | ✅ | ◐ 仅 `chrome://inspect` 远程调试 |
+| 控制台消息 / 原生消息处理器 | ✅ | ❌ | ✅ | ◐ 经 `WebMessageListener`（IPC 通道） |
+| 自定义 scheme 注册 | ✅ | ✅ | — `WKURLSchemeHandler` 内建 | — `ShouldInterceptRequest` 内建 |
+| 资源服务（AssetServer） | ✅ scheme 处理 | ✅ scheme 处理 | ✅ scheme 处理 | ✅ `AndroidAssetServer` |
+| IPC 传输 | ✅ 请求拦截 | ✅ 请求拦截 | ✅ 请求拦截 | ✅ `WailsWebMessageListener` |
+| Streams 双向字节流 | ✅ 长轮询 | ✅ 长轮询 | ✅ 长轮询 | ❌ `ShouldInterceptRequest` 同步约束 |
+| 自定义 scheme 请求取消 | ✅ CDP `Fetch`/`Network` | ❌ WebKitGTK 无钩子（平台限制） | ✅ `StopUrlSchemeTask` | — |
+
+### 10.4 平台集成服务
+
+| 功能 | Windows | Linux | macOS | Android |
+|------|---------|-------|-------|---------|
+| 剪贴板：文本 / HTML | ✅ `WindowsClipboard` | ✅ xsel/xclip | ✅ NSPasteboard | ✅ ClipboardManager |
+| 剪贴板：图片 | ✅ | ✅ xclip（xsel 回退不支持） | ✅ | ✅ MediaStore content:// URI（API 29+；低版本需存储权限） |
+| 剪贴板：文件列表 | ✅ CF_HDROP | ✅ text/uri-list | ✅ NSFilenamesPboardType | ✅ ClipData URI |
+| 系统托盘 | ✅ `Win32SystemTray`（light/dark 图标） | ✅ StatusNotifierItem + 隐藏窗口回退 | ✅ `NSStatusItem` | — 无托盘概念 |
+| 托盘 tooltip | ✅ | ✅ | ❌ `NSStatusItem` 不支持 | — |
+| 全局快捷键 | ✅ `RegisterHotKey` | ✅ X11 `XGrabKey`（`LinuxX11GlobalHotkeys`；原生 Wayland 回退窗口内 `Gtk.ShortcutController`） | ✅ Carbon `RegisterEventHotKey` | — |
+| 自启动 | ✅ 注册表（`WindowsAutostartManager`） | ✅ `.desktop`（`LinuxAutostartManager`） | ✅ LaunchAgent（`MacOSAutostartManager`） | — |
+| 打开外部浏览器 | ✅ `ShellExecuteW` | ✅ `xdg-open` | ✅ `NSWorkspace` | ✅ `Intent.ActionView` |
+| Keychain / 安全存储 | ✅ Credential Manager | ✅ `secret-tool`（Secret Service） | ✅ Keychain Services | ✅ `AndroidKeychain`（Android Keystore AES-GCM + 私有 SharedPreferences） |
+| 系统通知（Notification 插件） | ✅ PowerShell Toast | ✅ `notify-send` / `dbus-send` | ✅ `osascript`（AppleScript `display notification`） | ✅ `NotificationManager`（渠道 + 待处理 Intent；API 33+ 需 `POST_NOTIFICATIONS`） |
+| 移动端能力（Haptics/Biometric/NFC/扫码/定位/相机/权限） | — | — | — | ✅ `Android.*` 实现 |
+| 媒体权限（摄像头/麦克风） | — WebView2 原生提示 | — WebKitGTK 原生提示 | ✅ `CameraPermission/MicrophonePermission` + WKUIDelegate | ◐ 宿主自行处理运行时权限 |
+
+> 备注：`PlatformCapabilities.HasNativeDrag` 在四个平台均返回 true（Windows/macOS/Linux/Android 各自按原生能力声明）；macOS 已通过 `MacDropView` 接入窗口级 `WindowFileDropped` 事件。
+
+### 10.5 构建与打包
+
+| 功能 | Windows | Linux | macOS | Android |
+|------|---------|-------|-------|---------|
+| 构建目标 | ✅ `win-x64` 等 | ✅ `linux-x64` 等 | ✅ `osx-*`（需 mac 主机） | ✅ `android-arm64`（默认） |
+| 打包格式 | ✅ MSIX/appx、NSIS、zip | ✅ deb、rpm、AppImage、targz | ✅ zip/targz + `.app` 输出准备（无 dmg/pkg） | ✅ APK（Android 工作负载产出） |
+
+### 10.6 各平台待补齐清单
+
+| 平台 | 缺口（按影响排序） |
+|------|-------------------|
+| **macOS** | 无阻断项。打印/PDF、截图、`StartDrag`、模态 sheet、Dock 徽章、Dock 进度、上下文菜单、文件拖放、NSPanel、notch 窗口、系统通知均已实现（macOS 参考程序集离线编译通过；运行时需 mac 主机实机验证） |
+| **Linux** | 残留平台限制：① 窗口效果（Mica 等价物；GTK4 无模糊/亚克力 API）；② scheme 请求取消（WebKitGTK 无钩子）；③ PDF 导出需在真实 GTK/WebKitGTK 桌面回归。已完成：Keychain（`secret-tool`）、X11 全局快捷键（`XGrabKey`）、启动器进度/徽章（Unity LauncherEntry D-Bus） |
+| **Android** | 残留平台限制：① Streams 双向字节流（`ShouldInterceptRequest` 同步约束，需事件通道方案）；② 剪贴板图片在 API 29 以下需存储权限（当前 no-op）；③ PDF 无 UI 导出（仅系统“另存为 PDF”）；④ 通知需宿主声明 `POST_NOTIFICATIONS` 权限。已完成：剪贴板图片（MediaStore）、Android Keystore、系统通知插件、打印（`PrintManager`）。桌面窗口语义（最大化/最小化/置顶/托盘/菜单）平台不适用 |
+| **Windows** | 无阻断项；窗口阴影不支持单独控制（`Win32WebviewWindow.cs:3243`，系统自动加阴影） |
+
+> 说明：上表"平台不适用"的项不需要移植；"未实现"项可按列内顺序排期。macOS 相关缺口需在 mac 主机编译并实机验证；Linux 缺口需在 X11 与 Wayland 两种后端分别回归。
+
+### 10.7 按清单补全记录（第一批，2026-10-22）
+
+| 平台 | 项 | 实现 | 验证 |
+|------|----|------|------|
+| macOS | 打印 | `MacOSWebviewWindow.Print` → `NSPrintOperation.FromView(_webView).RunOperation()` | 仅非 macOS 分支编译通过；原生分支未在本机编译 |
+| macOS | 导出 PDF | `MacOSWebviewWindow.PrintToPDF(path)` → `WKWebView.CreatePdf` 回调写盘 | 同上 |
+| macOS | 截图 | 新增 `CapturePreviewAsync` → `WKWebView.TakeSnapshot` + `NSBitmapImageRep` 转 PNG | 同上 |
+| macOS | 无边框拖动 | `StartDrag` → `NSWindow.PerformWindowDrag(NSApplication.CurrentEvent)` | 同上 |
+| macOS | 模态窗口 | `AttachAsModal` → 静态 `NativeWindows` 映射 + `NSWindow.BeginSheet` | 同上 |
+| macOS | Dock 徽章 | `SetBadgeCount` / `SetBadgeLabel` → `NSDockTile.BadgeLabel` | 同上 |
+| macOS | 所有工作区 | `SetVisibleOnAllWorkspaces` → `NSWindowCollectionBehavior.CanJoinAllSpaces` | 同上 |
+| Linux | Keychain | 新增 `LinuxKeychain`（`secret-tool` store/lookup/clear，参数经 `ArgumentList` 直传，可注入运行器） | `LinuxKeychainTests` 8/8 通过 |
+| 跨平台 | 系统通知（macOS） | `NotificationService` 新增 `osascript` 分支 + AppleScript 转义（引号/反斜杠/换行） | `NotificationServiceTests` 9/9 通过 |
+
+**构建**：`Wails.Net.Application.Linux`、`Wails.Net.Plugins.Notification`、`Wails.Net.Application.MacOS`（非 macOS 分支）、`Wails.Net.Application.Linux.Tests`、`Wails.Net.Application.Tests` 均 0 警告 0 错误。
+
+**说明**：第一批实现完成后，macOS 原生分支（`#if MACOS`）仍未在本机（Windows）参与正式构建；第二批已引入 `.NET 10` macOS 参考程序集（`Microsoft.macOS.Ref.net10.0_26.0` 26.0.11017）做离线编译校验，并修复了 macOS 平台项目的全部编译错误（详见 §10.8）。运行时行为仍需在 mac 主机实机验证。Android 项需在安装 `android` 工作负载后实施。
+
+### 10.8 按清单补全记录（第二批，2026-10-22）
+
+| 平台 | 项 | 实现 | 验证 |
+|------|----|------|------|
+| macOS | 上下文菜单 | `MacOSWebviewWindow.OpenContextMenu` → `MacOSMenu` 构建 `NSMenu` + `NSMenu.PopUpMenu(null, 点, 内容视图)`（AppKit 坐标转换 `ConvertPointToView`） | macOS 目标离线编译通过 |
+| macOS | 文件拖放 | 新增 `MacDropView : NSView`（`RegisterForDraggedTypes("public.file-url")`、`DraggingEntered/DraggingUpdated/PerformDragOperation`），`SetFileDropEnabled` 控制注册状态，`HandleFilesDropped` 发出 `KnownEvents.WindowFileDropped` | 同上 |
+| macOS | 编译修复 | 内容视图改为 `MacDropView`；`NSWindow.Opaque`→`IsOpaque`；`NSImage.FromData`→`new NSImage(NSData)`；`NSPasteboardType` 枚举 + `NSPasteboardTypeExtensions.GetConstant`；`NSEventModifierMask.*KeyMask`；`NSMenu.AutoEnablesItems`；`NSCellStateValue`；`NSWindowStyle.FullScreenWindow`；`NSWindowLevel` 强类型赋值；`NSUrlRequest.Headers`；`NSAppearance.GetAppearance(NSString)`；`UTType.CreateFromExtension` 替代弃用的 `AllowedFileTypes`；`NSColor.ControlAccent`/`UsingColorSpace`；`ActivateIgnoringOtherApps`→`Activate()`；`NSAlert` 按钮返回码常量；Carbon 事件处理改用委托（移除 `[UnmanagedCallersOnly]`）；`SecKeyChain.QueryAsData` 三参重载；`ObserveValue` 改为 `override` | `.NET 10 macOS` 参考程序集离线编译 0 警告 0 错误 |
+| macOS | Keychain 命名空间 | `MacOSKeychain` 使用 `global::Security.*`，避免与 `Wails.Net.Application.Security` 命名空间冲突 | 同上 |
+
+**构建**：`Wails.Net.Application.MacOS`（net10.0 骨架）0 警告 0 错误；macOS 原生分支经临时工程（`AssemblyName=Wails.Net.Application.MacOS`、`DefineConstants=MACOS`、引用 `Microsoft.macOS.Ref.net10.0_26.0`）全量编译 0 警告 0 错误。
+
+**说明**：离线编译校验使用与本机 `.NET 10 SDK` 工作负载清单一致的 macOS 26.0 参考程序集，可校验 API 名称与签名；但 `P/Invoke`、AppKit 运行时行为、以及 `net10.0-macos` 目标上的 AOT/裁剪仍需 mac 主机验证。
+
+### 10.9 按清单补全记录（第三批，2026-10-22）
+
+| 平台 | 项 | 实现 | 验证 |
+|------|----|------|------|
+| macOS | Dock 进度 | `MacOSWebviewWindow.SetTaskbarProgress` → `NSDockTile.ContentView` + 新增 `MacDockProgressView`（绘制应用图标 + 圆角进度条；`Error` 红色、`Paused` 橙色、`Indeterminate` 固定 35%、`None` 清除视图） | macOS 目标离线编译通过 |
+| macOS | NSPanel 窗口类 | `WebviewWindowMacOptions.WindowClass`（0=NSWindow、1=NSPanel）、`PanelPreferences`（`NonActivating`/`FloatingPanel`/`BecomesKeyOnlyIfNeeded`/`UtilityWindow`）、`CollectionBehavior`；`Create()` 按 `WindowClass` 实例化 `NSPanel` 并应用样式位与面板行为 | 同上 |
+| macOS | notch 窗口 | 新增 `NotchWindowOptions`、`NotchWindow`、`Application.CreateNotchWindow`、内部 `NotchWindowInfo`；`BuildNotchWindowOptions` 复刻 Go `webviewOptionsForNotchWindow`（660×92 默认、水平 30pt/底部 12pt 边距、透明无边框、`PopUpMenu` 层级、跨 Space 行为）；平台侧 `MacNotchBackgroundView` 贝塞尔刘海形状、相机刘海定位（`auxiliaryTopLeftArea/RightArea` + `safeAreaInsets`）、滑入/滑出动画（`NSAnimationContext` + KVC `animator`）、悬停取焦、窗口关闭时移除跟踪区域 | 同上；`NotchWindowTests` 5/5 通过 |
+| macOS | 窗口层级修正 | `WindowLevel` 序号（0..7）改为显式映射到 `NSWindowLevel`（原实现直接强转，2..7 会落到无效枚举值） | 同上 |
+
+**构建**：`Wails.Net.Application`、`Wails.Net.Application.MacOS`（net10.0 骨架）、macOS 原生分支离线编译均 0 警告 0 错误；`Wails.Net.Application.Tests` 构建通过，新增 `NotchWindowTests` 5 项全部通过。
+
+**说明**：notch 的动画在 AppKit 中通过 `NSWindow.Animator`（绑定为 `NSObject`）上的 KVC 键 `frame`/`alphaValue` 驱动，已按 Go 侧时长与缓动近似实现；显示器/刘海几何与 NSPanel 非激活行为需在带刘海的 mac 真机回归。
+
+### 10.10 按清单补全记录（第四批：Linux，2026-10-22）
+
+| 平台 | 项 | 实现 | 验证 |
+|------|----|------|------|
+| Linux | X11 全局快捷键 | 新增 `LinuxX11GlobalHotkeys`：`XGrabKey` 系统级抓取（`XInitThreads` 跨线程、CapsLock/NumLock 组合、临时替换 Xlib 错误处理器吞掉 BadAccess、后台事件线程 + `GLib.IdleAdd` 回主线程）；`LinuxKeyBindingManager` 优先全局注册，X11 不可用（原生 Wayland/无 DISPLAY/键被占用）时回退窗口内 `Gtk.ShortcutController` | `LinuxX11GlobalHotkeysTests` 7/7 通过；Linux 构建 0 警告 0 错误 |
+| Linux | 启动器进度 / 徽章 | 新增 `LinuxLauncherEntry`：向 session bus 广播 `com.canonical.Unity.LauncherEntry.Update (s a{sv})`，`LinuxWebviewWindow` 实现 `SetTaskbarProgress`（0..1，`Indeterminate=-1`）、`SetBadgeCount`/`SetBadgeLabel`（数字计数）；appId 取自 `LinuxPlatformApp.ApplicationId`，不可用时按应用名推导 | `LinuxLauncherEntryTests` 8/8 通过；Linux 构建 0 警告 0 错误 |
+| Linux | 平台限制确认 | 窗口效果（GTK4 无模糊/亚克力 API）、scheme 请求取消（WebKitGTK 无钩子）保持文档化限制；PDF 导出逻辑维持 WebKitGTK `PrintOperation` + Print-to-File，需真实桌面回归 | — |
+
+**构建**：`Wails.Net.Application.Linux`、`Wails.Net.Application.Linux.Tests` 均 0 警告 0 错误；新增 15 项纯逻辑测试全部通过。
+
+**说明**：Linux 原生行为（XGrabKey 抓取、Unity LauncherEntry 信号、PDF 导出对话框）需在 X11 与 Wayland 两种后端的真实桌面回归；Wayland 下全局快捷键自动回退窗口内 GTK 快捷键（xdg-desktop-portal GlobalShortcuts 需用户确认会话，本批未启用）。
+
+### 10.11 按清单补全记录（第五批：Android，2026-10-22）
+
+| 平台 | 项 | 实现 | 验证 |
+|------|----|------|------|
+| Android | 剪贴板图片 | `AndroidClipboard.SetImage` 写入 MediaStore（`IS_PENDING` 两阶段，API 29+）后以 `content://` URI 放入 `ClipData`；`GetImage` 经 `ContentResolver.OpenInputStream` 读取首个 URI | Android 参考程序集离线编译通过 |
+| Android | Keychain | 新增 `AndroidKeychain`：`AndroidKeyStore` 按 service+account 生成 AES-256-GCM 密钥（别名取 SHA-256），密文与 IV 以 Base64 写入私有 SharedPreferences；删除时同时清理密钥条目 | 同上 |
+| Android | 系统通知 | Notification 插件新增 `net10.0-android36.0` 目标（`WailsNetEnableAndroid=true` 时启用）；`SendAndroidNotification` 使用 `NotificationChannel` + `Notification.Builder` + 启动 `PendingIntent`，API 33+ 检查 `POST_NOTIFICATIONS` | 插件 net10.0 目标构建 0 警告 0 错误；Android 分支离线编译通过 |
+| Android | 打印 | `AndroidWebviewWindow.Print` → `WebView.CreatePrintDocumentAdapter` + `PrintManager.Print`（系统打印界面，含“另存为 PDF”） | Android 离线编译通过 |
+| Android | 平台限制确认 | Streams（同步拦截约束）、PDF 无 UI 导出（回调绑定仅支持派生）、API<29 剪贴板图片（需存储权限）保持文档化限制 | — |
+
+**构建**：Android 源码经 `Microsoft.Android.Ref.36`（36.1.118）离线编译 0 警告 0 错误；`Wails.Net.Plugins.Notification`（net10.0）0 警告 0 错误。
+
+**说明**：本机未安装 `android` 工作负载（`dotnet workload list` 为空），`net10.0-android36.0` 无法本地构建/运行测试；离线编译使用与工作负载清单一致的参考程序集（`Microsoft.Android.Ref.36`），仅校验 API 名称与签名。设备端行为（MediaStore 剪贴板、Keystore 加解密、通知展示、打印对话框）需在安装工作负载后通过 `tests/Wails.Net.Android.E2E/run-android-e2e.fsx` 回归。
 
 

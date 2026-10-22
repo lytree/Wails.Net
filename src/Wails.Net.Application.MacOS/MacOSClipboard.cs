@@ -30,7 +30,7 @@ public sealed class MacOSClipboard : IClipboardImpl
             {
                 var pasteboard = AppKit.NSPasteboard.GeneralPasteboard;
                 pasteboard.ClearContents();
-                pasteboard.SetStringForType(text, AppKit.NSPasteboardType.String);
+                pasteboard.SetStringForType(text, NSPasteboardTypeString(AppKit.NSPasteboardType.String));
             });
         }
 #else
@@ -77,9 +77,9 @@ public sealed class MacOSClipboard : IClipboardImpl
             {
                 var pasteboard = AppKit.NSPasteboard.GeneralPasteboard;
                 pasteboard.ClearContents();
-                pasteboard.SetStringForType(html, AppKit.NSPasteboardType.Html);
+                pasteboard.SetStringForType(html, NSPasteboardTypeString(AppKit.NSPasteboardType.Html));
                 // 同时写入纯文本回退，保证粘贴到纯文本应用时可用。
-                pasteboard.SetStringForType(fallbackText, AppKit.NSPasteboardType.String);
+                pasteboard.SetStringForType(fallbackText, NSPasteboardTypeString(AppKit.NSPasteboardType.String));
             });
         }
 #else
@@ -94,7 +94,7 @@ public sealed class MacOSClipboard : IClipboardImpl
         lock (_lock)
         {
             return MacOSPlatformApp.DispatchOnMainThreadSync(() =>
-                AppKit.NSPasteboard.GeneralPasteboard.GetStringForType(AppKit.NSPasteboardType.Html) ?? string.Empty);
+                AppKit.NSPasteboard.GeneralPasteboard.GetStringForType(NSPasteboardTypeString(AppKit.NSPasteboardType.Html)) ?? string.Empty);
         }
 #else
         return string.Empty;
@@ -111,7 +111,7 @@ public sealed class MacOSClipboard : IClipboardImpl
             MacOSPlatformApp.DispatchOnMainThreadSync(() =>
             {
                 using var data = Foundation.NSData.FromArray(imageData);
-                using var image = AppKit.NSImage.FromData(data);
+                using var image = new AppKit.NSImage(data);
                 if (image is null)
                 {
                     return;
@@ -120,7 +120,7 @@ public sealed class MacOSClipboard : IClipboardImpl
                 var pasteboard = AppKit.NSPasteboard.GeneralPasteboard;
                 pasteboard.ClearContents();
                 // NSImage 实现 INSPasteboardWriting，可直接写入（参照 DevToys SetClipboardImageAsync）。
-                pasteboard.WriteObjects(new INSPasteboardWriting[] { image });
+                pasteboard.WriteObjects(new AppKit.INSPasteboardWriting[] { image });
             });
         }
 #else
@@ -170,7 +170,7 @@ public sealed class MacOSClipboard : IClipboardImpl
                 pasteboard.ClearContents();
                 var fileList = files
                     .Where(f => !string.IsNullOrEmpty(f))
-                    .Select(f => (INSPasteboardWriting)Foundation.NSUrl.FromFilename(f))
+                    .Select(f => (AppKit.INSPasteboardWriting)Foundation.NSUrl.FromFilename(f))
                     .ToArray();
                 if (fileList.Length > 0)
                 {
@@ -233,4 +233,14 @@ public sealed class MacOSClipboard : IClipboardImpl
         // 非 macOS 目标：no-op 骨架。
 #endif
     }
+
+#if MACOS
+    /// <summary>
+    /// 将 <see cref="AppKit.NSPasteboardType"/> 枚举转换为 NSPasteboard 的字符串类型常量。
+    /// </summary>
+    /// <param name="type">粘贴板类型枚举。</param>
+    /// <returns>字符串常量。</returns>
+    private static string NSPasteboardTypeString(AppKit.NSPasteboardType type)
+        => AppKit.NSPasteboardTypeExtensions.GetConstant(type)?.ToString() ?? string.Empty;
+#endif
 }

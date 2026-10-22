@@ -1,4 +1,5 @@
 using System.Text;
+using System.Globalization;
 using System.Text.Json;
 using Wails.Net.Application.Logging;
 using Wails.Net.Application.Menus;
@@ -9,6 +10,7 @@ using Menu = Wails.Net.Application.Menus.Menu;
 using WailsApplication = Wails.Net.Application.Application;
 
 #if MACOS
+using System.Collections.Concurrent;
 using AppKit;
 using CoreGraphics;
 using Foundation;
@@ -68,6 +70,31 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
     private readonly WebviewWindowMacOptions? _macWindowOptions;
 
 #if MACOS
+    /// <summary>
+    /// 窗口 ID → 原生 NSWindow 映射，用于模态窗口（sheet）与父窗口关联。
+    /// </summary>
+    private static readonly ConcurrentDictionary<uint, NSWindow> NativeWindows = new();
+
+    /// <summary>
+    /// 承载 WKWebView 的拖放视图（注册文件 URL 拖放类型）。
+    /// </summary>
+    private MacDropView? _dropView;
+
+    /// <summary>
+    /// notch 窗口配置（null 表示普通窗口）。
+    /// </summary>
+    private NotchWindowInfo? _notchInfo;
+
+    /// <summary>
+    /// notch 窗口的鼠标进入/离开跟踪区域（关闭时移除）。
+    /// </summary>
+    private NSTrackingArea? _notchTrackingArea;
+
+    /// <summary>
+    /// Dock 进度视图（惰性创建，任务栏进度清除时释放）。
+    /// </summary>
+    private MacDockProgressView? _dockProgressView;
+
     /// <summary>
     /// 原生 NSWindow 实例。
     /// </summary>
@@ -162,10 +189,27 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
             var macOptions = _macOptions ?? new MacOptions();
             var windowMac = _macWindowOptions;
             var titleBar = windowMac?.TitleBar ?? macOptions.TitleBar ?? new MacTitleBarOptions();
+            _notchInfo = windowMac?.Notch;
 
             var styleMask = NSWindowStyle.Titled | NSWindowStyle.Closable
                 | NSWindowStyle.Miniaturizable | NSWindowStyle.Resizable;
-            if (_options.Frameless && (macOptions.CornerType is 1 or 2))
+            var windowClass = windowMac?.WindowClass ?? 0;
+            var panelPreferences = windowMac?.PanelPreferences;
+            if (windowClass == 1)
+            {
+                // NSPanel：辅助面板默认无边框，按偏好叠加非激活/工具窗口样式位。
+                styleMask = NSWindowStyle.Borderless;
+                if (panelPreferences?.NonActivating == true)
+                {
+                    styleMask |= NSWindowStyle.NonactivatingPanel;
+                }
+
+                if (panelPreferences?.UtilityWindow == true)
+                {
+                    styleMask |= NSWindowStyle.Utility;
+                }
+            }
+            else if (_options.Frameless && (macOptions.CornerType is 1 or 2))
             {
                 styleMask = NSWindowStyle.Borderless | NSWindowStyle.Resizable | NSWindowStyle.Miniaturizable;
             }
@@ -176,17 +220,25 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
 
             var width = Math.Max(1, _options.Width);
             var height = Math.Max(1, _options.Height);
-            _window = new NSWindow(
-                new CGRect(0, 0, width, height),
-                styleMask,
-                NSBackingStore.Buffered,
-                false);
+            _window = windowClass == 1
+                ? new NSPanel(new CGRect(0, 0, width, height), styleMask, NSBackingStore.Buffered, false)
+                : new NSWindow(new CGRect(0, 0, width, height), styleMask, NSBackingStore.Buffered, false);
 
-            // 内容视图（承载 WKWebView，支持圆角）。
-            var contentView = new NSView(new CGRect(0, 0, width, height))
+            if (_window is NSPanel panel)
+            {
+                // NSPanel 默认行为与 NSWindow 不同：Wails 窗口应在其他应用激活时保持可见。
+                panel.HidesOnDeactivate = false;
+                panel.FloatingPanel = panelPreferences?.FloatingPanel ?? false;
+                panel.BecomesKeyOnlyIfNeeded = panelPreferences?.BecomesKeyOnlyIfNeeded ?? false;
+                panel.MovableByWindowBackground = true;
+            }
+
+            // 内容视图（承载 WKWebView，支持圆角，并接收文件拖放）。
+            var contentView = new MacDropView(new CGRect(0, 0, width, height), this)
             {
                 AutoresizingMask = NSViewResizingMask.WidthSizable | NSViewResizingMask.HeightSizable,
             };
+            _dropView = contentView;
             if (_options.Frameless && macOptions.CornerType == 2 && macOptions.CornerRadius > 0)
             {
                 contentView.WantsLayer = true;
@@ -341,15 +393,15 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
         var backdrop = _macWindowOptions?.Backdrop ?? macOptions.Backdrop;
         if (backdrop == 1 || string.Equals(_options.BackgroundType, "transparent", StringComparison.OrdinalIgnoreCase))
         {
-            _window.Opaque = false;
+            _window.IsOpaque = false;
             _window.BackgroundColor = NSColor.Clear;
             // 参照 DevToys BlazorWKWebView：通过 KVC 键 drawsBackground 使 WKWebView 透明。
             _webView.SetValueForKey(NSObject.FromObject(false), new NSString("drawsBackground"));
         }
         else if (backdrop == 2 || string.Equals(_options.BackgroundType, "translucent", StringComparison.OrdinalIgnoreCase))
         {
-            _window.Opaque = false;
-            var effectView = new NSVisualEffectView(_window.ContentView.Bounds)
+            _window.IsOpaque = false;
+            var effectView = new NSVisualEffectView(_window.ContentView!.Bounds)
             {
                 AutoresizingMask = NSViewResizingMask.WidthSizable | NSViewResizingMask.HeightSizable,
                 BlendingMode = NSVisualEffectBlendingMode.BehindWindow,
@@ -379,7 +431,8 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
         var appearanceName = _macWindowOptions?.Appearance;
         if (!string.IsNullOrEmpty(appearanceName))
         {
-            var appearance = NSAppearance.GetAppearance(appearanceName);
+            using var appearanceNs = new NSString(appearanceName);
+            var appearance = NSAppearance.GetAppearance(appearanceNs);
             if (appearance is not null)
             {
                 _window.Appearance = appearance;
@@ -393,7 +446,14 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
         var level = _macWindowOptions?.WindowLevel ?? 0;
         if (level != 0)
         {
-            _window.Level = (nfloat)level;
+            _window.Level = ToNativeWindowLevel(level);
+        }
+
+        // 跨 Space / 全屏行为（取值与 NSWindowCollectionBehavior 一致）。
+        var collectionBehavior = _macWindowOptions?.CollectionBehavior ?? 0;
+        if (collectionBehavior != 0)
+        {
+            _window.CollectionBehavior = (NSWindowCollectionBehavior)collectionBehavior;
         }
 
         // 初始状态。
@@ -418,6 +478,12 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
         else
         {
             SetPosition(_options.X, _options.Y);
+        }
+
+        // notch 窗口：原生形状背景 + 相机刘海定位（覆盖上面的常规定位）。
+        if (_notchInfo is not null)
+        {
+            ConfigureNotchWindow();
         }
 
         // 加载内容：URL > HTML > wails:// 资源。
@@ -462,7 +528,7 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
             var js = app.GenerateRuntimeJs(false);
             if (!string.IsNullOrEmpty(js))
             {
-                var script = new WKUserScript(js, WKUserScriptInjectionTime.AtDocumentStart, false);
+                var script = new WKUserScript(new NSString(js), WKUserScriptInjectionTime.AtDocumentStart, false);
                 ucc.AddUserScript(script);
                 _runtimeInjected = true;
             }
@@ -542,8 +608,14 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
     public void Show()
     {
 #if MACOS
-        _window?.MakeKeyAndOrderFront(null);
-        NSApplication.SharedApplication.ActivateIgnoringOtherApps(true);
+        if (_notchInfo is not null)
+        {
+            ShowNotchWindow();
+            return;
+        }
+
+        _window?.MakeKeyAndOrderFront(null!);
+        NSApplication.SharedApplication.Activate();
 #endif
     }
 
@@ -551,6 +623,12 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
     public void Hide()
     {
 #if MACOS
+        if (_notchInfo is not null)
+        {
+            HideNotchWindow();
+            return;
+        }
+
         _window?.OrderOut(null);
 #endif
     }
@@ -658,10 +736,10 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
         {
             if (!NSApplication.SharedApplication.Active)
             {
-                NSApplication.SharedApplication.ActivateIgnoringOtherApps(true);
+                NSApplication.SharedApplication.Activate();
             }
 
-            _window.MakeKeyAndOrderFront(null);
+            _window.MakeKeyAndOrderFront(null!);
             _window.MakeKeyWindow();
         }
 #endif
@@ -717,7 +795,7 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
 #if MACOS
         if (_window is not null)
         {
-            _window.Level = onTop ? (nfloat)NSWindowLevel.Floating : (nfloat)NSWindowLevel.Normal;
+            _window.Level = onTop ? NSWindowLevel.Floating : NSWindowLevel.Normal;
         }
 #endif
     }
@@ -741,7 +819,7 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
     public bool IsFullscreen()
     {
 #if MACOS
-        return _window is not null && (_window.StyleMask & NSWindowStyle.FullScreen) != 0;
+        return _window is not null && (_window.StyleMask & NSWindowStyle.FullScreenWindow) != 0;
 #else
         return false;
 #endif
@@ -870,7 +948,7 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
             return (0, 0);
         }
 
-        var size = _window.ContentView.Frame.Size;
+        var size = _window.ContentView!.Frame.Size;
         return ((int)size.Width, (int)size.Height);
 #else
         return (0, 0);
@@ -946,7 +1024,7 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
             // 带 completionHandler 的同步重载（参照 DevToys），fire-and-forget。
             _webView.EvaluateJavaScript(
                 js,
-                (NSObject result, NSError error) => { });
+                (NSObject? result, NSError? error) => { });
         }
         catch
         {
@@ -1002,13 +1080,95 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
     /// <inheritdoc />
     public void Print()
     {
-        // WKWebView 打印需 NSPrintOperation（macOS 11+），暂未实现。
+#if MACOS
+        if (_webView is null)
+        {
+            return;
+        }
+
+        // 对应 Wails v3 Go 版本 webview_window_darwin.m 的 windowPrint：
+        // 以 WKWebView 作为打印视图创建 NSPrintOperation，交由系统打印面板处理。
+        using var operation = NSPrintOperation.FromView(_webView);
+        operation.RunOperation();
+#endif
     }
 
     /// <inheritdoc />
     public void PrintToPDF(string path)
     {
-        // WKWebView 无同步 PDF 导出 API，暂未实现。
+#if MACOS
+        if (_webView is null || string.IsNullOrEmpty(path))
+        {
+            return;
+        }
+
+        // WKWebView.CreatePdf 在 macOS 11+ 可用，回调在后台线程返回 PDF 数据。
+        _webView.CreatePdf(new WKPdfConfiguration(), (data, error) =>
+        {
+            if (error is not null || data is null)
+            {
+                return;
+            }
+
+            try
+            {
+                using var target = Foundation.NSUrl.FromFilename(path);
+                if (target is not null)
+                {
+                    data.Save(target, true);
+                }
+            }
+            catch (Exception)
+            {
+                // 写入失败时静默忽略（与接口无返回值语义一致）
+            }
+        });
+#endif
+    }
+
+    /// <inheritdoc />
+    public Task<byte[]?> CapturePreviewAsync()
+    {
+#if MACOS
+        if (_webView is null)
+        {
+            return Task.FromResult<byte[]?>(null);
+        }
+
+        var completion = new TaskCompletionSource<byte[]?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _webView.TakeSnapshot(new WKSnapshotConfiguration(), (image, error) =>
+        {
+            if (error is not null || image is null)
+            {
+                completion.TrySetResult(null);
+                return;
+            }
+
+            try
+            {
+                using var tiff = image.AsTiff();
+                if (tiff is null)
+                {
+                    completion.TrySetResult(null);
+                    return;
+                }
+
+                using var representation = new NSBitmapImageRep(tiff);
+                using var png = representation.RepresentationUsingTypeProperties(
+                    NSBitmapImageFileType.Png,
+                    new NSDictionary());
+                completion.TrySetResult(png?.ToArray());
+            }
+            catch (Exception)
+            {
+                completion.TrySetResult(null);
+            }
+        });
+
+        return completion.Task;
+#else
+        return Task.FromResult<byte[]?>(null);
+#endif
     }
 
     /// <inheritdoc />
@@ -1018,10 +1178,57 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
     }
 
     /// <inheritdoc />
+    public void OpenContextMenu(ContextMenuData data)
+    {
+#if MACOS
+        ArgumentNullException.ThrowIfNull(data);
+        var window = _window;
+        var contentView = window?.ContentView;
+        if (_webView is null || window is null || contentView is null)
+        {
+            return;
+        }
+
+        var contextMenu = WailsApplication.Get()?.MenuManager?.GetContextMenu(data.Id);
+        if (contextMenu is null)
+        {
+            return;
+        }
+
+        // 复用应用菜单的 NSMenu 构建器，将上下文菜单模型转换为原生菜单。
+        using var impl = new MacOSMenu(contextMenu);
+        var nativeMenu = impl.NativeMenu;
+        if (nativeMenu is null)
+        {
+            return;
+        }
+
+        // 视口坐标 → 内容视图坐标；popUpMenuPositioningItem 需要原生视图坐标。
+        var location = _webView.ConvertPointToView(new CGPoint(data.X, data.Y), contentView);
+        nativeMenu.PopUpMenu(null!, location, contentView);
+#endif
+    }
+
+    /// <inheritdoc />
+    public void SetFileDropEnabled(bool enabled)
+    {
+#if MACOS
+        _dropView?.SetFileDropEnabled(enabled);
+#endif
+    }
+
+    /// <inheritdoc />
     public void StartDrag()
     {
-        // macOS 窗口拖动由标题栏原生处理，无边框窗口需自定义拖动区域。
-        // Wails v3 通过 delegate startDrag 实现，暂未实现。
+#if MACOS
+        // 对应 Wails v3 Go 版本 webview_window_darwin.m 中 startDrag：
+        // 使用当前鼠标事件触发系统原生窗口拖动（无边框窗口自定义拖动区域依赖此路径）。
+        var currentEvent = NSApplication.SharedApplication.CurrentEvent;
+        if (currentEvent is not null)
+        {
+            _window?.PerformWindowDrag(currentEvent);
+        }
+#endif
     }
 
     /// <inheritdoc />
@@ -1055,7 +1262,18 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
     /// <inheritdoc />
     public void AttachAsModal(uint parentWindowId)
     {
-        // 模态窗口以 sheet 形式附加（需要父窗口句柄），暂未实现。
+#if MACOS
+        if (_window is null)
+        {
+            return;
+        }
+
+        // 以 sheet 形式附加到父窗口（对应 Wails v3 的 modal window 语义）。
+        if (NativeWindows.TryGetValue(parentWindowId, out var parent) && !ReferenceEquals(parent, _window))
+        {
+            parent.BeginSheet(_window, null!);
+        }
+#endif
     }
 
     /// <inheritdoc />
@@ -1129,6 +1347,74 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
         if (_window is not null)
         {
             _window.HasShadow = hasShadow;
+        }
+#endif
+    }
+
+    /// <inheritdoc />
+    public void SetBadgeCount(int count)
+    {
+#if MACOS
+        // 对应 Wails v3 的 Dock badge：使用 NSDockTile.BadgeLabel 显示数字徽章。
+        NSApplication.SharedApplication.DockTile.BadgeLabel =
+            count > 0 ? count.ToString(CultureInfo.InvariantCulture) : null;
+#endif
+    }
+
+    /// <inheritdoc />
+    public void SetBadgeLabel(string? label)
+    {
+#if MACOS
+        // label 为 null/空时清除徽章（与 Windows 的任务栏徽章语义一致）。
+        NSApplication.SharedApplication.DockTile.BadgeLabel =
+            string.IsNullOrEmpty(label) ? null : label;
+#endif
+    }
+
+    /// <inheritdoc />
+    public void SetTaskbarProgress(TaskbarProgressState state, ulong completed, ulong total)
+    {
+#if MACOS
+        // macOS 无任务栏：以 Dock 磁贴（NSDockTile.ContentView）绘制进度条。
+        var dockTile = NSApplication.SharedApplication.DockTile;
+        if (state == TaskbarProgressState.None)
+        {
+            if (_dockProgressView is not null)
+            {
+                dockTile.ContentView = null!;
+                _dockProgressView = null;
+                dockTile.Display();
+            }
+
+            return;
+        }
+
+        var size = dockTile.Size;
+        var view = _dockProgressView ??= new MacDockProgressView(
+            new CGRect(0, 0, Math.Max(1, size.Width), Math.Max(1, size.Height)));
+        var fraction = total > 0 ? Math.Clamp((double)completed / total, 0.0, 1.0) : 0.0;
+        view.Update(state, fraction);
+        dockTile.ContentView = view;
+        dockTile.Display();
+#endif
+    }
+
+    /// <inheritdoc />
+    public void SetVisibleOnAllWorkspaces(bool visible)
+    {
+#if MACOS
+        if (_window is null)
+        {
+            return;
+        }
+
+        if (visible)
+        {
+            _window.CollectionBehavior |= NSWindowCollectionBehavior.CanJoinAllSpaces;
+        }
+        else
+        {
+            _window.CollectionBehavior &= ~NSWindowCollectionBehavior.CanJoinAllSpaces;
         }
 #endif
     }
@@ -1224,7 +1510,7 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
     public void LoadHTML(string html)
     {
 #if MACOS
-        _webView?.LoadHtmlString(html, null);
+        _webView?.LoadHtmlString(html, null!);
 #endif
     }
 
@@ -1249,7 +1535,19 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
     /// <param name="window">NSWindow 实例。</param>
     private void AttachWindowEvents(NSWindow window)
     {
-        window.WillClose += (_, _) => DispatchWindowEvent(WindowEventType.WindowClosed);
+        NativeWindows[_id] = window;
+        window.WillClose += (_, _) =>
+        {
+            // 窗口关闭前移除 notch 跟踪区域，避免原生层残留引用。
+            if (_notchTrackingArea is not null && _dropView is not null)
+            {
+                _dropView.RemoveTrackingArea(_notchTrackingArea);
+                _notchTrackingArea = null;
+            }
+
+            NativeWindows.TryRemove(_id, out _);
+            DispatchWindowEvent(WindowEventType.WindowClosed);
+        };
         window.DidResize += (_, _) => DispatchWindowEvent(WindowEventType.WindowResized);
         window.DidMove += (_, _) => DispatchWindowEvent(WindowEventType.WindowMoved);
         window.DidBecomeKey += (_, _) => DispatchWindowEvent(WindowEventType.WindowFocus);
@@ -1281,6 +1579,21 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
         }
 
         DispatchWindowEvent(WindowEventType.WindowRuntimeReady);
+    }
+
+    /// <summary>
+    /// 处理拖放视图提交的文件列表（由 <see cref="MacDropView"/> 调用）。
+    /// 对应 Wails v3 Go 版本 <c>webview_window_darwin.m</c> 的 performDragOperation 事件派发。
+    /// </summary>
+    /// <param name="paths">拖入的文件路径。</param>
+    internal void HandleFilesDropped(IReadOnlyList<string> paths)
+    {
+        if (paths.Count == 0)
+        {
+            return;
+        }
+
+        WailsApplication.Get()?.Events.Emit(KnownEvents.WindowFileDropped, paths.ToArray(), _id);
     }
 
     /// <summary>
@@ -1420,7 +1733,7 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
     private static IReadOnlyDictionary<string, string> ReadRequestHeaders(NSUrlRequest request)
     {
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var allHeaders = request.AllHTTPHeaderFields;
+        var allHeaders = request.Headers;
         if (allHeaders is null)
         {
             return headers;
@@ -1522,7 +1835,7 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
                 var buffer = new byte[81920];
                 while (true)
                 {
-                    var read = (int)stream.Read(buffer, 0, buffer.Length);
+                    var read = (int)stream.Read(buffer, 0, (nuint)buffer.Length);
                     if (read <= 0)
                     {
                         break;
@@ -1638,7 +1951,7 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
 #if MACOS
         if (_window is not null)
         {
-            _window.Opaque = !translucent;
+            _window.IsOpaque = !translucent;
         }
 #endif
     }
@@ -1702,6 +2015,270 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
         }
 #endif
     }
+#if MACOS
+    // ─── notch 窗口（相机刘海）───
+
+    /// <summary>
+    /// notch 原生形状边距：水平 30pt、底部 12pt（与 Wails v3 Go 版本常量一致）。
+    /// </summary>
+    private const int NotchHorizontalInset = 30;
+
+    /// <summary>
+    /// notch 原生形状底部边距。
+    /// </summary>
+    private const int NotchBottomInset = 12;
+
+    /// <summary>
+    /// 将 Wails 序号式窗口层级映射为 AppKit 的 <see cref="NSWindowLevel"/>。
+    /// 0=Normal、1=Floating、2=TornOffMenu、3=ModalPanel、4=MainMenu、5=Status、
+    /// 6=PopUpMenu、7=ScreenSaver。
+    /// </summary>
+    /// <param name="level">序号层级。</param>
+    /// <returns>原生窗口层级。</returns>
+    private static NSWindowLevel ToNativeWindowLevel(int level) => level switch
+    {
+        1 => NSWindowLevel.Floating,
+        2 => NSWindowLevel.TornOffMenu,
+        3 => NSWindowLevel.ModalPanel,
+        4 => NSWindowLevel.MainMenu,
+        5 => NSWindowLevel.Status,
+        6 => NSWindowLevel.PopUpMenu,
+        7 => NSWindowLevel.ScreenSaver,
+        _ => NSWindowLevel.Normal,
+    };
+
+    /// <summary>
+    /// 配置 notch 窗口：禁用拖动、注入原生形状背景、设置 WebView 内容区与相机刘海定位。
+    /// 对应 Wails v3 Go 版本 <c>webview_notch_window_darwin.m</c> 的
+    /// <c>configureWebView:contentWidth:contentHeight:targetScreenID:</c>。
+    /// </summary>
+    private void ConfigureNotchWindow()
+    {
+        if (_window is null || _webView is null || _dropView is null || _notchInfo is null)
+        {
+            return;
+        }
+
+        // notch 窗口保持锚定，即使 Web 内容请求原生拖动也不移动。
+        _window.IsMovable = false;
+        _window.MovableByWindowBackground = false;
+
+        var root = _window.ContentView;
+        if (root is null)
+        {
+            return;
+        }
+
+        // 原生形状背景（黑色刘海形状），置于 WebView 之下。
+        var background = new MacNotchBackgroundView(root.Bounds)
+        {
+            AutoresizingMask = NSViewResizingMask.WidthSizable | NSViewResizingMask.HeightSizable,
+        };
+        root.AddSubview(background, NSWindowOrderingMode.Below, _webView);
+
+        // Web 内容位于形状边距内部（AppKit 原点在左下角）。
+        _webView.Frame = new CGRect(
+            NotchHorizontalInset,
+            NotchBottomInset,
+            Math.Max(1, _notchInfo.ContentWidth),
+            Math.Max(1, _notchInfo.ContentHeight));
+        _webView.AutoresizingMask = NSViewResizingMask.NotSizable;
+
+        // 鼠标悬停时获取焦点（不触发隐藏策略），对应 Go 侧 mouseEntered 行为。
+        _notchTrackingArea = new NSTrackingArea(
+            CGRect.Empty,
+            NSTrackingAreaOptions.MouseEnteredAndExited | NSTrackingAreaOptions.ActiveAlways | NSTrackingAreaOptions.InVisibleRect,
+            _dropView,
+            null!);
+        _dropView.AddTrackingArea(_notchTrackingArea);
+
+        _window.SetFrame(ComputeNotchTargetFrame(), false);
+    }
+
+    /// <summary>
+    /// notch 目标显示器：按 ID 匹配，未找到时回退首个主显示器。
+    /// </summary>
+    /// <returns>目标 NSScreen，无显示器时为 null。</returns>
+    private NSScreen? ResolveNotchScreen()
+    {
+        var screens = NSScreen.Screens;
+        if (screens is null || screens.Length == 0)
+        {
+            return null;
+        }
+
+        var screenId = _notchInfo?.ScreenId;
+        if (!string.IsNullOrEmpty(screenId))
+        {
+            foreach (var screen in screens)
+            {
+                if (screen.DeviceDescription?.ObjectForKey(new NSString("NSScreenNumber")) is NSNumber number
+                    && number.UInt32Value.ToString(CultureInfo.InvariantCulture) == screenId)
+                {
+                    return screen;
+                }
+            }
+        }
+
+        return screens[0] ?? NSScreen.MainScreen;
+    }
+
+    /// <summary>
+    /// 计算 notch 目标帧：水平居中于相机刘海（无刘海时居中于屏幕），
+    /// 垂直贴齐屏幕顶部。对应 Go 侧 <c>notchTargetFrame</c>。
+    /// </summary>
+    /// <returns>目标窗口帧（AppKit 坐标）。</returns>
+    private CGRect ComputeNotchTargetFrame()
+    {
+        if (_window is null)
+        {
+            return CGRect.Empty;
+        }
+
+        var frame = _window.Frame;
+        var screen = ResolveNotchScreen();
+        if (screen is null)
+        {
+            return frame;
+        }
+
+        var hasCameraHousing = false;
+        var centre = screen.Frame.X + (screen.Frame.Width / 2);
+
+        // macOS 12+：auxiliaryTopLeftArea/RightArea 之间的空隙即相机刘海。
+        var leftArea = screen.AuxiliaryTopLeftArea;
+        var rightArea = screen.AuxiliaryTopRightArea;
+        var leftEdge = leftArea.X + leftArea.Width;
+        var rightEdge = rightArea.X;
+        if (screen.SafeAreaInsets.Top > 0
+            && leftArea.Width > 0 && leftArea.Height > 0
+            && rightArea.Width > 0 && rightArea.Height > 0
+            && rightEdge > leftEdge)
+        {
+            hasCameraHousing = true;
+            centre = leftEdge + ((rightEdge - leftEdge) / 2);
+        }
+
+        var reference = hasCameraHousing ? screen.Frame : screen.VisibleFrame;
+        var target = new CGRect(
+            Math.Round(centre - (frame.Width / 2)),
+            reference.Y + reference.Height - frame.Height,
+            frame.Width,
+            frame.Height);
+        return target;
+    }
+
+    /// <summary>
+    /// 显示 notch 窗口：启用动画时从屏幕顶部上方滑入。
+    /// 对应 Go 侧 <c>showAnimated:duration:</c>。
+    /// </summary>
+    private void ShowNotchWindow()
+    {
+        if (_window is null || _notchInfo is null)
+        {
+            return;
+        }
+
+        // 已显示的窗口再次 Show 时仅前置，不重播动画。
+        if (_window.IsVisible)
+        {
+            _window.OrderFrontRegardless();
+            return;
+        }
+
+        var target = ComputeNotchTargetFrame();
+        var duration = _notchInfo.AnimationSpeedMilliseconds / 1000.0;
+        if (!_notchInfo.Animated || duration <= 0)
+        {
+            _window.AlphaValue = 1;
+            _window.SetFrame(target, false);
+            _window.OrderFrontRegardless();
+            return;
+        }
+
+        var hidden = new CGRect(target.X, target.Y + target.Height, target.Width, target.Height);
+        _window.SetFrame(hidden, false);
+        _window.AlphaValue = (nfloat)0.96;
+        _window.OrderFrontRegardless();
+
+        NSAnimationContext.RunAnimation(
+            context =>
+            {
+                context.Duration = duration;
+                var animator = _window.Animator;
+                animator.SetValueForKey(NSValue.FromCGRect(target), new NSString("frame"));
+                animator.SetValueForKey(NSNumber.FromDouble(1.0), new NSString("alphaValue"));
+            },
+            () =>
+            {
+                _window.SetFrame(target, false);
+                _window.AlphaValue = 1;
+            });
+    }
+
+    /// <summary>
+    /// 隐藏 notch 窗口：启用动画时向上滑出（时长取显示时长的 2/3）。
+    /// 对应 Go 侧 <c>hideAnimated:duration:</c>。
+    /// </summary>
+    private void HideNotchWindow()
+    {
+        if (_window is null || _notchInfo is null)
+        {
+            return;
+        }
+
+        var target = ComputeNotchTargetFrame();
+        var duration = _notchInfo.AnimationSpeedMilliseconds / 1000.0;
+        if (!_notchInfo.Animated || duration <= 0)
+        {
+            _window.OrderOut(null);
+            _window.AlphaValue = 1;
+            return;
+        }
+
+        var hidden = new CGRect(target.X, target.Y + target.Height, target.Width, target.Height);
+        NSAnimationContext.RunAnimation(
+            context =>
+            {
+                context.Duration = duration * (2.0 / 3.0);
+                var animator = _window.Animator;
+                animator.SetValueForKey(NSValue.FromCGRect(hidden), new NSString("frame"));
+                animator.SetValueForKey(NSNumber.FromDouble(0.9), new NSString("alphaValue"));
+            },
+            () =>
+            {
+                _window.OrderOut(null);
+                _window.AlphaValue = 1;
+            });
+    }
+
+    /// <summary>
+    /// notch 面板鼠标进入：前置并获取 key 焦点，使 WebView 可立即接收键盘输入。
+    /// 对应 Go 侧 <c>mouseEntered:</c>。
+    /// </summary>
+    internal void HandleNotchMouseEntered()
+    {
+        if (_window is null || _notchInfo is null || !_window.IsVisible)
+        {
+            return;
+        }
+
+        _window.OrderFrontRegardless();
+        _window.MakeKeyWindow();
+        if (_webView is not null)
+        {
+            _window.MakeFirstResponder(_webView);
+        }
+    }
+
+    /// <summary>
+    /// notch 面板鼠标离开：保持 key 状态直到用户聚焦其他窗口（不做隐藏）。
+    /// </summary>
+    internal void HandleNotchMouseExited()
+    {
+        // 与 Go 实现一致：悬停仅获取焦点，不触发关闭/隐藏策略。
+    }
+#endif
 }
 
 #if MACOS
@@ -1842,13 +2419,14 @@ internal sealed class MacUiDelegate : WKUIDelegate
         alert.AddButton("确定");
         alert.AddButton("取消");
         // 参照 DevToys：以 sheet 形式呈现，不阻塞主线程。
-        alert.BeginSheetForResponse(webView.Window, result =>
+        alert.BeginSheetForResponse(webView.Window!, result =>
         {
             completionHandler(result == 1000); // NSAlertFirstButtonReturn
         });
     }
 
     /// <inheritdoc />
+#pragma warning disable CS0672 // 重写过时的 WKUIDelegate 成员：保留以兼容 WebKit 的原生调用路径。
     public override void RunJavaScriptTextInputPanel(
         WKWebView webView,
         string prompt,
@@ -1865,11 +2443,12 @@ internal sealed class MacUiDelegate : WKUIDelegate
         alert.AccessoryView = textField;
         alert.AddButton("确定");
         alert.AddButton("取消");
-        alert.BeginSheetForResponse(webView.Window, result =>
+        alert.BeginSheetForResponse(webView.Window!, result =>
         {
             completionHandler(result == 1000 ? textField.StringValue : null!);
         });
     }
+#pragma warning restore CS0672
 
     /// <summary>
     /// 处理 getUserMedia 相机 / 麦克风捕获权限请求（macOS 12.0+）。
@@ -2029,6 +2608,268 @@ internal sealed class MacUrlSchemeHandler : NSObject, IWKUrlSchemeHandler
         // 任务被取消（页面导航/刷新）。记录该任务，供长轮询等异步完成场景检测，
         // 避免对已停止的任务调用 DidReceiveResponse/DidFinish 导致崩溃。
         MarkStopped(urlSchemeTask);
+    }
+}
+
+/// <summary>
+/// 承载 WKWebView 的内容视图，注册文件 URL 拖放并派发 <c>WindowFileDropped</c> 事件。
+/// 对应 Wails v3 Go 版本 <c>webview_window_darwin.m</c> 中 registerForDraggedTypes 与
+/// performDragOperation 的实现。
+/// </summary>
+[Register("WailsMacDropView")]
+internal sealed class MacDropView : NSView
+{
+    /// <summary>文件 URL 的粘贴板类型（NSPasteboardTypeFileURL 的原始字符串）。</summary>
+    private static readonly string[] FileUrlTypes = ["public.file-url"];
+
+    private readonly MacOSWebviewWindow _window;
+    private bool _enabled = true;
+
+    /// <summary>
+    /// 构造拖放视图。
+    /// </summary>
+    /// <param name="frame">视图尺寸。</param>
+    /// <param name="window">关联窗口。</param>
+    public MacDropView(CGRect frame, MacOSWebviewWindow window)
+        : base(frame)
+    {
+        _window = window;
+        RegisterForDraggedTypes(FileUrlTypes);
+    }
+
+    /// <summary>
+    /// 启用或禁用文件拖放（对应 <c>SetFileDropEnabled</c>）。
+    /// </summary>
+    /// <param name="enabled">是否启用。</param>
+    public void SetFileDropEnabled(bool enabled)
+    {
+        if (_enabled == enabled)
+        {
+            return;
+        }
+
+        _enabled = enabled;
+        if (enabled)
+        {
+            RegisterForDraggedTypes(FileUrlTypes);
+        }
+        else
+        {
+            UnregisterDraggedTypes();
+        }
+    }
+
+    /// <inheritdoc />
+    public override NSDragOperation DraggingEntered(INSDraggingInfo sender) =>
+        _enabled ? NSDragOperation.Copy : NSDragOperation.None;
+
+    /// <inheritdoc />
+    public override NSDragOperation DraggingUpdated(INSDraggingInfo sender) =>
+        _enabled ? NSDragOperation.Copy : NSDragOperation.None;
+
+    /// <inheritdoc />
+    public override bool PerformDragOperation(INSDraggingInfo sender)
+    {
+        if (!_enabled)
+        {
+            return false;
+        }
+
+        var paths = new List<string>();
+        var items = sender.DraggingPasteboard.PasteboardItems;
+        if (items is not null)
+        {
+            foreach (var item in items)
+            {
+                var value = item.GetStringForType("public.file-url");
+                if (string.IsNullOrEmpty(value))
+                {
+                    continue;
+                }
+
+                using var url = NSUrl.FromString(value);
+                var path = url?.Path;
+                if (!string.IsNullOrEmpty(path))
+                {
+                    paths.Add(path);
+                }
+            }
+        }
+
+        if (paths.Count == 0)
+        {
+            return false;
+        }
+
+        _window.HandleFilesDropped(paths);
+        return true;
+    }
+
+    /// <summary>
+    /// 鼠标进入视图：notch 面板在此获取 key 焦点。
+    /// </summary>
+    /// <param name="theEvent">鼠标事件。</param>
+    public override void MouseEntered(NSEvent theEvent)
+    {
+        base.MouseEntered(theEvent);
+        _window.HandleNotchMouseEntered();
+    }
+
+    /// <summary>
+    /// 鼠标离开视图：notch 面板保持焦点，不做隐藏。
+    /// </summary>
+    /// <param name="theEvent">鼠标事件。</param>
+    public override void MouseExited(NSEvent theEvent)
+    {
+        base.MouseExited(theEvent);
+        _window.HandleNotchMouseExited();
+    }
+}
+
+/// <summary>
+/// notch 原生形状背景：按 Wails v3 Go 版本 <c>WailsNotchBackgroundView</c> 的
+/// 贝塞尔路径绘制黑色刘海形状。
+/// </summary>
+[Register("WailsNotchBackgroundView")]
+internal sealed class MacNotchBackgroundView : NSView
+{
+    /// <summary>侧翼内收宽度。</summary>
+    private const float WingInset = 20f;
+
+    /// <summary>底部圆角半径。</summary>
+    private const float BottomCornerRadius = 28f;
+
+    /// <summary>
+    /// 构造背景视图。
+    /// </summary>
+    /// <param name="frame">视图尺寸。</param>
+    public MacNotchBackgroundView(CGRect frame)
+        : base(frame)
+    {
+    }
+
+    /// <inheritdoc />
+    public override bool IsOpaque => false;
+
+    /// <inheritdoc />
+    public override void DrawRect(CGRect dirtyRect)
+    {
+        base.DrawRect(dirtyRect);
+
+        nfloat width = Bounds.Width;
+        nfloat height = Bounds.Height;
+        if (width <= 0 || height <= 0)
+        {
+            return;
+        }
+
+        nfloat wing = WingInset;
+        nfloat radius = BottomCornerRadius;
+        var bodyBottom = radius;
+        var path = new NSBezierPath();
+        // 顶部横跨整个透明画布，两侧向内收窄到 body，再经更紧的下圆角收底。
+        path.MoveTo(new CGPoint(0, height));
+        path.LineTo(new CGPoint(width, height));
+        path.CurveTo(
+            new CGPoint(width - (wing * 0.58f), height),
+            new CGPoint(width - wing, height - (wing * 0.42f)),
+            new CGPoint(width - wing, height - wing));
+        path.LineTo(new CGPoint(width - wing, bodyBottom));
+        path.CurveTo(
+            new CGPoint(width - wing, radius * 0.45f),
+            new CGPoint(width - wing - (radius * 0.45f), 0),
+            new CGPoint(width - wing - radius, 0));
+        path.LineTo(new CGPoint(wing + radius, 0));
+        path.CurveTo(
+            new CGPoint(wing + (radius * 0.45f), 0),
+            new CGPoint(wing, radius * 0.45f),
+            new CGPoint(wing, bodyBottom));
+        path.LineTo(new CGPoint(wing, height - wing));
+        path.CurveTo(
+            new CGPoint(wing, height - (wing * 0.42f)),
+            new CGPoint(wing * 0.58f, height),
+            new CGPoint(0, height));
+        path.ClosePath();
+
+        NSColor.Black.SetFill();
+        path.Fill();
+    }
+}
+
+/// <summary>
+/// Dock 磁贴进度视图：绘制应用图标与底部进度条。
+/// 对应 <c>IWebviewWindowImpl.SetTaskbarProgress</c> 在 macOS 上的实现
+/// （macOS 无任务栏，改用 <c>NSDockTile.ContentView</c>）。
+/// </summary>
+[Register("WailsDockProgressView")]
+internal sealed class MacDockProgressView : NSView
+{
+    private TaskbarProgressState _state;
+    private double _fraction;
+
+    /// <summary>
+    /// 构造 Dock 进度视图。
+    /// </summary>
+    /// <param name="frame">视图尺寸（与 Dock 磁贴一致）。</param>
+    public MacDockProgressView(CGRect frame)
+        : base(frame)
+    {
+    }
+
+    /// <summary>
+    /// 更新进度状态并请求重绘。
+    /// </summary>
+    /// <param name="state">进度状态。</param>
+    /// <param name="fraction">进度比例（0..1）。</param>
+    public void Update(TaskbarProgressState state, double fraction)
+    {
+        _state = state;
+        _fraction = fraction;
+        NeedsDisplay = true;
+    }
+
+    /// <inheritdoc />
+    public override void DrawRect(CGRect dirtyRect)
+    {
+        base.DrawRect(dirtyRect);
+
+        var icon = NSApplication.SharedApplication.ApplicationIconImage;
+        icon?.Draw(Bounds);
+
+        nfloat width = Bounds.Width;
+        nfloat height = Bounds.Height;
+        if (width <= 0 || height <= 0)
+        {
+            return;
+        }
+
+        var barHeight = (nfloat)Math.Max(6, height * 0.06);
+        var inset = (nfloat)(width * 0.1);
+        var barRect = new CGRect(inset, inset, width - (2 * inset), barHeight);
+        var radius = barHeight / 2;
+        var background = NSBezierPath.FromRoundedRect(barRect, radius, radius);
+        NSColor.Black.ColorWithAlphaComponent((nfloat)0.55).SetFill();
+        background.Fill();
+
+        var fraction = _state == TaskbarProgressState.Indeterminate
+            ? 0.35
+            : Math.Clamp(_fraction, 0.0, 1.0);
+        var fillWidth = (nfloat)(barRect.Width * fraction);
+        if (fillWidth <= 0)
+        {
+            return;
+        }
+
+        var fillRect = new CGRect(barRect.X, barRect.Y, fillWidth, barHeight);
+        var fill = NSBezierPath.FromRoundedRect(fillRect, radius, radius);
+        var colour = _state switch
+        {
+            TaskbarProgressState.Error => NSColor.SystemRed,
+            TaskbarProgressState.Paused => NSColor.SystemOrange,
+            _ => NSColor.White,
+        };
+        colour.SetFill();
+        fill.Fill();
     }
 }
 #endif

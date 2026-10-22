@@ -1,3 +1,4 @@
+using Android.Print;
 using Android.Views;
 using Android.Webkit;
 using Wails.Net.Application.Menus;
@@ -560,18 +561,35 @@ public sealed class AndroidWebviewWindow : IWebviewWindowImpl
     /// <inheritdoc />
     public void Print()
     {
-        // Android WebView 打印需通过 PrintManager + PrintDocumentAdapter，骨架实现 no-op。
-        // 完整实现：
-        //   var adapter = _webView?.CreatePrintDocumentAdapter("document");
-        //   var printManager = context.GetSystemService(Context.PrintService) as PrintManager;
-        //   printManager?.Print("document", adapter, null);
+        var webView = _webView;
+        if (webView is null)
+        {
+            return;
+        }
+
+        // 通过 PrintManager 打开系统打印界面（含“另存为 PDF”）。
+        _app.DispatchOnMainThread(() =>
+        {
+            var context = webView.Context;
+            var adapter = webView.CreatePrintDocumentAdapter("Wails Document");
+            if (context is null || adapter is null)
+            {
+                return;
+            }
+
+            var printManager = context.GetSystemService(global::Android.Content.Context.PrintService) as PrintManager;
+            printManager?.Print("Wails Document", adapter, null);
+        });
     }
 
     /// <inheritdoc />
     public void PrintToPDF(string path)
     {
-        // Android WebView 不原生支持 PDF 导出，需通过 PrintManager 间接实现。
-        throw new NotSupportedException("Android WebView 不支持直接导出 PDF，请使用 PrintManager 间接打印。");
+        // Android 无公开的“WebView → PDF 文件”无 UI API：打印适配器只能在
+        // PrintManager 会话中由框架驱动写入，回调类绑定仅支持派生不支持托管构造。
+        // 宿主应调用 Print() 并选择“另存为 PDF”，或在前端用 jsPDF 生成后下载。
+        throw new NotSupportedException(
+            "Android 不支持无 UI 导出 PDF；请使用 Print() 的系统“另存为 PDF”，或在前端生成 PDF。");
     }
 
     /// <inheritdoc />
