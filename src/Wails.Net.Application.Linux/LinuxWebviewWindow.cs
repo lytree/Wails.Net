@@ -182,12 +182,13 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     private int _maxHeight;
 
     /// <summary>
-    /// 窗口 X 坐标（GTK4 窗口位置由窗口管理器控制，此处缓存以便查询）。
+    /// 窗口 X 坐标（DIP，GTK4 窗口位置由窗口管理器控制，此处缓存以便查询）。
+    /// 依据 Wails v3 PR #6346，对外坐标统一为 DIP 逻辑像素。
     /// </summary>
     private int _x = -1;
 
     /// <summary>
-    /// 窗口 Y 坐标。
+    /// 窗口 Y 坐标（DIP）。
     /// </summary>
     private int _y = -1;
 
@@ -1265,6 +1266,8 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     /// <inheritdoc />
     public void SetPosition(int x, int y)
     {
+        // 对外坐标一律为 DIP（GTK 逻辑像素），与 Wails v3 PR #6346 的 DIP 语义一致：
+        // GDK 的显示器几何与窗口位置都定义在 DIP 空间，仅 wmctrl 需要物理像素。
         _x = x;
         _y = y;
         // GTK4 中窗口位置由窗口管理器控制。
@@ -1275,30 +1278,9 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
             return;
         }
 
-        try
-        {
-            var title = _window.GetTitle() ?? string.Empty;
-            if (!string.IsNullOrEmpty(title))
-            {
-                _window.GetDefaultSize(out var width, out var height);
-                var psi = new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "wmctrl",
-                    Arguments = $"-r \"{title}\" -e 0,{x},{y},{width},{height}",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-
-                using var process = System.Diagnostics.Process.Start(psi);
-                process?.WaitForExit(1000);
-            }
-        }
-        catch
-        {
-            // wmctrl 不可用时忽略，坐标已缓存供 GetPosition 查询。
-        }
+        // GTK 返回的默认尺寸同样是 DIP。
+        _window.GetDefaultSize(out var width, out var height);
+        MoveWindowByDipBounds(x, y, width, height);
     }
 
     /// <inheritdoc />
@@ -1619,6 +1601,8 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
             return (0, 0);
         }
 
+        // GTK 的默认尺寸以应用像素（即 DIP 逻辑像素）返回，
+        // 与 Wails v3 PR #6346 的 GTK DIP 语义一致，无需再按缩放因子换算。
         _window.GetDefaultSize(out var width, out var height);
         return (width, height);
     }
@@ -1645,7 +1629,8 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     /// <inheritdoc />
     public (int X, int Y) GetPosition()
     {
-        // 返回缓存的窗口位置（GTK4 窗口位置由窗口管理器控制，无法直接获取）。
+        // 返回缓存的窗口位置（DIP 逻辑像素，GTK4 窗口位置由窗口管理器控制，无法直接获取）。
+        // 依据 Wails v3 PR #6346，缓存的是调用方传入的 DIP 坐标，而非 wmctrl 使用的物理像素。
         return (_x, _y);
     }
 
@@ -2012,6 +1997,9 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
 
         // 获取主显示器几何信息以计算居中位置。
         // 对应 Go 版 webview_window_linux.go 中的 Centre 实现。
+        // 依据 Wails v3 PR #6346，GDK 的显示器几何是 DIP（逻辑像素），
+        // 而窗口默认尺寸同为 DIP，故居中计算全程在 DIP 空间完成，
+        // 仅在调用 wmctrl 时再按显示器缩放因子换算为物理像素。
         var display = Gdk.Display.GetDefault();
         if (display is null)
         {
@@ -2033,7 +2021,7 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         var geometry = monitor.Geometry;
         _window.GetDefaultSize(out var width, out var height);
 
-        // 计算居中坐标。
+        // 计算居中坐标（DIP）。
         var x = geometry.X + (geometry.Width - width) / 2;
         var y = geometry.Y + (geometry.Height - height) / 2;
         _x = x;
@@ -2044,32 +2032,106 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         // 仅缓存坐标供 GetPosition 查询。
         if (LinuxBackendDetector.SupportsWindowPositionControl())
         {
-            try
-            {
-                var title = _window.GetTitle() ?? string.Empty;
-                if (!string.IsNullOrEmpty(title))
-                {
-                    var psi = new System.Diagnostics.ProcessStartInfo
-                    {
-                        FileName = "wmctrl",
-                        Arguments = $"-r \"{title}\" -e 0,{x},{y},{width},{height}",
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
-
-                    using var process = System.Diagnostics.Process.Start(psi);
-                    process?.WaitForExit(1000);
-                }
-            }
-            catch
-            {
-                // wmctrl 不可用时忽略，坐标已缓存供 GetPosition 查询。
-            }
+            MoveWindowByDipBounds(x, y, width, height);
         }
 
         _window.Present();
+    }
+
+    /// <summary>
+    /// 按 DIP 边界移动窗口（X11 下通过 wmctrl 实现）。
+    /// 依据 Wails v3 PR #6346，窗口对外坐标与显示器几何都在 DIP 空间，
+    /// 而 wmctrl 使用 X11 根窗口坐标（物理像素），因此仅在真正调用 wmctrl 前
+    /// 按目标显示器的缩放因子换算，避免把缩放后的像素坐标暴露给调用方。
+    /// 不具备位置控制能力（Wayland）或 wmctrl 不可用时静默忽略，坐标仍已缓存。
+    /// </summary>
+    /// <param name="dipX">窗口左上角 X 坐标（DIP）。</param>
+    /// <param name="dipY">窗口左上角 Y 坐标（DIP）。</param>
+    /// <param name="dipWidth">窗口宽度（DIP）。</param>
+    /// <param name="dipHeight">窗口高度（DIP）。</param>
+    private void MoveWindowByDipBounds(int dipX, int dipY, int dipWidth, int dipHeight)
+    {
+        if (!LinuxBackendDetector.SupportsWindowPositionControl() || _window is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var title = _window.GetTitle() ?? string.Empty;
+            if (string.IsNullOrEmpty(title))
+            {
+                return;
+            }
+
+            var target = LinuxDipCoordinates.SelectTargetMonitor(
+                CollectMonitorInfos(), dipX, dipY);
+            var scaleFactor = target?.ScaleFactor ?? LinuxDipCoordinates.DefaultScaleFactor;
+
+            var x = LinuxDipCoordinates.DipToPhysical(dipX, scaleFactor);
+            var y = LinuxDipCoordinates.DipToPhysical(dipY, scaleFactor);
+            var width = LinuxDipCoordinates.DipToPhysical(dipWidth, scaleFactor);
+            var height = LinuxDipCoordinates.DipToPhysical(dipHeight, scaleFactor);
+
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "wmctrl",
+                Arguments = $"-r \"{title}\" -e 0,{x},{y},{width},{height}",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = System.Diagnostics.Process.Start(psi);
+            process?.WaitForExit(1000);
+        }
+        catch
+        {
+            // wmctrl 不可用时忽略，坐标已缓存供 GetPosition 查询。
+        }
+    }
+
+    /// <summary>
+    /// 收集当前显示器的 DIP 几何与缩放因子，供 DIP → 物理像素换算选择目标显示器。
+    /// GDK 报告的 <c>Geometry</c> 为逻辑像素（DIP），<c>ScaleFactor</c> 为该显示器的缩放比例。
+    /// </summary>
+    /// <returns>显示器信息列表；无显示器或 GDK 不可用时返回空列表。</returns>
+    private static IReadOnlyList<LinuxMonitorInfo> CollectMonitorInfos()
+    {
+        var display = Gdk.Display.GetDefault();
+        if (display is null)
+        {
+            return System.Array.Empty<LinuxMonitorInfo>();
+        }
+
+        var monitors = display.GetMonitors();
+        var count = monitors.GetNItems();
+        if (count == 0)
+        {
+            return System.Array.Empty<LinuxMonitorInfo>();
+        }
+
+        var infos = new List<LinuxMonitorInfo>((int)count);
+        for (uint i = 0; i < count; i++)
+        {
+            var monitor = monitors.GetObject(i) as Gdk.Monitor;
+            if (monitor is null)
+            {
+                continue;
+            }
+
+            var geometry = monitor.Geometry;
+            infos.Add(new LinuxMonitorInfo(
+                geometry.X,
+                geometry.Y,
+                geometry.Width,
+                geometry.Height,
+                (double)monitor.ScaleFactor,
+                isPrimary: i == 0));
+        }
+
+        return infos;
     }
 
     /// <inheritdoc />

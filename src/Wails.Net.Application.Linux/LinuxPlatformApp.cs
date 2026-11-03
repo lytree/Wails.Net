@@ -208,7 +208,15 @@ public sealed class LinuxPlatformApp : IPlatformApp
     /// <inheritdoc />
     public bool IsDarkMode()
     {
-        // 在 Linux 上优先通过 D-Bus（gsettings）读取 color-scheme。
+        // Wails v3.1.0 #6072：优先读取 xdg-desktop-portal 的 color-scheme，
+        // 兼容 KDE 等不提供 GNOME gsettings schema 的桌面。
+        var portalDark = LinuxAppearancePortal.TryReadColorSchemeIsDark();
+        if (portalDark is not null)
+        {
+            return portalDark.Value;
+        }
+
+        // 在 Linux 上其次通过 D-Bus（gsettings）读取 color-scheme。
         if (OperatingSystem.IsLinux())
         {
             var scheme = RunGsettingsGet(GnomeInterfaceSchema, "color-scheme");
