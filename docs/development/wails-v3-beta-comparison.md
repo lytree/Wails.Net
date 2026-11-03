@@ -1095,7 +1095,7 @@ Wails.Net `HelperProcess.cs` 对齐：
 | 14 | `#6424` 缺失的打包资源返回 404 | ✅ 已实现 | SPA 回退仅限导航请求（`/` 结尾、无扩展名、`.html`/`.htm`，或 `Accept` 含 `text/html`）；缺失的 `.js`/`.css` 等子资源直接 404 |
 | 15 | `#6483` 重复前导斜杠路径归一化 | ✅ 已实现 | 新增 `NormalizeRequestPath`：折叠连续 `/`（含前导）、解析 `.`/`..` 并阻止越出根路径；`GetAssetBytes`/`ExtractAssetContent`/HTTP 入口统一使用 |
 | 16 | `#6400` 仅发现精确的 index 文件 | ✅ 已实现 | 目录索引仅在路径以 `/` 结尾时尝试精确 `index.html`，不再误匹配 `not-index.html` |
-| 17 | `#6398`/`#6399`/`#6403`/`#6405`/`#6406`/`#6409` 资源回退头、范围、MIME 嗅探细节 | ✅ 已实现 | 回退资源忽略 Range（返回完整 200 + 正确长度/类型），缺失资源不再回退为 HTML；[ContentTypeSniffer.cs](../../src/Wails.Net.AssetServer/ContentTypeSniffer.cs) 逐条对齐 Go `net/http/internal/sniff.go`（512 字节、签名表顺序、掩码匹配、HTML 标签终止符 `isTT`、UTF BOM、文本控制字符集合且不校验 UTF-8、charset 后缀），扩展名映射优先、失败回退 `application/octet-stream`；`Content-Type` 基于完整内容在 Range 切片前判定，HEAD 复用同一结果仅跳过 body；SPA 回退资源不嗅探 |
+| 17 | `#6398`/`#6399`/`#6403`/`#6405`/`#6406`/`#6409` 资源回退头、范围、MIME 嗅探细节 | ✅ 已实现 | 回退资源忽略 Range（返回完整 200 + 正确长度/类型），缺失资源不再回退为 HTML；[ContentTypeSniffer.cs](../../src/Wails.Net.AssetServer/ContentTypeSniffer.cs) 逐条对齐 Go `net/http/sniff.go`（Go 1.24.0 源码；512 字节、签名表顺序、掩码匹配、HTML 标签终止符 `isTT`、UTF BOM、文本控制字符集合且不校验 UTF-8、charset 后缀），扩展名映射优先、失败回退 `application/octet-stream`；`Content-Type` 基于完整内容在 Range 切片前判定，HEAD 复用同一结果仅跳过 body；SPA 回退资源不嗅探 |
 | 18 | CLI dev/打包/模板/缓存等大批修复（`#6412`–`#6498` 区间） | ⚠️ 部分实现 | ✅ `#6478` `icon --sizes`（1–256 校验、0 忽略、至少一个非零、失败退出码 1 且保留旧 `icon.ico`、按尺寸真实缩放生成多帧 ICO）；✅ `#6480` 打包失败保留旧产物（同目录暂存 → 成功后原子替换、Unix 权限保留、清理暂存）；⛔ 其余按组不适用（Taskfile/Go cache/`printf` 格式替换/gosod/symlink/DMG/syso/.icns/`dotnet tool` 安装等，见 §12.4 第 10 条）；`#6498` 文件权限保留待 Linux 实机复核 |
 | 19 | `#6521` CGO-free macOS/Linux 后端实验 | ⛔ 不适用 | Go 独有（CGO）机制 |
 | 20 | `#6531` 原生 YAML 构建、便携打包与签名 | ⛔ 不适用 | Wails.Net 使用 MSBuild + `wails` CLI，无 YAML 构建体系 |
@@ -1163,9 +1163,10 @@ Wails.Net `HelperProcess.cs` 对齐：
    - ⛔ 不适用：`#6425` 中 `/wails/runtime.js` 专属路由——本移植前端运行时由 `@wails-net/runtime` npm 包提供，无该内置路由（维持不适用结论，不做硬凑）。
 
 8. **资源服务器 MIME 内容嗅探（`#6398` 余项，2026-11-04 按 Go 源码重写）**
-   - `ContentTypeSniffer`（internal 纯静态）逐条对齐 Go `net/http/internal/sniff.go`：前 512 字节、签名表顺序（HTML → XML → PDF/PS → BOM → 图像 → 音视频 → 字体 → 归档 → WASM → 文本）；`htmlSig` 使用 `firstNonWS` 且要求标签终止符（空格/`>`）；`maskedSig` 对 WebP/AIFF/ID3/Ogg/MThd/AVI/WAVE/EOT 按掩码比较（RIFF 子类型不再统一判为 `audio/wave`）；MP4 按大端盒长度校验并 4 字节步进扫描 `mp4`（跳过 offset 12）；文本嗅探仅排除 Go 控制字符集合（0x09/0x0A/0x0C/0x0D/0x1B/0x7F 允许，不校验 UTF-8），文本类返回带 `; charset=utf-8`（BOM 返回 utf-16be/utf-16le）。
+   - `ContentTypeSniffer`（internal 纯静态）逐条对齐 Go `net/http/sniff.go`（Go 1.24.0 源码）：前 512 字节、签名表顺序（HTML → XML → PDF/PS → BOM → 图像 → 音视频 → 字体 → 归档 → WASM → 文本）；`htmlSig` 使用 `firstNonWS` 且要求标签终止符（空格/`>`）；`maskedSig` 对 WebP/AIFF/ID3/Ogg/MThd/AVI/WAVE/EOT 按掩码比较（RIFF 子类型不再统一判为 `audio/wave`）；MP4 按大端盒长度校验并 4 字节步进扫描 `mp4`（跳过 offset 12）；文本嗅探仅排除 Go 控制字符集合（0x09/0x0A/0x0C/0x0D/0x1B/0x7F 允许，不校验 UTF-8），文本类返回带 `; charset=utf-8`（BOM 返回 utf-16be/utf-16le）。
    - `AssetServer.ServeAssetCoreAsync`：仅当 `GetMimeType` 返回默认 `application/octet-stream` 且非 SPA 回退时嗅探；已知扩展名优先；`Content-Type` 在 Range 切片前基于完整内容判定，206 的 `Content-Range`/`Content-Length` 不受影响；HEAD 返回嗅探后的类型但不写 body。
    - 测试：`ContentTypeSnifferTests` 重写并扩至 45 项（含 HTML 终止符、BOM、掩码签名、MP4 盒校验、文本控制字符、512 字节截断）；`AssetServerTests` 中扩展名缺失二进制用例补控制字节后全类 89/89
+   - **收尾核对（2026-11-04）**：以 Go 1.24.0 `src/net/http/sniff.go` 源码逐条比对，签名表 31 项（17 个 HTML 标签 + XML + PDF/PS + 3 个 BOM + 7 个图像 + 8 个音视频/MP4 + 6 个字体 + 6 个归档/WASM + 文本）、顺序与边界字节完全一致 → **无缺口**。等价性说明：`boxSize < 12` 为提前返回（Go 对 4/8/0 的盒长度同样必然返回空）；UTF BOM 的 4 字节掩码中第 4 字节被 `\x00` 掩掉，与本实现的 3 字节/2 字节比较等价；`htmlSig` 的 `db &= 0xDF` 折叠等价于仅对 `a`–`z` 减 32；`maskedSig` 的 RIFF/FORM/EOT 掩码跳过位与本实现的偏移比较等价。
 
 9. **GTK 多 DPI DIP 坐标（`#6346`）**
    - 新增 `LinuxDipCoordinates`（纯函数）：`NormalizeScaleFactor`（<=0/NaN/Infinity 回退 1.0）、`DipToPhysical`（floor）、`PhysicalToDip`（ceil）、`SelectTargetMonitor`（命中→最近→null）；`LinuxMonitorInfo` 描述 DIP 几何与缩放因子。
@@ -1205,7 +1206,7 @@ Wails.Net `HelperProcess.cs` 对齐：
   - `DevProcessLifetimeGuardTests`：12/12、`DevProcessCleanupTests`：11/11 通过（#6371）；
   - `LinuxDipCoordinatesTests`：27/27 通过（#6346，Windows 主机编译 Linux 项目）；
   - `AssetServerTests`：85/85 通过（资源服务器批次；项目全量 305 项由实现方跑通）。
-  - 2026-11-04 追加（MIME 嗅探 + CLI 批次）：`ContentTypeSnifferTests` 45/45、`AssetServerTests` 354/354（含 PNG 嗅探/扩展名优先/Range 206/HEAD）、`IconCommandTests` 15/15、`PackagerTests` 37/37、`PackagerDebRpmTests` 6 通过 2 跳过（Linux 专属用例）、`PackagerBundleTests` 3/3。
+  - 2026-11-04 追加（MIME 嗅探 + CLI 批次）：`ContentTypeSnifferTests` 45/45、资源服务器测试项目 354/354（其中 `AssetServerTests` 类 89/89，含 PNG 嗅探/扩展名优先/Range 206/HEAD）、`IconCommandTests` 15/15、`PackagerTests` 37/37、`PackagerDebRpmTests` 6 通过 2 跳过（Linux 专属用例）、`PackagerBundleTests` 3/3。
   - 2026-11-04 追加（macOS DIP + 审查修复）：`MacDipCoordinatesTests` 37/37（`Wails.Net.Application.MacOS.Tests` 全量 56/56）、`TrayIconRebuildSchedulerTests` 6/6、`PlatformMessageWindowTests` 2 通过 2 跳过（GUI 用例）。
 - **全量构建（2026-11-04，非 Android）**：`src/` 与 `tests/` 全部非 Android 项目编译通过，0 错误；仅 `Wails.Net.Plugins.Mobile.Tests` 失败（`CS0246: MobilePlugin`，`src/Wails.Net.Plugins.Mobile` 中无该类型，**既有问题**，本轮未触碰）。Android 4 个项目（`Application.Android`、`Bundle.Android`、`Application.Android.Tests`、`Demo.Android`）因本机未安装 `android` 工作负载报 `NETSDK1147`，按既有约定跳过。
 - **全量单元测试（2026-11-04，Windows 主机，GUI 默认跳过）**：共 3380 项，通过 3129、失败 7、跳过 244。
