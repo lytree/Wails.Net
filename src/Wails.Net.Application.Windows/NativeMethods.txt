@@ -43,6 +43,12 @@ GetMonitorInfoW
 MonitorFromWindow
 EnumDisplayMonitors
 MessageBoxW
+TaskDialogIndirect
+TASKDIALOGCONFIG
+TASKDIALOG_BUTTON
+PFTASKDIALOGCALLBACK
+TASKDIALOG_NOTIFICATIONS
+HWND_TOPMOST
 MonitorFromRect
 MONITORINFO
 HMONITOR
@@ -173,3 +179,4 @@ CoCreateInstance
 FlashWindowEx
 FLASHWINFO
 FLASHWINFO_FLAGS
+RegisterWindowMessage

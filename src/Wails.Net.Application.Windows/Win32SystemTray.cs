@@ -132,6 +132,34 @@ public sealed class Win32SystemTray : ISystemTrayImpl, IDisposable
     private static readonly ConcurrentDictionary<IntPtr, Win32SystemTray> s_traysByHwnd = new();
 
     /// <summary>
+    /// <c>TaskbarCreated</c> 消息 ID（由 <c>RegisterWindowMessage</c> 分配的动态消息）。
+    /// 0 表示尚未注册。
+    /// 对应 Wails v3 <c>v3.1.0</c> PR #6386：Explorer 重启后系统广播该消息，托盘需重新注册图标。
+    /// </summary>
+    private static uint s_taskbarCreatedMessage;
+
+    /// <summary>
+    /// 获取 <c>TaskbarCreated</c> 消息 ID；首次访问时注册（幂等）。
+    /// </summary>
+    internal static uint TaskbarCreatedMessage
+    {
+        get
+        {
+            if (s_taskbarCreatedMessage == 0)
+            {
+                s_taskbarCreatedMessage = PInvoke.RegisterWindowMessage("TaskbarCreated");
+            }
+
+            return s_taskbarCreatedMessage;
+        }
+    }
+
+    /// <summary>
+    /// 托盘图标重建去抖调度器（#6386），首次需要时创建。
+    /// </summary>
+    private TrayIconRebuildScheduler? _rebuildScheduler;
+
+    /// <summary>
     /// 托盘消息窗口句柄。
     /// </summary>
     private HWND _hwnd;
@@ -345,6 +373,10 @@ public sealed class Win32SystemTray : ISystemTrayImpl, IDisposable
 
         _disposed = true;
 
+        // 先取消尚未触发的 Explorer 重启重建，避免销毁后再次 NIM_ADD。
+        _rebuildScheduler?.Dispose();
+        _rebuildScheduler = null;
+
         // 先取消主题订阅，避免销毁期间回调仍触发 ModifyTrayIcon。
         // 对应 Go systemtray_windows.go destroy 中的 cancelTheme。
         UnsubscribeThemeChanged();
@@ -448,6 +480,53 @@ public sealed class Win32SystemTray : ISystemTrayImpl, IDisposable
     {
         var data = CreateNotifyIconData();
         Shell_NotifyIconW(NimModify, ref data);
+    }
+
+    /// <summary>
+    /// 系统广播 <c>TaskbarCreated</c>（Explorer 重启）通知所有托盘实例：去抖 1 秒后重新注册图标。
+    /// <para>
+    /// 由顶层窗口 <see cref="PlatformMessageWindow"/> 的消息过程调用：托盘的仅消息窗口
+    /// 收不到 <c>HWND_BROADCAST</c>，必须由顶层窗口接收后再分发到各托盘实例。
+    /// </para>
+    /// 对应 Wails v3 <c>v3.1.0</c> PR #6386。
+    /// </summary>
+    internal static void NotifyTaskbarCreated()
+    {
+        foreach (var tray in s_traysByHwnd.Values)
+        {
+            tray.ScheduleTaskbarRebuild();
+        }
+    }
+
+    /// <summary>
+    /// 请求一次托盘图标重建（去抖合并）。仅在托盘可见且未销毁时生效。
+    /// </summary>
+    private void ScheduleTaskbarRebuild()
+    {
+        if (_disposed || _hwnd.IsNull || !_visible)
+        {
+            return;
+        }
+
+        _rebuildScheduler ??= new TrayIconRebuildScheduler(RebuildTrayIconAfterExplorerRestart);
+        _rebuildScheduler.Request();
+    }
+
+    /// <summary>
+    /// Explorer 重启后重新注册托盘图标。
+    /// <para>
+    /// 在去抖计时器线程执行；<c>Shell_NotifyIconW</c> 通过消息窗口句柄向窗口线程投递回调，
+    /// 因此跨线程调用安全。重建前再次校验可见性，避免销毁竞态。
+    /// </para>
+    /// </summary>
+    private void RebuildTrayIconAfterExplorerRestart()
+    {
+        if (_disposed || _hwnd.IsNull || !_visible)
+        {
+            return;
+        }
+
+        AddTrayIcon();
     }
 
     /// <summary>

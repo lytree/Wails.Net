@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Wails.Net.Application.SystemTray;
 using Wails.Net.Events;
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -16,6 +17,10 @@ namespace Wails.Net.Application.Windows;
 /// 本窗口由平台层在消息循环前创建，充当应用级消息接收点，
 /// 使主题变化事件（<see cref="KnownEvents.ThemeChanged"/>）在任何情况下都能发出，
 /// 托盘图标因而能随明暗主题切换。
+/// </para>
+/// <para>
+/// 同时接收 Explorer 重启广播的 <c>TaskbarCreated</c>（同样只发往顶层窗口），
+/// 转发给各托盘实例去抖重建图标（Wails v3 <c>v3.1.0</c> PR #6386）。
 /// </para>
 /// <para>
 /// 对应 Wails v3 Go 版本 <c>application_windows.go</c> 中 <c>mainThreadWindow</c> 的
@@ -172,6 +177,15 @@ internal sealed class PlatformMessageWindow : IDisposable
                 return (LRESULT)0;
 
             default:
+                // Explorer 重启：TaskbarCreated 只广播给顶层窗口，转发给各托盘实例去抖重建。
+                // 注册失败时消息 ID 为 0（WM_NULL），必须排除，避免误触发重建。
+                var taskbarCreatedMessage = Win32SystemTray.TaskbarCreatedMessage;
+                if (taskbarCreatedMessage != 0 && msg == taskbarCreatedMessage)
+                {
+                    Win32SystemTray.NotifyTaskbarCreated();
+                    return (LRESULT)0;
+                }
+
                 return PInvoke.DefWindowProc(hWnd, msg, wParam, lParam);
         }
     }
