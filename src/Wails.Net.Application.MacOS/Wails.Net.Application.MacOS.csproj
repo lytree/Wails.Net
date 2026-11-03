@@ -38,8 +38,4 @@
     <ProjectReference Include="..\Wails.Net.Application\Wails.Net.Application.csproj" />
   </ItemGroup>
 
-  <ItemGroup Condition="$(TargetFramework.Contains('macos'))">
-    <InternalsVisibleTo Include="Wails.Net.Application.MacOS.Tests" />
-  </ItemGroup>
-
 </Project>

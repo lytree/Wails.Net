@@ -560,7 +560,11 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
             return;
         }
 
+        // 与 Wails v3 mac 侧 windowSetSize 一致：先设置内容区尺寸，
+        // 再把窗口框架尺寸设为同一 DIP 值（AppKit point == DIP）。
         _window.SetContentSize(new CGSize(width, height));
+        var frame = _window.Frame;
+        _window.SetFrame(new CGRect(frame.X, frame.Y, width, height), true);
 #endif
     }
 
@@ -595,12 +599,13 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
             return;
         }
 
-        // 将 top-left 原点坐标转换为 AppKit 的 bottom-left 原点。
-        var primaryHeight = GetPrimaryScreenHeight();
+        // 对外坐标为 top-left 原点 DIP；AppKit 为 bottom-left 原点，
+        // 经 MacDipCoordinates 做可逆 Y 翻转（保证 GetPosition 往返一致）。
+        var primaryHeightDip = GetPrimaryScreenHeightDip();
         var frame = _window.Frame;
-        frame.X = x;
-        frame.Y = primaryHeight - frame.Height - y;
-        _window.SetFrame(frame, true);
+        var appKitY = MacDipCoordinates.ToAppKitBottomLeftY(
+            y, (int)frame.Height, (int)primaryHeightDip);
+        _window.SetFrame(new CGRect(x, appKitY, frame.Width, frame.Height), true);
 #endif
     }
 
@@ -996,9 +1001,11 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
             return (0, 0);
         }
 
-        var primaryHeight = GetPrimaryScreenHeight();
+        var primaryHeightDip = GetPrimaryScreenHeightDip();
         var frame = _window.Frame;
-        return ((int)frame.X, (int)(primaryHeight - frame.Y - frame.Height));
+        var dipY = MacDipCoordinates.ToDipTopLeftY(
+            (int)frame.Y, (int)frame.Height, (int)primaryHeightDip);
+        return ((int)frame.X, dipY);
 #else
         return (0, 0);
 #endif
@@ -1457,17 +1464,37 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
             return;
         }
 
-        var screen = _window.Screen ?? NSScreen.MainScreen;
+        var screens = NSScreen.Screens;
+        if (screens is null || screens.Length == 0)
+        {
+            return;
+        }
+
+        var screen = ResolveCentreScreen(screens);
         if (screen is null)
         {
             return;
         }
 
-        var screenFrame = screen.VisibleFrame;
-        var windowFrame = _window.Frame;
-        var x = screenFrame.X + (screenFrame.Width - windowFrame.Width) / 2;
-        var y = screenFrame.Y + (screenFrame.Height - windowFrame.Height) / 2;
-        _window.SetFrame(new CGRect(x, y, windowFrame.Width, windowFrame.Height), true);
+        // NSScreen 的 Frame/VisibleFrame 均为 point（DIP）。
+        // 工作区在 top-left 原点 DIP 空间中的几何由 MacDipCoordinates 计算，
+        // 居中后再经可逆 Y 翻转回到 AppKit bottom-left 坐标。
+        var primaryHeightDip = screens[0].Frame.Height;
+        var visibleFrame = screen.VisibleFrame;
+        var workArea = new MacMonitorInfo(
+            dipX: (int)visibleFrame.X,
+            dipY: MacDipCoordinates.ToDipTopLeftY(
+                (int)visibleFrame.Y, (int)visibleFrame.Height, (int)primaryHeightDip),
+            dipWidth: (int)visibleFrame.Width,
+            dipHeight: (int)visibleFrame.Height,
+            scaleFactor: screen.BackingScaleFactor);
+
+        var frame = _window.Frame;
+        var (dipX, dipY) = MacDipCoordinates.CentreDipBounds(
+            workArea, (int)frame.Width, (int)frame.Height);
+        var appKitY = MacDipCoordinates.ToAppKitBottomLeftY(
+            dipY, (int)frame.Height, (int)primaryHeightDip);
+        _window.SetFrame(new CGRect(dipX, appKitY, frame.Width, frame.Height), true);
 #endif
     }
 
@@ -1857,10 +1884,10 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
     }
 
     /// <summary>
-    /// 获取主屏幕高度（用于 Y 坐标翻转）。
+    /// 获取主屏幕高度（DIP / AppKit point，用于 top-left 与 bottom-left 原点之间的 Y 翻转）。
     /// </summary>
-    /// <returns>主屏幕高度（points）。</returns>
-    private static nfloat GetPrimaryScreenHeight()
+    /// <returns>主屏幕高度（DIP）。</returns>
+    private static nfloat GetPrimaryScreenHeightDip()
     {
         var screens = NSScreen.Screens;
         if (screens is null || screens.Length == 0)
@@ -1869,6 +1896,47 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
         }
 
         return screens[0].Frame.Height;
+    }
+
+    /// <summary>
+    /// 解析 <see cref="Centre"/> 的目标屏幕：优先窗口当前所在屏幕
+    /// （AppKit 依据窗口覆盖率选择），回退到按窗口中心 DIP 坐标命中的显示器。
+    /// </summary>
+    /// <param name="screens">NSScreen 列表（调用方保证非空）。</param>
+    /// <returns>目标屏幕；无法解析时返回 null。</returns>
+    private NSScreen? ResolveCentreScreen(NSScreen[] screens)
+    {
+        if (_window?.Screen is not null)
+        {
+            return _window.Screen;
+        }
+
+        if (screens.Length == 0)
+        {
+            return null;
+        }
+
+        var primaryHeightDip = screens[0].Frame.Height;
+        var monitors = new MacMonitorInfo[screens.Length];
+        for (var i = 0; i < screens.Length; i++)
+        {
+            var frame = screens[i].Frame;
+            monitors[i] = new MacMonitorInfo(
+                dipX: (int)frame.X,
+                dipY: MacDipCoordinates.ToDipTopLeftY(
+                    (int)frame.Y, (int)frame.Height, (int)primaryHeightDip),
+                dipWidth: (int)frame.Width,
+                dipHeight: (int)frame.Height,
+                scaleFactor: screens[i].BackingScaleFactor);
+        }
+
+        var windowFrame = _window!.Frame;
+        var centerX = (int)(windowFrame.X + windowFrame.Width / 2);
+        var centerY = MacDipCoordinates.ToDipTopLeftY(
+            (int)windowFrame.Y, (int)windowFrame.Height, (int)primaryHeightDip) +
+            (int)(windowFrame.Height / 2);
+        var index = MacDipCoordinates.SelectTargetMonitorIndex(monitors, centerX, centerY);
+        return index >= 0 ? screens[index] : NSScreen.MainScreen;
     }
 
     /// <summary>

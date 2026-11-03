@@ -661,29 +661,39 @@ public sealed class MacOSPlatformApp : IPlatformApp
             // 屏幕 ID：CGDirectDisplayID 字符串（deviceDescription 的 NSScreenNumber）。
             var id = GetScreenId(ns);
 
+            // DIP（AppKit point）几何：与窗口层一致，统一使用 top-left 原点。
+            var dipX = (int)frame.X;
+            var dipY = (int)(primaryHeight - frame.Y - frame.Height);
+            var dipWidth = (int)frame.Width;
+            var dipHeight = (int)frame.Height;
+            var workAreaDipX = (int)workArea.X;
+            var workAreaDipY = (int)(primaryHeight - workArea.Y - workArea.Height);
+            var workAreaDipWidth = (int)workArea.Width;
+            var workAreaDipHeight = (int)workArea.Height;
+
             screens[i] = new Screen(
                 id: id,
                 name: ns.LocalizedName ?? string.Empty,
-                x: (int)frame.X,
-                y: (int)(primaryHeight - frame.Y - frame.Height),
-                width: (int)frame.Width,
-                height: (int)frame.Height,
-                workAreaX: (int)workArea.X,
-                workAreaY: (int)(primaryHeight - workArea.Y - workArea.Height),
-                workAreaWidth: (int)workArea.Width,
-                workAreaHeight: (int)workArea.Height,
+                x: dipX,
+                y: dipY,
+                width: dipWidth,
+                height: dipHeight,
+                workAreaX: workAreaDipX,
+                workAreaY: workAreaDipY,
+                workAreaWidth: workAreaDipWidth,
+                workAreaHeight: workAreaDipHeight,
                 scaleFactor: scale,
                 isPrimary: i == 0)
             {
-                // Physical* = 点值 × scale（与 Wails cScreenToScreen 一致）。
-                PhysicalX = (int)(frame.X * scale),
-                PhysicalY = (int)((primaryHeight - frame.Y - frame.Height) * scale),
-                PhysicalWidth = (int)(frame.Width * scale),
-                PhysicalHeight = (int)(frame.Height * scale),
-                PhysicalWorkAreaX = (int)(workArea.X * scale),
-                PhysicalWorkAreaY = (int)((primaryHeight - workArea.Y - workArea.Height) * scale),
-                PhysicalWorkAreaWidth = (int)(workArea.Width * scale),
-                PhysicalWorkAreaHeight = (int)(workArea.Height * scale),
+                // Physical* = DIP × backingScaleFactor（向下取整，与 MacDipCoordinates 一致）。
+                PhysicalX = MacDipCoordinates.DipToPhysical(dipX, scale),
+                PhysicalY = MacDipCoordinates.DipToPhysical(dipY, scale),
+                PhysicalWidth = MacDipCoordinates.DipToPhysical(dipWidth, scale),
+                PhysicalHeight = MacDipCoordinates.DipToPhysical(dipHeight, scale),
+                PhysicalWorkAreaX = MacDipCoordinates.DipToPhysical(workAreaDipX, scale),
+                PhysicalWorkAreaY = MacDipCoordinates.DipToPhysical(workAreaDipY, scale),
+                PhysicalWorkAreaWidth = MacDipCoordinates.DipToPhysical(workAreaDipWidth, scale),
+                PhysicalWorkAreaHeight = MacDipCoordinates.DipToPhysical(workAreaDipHeight, scale),
             };
         }
 
