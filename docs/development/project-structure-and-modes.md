@@ -6,8 +6,8 @@
 > - **更新日期**：2026-08-03
 > - **适用版本**：Wails.Net `0.1.0-alpha.1` 及以上
 > - **参考实现**：
->   - Wails v3 `v3.0.0-beta.4` 源码（`internal/project/project.go`、`cmd/wails3/dev.go`、`cmd/wails3/build.go`）
->   - Tauri v2 GA `2.11.5` CLI（`tauri dev` / `tauri build`）
+>   - Wails v3 `v3.0.0` 源码（`internal/project/project.go`、`cmd/wails3/dev.go`、`cmd/wails3/build.go`；写作时参考 `v3.0.0-beta.4`）
+>   - Tauri v2 GA `2.12.5` CLI（`tauri dev` / `tauri build`）
 
 ---
 

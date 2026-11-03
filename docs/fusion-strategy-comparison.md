@@ -1,12 +1,12 @@
 # Wails.Net 架构融合策略对比详情
 
-> 本文档按 **架构融合策略**（AGENTS.md §1.1.1）的三大维度，详细对比 **Wails.Net**（当前项目）、**Tauri 2**（Rust 桌面/移动框架，GA `2.11.5`）和 **Wails 3 v3.0.0-beta.4**（Go 原版）在功能实现项上的差别。
+> 本文档按 **架构融合策略**（AGENTS.md §1.1.1）的三大维度，详细对比 **Wails.Net**（当前项目）、**Tauri 2**（Rust 桌面/移动框架，GA `2.12.5`，2026-10-21）和 **Wails 3 v3.0.0**（Go 原版，GA，2026-10-26）在功能实现项上的差别。
 >
 > - **融合策略**：
 >   - 维度 1：Host/DI/Config/Logging → 学 ASP.NET Core（Microsoft.Extensions.* 全栈）
 >   - 维度 2：Runtime/Window/IPC → 学 Wails v3（对象模型、IPC、多窗口、事件总线）
 >   - 维度 3：Plugin/Security/Capability → 学 Tauri v2（插件能力、权限模型、安全设计）
-> - **更新日期**：2026-08-10
+> - **更新日期**：2026-08-10（正文基于当时的 `src/` 状态）；2026-10-31 仅同步基线版本号（Wails v3 `v3.0.0` / Tauri `2.12.5`），差异重估见 `docs/development/wails-v3-beta-comparison.md` §11
 > - **对比基线**：基于本仓库当前 `src/` 实际代码状态（提交 `6a812ef`；架构优化路线图 `docs/architecture/optimization-roadmap.md` 已落地 P0 批次：配置模型收敛、Options 启动期校验、IPC handshake token、权限 Strict 模式、`Capability.platforms`）
 >
 > ## 本文档事实来源（OPT-DOC-001）

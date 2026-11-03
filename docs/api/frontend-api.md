@@ -946,23 +946,25 @@ await wails.dialog.message("提示", "操作已完成", "info");
 
 ### wails.dialog.question(title, message, buttons?)
 
-显示询问对话框，返回用户选择的按钮文本。
+显示询问对话框，返回用户选择的按钮索引（`buttons` 中的位置，从 0 开始；取消且未定义取消按钮时为 `-1`）。
+`buttons` 省略或为空时默认使用 `["Yes", "No"]`；按钮数 ≥ 2 时最后一个按钮视为取消按钮（Esc/关闭对话框回退到它）。
+Windows 优先使用 TaskDialog 渲染自定义标签，不支持时回退标准 Yes/No 消息框。
 
 **签名**
 
 ```javascript
-wails.dialog.question(title: string, message: string, buttons?: string[]): Promise<string>
+wails.dialog.question(title: string, message: string, buttons?: string[]): Promise<number>
 ```
 
 **示例**
 
 ```javascript
-const answer = await wails.dialog.question(
+const index = await wails.dialog.question(
   "确认",
   "确定要删除这条记录吗？",
-  ["是", "否"]
+  ["删除", "取消"]
 );
-if (answer === "是") {
+if (index === 0) {
   // 执行删除
 }
 ```

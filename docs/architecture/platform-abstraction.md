@@ -306,7 +306,7 @@ _webView?.LoadUri(wailsUrl);
 
 ## macOS 平台实现
 
-macOS 实现参照 Wails v3 官方源码（`v3/pkg/application/*_darwin.go` / `*.m`，参考版本 `v3.0.0-beta.4`）移植，位于 [Wails.Net.Application.MacOS](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.MacOS)。由于 AppKit / WebKit 绑定（`net10.0-macos`）只能在 macOS 宿主编译，采用**双 TFM + 条件编译**策略：
+macOS 实现参照 Wails v3 官方源码（`v3/pkg/application/*_darwin.go` / `*.m`，参考版本 `v3.0.0`（GA）；最初移植时为 `v3.0.0-beta.4`）移植，位于 [Wails.Net.Application.MacOS](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.MacOS)。由于 AppKit / WebKit 绑定（`net10.0-macos`）只能在 macOS 宿主编译，采用**双 TFM + 条件编译**策略：
 
 | 目标 | 编译内容 | 说明 |
 |------|---------|------|

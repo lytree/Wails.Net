@@ -8,8 +8,8 @@
 ## 1. 项目背景
 
 - **项目**：Wails.Net — Wails v3 (Go) 的 .NET 10 移植实现
-- **参考版本**：`wails v3.0.0-beta.28`（2026-10-05 发布；2026-08-02 alpha → beta 升级，桌面 API 已稳定；beta.4 → beta.28 差异与待实现项见 `docs/development/wails-v3-beta-comparison.md` §9）
-- **对比基线**：Tauri v2 GA `2.11.5`（2026-07-01；Tauri 2.0 于 2024-10-02 正式发布，**无 beta 阶段**；Tauri 3 仅有 CLI-CEF alpha 预览，不作为参考）
+- **参考版本**：`wails v3.1.0`（2026-11-01 weekly；2026-10-26 的 `v3.0.0` GA 之后首个 minor 版本，`v3.2.0-nightly.*` 为预发布不作基线；差异与待实现项见 `docs/development/wails-v3-beta-comparison.md` §11–§12）
+- **对比基线**：Tauri v2 GA `2.12.5`（2026-10-21；Tauri 2.0 于 2024-10-02 正式发布，**无 beta 阶段**；Tauri 3 仅有 CLI-CEF alpha 预览，不作为参考）
 - **目标平台**：Windows、Linux、Android（macOS 已实现 `Wails.Net.Application.MacOS`：`#if MACOS` 分支为完整 AppKit + WKWebView 实现，`#else` 分支降级到 ServerMode；iOS 暂不实现）
 - **实施计划**：详见 `.trae/documents/wails-net-dotnet10-implementation-plan.md`
 
@@ -39,10 +39,11 @@
 - **Runtime/Window/IPC** → 学 Wails v3（对象模型、IPC、多窗口、事件总线）
 - **Plugin/Security/Capability** → 学 Tauri v2（插件能力、权限模型、安全设计）
 
-> **参考基线（2026-10-17 更新）**：
-> - Wails v3 = `v3.0.0-beta.28`（master 分支 `v3/` 目录，2026-08-02 alpha → beta，2026-10-05 beta.28）
-> - Tauri = v2 GA `2.11.5`（2026-07-01；Tauri 2 已于 2024-10-02 正式发布，不再有 beta 版本）
-> - 三方差异确认详见 `docs/development/wails-v3-beta-comparison.md`（Wails v3 beta 维度）与 `docs/fusion-strategy-comparison.md`（三方功能对比）
+> **参考基线（2026-11-03 更新）**：
+> - Wails v3 = `v3.1.0`（2026-11-01 weekly；`v3.0.0` → `v3.1.0` 差异见对比文档 §12）
+> - Tauri = v2 GA `2.12.5`（2026-10-21；Tauri 2 已于 2024-10-02 正式发布，不再有 beta 版本）
+> - Wails v3 已进入 **周更发布节奏**：每周 bump minor（`v3.1.0`、`v3.2.0` …）、每日 `v3.x.0-nightly.YYYYMMDD` 预发布、hotfix 走 patch；`@wailsio/runtime` npm 版本与 Wails 发布版本号一致（当前 `3.1.0`）。基线维护时以 **最新 weekly/hotfix（不含 nightly）** 为准
+> - 三方差异确认详见 `docs/development/wails-v3-beta-comparison.md`（Wails v3 维度，§1–§10 为 beta 时代历史结论，§11 为 GA 基线，§12 为 v3.1.0 基线）与 `docs/fusion-strategy-comparison.md`（三方功能对比）
 
 ### 1.2 互操作策略
 
@@ -590,7 +591,7 @@ dotnet fsi script.fsx
 
 | 资源 | 链接 |
 |------|------|
-| Wails v3 源码 | https://github.com/wailsapp/wails/tree/v3.0.0-beta.28 |
+| Wails v3 源码 | https://github.com/wailsapp/wails/tree/v3.1.0 |
 | Tauri v2 源码 | https://github.com/tauri-apps/tauri |
 | GirCore | https://github.com/gircore/gir.core |
 | .NET Android | https://learn.microsoft.com/dotnet/android/ |
@@ -609,4 +610,4 @@ dotnet fsi script.fsx
 
 ---
 
-**最后更新**：2026-10-17（参考基线升级：Wails v3 `v3.0.0-beta.4` → `v3.0.0-beta.28`；§1 参考版本、§1.1.1 参考基线、§8 资源链接同步；beta.4 → beta.28 差异与待实现项复核见 `docs/development/wails-v3-beta-comparison.md` §9）
+**最后更新**：2026-11-03（参考基线升级：Wails v3 `v3.0.0`（GA）→ `v3.1.0`（2026-11-01 weekly，不含 nightly）；§1 参考版本、§1.1.1 参考基线（npm `@wailsio/runtime` 3.1.0）、§8 资源链接同步；`v3.0.0` → `v3.1.0` 差异、实现与待办清单见 `docs/development/wails-v3-beta-comparison.md` §12）

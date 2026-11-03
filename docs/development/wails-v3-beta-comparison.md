@@ -1,9 +1,9 @@
 # Wails.Net × Wails v3 最新开发分支对比：可参考项确认
 
-> 分析日期：2026-08-07（beta.4 基线）；**2026-10-17 再确认：Wails v3 已演进至 v3.0.0-beta.28（2026-10-05），差异与待实现项复核见 §9**；**2026-10-22 再确认：beta.28 仍为最新发布（changelog `Unreleased` 为空），剩余差异与 P1-4 实现见 §9.14**
+> 分析日期：2026-08-07（beta.4 基线）；2026-10-17 再确认：演进至 v3.0.0-beta.28（见 §9）；2026-10-22 再确认：beta.28 仍为最新（见 §9.14）；**2026-10-31 基线升级：Wails v3 `v3.0.0` 已于 2026-10-26 正式发布（GA），beta.29–beta.34 与 GA 差异、安全项及待对齐清单见 §11**；**2026-11-03 基线升级：最新 weekly 为 `v3.1.0`（2026-11-01，`v3.2.0-nightly.*` 为预发布不作基线），差异清单、实现与待办见 §12**
 > **2026-10-17 源码级复核**：§9.2/§9.1 各项已对照 Wails v3 `v3.0.0-beta.28` 官方 Go 源码（tag `v3.0.0-beta.28`，`v3/` 目录）逐项确认，结论与更正见 **§9.7**。
-> 对比对象：wailsapp/wails **master 分支 v3/ 目录**（Wails v3 的实际开发流）
-> 基线：AGENTS.md 参考版本 **`v3.0.0-beta.28`**（2026-10-05，2026-10-17 升级；2026-10-22 再确认仍为最新）
+> 对比对象：wailsapp/wails **v3 发布流**（`v3/` 目录；v3.0.0 GA 后按周更 minor + nightly 预发布）
+> 基线：AGENTS.md 参考版本 **`v3.1.0`**（2026-11-01 weekly；§1–§10 为 beta 时代结论、§11 为 v3.0.0 GA 基线，均保留原文与日期，**以 §12 为当前基线**）
 
 ---
 
@@ -11,11 +11,11 @@
 
 | 维度 | Wails v3（master） | Wails.Net |
 |------|--------------------|-----------|
-| 当前版本 | v3.0.0-beta.4（2026-08-05） | 参考 v3.0.0-*（alpha 时代），已落后约 1 个里程碑 |
-| 里程碑 | 2026-08-02 alpha → beta 升级 | 8 阶段实现完成（含 Android） |
+| 当前版本 | **v3.1.0（2026-11-01 weekly）**；§1–§10 写作时为 v3.0.0-beta.4（2026-08-05），§11 为 v3.0.0 GA 基线，§12 为重估 | 参考 v3.1.0 基线（主体机制已对齐，剩余差异见 §12） |
+| 里程碑 | 2026-08-02 alpha → beta；**2026-10-26 v3.0.0 GA（此后周更 minor + nightly）** | 8 阶段实现完成（含 Android） |
 | 核心架构 | Go Services + 静态分析生成 TS 绑定；可安装插件（打包前端资源）；多窗口一等公民 | [Binding] 源生成器强类型调用器；IPlugin 插件体系（45+ BuiltIn）；多窗口支持 |
 | 构建 | Taskfile + `wails3 build` + server 构建 | MSBuild/dotnet + `wails build` + Server 模式（WebSocketTransport） |
-| 前端运行时 | @wailsio/runtime（v3.0.0-alpha.96，2026-07） | @wails-net/runtime（自研，已迁 npm 包） |
+| 前端运行时 | @wailsio/runtime **3.1.0**（版本号与 Wails 发布一致） | @wails-net/runtime（自研，已迁 npm 包） |
 | 平台 | macOS / Linux（GTK4）/ Windows / iOS / Android（实验性） | Windows / Linux（GirCore GTK4）/ Android；macOS 骨架 |
 
 **结论**：方向高度一致（编译期生成绑定、插件化、多窗口、Server 模式均已对齐），差距集中在 beta 期间新增的机制性功能与平台细节修复。
@@ -146,9 +146,11 @@
 
 ## 7. 附：Tauri 最新版本基线确认（v2 GA，非 beta）
 
-> 用户询问"与 Tauri 最新 beta 版的差异"时需先澄清版本状态：**Tauri 2 已于 2024-10-02 GA**，当前稳定版 **2.11.5**（2026-07-01），**不存在 beta 阶段**；Tauri 3 仅有 `@tauri-apps/cli-cef-v3.0.0-cef.0` alpha 预览（2026-05-04，CEF 后端实验，不作参考）。因此 Wails.Net 的对比基线是 **Tauri v2 GA 2.11.5**（AGENTS.md §1 已同步）。
+> 用户询问"与 Tauri 最新 beta 版的差异"时需先澄清版本状态：**Tauri 2 已于 2024-10-02 GA**，当前稳定版 **2.12.5**（2026-10-21；npm `@tauri-apps/api` 为 2.12.4），**不存在 beta 阶段**；Tauri 3 仅有 `@tauri-apps/cli-cef-v3.0.0-cef.0` alpha 预览（2026-05-04，CEF 后端实验，不作参考）。因此 Wails.Net 的对比基线是 **Tauri v2 GA 2.12.5**（AGENTS.md §1 已同步）。
+>
+> 2.11.5（2026-07-01）→ 2.12.5（2026-10-21）主要变化（2.12.0 起）：`limitNavigationsToAppBoundDomains`（限制导航域，安全）、`appDirectoriesOverride`（统一数据目录）、`@tauri-apps/api/app` 新增 `exit` 命令、`convertFileSrc` 的 Rust 等价 API、`setFullscreenOnMonitor`、wry 权限处理器 API（摄像头/麦克风/字体/剪贴板等运行时决策）、macOS Liquid Glass `Regular`/`Clear` + `interactive`、ACL 拒绝作用域修复（此前一个 capability 的拒绝会影响所有 origin）、`asset://` 多范围响应与异步加载修复，以及 NSIS 降级拦截修复。
 
-| # | Tauri 2.11.x 特性 | Wails.Net 现状 | 可参考性 |
+| # | Tauri 2.12.x 特性 | Wails.Net 现状 | 可参考性 |
 |---|-------------------|----------------|----------|
 | 1 | 插件生态（官方 30+ 插件，前端资源/权限分离打包） | IPlugin 后端命令注册 + Security/Capability 基础（学 Tauri 设计） | P1（对齐插件权限模型，已有基础） |
 | 2 | 动态 ACL（`dynamic-acl` feature，可关闭减体积） | 无动态 ACL 概念（静态 Capability 声明） | 观望 |
@@ -156,6 +158,10 @@
 | 4 | Linux D-Bus 主题检测 | ✅ Linux 平台层已有 D-Bus 系统主题事件监听 | 无需 |
 | 5 | `Webview::eval_with_callback` | ❌ 需核对 WebView eval 是否支持回调 | P3 |
 | 6 | Android 多窗口（activity embedding） | ❌ Android 单 Activity | P3（远期） |
+| 7 | `limitNavigationsToAppBoundDomains`（2.12.0） | ❓ 未见导航域限制（仅有资产/IPC 源校验） | P2（安全） |
+| 8 | ACL 拒绝作用域按 local/remote 区分（2.12.0 修复） | ❓ Capability 拒绝是否按源区分需核对 | P2 |
+| 9 | wry 权限处理器 API（运行时 Allow/Deny） | ⚠️ 有 `WebViewPermissionRequest` 抽象，需核对是否覆盖 9 类权限 | P3 |
+| 10 | `asset://` 多范围响应与异步加载（2.12.0 修复） | ✅ 分块/范围请求已有（`AssetServer` 分块传输、异步读取） | 无需（建议回归） |
 
 **结论**：Wails.Net 与 Tauri 的差异集中在插件生态丰富度（Tauri 30+ 官方插件 vs Wails.Net 45+ BuiltIn 命令）与 ACL 机制（Tauri 动态 ACL vs Wails.Net 静态 Capability）；架构融合策略（AGENTS.md §1.1.1 维度 3）无需调整，方向一致。
 
@@ -691,6 +697,7 @@ Wails.Net `HelperProcess.cs` 对齐：
 ### 9.14.1 基线再确认
 
 - 官方 changelog（v3.wails.io/changelog）最新发布仍为 **`v3.0.0-beta.28`（2026-10-05）**，`Unreleased` 段落为空；页面最后更新 2026-10-20，**无 beta.29**。基线保持 beta.28，无需升级。
+- ⚠️ **该结论已于 2026-10-31 作废**：beta.29（2026-10-13）起连续发布 beta.30–beta.34，并于 **2026-10-26 发布 `v3.0.0` GA**。当前基线以 **§11** 为准。
 - 剩余差异（本次复核后仍未实现/受平台限制）：
 
 | 项 | 状态 | 说明 |
@@ -912,5 +919,306 @@ Wails.Net `HelperProcess.cs` 对齐：
 **构建**：Android 源码经 `Microsoft.Android.Ref.36`（36.1.118）离线编译 0 警告 0 错误；`Wails.Net.Plugins.Notification`（net10.0）0 警告 0 错误。
 
 **说明**：本机未安装 `android` 工作负载（`dotnet workload list` 为空），`net10.0-android36.0` 无法本地构建/运行测试；离线编译使用与工作负载清单一致的参考程序集（`Microsoft.Android.Ref.36`），仅校验 API 名称与签名。设备端行为（MediaStore 剪贴板、Keystore 加解密、通知展示、打印对话框）需在安装工作负载后通过 `tests/Wails.Net.Android.E2E/run-android-e2e.fsx` 回归。
+
+---
+
+## 11. 2026-10-31 基线升级：v3.0.0-beta.28 → v3.0.0（GA）
+
+> 复核方式：GitHub Releases（`wailsapp/wails`、`tauri-apps/tauri`）+ npm registry（`@wailsio/runtime`、`@tauri-apps/api`）+ 本仓库 `src/` 代码逐项确认。**未做 v3.0.0 tag 源码逐行复核**（本地参考源码目录 `F:\Code\Dotnet\wails-v3-ref` 不存在），下表标 ❓ 的项为依据 changelog 与本仓库代码的初步判断，落地前需对照 tag 源码确认。
+
+### 11.1 版本现状（2026-10-31）
+
+| 项目 | 当前版本 | 发布日期 | 说明 |
+|------|----------|----------|------|
+| Wails v3（基线） | **`v3.0.0`**（GA） | 2026-10-26 | beta.28（2026-10-05）后连续发布 beta.29–beta.34 |
+| Wails 预发布 | `v3.0.0-beta.29` … `v3.0.0-beta.34` | 2026-10-13 … 2026-10-20 | beta.31/GA 含安全修复，beta.30 及更早应升级 |
+| Wails nightly | `v3.1.0-nightly.20261028` | 2026-10-28 | 预览下一个 weekly，不作基线 |
+| `@wailsio/runtime` | `3.0.0` | 与 Wails 发布一致 | GA 起固定同版本号，生产需 pin 精确版本 |
+| Tauri v2（对比基线） | **`tauri-v2.12.5`** | 2026-10-21 | npm `@tauri-apps/api` 为 `2.12.4` |
+
+**发布节奏（GA 起）**：每周 bump minor（`v3.1.0`、`v3.2.0` …）→ 每日 `v3.X.0-nightly.YYYYMMDD` 预发布 → hotfix 走 patch。Go `@latest` 只解析 weekly/hotfix，**基线维护以 weekly/hotfix 为准，不跟 nightly**。同时 GA 明确：**Linux 默认 GTK4 + WebKitGTK 6.0**，GTK3 仅保留到 v3.1（Wails.Net 已用 `GirCore.Gtk-4.0` / `GirCore.WebKit-6.0`，`Directory.Packages.props` 第 44–47 行，方向一致，无迁移负担）。
+
+### 11.2 beta.28 → v3.0.0 差异清单与 Wails.Net 现状
+
+| # | 变更（版本 / PR） | Wails v3 内容 | Wails.Net 现状 | 建议 |
+|---|------------------|---------------|----------------|------|
+| 1 | Server 模式 IPC 收紧（beta.31 安全） | `/wails/runtime` 仅接受 **POST**，且仅服务自身 origin 或 `WebSocketOriginPatterns` 白名单内的 origin；其他方法 405、其他浏览器来源 403 | ✅ 已实现：新增 `IpcRequestGuard`（[IpcRequestGuard.cs](../../src/Wails.Net.Application/Security/IpcRequestGuard.cs)），Server 模式在 [IpcTransportStrategy.cs](../../src/Wails.Net.Application/Transport/IpcTransportStrategy.cs) / [ServerModeTransportExtensions.cs](../../src/Wails.Net.Application/Hosting/ServerModeTransportExtensions.cs) 装配；`/wails/message` 非 POST → 405 + `Allow: POST`，Origin 非同源/非白名单 → 403，无 Origin 时按 `Sec-Fetch-Site` 判定（[HttpTransport.cs](../../src/Wails.Net.Application/Transport/HttpTransport.cs)） | 已完成（2026-10-31） |
+| 2 | Server 模式 DNS rebinding 防护（beta.31 安全） | 绑定 loopback 时，`Host` 头非 localhost/IP/绑定主机/白名单 → 403 | ✅ 已实现：`IpcRequestGuard.IsHostAllowed` 对齐 Go `serverHostAllowed`（仅 loopback 绑定启用，放行空 Host / localhost / 任意 IP 字面量 / 绑定主机 / 白名单模式；端口不参与判定），HTTP 与 WebSocket 传输层入口均校验（403）。规则细节见 §11.5 | 已完成（2026-10-31） |
+| 3 | Linux 跨源子帧 `wails:` 消息拦截（v3.0.0 安全，缓解 GHSA-2p5f-2gx8-mh8m） | GTK3/GTK4 向所有帧注入 guard 脚本 | ✅ 已实现（2026-11-01）：[LinuxFrameGuard.cs](../../src/Wails.Net.Application.Linux/LinuxFrameGuard.cs) 守卫脚本经 `UserContentManager.AddScript(AllFrames, DocumentStart)` **先于**运行时标志注入——顶层帧/同源子帧标记 `__wailsFrameTrusted=true`，其余帧标记 false 并拦截 `_wails` 写入与 `fetch`/`XHR`/`sendBeacon` 到 `wails:` 端点；运行时标志脚本由 `WrapRuntimeScript` 包裹，不可信帧不注入。原生侧 [LinuxIpcOriginGuard.cs](../../src/Wails.Net.Application.Linux/LinuxIpcOriginGuard.cs) 在 `OnWailsSchemeRequest` 校验 IPC（`POST /wails/*`）的 `Origin` 与窗口同源（默认端口归一、`Origin: null` 仅在 wails 页面且非跨源上下文时容忍、无 Origin 时按 `Sec-Fetch-Site` 拒绝 cross-site），不通过返回 403。**平台限制**：WebKitGTK 的 `URISchemeRequest` 不暴露发起帧，且旧版本可能不透传 `Origin`（此时放行并由脚本守卫兜底）；同源子帧无法（也无需）区分——与上游结论一致 | 已完成（2026-11-01） |
+| 4 | Windows 问题对话框自定义按钮 + 回调（beta.33/beta.34 #5794） | 自定义按钮走 TaskDialog，comctl32 v6 不可用时回退 MessageBox + 位置映射回调 | ✅ 已实现（2026-11-01）：新增 [MessageDialogOptions.cs](../../src/Wails.Net.Application/Dialogs/MessageDialogOptions.cs)（`MessageDialogButton.Label/IsDefault/IsCancel/Callback`），`IPlatformApp` / `IDialogManager` 以接口默认方法提供 options 重载（非 Windows 平台自动获得「标签透传 + 回调」）；Windows 由 [Win32TaskDialog.cs](../../src/Wails.Net.Application.Windows/Win32TaskDialog.cs) 调用 `TaskDialogIndirect`（按钮 ID 1000+i、`TDF_ALLOW_DIALOG_CANCELLATION`、TDN_CREATED 置顶），失败回退 MessageBox 并按 Go `messageBoxButtonFor` 的标签匹配 + Yes/No/Cancel 位置回退；[DialogPlugin.cs](../../src/Wails.Net.Plugins.Dialog/DialogPlugin.cs) 的 `dialog.question` 支持可选 `buttons`（默认 `["Yes","No"]，末按钮视为取消），[index.ts](../../packages/wails-net-plugin-dialog/src/index.ts) 同步签名 | 已完成（2026-11-01） |
+| 5 | dev 就绪探测改 TCP（beta.33 #6209） | 自动前端就绪闸门由 HTTP GET 改 TCP 探测（旧实现无 `Accept` 头被 Vite 404，`wails3 dev` 卡 60s） | ✅ 已实现（2026-10-31）：[FrontendDevServerReadiness.cs](../../src/Wails.Net.Cli/Build/FrontendDevServerReadiness.cs) 改为 `TryCreateTarget`（URL→`host:port`，对齐 Go `frontendTCPTarget`：仅 http/https、无片段、缺省端口 80/443）+ `ProbeTcpOnceAsync`（连接成功即就绪，不再发 HTTP 请求、不受 404 影响）；[DevCommand.cs](../../src/Wails.Net.Cli/Commands/DevCommand.cs) 以「TCP 探测 + 60s/250ms/单次 5s」等待，未就绪仍放弃启动并清理前端进程 | 已完成（2026-10-31） |
+| 6 | 绑定生成 `bindings/events` 名称常量（beta.33 #5645） | 为每个 `application.RegisterEvent` 常量名生成 TS 模块，可直接用于 `Events.On/Emit` | ⚠️ 已有事件**枚举** TS 生成（[EventGenerator.cs](../../src/Wails.Net.Generator/EventGenerator.cs)），无 `RegisterEvent` 名称常量模块 | P2 |
+| 7 | Updater 归档解压 zip-slip 加固（beta.31） | `filepath.IsLocal` + 拼接路径包含性校验，覆盖 `..`/反斜杠/绝对路径/符号链接写穿 | ✅ `GetFullPath` + 包含性校验（[UpdateExtractor.cs:135-147](../../src/Wails.Net.Plugins.Updater/Services/Updater/UpdateExtractor.cs)、`:168-180`） | 无需（建议补反斜杠/符号链接用例） |
+| 8 | Updater 跨设备 rename 回退（beta.30/beta.31 #6135） | Linux/tmpfs 场景 rename 失败时改为「就近暂存 + 跨文件系统复制」 | ⚠️ [UpdateExtractor.cs:109](../../src/Wails.Net.Plugins.Updater/Services/Updater/UpdateExtractor.cs) 直接 `File.Move(overwrite: true)`，无跨设备回退 | P2 |
+| 9 | Updater 暂存安全与替换前校验（v3.0.0 #6350/#6360） | 重启待定时保护暂存文件；替换前校验更新内容，损坏则回滚而非破坏现有安装 | ⚠️ 有签名校验与暂存目录清理（[HelperProcess.cs:171](../../src/Wails.Net.Plugins.Updater/Services/Updater/HelperProcess.cs)），未见替换前完整性校验/回滚 | P2 |
+| 10 | Windows `SetMenu` 行为（beta.30 #6103/#6104） | `SetMenu` 未配置菜单栏主题时也重绘菜单栏；`SetMenu(nil)` 为 no-op 而非 panic | ✅ `SetMenu(nil)` 直接返回（[Win32WebviewWindow.cs:2923-2929](../../src/Wails.Net.Application.Windows/Win32WebviewWindow.cs)），`SetMenuHandle` 调 `DrawMenuBar`（`:2191-2200`） | 无需 |
+| 11 | `x-wails-window-id` 越界拒绝（beta.31） | HTTP runtime transport 拒绝越界窗口 ID，避免被截断成其他窗口 ID | ❌ 仅有头名常量（[AssetServer.cs:58](../../src/Wails.Net.AssetServer/AssetServer.cs)），未见范围校验 | P2（安全） |
+| 12 | Windows WebView2 COM 瞬态错误容错（beta.33 #6302） | 运行时操作对瞬态 COM 错误重试/降级 | ➖ 由 WebView2 SDK 托管调用，无自维护 COM vtable（beta.30/34 的 AddRef/vtable 缺陷不适用） | 观察 |
+| 13 | Windows WebView 激活焦点 / Tab 逃逸（beta.34 #3783） | 窗口激活时 WebView 重新获得焦点，Tab 可在原生窗口与 WebView 间往返 | ❓ 需 GUI 会话验证 | P2（GUI 用例） |
+| 14 | Windows 菜单绘制崩溃修复（v3.0.0 #6311/#6358） | 修复部分 Windows 构建上 `SetTextColor` 失败 panic；修复 `uxtheme.dll` 卸载后仍使用其函数导致的崩溃 | ❓ [Win32Theme.cs:65-94](../../src/Wails.Net.Application.Windows/Win32Theme.cs) 解析序号后 `FreeLibrary`，缓存函数指针的后续调用需确认安全性 | P2 |
+| 15 | Linux 原生菜单先初始化再设置（beta.29 #6233） | 避免在 GTK 初始化前设置原生菜单 | ❓ 需核对 `LinuxSystemTray.SetMenu`（[LinuxSystemTray.cs:297](../../src/Wails.Net.Application.Linux/LinuxSystemTray.cs)）时序 | P3 |
+| 16 | Linux DMA-BUF / NVIDIA 判定（beta.31） | Wayland 下仅当 WebKit 实际渲染在 NVIDIA 时才关闭 DMA-BUF | ➖ 对应 Go 的 WebKit 环境变量策略；Wails.Net 未干预渲染后端 | P3（需 Linux 实机） |
+| 17 | macOS 修复批次（beta.29–v3.0.0） | 按键盘布局的全局快捷键、`WindowDidUpdate` 噪声（约 120 次/秒空 `evaluateJavaScript`）、菜单分区标题、`SetRelativePosition` 相对工作区、重复 teardown | ❓ macOS 分支存在但无 mac 主机，未编译/未验证 | 远期（随 macOS 平台回归） |
+| 18 | `InvokeSync*` panic 阻塞（beta.30 #6108） | 派发回调 panic 时不再永久阻塞调用方 | ➖ 无对应同步调度 API | 无需 |
+| 19 | Go 1.26 最低版本（beta.31） | v3 模块声明 `go 1.26.0`，模板同步 | ➖ .NET 运行时无关 | 无需 |
+| 20 | 远程模板 URL 校验（beta.31） | `wails3 init -t` 仅接受 `https/http/ssh/git` 与 `user@host:path`，并限制 git 传输 | ➖ CLI 仅内置模板（`--template` 为本地/内置名），无远程 clone 路径 | 无需 |
+| 21 | 依赖安全更新（v3.0.0） | `klauspost/compress` 1.18.7、`golang.org/x/image` 0.45.0、Go 1.26.10（crypto/x509）、`vite` ≥ 8.2.4 | ➖ Go 依赖；前端 `vite` 版本需按现有模板/文档自查 | 观察 |
+| 22 | `wails3 update cli` 找不到 v3 release（v3.0.0 修复） | 更新 CLI 时正确解析 v3 发布 | ❓ 需核对 `wails update` 命令的版本解析逻辑 | P3 |
+
+### 11.3 本次基线维护变更
+
+| 文件 | 变更 |
+|------|------|
+| `AGENTS.md` | §1 参考版本 → `v3.0.0`；§1 对比基线 → Tauri `2.12.5`；§1.1.1 参考基线新增周更节奏说明；§8 源码链接 → `tree/v3.0.0`；文末日期 |
+| `docs/development/wails-v3-beta-comparison.md` | 顶部基线声明、§1 版本现状、§7 Tauri 2.12.x 基线、§9.14.1 结论作废批注、新增 §11 |
+| `docs/README.md` | Wails v3 源码 tag、Tauri 版本 |
+| `docs/development/contributing.md` | Wails v3 源码链接 |
+| `docs/development/plugin-packaging.md`、`project-structure-and-modes.md` | 参考版本由 beta.4 更新为 v3.0.0（Tauri 2.12.5） |
+| `docs/architecture/benchmark-audit-and-unified-sdk-plan.md`、`platform-abstraction.md` | 对标基线 / 参考版本更新为 v3.0.0（Tauri 2.12.5） |
+| `docs/comparison-with-tauri2-wails3.md`、`docs/fusion-strategy-comparison.md` | 文档头版本声明更新 |
+
+> 历史文档（`docs/ADR/0001-technology-selection.md` 的 alpha.102 决策上下文、`docs/architecture/refactor-and-hardening-plan.md` 的 2026-08-16 beta.4 审计）保留原始版本号，作为当时决策/审计记录，不回写。
+
+### 11.4 后续待办（按优先级）
+
+1. ✅ **P0 安全（已完成 2026-10-31）**：Server 模式 `/wails/message` 强制 POST + 同源/白名单校验、loopback 绑定 `Host` 白名单（防 DNS rebinding），实现于 `IpcRequestGuard` 并在 `HttpTransport` / `WebSocketTransport` 入口生效；单测 `IpcRequestGuardTests`（15 个）与端到端 `ServerModeRequestHardeningTests`（13 个）全部通过。
+2. ✅ **P1（已完成 2026-10-31）**：`FrontendDevServerReadiness` 改为 TCP 探测（对齐 beta.33 #6209）——`TryCreateTarget` 解析 `host:port`（http/https、无片段、缺省 80/443）+ `ProbeTcpOnceAsync` 连接成功即就绪，修正 Vite 404 导致 `wails dev` 等满 60s 的缺陷；`DevCommand` 同步改用 TCP 等待。测试 `FrontendDevServerReadinessTests` **15 项**（含真实 `TcpListener` 连接用例）通过。
+3. ✅ **P1（已完成 2026-11-01）**：Windows 问题对话框支持自定义按钮标签与回调——新增 `MessageDialogOptions` / `MessageDialogButton` 与 `IPlatformApp` / `IDialogManager` 的 options 重载（接口默认实现回退到 `string[]` 并触发回调），Windows 优先 `TaskDialogIndirect`（`Win32TaskDialog`），comctl32 v6 不可用或调用失败时回退 MessageBox 并按 Go `messageBoxButtonFor` 的标签匹配 + Yes/No/Cancel 位置回退；`DialogPlugin` 的 `dialog.question` 新增可选 `buttons` 参数（默认 `["Yes","No"]`）。测试 `Win32TaskDialogTests`（14 项）、`MessageDialogOptionsTests`（8 项）、`DialogManagerTests` 新增 2 项全部通过。
+4. ✅ **P1（已完成 2026-11-01）**：Linux 子帧 `wails:` 消息来源校验——双层防护：(1) 脚本守卫 `LinuxFrameGuard`（所有帧注入，非顶层/非同源帧禁用 IPC 入口并跳过运行时标志注入）；(2) 原生 `LinuxIpcOriginGuard` 校验 IPC 请求 `Origin` 与窗口当前页面同源（`Origin: null` 仅在 wails 页面且非跨源上下文时容忍，无 Origin 时按 `Sec-Fetch-Site` 兜底），不合规返回 403。**平台限制**：WebKitGTK 不暴露发起帧且旧版本可能不透传 `Origin`，此时退化为脚本守卫；同源子帧无法区分（上游同样未解决）。测试 `LinuxIpcOriginGuardTests`（21 项）与 `LinuxFrameGuardTests`（9 项）在 Windows 上通过（纯逻辑，无 GTK 依赖）；真实 WebKitGTK 行为建议在 WSL/Linux 桌面会话中手动验证。
+5. **P2**：绑定生成器新增 `bindings/events` 名称常量模块；Updater 跨设备回退与替换前校验/回滚；`x-wails-window-id` 范围校验；Windows 激活焦点与 Tab 往返用例；`Win32Theme` 的 uxtheme 生命周期确认。
+
+> 基线维护节奏建议：每次 Wails weekly/hotfix 发布后，仅复核 §11.1 版本表 + §11.2 新增条目，历史章节（§1–§10）不再回写。
+
+### 11.5 Host 校验（DNS rebinding 防护）实现说明
+
+对应 Wails v3 `v3.0.0` 的 `v3/pkg/application/host_guard_server.go`（`isLoopbackBindHost` / `serverHostAllowed`），Wails.Net 实现为 [`IpcRequestGuard`](../../src/Wails.Net.Application/Security/IpcRequestGuard.cs)，由 `DefaultIpcTransportStrategy`（[IpcTransportStrategy.cs](../../src/Wails.Net.Application/Transport/IpcTransportStrategy.cs)）与 `UseServerModeTransport`（[ServerModeTransportExtensions.cs](../../src/Wails.Net.Application/Hosting/ServerModeTransportExtensions.cs)）在 **Server 模式**装配到 [`HttpTransport`](../../src/Wails.Net.Application/Transport/HttpTransport.cs) 与 [`WebSocketTransport`](../../src/Wails.Net.Application/Transport/WebSocketTransport.cs)，在路由与 CORS 之前校验，不通过返回 `403 Forbidden: Host not allowed`。
+
+**启用条件**
+
+- 绑定主机（`IpcRequestGuard.BindHost`，默认 `localhost`，与传输层 `http://localhost:{Port}` 前缀一致）为 `localhost` 或 loopback IP 字面量（`127.0.0.1`、`[::1]`）时启用。
+- 绑定其它主机（如 `0.0.0.0`、域名）视为有意网络部署，**不做** Host 校验（与 Go `isLoopbackBindHost` 一致）。
+- `RequestGuard` 为 `null`（裸构造传输层 / 既有单元测试）时不启用，保持向后兼容。
+
+**放行规则（按判定顺序；端口不参与校验，IPv6 方括号先剥离）**
+
+1. 空 Host —— 浏览器总会发送 Host，仅 HTTP/1.0 客户端会省略；
+2. `localhost`（大小写不敏感，可带端口）；
+3. 任意 IP 字面量（IPv4 / IPv6）—— IP 无法被 DNS 改写，天然安全；
+4. 绑定主机；
+5. 命中 `IpcOptions.AllowedOrigins` 模式 —— 模式先剥离 `scheme://` 前缀，随后 `*` 通配分别匹配「带端口 Host」与「不带端口 Host」，大小写不敏感（对应 Go `strings.Cut(pattern, "://")` + `path.Match`）。
+
+**拒绝**
+
+- 其它任何主机名，包括 `evil.example`（rebinding 目标）、`localhost.evil.example`（前缀陷阱）、`localhost.`（尾点变体）；尾点、简写 IP 等拼写变体均不放行。
+
+**与 Origin 校验的边界**
+
+- Host 校验独立于 `IpcOptions.RequireOriginValidation`：即使配置 `RequireOriginValidation=false`（映射 Go `WebSocketAllowAllOrigins`，仅跳过 Origin 校验），loopback 绑定的 Host 校验仍然生效。
+- Origin 模式匹配与 Host 模式匹配规则不同：Origin 模式含 `scheme://` 时必须连同 scheme 匹配 `scheme://host:port`（对应 Go `authorizeRuntimeOrigin`），Host 模式则剥离 scheme 后匹配主机名。
+- Windows HTTP.SYS 对「Host 与监听前缀不匹配」的请求可能在进入托管层之前直接返回 400；托管层闸门返回 403。两者都表示请求被拒绝，E2E 用例据此断言 `403 或 400`。
+
+**测试覆盖**
+
+- 单元：[IpcRequestGuardTests.cs](../../tests/Wails.Net.Application.Tests/Security/IpcRequestGuardTests.cs)（localhost / IP 字面量 / 空 Host / rebinding 变体 / 白名单 / 非 loopback 绑定共 8 个 Host 用例）。
+- 端到端：[ServerModeRequestHardeningTests.cs](../../tests/Wails.Net.Application.Tests/Transport/ServerModeRequestHardeningTests.cs)（HTTP 与 WebSocket 各含伪造 Host 用例，返回 403/400）。
+
+### 11.6 Linux 子帧来源校验（跨源 `wails:` 消息）实现说明
+
+对应 Wails v3 `v3.0.0` 对 GHSA-2p5f-2gx8-mh8m 的缓解（GTK3/GTK4 向所有帧注入 guard 脚本），Wails.Net 分为**两层**：
+
+**第 1 层：脚本守卫（`LinuxFrameGuard`，[LinuxFrameGuard.cs](../../src/Wails.Net.Application.Linux/LinuxFrameGuard.cs)）**
+
+- `LinuxWebviewWindow.InjectRuntimeJs` 通过 `UserContentManager.AddScript(AllFrames, DocumentStart)` 先注册守卫脚本、再注册被 `WrapRuntimeScript` 包裹的运行时标志脚本（WebKit 按注册顺序在同一注入时机执行，故守卫总是先运行）。
+- 守卫判定：`window.top === window.self`（顶层帧）或 `window.top.location.origin === window.location.origin`（同源子帧）→ `window.__wailsFrameTrusted = true`；读取顶层 `location` 抛异常（跨源）或其它异常 → `false`。
+- 不可信帧处置：写入 `__wailsFrameTrusted=false`；用 `Object.defineProperty(window, '_wails', …)` 拦截运行时标志写入；包装 `fetch` / `XMLHttpRequest.open` / `navigator.sendBeacon`，对 `wails:` 开头的 URL 直接拒绝；运行时标志脚本因 `WrapRuntimeScript` 的条件直接跳过（不暴露平台/端点信息）。
+- 守卫脚本缺失时（`__wailsFrameTrusted === undefined`）按可信处理，与非守卫注入路径行为一致（向后兼容）。
+
+**第 2 层：原生请求校验（`LinuxIpcOriginGuard`，[LinuxIpcOriginGuard.cs](../../src/Wails.Net.Application.Linux/LinuxIpcOriginGuard.cs)）**
+
+- 仅拦截 IPC 请求（`POST /wails/*`，含 Streams 的 `POST /wails/stream/*`）；静态资源与 GET 不受影响。
+- `Origin` 头存在：
+  1. `Origin: null`（不透明源，sandbox / `data:` 子帧）：`Sec-Fetch-Site` 为 `cross-site` / `same-site` → 拒绝；否则仅当窗口 URL 协议为 `wails` 时容忍（WebKitGTK 可能把自定义协议页面的 Origin 序列化为字面量 `null`，一律拒绝会破坏应用自身 IPC，此时由第 1 层脚本守卫兜底）；其它协议（`http`/`https`/`about`）或无窗口 URL → 拒绝；
+  2. 归一化后与窗口当前页面（`WebView.GetUri()`，回退 `_currentUrl`）比较：scheme / host / port 大小写不敏感，忽略路径 / 查询 / 片段，去除 `http:80` / `https:443` 默认端口；不一致 → 拒绝。
+- `Origin` 缺失：按 `Sec-Fetch-Site` 兜底，`cross-site` / `same-site` → 拒绝；两者都缺失（旧版 WebKitGTK 未透传）→ 放行，由第 1 层脚本守卫兜底。
+- 拒绝时在 `OnWailsSchemeRequest` 直接返回 `403 Forbidden` 并记录 `LogWarning`（窗口名 / 方法 / 路径，不含请求体）。
+- 合法请求的 `Origin` 会写入 `WebviewRequest.Origin`，供管线/后续端点复用。
+
+**平台限制（与上游一致）**
+
+- WebKitGTK 的 `URISchemeRequest` 不暴露发起帧，无法直接按帧判定；帧来源只能由脚本守卫判定。
+- 旧版 WebKitGTK 可能不透传 `Origin` / `Sec-Fetch-Site`，此时请求层退化为放行，仅剩脚本守卫（非硬边界）。
+- **同源**子帧与主帧共享 Origin，无法也不需要在请求层区分（同源子帧本就可访问主帧 DOM 与运行时）。
+
+**测试覆盖**
+
+- 单元（纯逻辑，无 GTK 依赖，可在任意平台运行）：
+  [LinuxIpcOriginGuardTests.cs](../../tests/Wails.Net.Application.Linux.Tests/LinuxIpcOriginGuardTests.cs)（21 项：同源/跨源/不透明源（wails 页面容忍、http 页面拒绝、`cross-site` 拒绝、无 URL 拒绝）/默认端口/大小写/`Sec-Fetch-Site`/大小写头名/非法 Origin/归一化边界）；
+  [LinuxFrameGuardTests.cs](../../tests/Wails.Net.Application.Linux.Tests/LinuxFrameGuardTests.cs)（9 项：信任标记、跨源判定、三类阻断、包裹条件、空参数异常）。
+- 真实 WebKitGTK 行为（`Origin` 是否透传、自定义协议跨源请求是否被发送）需在 Linux 桌面会话中手动验证，无法在 Windows 自动化环境中覆盖。
+
+---
+
+## 12. v3.1.0 基线（2026-11-01）对比与实现记录
+
+> 复核日期：2026-11-03。复核方式：GitHub Releases API（`wailsapp/wails`，`/releases`）+ npm registry（`@wailsio/runtime`）+ 本仓库 `src/` 与 `tests/` 代码逐项确认。**未做 v3.1.0 tag 源码逐行复核**（本地无参考源码目录），结论依据 release notes 与本仓库实现。
+
+### 12.1 基线确认
+
+| 项目 | 值 | 说明 |
+|------|----|------|
+| Wails v3 最新正式发布 | **`v3.1.0`**（2026-11-01） | weekly minor；`v3.0.0`（2026-10-26 GA）之后首个 minor |
+| 预发布（不作基线） | `v3.2.0-nightly.20261102` | 每日 nightly，按 AGENTS.md §1.1.1 排除 |
+| `@wailsio/runtime` | **`3.1.0`** | 与 Wails 发布版本号一致 |
+| 上一基线 | `v3.0.0`（2026-10-26 GA，见 §11） | 本次升级目标：`v3.0.0` → `v3.1.0` |
+
+**结论**：基线需要升级，由 `v3.0.0` 升级到 **`v3.1.0`**；AGENTS.md §1/§1.1.1/§8 已同步。
+
+### 12.2 差异清单（v3.0.0 → v3.1.0）
+
+状态说明：✅ 已实现 / 已具备（无需改动）；⏳ 待实现；⛔ 不适用（.NET 或本仓库无对应机制）。
+
+| # | v3.1.0 变更（release notes 摘要） | 状态 | 说明 |
+|---|----------------------------------|------|------|
+| 1 | `#6276` Emit 在 hook 锁内快照事件钩子 | ✅ 已实现 | [EventProcessor.cs](../../src/Wails.Net.Application/Events/EventProcessor.cs) 新增 `_hooksLock`；`RegisterHook` 加锁，`EmitCore` 锁内 `ToArray()` 后遍历 |
+| 2 | `#6287` Run 之前投递的主线程任务暂存至 Run 启动 | ✅ 已实现 | [Application.cs](../../src/Wails.Net.Application/Application.cs) 新增 `_pendingMainThreadActions`（`ConcurrentQueue`），`Run` 启动时先 `FlushPendingMainThreadActions()`（FIFO） |
+| 3 | `#6390` Run 之前的对话框直接“无操作”，不再永久等待 | ✅ 已实现 | [DialogManager.cs](../../src/Wails.Net.Application/Managers/DialogManager.cs) 新增运行状态判定；未运行时消息框返回 `-1`、文件框返回 `null`；DI 路径经 `AttachRunningState` 补挂 |
+| 4 | `#6072` 从 settings portal 读取暗色模式 | ✅ 已实现 | 新增 [LinuxAppearancePortal.cs](../../src/Wails.Net.Application.Linux/LinuxAppearancePortal.cs)（`org.freedesktop.portal.Settings.Read/ReadOne`）；`LinuxPlatformApp.IsDarkMode` 优先 portal，再回退 gsettings/环境变量 |
+| 5 | `#6017` 系统托盘 `SetTooltip` | ✅ 已具备 | Windows `NOTIFYICONDATA.szTip`、Linux `Gtk.Window.SetTooltipText`、`SystemTrayManager.SetTooltip` 均已存在 |
+| 6 | `#6166` `Window.SetZoom` 允许小于 1.0 | ✅ 已具备 | 无下限钳制（[Win32WebviewWindow.cs](../../src/Wails.Net.Application.Windows/Win32WebviewWindow.cs#L2670-L2688) 直接写 `ZoomFactor`；Linux 直接透传 `SetZoomLevel`）。平台限制：WebView2 合法区间 0.25–5.0 |
+| 7 | `#6304` GitHub updater provider 使用正确的资产 URL | ✅ 已具备 | 使用 `browser_download_url`，未使用 API `url` |
+| 8 | `#6395` 混合大小写资源扩展名 | ✅ 已具备 | `AssetServer.GetMimeType` 对扩展名 `ToLowerInvariant()` |
+| 9 | `#6387`/`#6388` 全屏/最大化下不被新尺寸约束改变大小 | ✅ 已具备 | `SetMinSize`/`SetMaxSize` 仅记录，不在约束变更时 resize；全屏走 `SetWindowPos`，不经 `WM_GETMINMAXINFO` |
+| 10 | `#6386` Explorer 重启后重建托盘图标（去抖 1 秒） | ✅ 已实现 | 新增 [TrayIconRebuildScheduler.cs](../../src/Wails.Net.Application.Windows/TrayIconRebuildScheduler.cs)（1 秒去抖合并）；[PlatformMessageWindow.cs](../../src/Wails.Net.Application.Windows/PlatformMessageWindow.cs) 顶层窗口接收 `TaskbarCreated`（仅消息窗口收不到 `HWND_BROADCAST`）后经 [Win32SystemTray.cs](../../src/Wails.Net.Application.Windows/Win32SystemTray.cs) 的 `NotifyTaskbarCreated` 分发重建；真实 Explorer 重启需 GUI 验证 |
+| 11 | `#6371` 终端关闭时结束 dev 派生进程 | ✅ 已实现 | 新增 [DevProcessLifetimeGuard.cs](../../src/Wails.Net.Cli/Build/DevProcessLifetimeGuard.cs)：Windows 作业对象（`KILL_ON_JOB_CLOSE`，`[DllImport]` 手动声明，未引 `PInvoke.*`）+ Unix `PosixSignalRegistration`（`SIGHUP`/`SIGTERM`）；`DevCommand` 将 `dotnet watch` 与前端 dev server 纳入守护（[FrontendToolchain.cs](../../src/Wails.Net.Cli/Build/FrontendToolchain.cs) 新增 `onStarted` 回调）；`DevProcessCleanup.TerminateSync` 供信号处理器同步终止。真实关闭控制台窗口 / SIGHUP 投递需真机验证 |
+| 12 | `#6346` GTK/macOS 屏幕坐标使用 DIP 空间 | ✅ 已实现（Linux + macOS） | 新增 [LinuxDipCoordinates.cs](../../src/Wails.Net.Application.Linux/LinuxDipCoordinates.cs)：DIP↔物理像素换算（1.0/1.25/1.5/2.0、负坐标、无效因子回退 1.0）与目标显示器选择；`SetPosition`/`Centre` 全程 DIP 计算，仅调用 `wmctrl` 前按目标显示器 `ScaleFactor` 换算。macOS 新增 [MacDipCoordinates.cs](../../src/Wails.Net.Application.MacOS/MacDipCoordinates.cs)（纯逻辑层，可单测）：AppKit point≡DIP 的 Y 轴翻转/逆运算、DIP↔物理换算、`NSScreen.VisibleFrame` 居中与多屏目标选择；`MacOSWebviewWindow` 的 `SetPosition`/`Centre`/`SetSize`/`GetPosition`/`GetSize` 与 `MacOSPlatformApp.EnumerateScreens` 已接线；`#if MACOS` 分支在 Windows 主机不参与编译，需 macOS 实机验证 |
+| 13 | `#6401`/`#6425`/`#6451` HEAD 请求不返回响应体 | ✅ 已实现 | [AssetServer.cs](../../src/Wails.Net.AssetServer/AssetServer.cs) 按 `HttpMethod` 判定 HEAD：状态码与响应头（`Content-Length`/`Content-Type`/`ETag`/`Accept-Ranges`/`Content-Range`）与 GET 一致，200/206/304/404/500 均不写 body；[BytesResult.cs](../../src/Wails.Net.AssetServer/Results/BytesResult.cs) 新增 `includeBody` 重载 |
+| 14 | `#6424` 缺失的打包资源返回 404 | ✅ 已实现 | SPA 回退仅限导航请求（`/` 结尾、无扩展名、`.html`/`.htm`，或 `Accept` 含 `text/html`）；缺失的 `.js`/`.css` 等子资源直接 404 |
+| 15 | `#6483` 重复前导斜杠路径归一化 | ✅ 已实现 | 新增 `NormalizeRequestPath`：折叠连续 `/`（含前导）、解析 `.`/`..` 并阻止越出根路径；`GetAssetBytes`/`ExtractAssetContent`/HTTP 入口统一使用 |
+| 16 | `#6400` 仅发现精确的 index 文件 | ✅ 已实现 | 目录索引仅在路径以 `/` 结尾时尝试精确 `index.html`，不再误匹配 `not-index.html` |
+| 17 | `#6398`/`#6399`/`#6403`/`#6405`/`#6406`/`#6409` 资源回退头、范围、MIME 嗅探细节 | ✅ 已实现 | 回退资源忽略 Range（返回完整 200 + 正确长度/类型），缺失资源不再回退为 HTML；[ContentTypeSniffer.cs](../../src/Wails.Net.AssetServer/ContentTypeSniffer.cs) 逐条对齐 Go `net/http/internal/sniff.go`（512 字节、签名表顺序、掩码匹配、HTML 标签终止符 `isTT`、UTF BOM、文本控制字符集合且不校验 UTF-8、charset 后缀），扩展名映射优先、失败回退 `application/octet-stream`；`Content-Type` 基于完整内容在 Range 切片前判定，HEAD 复用同一结果仅跳过 body；SPA 回退资源不嗅探 |
+| 18 | CLI dev/打包/模板/缓存等大批修复（`#6412`–`#6498` 区间） | ⚠️ 部分实现 | ✅ `#6478` `icon --sizes`（1–256 校验、0 忽略、至少一个非零、失败退出码 1 且保留旧 `icon.ico`、按尺寸真实缩放生成多帧 ICO）；✅ `#6480` 打包失败保留旧产物（同目录暂存 → 成功后原子替换、Unix 权限保留、清理暂存）；⛔ 其余按组不适用（Taskfile/Go cache/`printf` 格式替换/gosod/symlink/DMG/syso/.icns/`dotnet tool` 安装等，见 §12.4 第 10 条）；`#6498` 文件权限保留待 Linux 实机复核 |
+| 19 | `#6521` CGO-free macOS/Linux 后端实验 | ⛔ 不适用 | Go 独有（CGO）机制 |
+| 20 | `#6531` 原生 YAML 构建、便携打包与签名 | ⛔ 不适用 | Wails.Net 使用 MSBuild + `wails` CLI，无 YAML 构建体系 |
+| 21 | `#6367` 通知被关闭不算点击 | ⛔ 不适用 | 通知插件未上报点击事件（Windows 走 PowerShell Toast，无回调） |
+| 22 | `#6284` 始终提供托盘 Menu 属性 | ⛔ 不适用 | Wails.Net 托盘直接绑定平台实现，无 Go 侧 Menu 序列化 |
+| 23 | `#6326` WebView2 缺 `Content-Length` 时保留请求体 | ⛔ 不适用 | 未自建 WebView2 资源请求拦截；IPC 走 `wails://` scheme handler |
+| 24 | `#6392`/`#6407`/`#6411` 桌面条目发现与 XDG 搜索路径 | ⛔ 不适用 | 本仓库无 Go CLI 的桌面条目启动逻辑（仅生成 `.desktop`） |
+| 25 | Go 内部性能/分配优化（`#6391`/`#6394`/`#6402`/`#6419`/`#6420`/`#6428`/`#6443`/`#6449`/`#6453`–`#6455`/`#6478`/`#6482`/`#6490`/`#6499` 等） | ⛔ 不适用 | Go 实现细节，.NET 侧内存/序列化模型不同 |
+| 26 | store/SQLite 系列（`#6444`–`#6456`） | ⛔ 不适用 | 本仓库无 Go store 子系统 |
+| 27 | 发布/CI 工具链（`#6373`/`#6438`/`#6493`/`#6495`/`#6497`/`#6519`/`#6533`/`#6538`） | ⛔ 不适用 | 属 Wails 自身发布与 Go 工具链 |
+| 28 | v2.17.1 `GHSA-r5j2-ghh9-2jqw`（Linux WebKit 安全） | ⛔ 不适用（v3 维度） | 属 v2 发布流；v3 对应的 Linux 子帧校验已在本仓库完成（见 §11.2/§11.6） |
+
+### 12.3 受影响子系统矩阵
+
+| 子系统 | v3.1.0 相关变更 | Wails.Net 状态 |
+|--------|----------------|----------------|
+| 事件系统 | `#6275` 监听器投递顺序、`#6276` 钩子锁 | 前端 mailbox 已串行；本地监听器同步按调用顺序分发；钩子锁已补齐 |
+| 生命周期/主线程 | `#6287` Run 前任务暂存 | 已实现 |
+| 对话框 | `#6390` Run 前不挂起 | 已实现 |
+| Linux 外观 | `#6072` settings portal | 已实现（需 Linux 桌面验证） |
+| Linux 窗口 | `#6346` 多 DPI DIP 坐标 | 已实现（换算为纯函数并有单测；真实 GTK4/wmctrl 需 Linux 桌面验证） |
+| macOS 窗口/屏幕 | `#6346` Point/DIP 语义 | 已实现纯逻辑层（`MacDipCoordinates`）与窗口/屏幕接线；`#if MACOS` 分支需 macOS 实机编译验证 |
+| Windows 托盘 | `#6386` Explorer 重启重建 | 已实现（去抖 1 秒；真实 Explorer 重启需 GUI 验证） |
+| 资源服务器 | HEAD/404/斜杠/index/嗅探系列 | 已实现 HEAD、404、斜杠归一化、精确 index、回退 Range/头、MIME 内容嗅探 |
+| CLI dev/构建 | 进程清理、打包、模板、缓存 | 终端关闭清理、图标尺寸校验、打包原子替换已实现；其余批次 ⛔ 不适用/待评估 |
+| 通知/托盘 API | `#6017`（已有）、`#6367`/`#6284`（不适用） | 已具备 / 不适用 |
+
+### 12.4 本次实现记录
+
+1. **事件钩子并发安全（`#6276`）**
+   - `EventProcessor`：新增 `_hooksLock`；`RegisterHook` 在锁内 `Add`；`EmitCore` 在锁内 `ToArray()` 快照后再执行钩子。
+   - 测试：`RegisterHook_ConcurrentWithEmit_DoesNotThrow`（双线程 2000 次 Emit / 2000 次注册，零异常）。
+
+2. **Run 前主线程任务延迟执行（`#6287`）**
+   - `Application`：`DispatchOnMainThread` 在 `!_isRunning` 时入队；`Run` 置位运行标记后、`OnBeforeStart` 之前按 FIFO 执行；单个任务异常仅记录日志，不阻断后续。
+   - 测试：`DispatchOnMainThread_BeforeRun_ExecutesFifoAfterRunStarts`、`DispatchOnMainThread_WhileRunning_InvokesImmediately`。
+
+3. **Run 前对话框不挂起（`#6390`）**
+   - `DialogManager`：新增可选 `Func<bool>` 运行状态判定与 `AttachRunningState`（DI 模式补挂）；未运行时消息框返回 `-1`、文件选择返回 `null`，且不调用平台层。
+   - 测试：`DialogManagerTests` 新增 5 项（是否运行/选项重载/文件类对话框/运行中委托/补挂不覆盖）。
+
+4. **Linux 暗色模式 settings portal（`#6072`）**
+   - 新增 `LinuxAppearancePortal`：`Read` 失败时回退 `ReadOne`，500ms 超时，读取 `org.freedesktop.appearance` / `color-scheme`（0 无偏好、1 暗色、2 亮色）。
+   - `LinuxPlatformApp.IsDarkMode`：portal 优先；不可用时保持 gsettings / `GTK_THEME` / `COLOR_SCHEME` 回退链。
+   - 测试：`LinuxAppearancePortalTests`（6 项：映射 4 项 + 非 Linux 静默回退）。
+
+5. **Explorer 重启托盘重建（`#6386`）**
+   - 新增 `TrayIconRebuildScheduler`：窗口期内多次 `TaskbarCreated` 合并为一次重建，最后一次广播后延迟 1 秒执行；`Dispose` 后可安全取消。
+   - `PlatformMessageWindow`（顶层窗口）接收 `TaskbarCreated`（托盘的仅消息窗口收不到 `HWND_BROADCAST`），调用 `Win32SystemTray.NotifyTaskbarCreated()` 向所有可见托盘实例分发；重建前二次校验可见性/销毁状态。
+   - 测试：`TrayIconRebuildSchedulerTests`（6 项：合并、二次重建、释放取消、释放后忽略、无实例空操作、消息注册非 0）。
+
+6. **终端关闭时清理 dev 派生进程（`#6371`）**
+   - 新增 `DevProcessLifetimeGuard`（`IDevProcessLifetimeBackend` 可注入便于单测）：Windows 创建带 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` 的作业并 `AssignProcessToJobObject`；Unix 用 `PosixSignalRegistration` 注册 `SIGHUP`/`SIGTERM`，执行同步清理后保留默认终止语义（`SIGINT` 仍由 System.CommandLine 处理）。
+   - `DevCommand` 以 `using` 持有守卫，`dotnet watch` 启动后立即 `TryAttach`；前端 dev server 通过 `FrontendToolchain.DevAsync(onStarted)` 回调纳入守护。
+   - `DevProcessCleanup.TerminateSync`：信号处理器内同步终止进程树（`KillTree` 对已退出进程为无效操作，重复调用安全）。
+   - 测试：`DevProcessLifetimeGuardTests`（12 项）+ `DevProcessCleanupTests` 新增 2 项（共 11 项）。
+
+7. **资源服务器 P2 批次（`#6401`/`#6425`/`#6451`/`#6424`/`#6483`/`#6400`/`#6398`）**
+   - HEAD：`ServeAssetAsync` 判定 `HttpMethod == HEAD` 后仍走 GET 的读取/协商/日志流程，仅跳过响应体；`BytesResult.WriteAsync(includeBody:false)` 保留 206 的 `Content-Range`、`Content-Length` 等头；404/500 处理器同样按方法决定是否写 body。
+   - 404：新增 `ShouldUseSpaFallback`（目录/无扩展名/`.html`/`Accept: text/html` 才回退），缺失子资源返回 404。
+   - 归一化：`NormalizeRequestPath` 折叠重复斜杠并解析 `.`/`..`（越根丢弃），`GetAssetBytes`/`ExtractAssetContent`/HTTP 入口统一调用。
+   - 精确 index：`GetDirectoryIndexPath` 仅对 `/` 结尾路径追加精确 `index.html`。
+   - 回退资源：`CreateResult(isFallback:true)` 忽略 Range，返回完整 200 与正确 `Content-Type`/长度。
+   - 测试：`AssetServerTests` 新增 12 项（HEAD、404、归一化、精确 index、回退 Range），资源服务器测试项目共 305 项全部通过。
+   - ⛔ 不适用：`#6425` 中 `/wails/runtime.js` 专属路由——本移植前端运行时由 `@wails-net/runtime` npm 包提供，无该内置路由（维持不适用结论，不做硬凑）。
+
+8. **资源服务器 MIME 内容嗅探（`#6398` 余项，2026-11-04 按 Go 源码重写）**
+   - `ContentTypeSniffer`（internal 纯静态）逐条对齐 Go `net/http/internal/sniff.go`：前 512 字节、签名表顺序（HTML → XML → PDF/PS → BOM → 图像 → 音视频 → 字体 → 归档 → WASM → 文本）；`htmlSig` 使用 `firstNonWS` 且要求标签终止符（空格/`>`）；`maskedSig` 对 WebP/AIFF/ID3/Ogg/MThd/AVI/WAVE/EOT 按掩码比较（RIFF 子类型不再统一判为 `audio/wave`）；MP4 按大端盒长度校验并 4 字节步进扫描 `mp4`（跳过 offset 12）；文本嗅探仅排除 Go 控制字符集合（0x09/0x0A/0x0C/0x0D/0x1B/0x7F 允许，不校验 UTF-8），文本类返回带 `; charset=utf-8`（BOM 返回 utf-16be/utf-16le）。
+   - `AssetServer.ServeAssetCoreAsync`：仅当 `GetMimeType` 返回默认 `application/octet-stream` 且非 SPA 回退时嗅探；已知扩展名优先；`Content-Type` 在 Range 切片前基于完整内容判定，206 的 `Content-Range`/`Content-Length` 不受影响；HEAD 返回嗅探后的类型但不写 body。
+   - 测试：`ContentTypeSnifferTests` 重写并扩至 45 项（含 HTML 终止符、BOM、掩码签名、MP4 盒校验、文本控制字符、512 字节截断）；`AssetServerTests` 中扩展名缺失二进制用例补控制字节后全类 89/89
+
+9. **GTK 多 DPI DIP 坐标（`#6346`）**
+   - 新增 `LinuxDipCoordinates`（纯函数）：`NormalizeScaleFactor`（<=0/NaN/Infinity 回退 1.0）、`DipToPhysical`（floor）、`PhysicalToDip`（ceil）、`SelectTargetMonitor`（命中→最近→null）；`LinuxMonitorInfo` 描述 DIP 几何与缩放因子。
+   - `LinuxWebviewWindow`：`SetPosition`/`Centre` 全程 DIP 计算并缓存（`GetPosition`/`GetSize` 保持 DIP 语义），抽出 `MoveWindowByDipBounds` 仅在 `wmctrl` 调用前按目标显示器缩放因子换算物理像素。
+   - 测试：`LinuxDipCoordinatesTests`（27 项：多缩放往返、负坐标、无效因子回退、显示器选择/最近距离/负原点）。
+
+10. **CLI 批次 `#6412`–`#6498` 适用性核对与实现**
+   - ✅ `#6478`：[IconCommand.cs](../../src/Wails.Net.Cli/Commands/IconCommand.cs) 新增 `--sizes`（默认 `256,128,64,48,32,16`）：先校验尺寸再读源文件，非法尺寸/超范围（>256）退出码 1 且不写 `icon.ico`；`GenerateIcoAsync` 按尺寸缩放并生成多帧 PNG 帧 ICO。
+   - ✅ `#6480`：[Packager.cs](../../src/Wails.Net.Cli/Build/Packager.cs) 改为“同目录暂存文件夹 → 全部格式打包成功 → 保留 Unix 权限并原子替换”，失败时保留上一次产物；暂存目录在 `finally` 中清理。
+   - ⛔ 不适用分组（对照上游逐条核对）：Taskfile/Go cache/shell 链、`printf` 风格格式替换（C# 使用插值）、gosod/glob/symlink 语义、DMG/syso/.icns 生成、GitHub 安装器/HTTP 下载（.NET 走 `dotnet tool`/NuGet）、Go 运行时/服务端专属项。
+   - 待评估：`#6498` 文件权限保留（已按 Unix 语义实现，需 Linux 实机复核）。
+
+11. **macOS DIP 坐标补全（`#6346` macOS 维度，2026-11-04）**
+   - 新增 `MacDipCoordinates`（`internal` 纯逻辑，`#if` 无关，Windows 主机可编译单测）：`NormalizeScaleFactor`、`DipToPhysical`（floor）、`PhysicalToDip`（ceil）、`ToAppKitBottomLeftY`/`ToDipTopLeftY`（严格互逆，`appKitY = primaryHeight - height - topY`）、`CentreDipBounds`、`SelectTargetMonitorIndex`（命中→最近→-1）；`MacMonitorInfo` 描述单屏 DIP 几何（top-left 空间）与 `backingScaleFactor`。
+   - `MacOSWebviewWindow`：`SetSize` 先 `SetContentSize` 再按请求尺寸 `SetFrame`（对齐上游 `windowSetSize`）；`SetPosition`/`GetPosition` 在 top-left DIP 与 AppKit bottom-left 之间翻转；`Centre` 依据 `NSScreen.VisibleFrame`（转 top-left DIP）居中，目标屏优先 `_window.Screen`、回退窗口中心命中/最近屏、再回退 `NSScreen.MainScreen`；`GetSize` 返回 frame DIP 尺寸，与 `SetSize` 一致。
+   - `MacOSPlatformApp.EnumerateScreens`：DIP 几何取 point 值，物理几何改用 `MacDipCoordinates.DipToPhysical`（修正负坐标截断方向）。
+   - 测试：`MacDipCoordinatesTests` 37/37 通过（Windows 主机，`#else` 骨架程序集 + `InternalsVisibleTo`）。
+   - **未验证**：`#if MACOS` 分支未在 macOS 主机编译/运行（Windows 主机不参与该分支编译）。
+
+12. **本轮代码审查修复（2026-11-04）**
+   - [PlatformMessageWindow.cs](../../src/Wails.Net.Application.Windows/PlatformMessageWindow.cs)：`TaskbarCreated` 消息 ID 为 0（`RegisterWindowMessage` 失败时返回 `WM_NULL`）时不再触发托盘重建，避免误判。
+   - [TrayIconRebuildScheduler.cs](../../src/Wails.Net.Application.Windows/TrayIconRebuildScheduler.cs)：去抖回调改为在 `_gate` 锁内执行，`Dispose` 返回后不会再有 `NIM_ADD` 并发执行（消除竞态）。
+   - `ContentTypeSniffer` 按 Go 源码整体重写（见第 8 条），修复上一轮与上游的语义偏差（RIFF 子类型误判、HTML 缺终止符、文本类型缺 charset、文本判定过严、Ogg/GZIP/ZIP/RAR/MP4 签名不一致）。
+   - 其余审查范围（`EventProcessor`、`Application`、`DialogManager`、`LinuxAppearancePortal`、`Win32SystemTray`、`DevProcessLifetimeGuard`/`DevProcessCleanup`/`DevCommand`/`FrontendToolchain`、`LinuxDipCoordinates`/`LinuxWebviewWindow`、`AssetServer`/`BytesResult`、`IconCommand`、`Packager`）逐项复核：未发现阻塞性缺陷；`src/` 未新增反射违规（仅既有白名单 `PlatformFactory`、`CapabilityManifestValidator` 使用 `System.Reflection`）。
+
+### 12.5 验证结果
+
+- 构建（0 警告 0 错误）：`Wails.Net.Application`、`Wails.Net.Application.Linux`、`Wails.Net.Application.Tests`、`Wails.Net.Application.Linux.Tests`。
+  - 2026-11-03 追加（本次 P1/P2 批次）：`Wails.Net.Application.Windows`（1 个既有 MSB3277 WebView2 版本冲突警告，非本次引入）、`Wails.Net.Application.Windows.Tests`、`Wails.Net.Cli`、`Wails.Net.Cli.Tests`、`Wails.Net.AssetServer`、`Wails.Net.AssetServer.Tests` 均编译通过，0 错误。
+- 定向单元测试（TUnit，Windows 主机）：
+  - `DialogManagerTests`：18/18 通过；
+  - `EventProcessorTests`：22/22 通过（含并发用例）；
+  - `ApplicationTests.DispatchOnMainThread_*`：2/2 通过；
+  - `LinuxAppearancePortalTests`：6/6 通过；
+  - `LinuxPlatformAppTests` 暗色相关：4/4 通过；
+  - `TrayIconRebuildSchedulerTests`：6/6 通过（#6386）；
+  - `DevProcessLifetimeGuardTests`：12/12、`DevProcessCleanupTests`：11/11 通过（#6371）；
+  - `LinuxDipCoordinatesTests`：27/27 通过（#6346，Windows 主机编译 Linux 项目）；
+  - `AssetServerTests`：85/85 通过（资源服务器批次；项目全量 305 项由实现方跑通）。
+  - 2026-11-04 追加（MIME 嗅探 + CLI 批次）：`ContentTypeSnifferTests` 45/45、`AssetServerTests` 354/354（含 PNG 嗅探/扩展名优先/Range 206/HEAD）、`IconCommandTests` 15/15、`PackagerTests` 37/37、`PackagerDebRpmTests` 6 通过 2 跳过（Linux 专属用例）、`PackagerBundleTests` 3/3。
+  - 2026-11-04 追加（macOS DIP + 审查修复）：`MacDipCoordinatesTests` 37/37（`Wails.Net.Application.MacOS.Tests` 全量 56/56）、`TrayIconRebuildSchedulerTests` 6/6、`PlatformMessageWindowTests` 2 通过 2 跳过（GUI 用例）。
+- **全量构建（2026-11-04，非 Android）**：`src/` 与 `tests/` 全部非 Android 项目编译通过，0 错误；仅 `Wails.Net.Plugins.Mobile.Tests` 失败（`CS0246: MobilePlugin`，`src/Wails.Net.Plugins.Mobile` 中无该类型，**既有问题**，本轮未触碰）。Android 4 个项目（`Application.Android`、`Bundle.Android`、`Application.Android.Tests`、`Demo.Android`）因本机未安装 `android` 工作负载报 `NETSDK1147`，按既有约定跳过。
+- **全量单元测试（2026-11-04，Windows 主机，GUI 默认跳过）**：共 3380 项，通过 3129、失败 7、跳过 244。
+  - 失败 7 项均为**既有环境/预期问题**，非本轮引入：`Application.Linux.Tests` 2 项（Windows 主机无 GirCore/GTK 与 Linux 平台注册）、`Plugins.FileSystem.Tests` 1 项（测试期望名称 `fs`，实现为 `filesystem`）、`Plugins.FsWatch.Tests` 1 项（期望 `fswatch`，实现为 `fs-watch`）、`SourceGenerators.Tests` 2 项（分析器/测试工程既有断言）、`Application.Windows.Tests` 1 项 `IsOnMainThread_ReturnsFalse_WhenCalledFromDifferentThread`（线程池线程复用导致全量运行时偶发；单独运行该类 8/8 通过）。
+  - `Wails.Net.Application.GuiContract.Tests` 为共享库（无测试主机入口），其契约用例由 Windows/Linux/Android 测试工程执行，不计入独立运行。
+
+- GUI 用例按约定默认跳过（未设置 `WAILS_RUN_GUI_TESTS`）。
+- **未验证**：真实 Explorer 重启后的托盘重建、真实关闭控制台窗口 / 终端 SIGHUP 的派生进程清理、真实 WebKitGTK 下 portal 读取与 GTK4/wmctrl 多 DPI 坐标、macOS `#if MACOS` 分支（Windows 主机不参与编译，需 macOS 实机编译/运行验证）、`#6498` 在 Linux 实机的权限保留行为。
+
+### 12.6 基线维护结论
+
+- 当前基线：**`v3.1.0`**（weekly，不含 nightly）。
+- 2026-11-04 复核：GitHub releases/tags 中最新正式版仍为 `v3.1.0`（2026-11-01），其上方仅有 `v3.2.0-nightly.20261101`/`0211`/`0311` 预发布，无 `v3.1.x` hotfix → **基线不变**。
+- 建议节奏：每次 weekly 发布后复核 release notes，按本表结构追加小节；本轮 P1（托盘重建、dev 终端关闭清理、GTK DIP）、资源服务器 P2 批次（含 MIME 内容嗅探）、CLI 批次核对、macOS DIP 补全与代码审查修复均已完成，并完成一次非 Android 全量构建/测试（3380 项，失败 7 项均为既有环境/预期问题）；后续待办为 `#6498` Linux 实机复核、macOS `#if MACOS` 实机编译验证，以及真实桌面环境下的托盘重建/信号清理/多 DPI 验证。
 
 

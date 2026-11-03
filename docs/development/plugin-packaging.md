@@ -6,7 +6,7 @@
 > - **适用版本**：Wails.Net `0.1.0-alpha.1` 及以上
 > - **参考实现**：
 >   - Tauri v2 插件模型（`tauri-plugin-*` crate + `@tauri-apps/plugin-*` npm 包）
->   - Wails v3 `v3.0.0-beta.4` 可安装插件（服务打包前端资源 + 脚本）
+>   - Wails v3 `v3.0.0` 可安装插件（服务打包前端资源 + 脚本；写作时参考 `v3.0.0-beta.4`，GA 后机制未变）
 >   - 差异确认见 [wails-v3-beta-comparison.md](wails-v3-beta-comparison.md)（P0-1 可安装插件）
 
 ---

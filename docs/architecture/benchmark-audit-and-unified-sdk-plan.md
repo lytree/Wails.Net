@@ -2,7 +2,7 @@
 
 > **审计日期**：2026-08-16
 > **审计性质**：深度审计 + 可破坏性重构方案（本文档只输出分析与方案，不含代码修改）
-> **对标基线**：Wails v3 `3.0.0-beta.4`（参考源码 `F:\Code\Dotnet\wails-v3-ref\`）、Tauri v2 GA `2.11.5`、ASP.NET Core（Microsoft.Extensions.* 全栈）
+> **对标基线**：Wails v3 `3.0.0-beta.4`（审计时版本）、Tauri v2 GA `2.11.5`（审计时版本）、ASP.NET Core（Microsoft.Extensions.* 全栈）；**当前基线已升级为 Wails v3 `v3.0.0`（GA，2026-10-26）/ Tauri `2.12.5`（2026-10-21），GA 后差异见 `docs/development/wails-v3-beta-comparison.md` §11**
 > **前置文档**：`fusion-architecture-audit.md`（2026-08-15 三主线审计）、`optimization-roadmap.md`（OPT-* 任务基线）、`fusion-strategy-comparison.md`
 >
 > 与前置文档的关系：前置文档聚焦"三主线融合的差距与 backlog"；本文档聚焦两个新维度——

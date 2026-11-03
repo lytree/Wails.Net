@@ -123,8 +123,8 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 
 ## 参考资源
 
-- [Wails v3 源码](https://github.com/wailsapp/wails/tree/v3.0.0-beta.4) — Go 版本参考实现
-- [Tauri v2 源码](https://github.com/tauri-apps/tauri) — Rust 对比参考（v2 GA 2.11.5）
+- [Wails v3 源码](https://github.com/wailsapp/wails/tree/v3.0.0) — Go 版本参考实现（`v3.0.0` GA，2026-10-26）
+- [Tauri v2 源码](https://github.com/tauri-apps/tauri) — Rust 对比参考（v2 GA 2.12.5，2026-10-21）
 - [GirCore](https://github.com/gircore/gir.core) — GTK4 .NET 绑定
 - [TUnit](https://github.com/thomhurst/TUnit) — 现代 .NET 测试框架
 - [CsWin32](https://github.com/microsoft/CsWin32) — Win32 源生成器
@@ -132,4 +132,4 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 
 ---
 
-**最后更新**：2026-08-16（新增深度对比与重构加固方案 `docs/architecture/refactor-and-hardening-plan.md`：SEC-H 安全加固路线 + 允许破坏性更改的重构清单，并补齐 `CommandSecurityEnforcementTests` 引用的缺失文档）
+**最后更新**：2026-10-31（参考基线升级：Wails v3 `v3.0.0`（GA，2026-10-26）、Tauri v2 `2.12.5`（2026-10-21）；版本差异与待对齐清单见 `docs/development/wails-v3-beta-comparison.md` §11）
