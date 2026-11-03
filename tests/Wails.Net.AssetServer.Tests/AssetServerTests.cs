@@ -1024,6 +1024,467 @@ public sealed class AssetServerTests
         }
     }
 
+    // ========== P2 修复批次：HEAD / 404 / 路径归一化 / 精确 index / 回退与 Range ==========
+
+    [Test]
+    public async Task ServeHttpAsync_HeadRequest_ReturnsSameHeadersWithoutBody()
+    {
+        var content = Encoding.UTF8.GetBytes(new string('x', 256));
+        TestHttpResponse? getResponse = null;
+        TestHttpResponse? headResponse = null;
+        try
+        {
+            getResponse = await SendRequestAsync(
+                () => new StubAssetServerWithSpaFallback(
+                    path => string.Equals(path.TrimStart('/'), "data.bin", StringComparison.Ordinal) ? content : null,
+                    enableSpaFallback: false),
+                "/data.bin");
+            headResponse = await SendRequestAsync(
+                () => new StubAssetServerWithSpaFallback(
+                    path => string.Equals(path.TrimStart('/'), "data.bin", StringComparison.Ordinal) ? content : null,
+                    enableSpaFallback: false),
+                "/data.bin",
+                "HEAD");
+
+            if (getResponse is null || headResponse is null)
+            {
+                return;
+            }
+
+            await Assert.That((int)headResponse.StatusCode).IsEqualTo((int)getResponse.StatusCode);
+            await Assert.That(headResponse.Body?.Length ?? -1).IsEqualTo(0);
+            await Assert.That(headResponse.GetHeader(AssetServer.Headers.ContentLength))
+                .IsEqualTo(content.Length.ToString());
+            await Assert.That(headResponse.GetHeader(AssetServer.Headers.ContentType))
+                .IsEqualTo(getResponse.GetHeader(AssetServer.Headers.ContentType));
+            await Assert.That(headResponse.GetHeader(AssetServer.Headers.ETag))
+                .IsEqualTo(getResponse.GetHeader(AssetServer.Headers.ETag));
+            await Assert.That(headResponse.GetHeader(AssetServer.Headers.AcceptRanges)).IsEqualTo("bytes");
+        }
+        finally
+        {
+            getResponse?.Dispose();
+            headResponse?.Dispose();
+        }
+    }
+
+    [Test]
+    public async Task ServeHttpAsync_HeadRangeRequest_Returns206HeadersWithoutBody()
+    {
+        var content = Encoding.UTF8.GetBytes("0123456789");
+        var response = await SendRequestAsync(
+            () => new StubAssetServerWithSpaFallback(
+                path => string.Equals(path.TrimStart('/'), "data.bin", StringComparison.Ordinal) ? content : null,
+                enableSpaFallback: false),
+            "/data.bin",
+            "HEAD",
+            new Dictionary<string, string> { [AssetServer.Headers.Range] = "bytes=0-9" });
+
+        if (response is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Assert.That((int)response.StatusCode).IsEqualTo(206);
+            await Assert.That(response.Body?.Length ?? -1).IsEqualTo(0);
+            await Assert.That(response.GetHeader(AssetServer.Headers.ContentRange)).IsEqualTo("bytes 0-9/10");
+            await Assert.That(response.GetHeader(AssetServer.Headers.ContentLength)).IsEqualTo("10");
+        }
+        finally
+        {
+            response.Dispose();
+        }
+    }
+
+    [Test]
+    public async Task ServeHttpAsync_HeadMissingResource_Returns404WithoutBody()
+    {
+        var response = await SendRequestAsync(
+            () => new StubAssetServerWithSpaFallback(_ => null, enableSpaFallback: false),
+            "/missing.html",
+            "HEAD");
+
+        if (response is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Assert.That((int)response.StatusCode).IsEqualTo(404);
+            await Assert.That(response.Body?.Length ?? -1).IsEqualTo(0);
+            await Assert.That(response.GetHeader(AssetServer.Headers.ContentType) ?? "").Contains("text/plain");
+            await Assert.That(response.GetHeader(AssetServer.Headers.ContentLength)).IsNotNull();
+        }
+        finally
+        {
+            response.Dispose();
+        }
+    }
+
+    [Test]
+    public async Task ServeHttpAsync_HeadSpaFallback_Returns200WithIndexHeaders()
+    {
+        var indexContent = Encoding.UTF8.GetBytes("<html>SPA</html>");
+        var response = await SendRequestAsync(
+            () => new StubAssetServerWithSpaFallback(
+                path => string.Equals(path.TrimStart('/'), "index.html", StringComparison.OrdinalIgnoreCase) ? indexContent : null),
+            "/client/route",
+            "HEAD",
+            new Dictionary<string, string> { [AssetServer.Headers.Accept] = "text/html" });
+
+        if (response is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Assert.That((int)response.StatusCode).IsEqualTo(200);
+            await Assert.That(response.Body?.Length ?? -1).IsEqualTo(0);
+            await Assert.That(response.Response.Content.Headers.ContentType?.MediaType ?? "").IsEqualTo("text/html");
+            await Assert.That(response.GetHeader(AssetServer.Headers.ContentLength))
+                .IsEqualTo(indexContent.Length.ToString());
+        }
+        finally
+        {
+            response.Dispose();
+        }
+    }
+
+    [Test]
+    public async Task ServeHttpAsync_MissingAssetWithExtension_Returns404InsteadOfFallback()
+    {
+        var indexContent = Encoding.UTF8.GetBytes("<html>SPA</html>");
+        var response = await SendRequestAsync(
+            () => new StubAssetServerWithSpaFallback(
+                path => string.Equals(path.TrimStart('/'), "index.html", StringComparison.OrdinalIgnoreCase) ? indexContent : null),
+            "/assets/app.js",
+            "GET",
+            new Dictionary<string, string> { [AssetServer.Headers.Accept] = "*/*" });
+
+        if (response is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Assert.That((int)response.StatusCode).IsEqualTo(404);
+            var body = Encoding.UTF8.GetString(response.Body ?? []);
+            await Assert.That(body).DoesNotContain("SPA");
+        }
+        finally
+        {
+            response.Dispose();
+        }
+    }
+
+    [Test]
+    public async Task ServeHttpAsync_ExtensionlessNonNavigationRequest_Returns404InsteadOfFallback()
+    {
+        var indexContent = Encoding.UTF8.GetBytes("<html>SPA</html>");
+        var response = await SendRequestAsync(
+            () => new StubAssetServerWithSpaFallback(
+                path => string.Equals(path.TrimStart('/'), "index.html", StringComparison.OrdinalIgnoreCase) ? indexContent : null),
+            "/api/data",
+            "GET",
+            new Dictionary<string, string> { [AssetServer.Headers.Accept] = "application/json" });
+
+        if (response is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Assert.That((int)response.StatusCode).IsEqualTo(404);
+        }
+        finally
+        {
+            response.Dispose();
+        }
+    }
+
+    [Test]
+    public async Task ServeHttpAsync_NavigationRequestWithHtmlAccept_Returns200WithIndex()
+    {
+        var indexContent = Encoding.UTF8.GetBytes("<html>SPA</html>");
+        var response = await SendRequestAsync(
+            () => new StubAssetServerWithSpaFallback(
+                path => string.Equals(path.TrimStart('/'), "index.html", StringComparison.OrdinalIgnoreCase) ? indexContent : null),
+            "/client/route",
+            "GET",
+            new Dictionary<string, string> { [AssetServer.Headers.Accept] = "text/html,application/xhtml+xml" });
+
+        if (response is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Assert.That((int)response.StatusCode).IsEqualTo(200);
+            await Assert.That(Encoding.UTF8.GetString(response.Body ?? []))
+                .IsEqualTo(Encoding.UTF8.GetString(indexContent));
+        }
+        finally
+        {
+            response.Dispose();
+        }
+    }
+
+    [Test]
+    public async Task ServeHttpAsync_SpaFallbackWithRange_Returns200FullBodyWithoutContentRange()
+    {
+        var indexContent = Encoding.UTF8.GetBytes("<html>SPA</html>");
+        var response = await SendRequestAsync(
+            () => new StubAssetServerWithSpaFallback(
+                path => string.Equals(path.TrimStart('/'), "index.html", StringComparison.OrdinalIgnoreCase) ? indexContent : null),
+            "/client/route",
+            "GET",
+            new Dictionary<string, string> { [AssetServer.Headers.Range] = "bytes=0-3" });
+
+        if (response is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Assert.That((int)response.StatusCode).IsEqualTo(200);
+            await Assert.That(response.Body?.Length ?? -1).IsEqualTo(indexContent.Length);
+            await Assert.That(response.GetHeader(AssetServer.Headers.ContentRange)).IsNull();
+            await Assert.That(response.GetHeader(AssetServer.Headers.ContentLength))
+                .IsEqualTo(indexContent.Length.ToString());
+        }
+        finally
+        {
+            response.Dispose();
+        }
+    }
+
+    [Test]
+    public async Task ServeAsync_RepeatedLeadingSlashes_AreCollapsed()
+    {
+        var indexContent = Encoding.UTF8.GetBytes("index page");
+        var scriptContent = Encoding.UTF8.GetBytes("console.log('app')");
+        var server = new StubAssetServerWithSpaFallback(path =>
+        {
+            var name = path.TrimStart('/');
+            if (string.Equals(name, "index.html", StringComparison.Ordinal)) return indexContent;
+            if (string.Equals(name, "assets/app.js", StringComparison.Ordinal)) return scriptContent;
+            return null;
+        }, enableSpaFallback: false);
+
+        var fromDoubleSlash = await server.ServeAsync("//index.html");
+        var fromTripleSlash = await server.ServeAsync("///assets/app.js");
+        var fromInnerDoubleSlash = await server.ServeAsync("/assets//app.js");
+
+        await Assert.That(Encoding.UTF8.GetString(fromDoubleSlash)).IsEqualTo("index page");
+        await Assert.That(Encoding.UTF8.GetString(fromTripleSlash)).IsEqualTo("console.log('app')");
+        await Assert.That(Encoding.UTF8.GetString(fromInnerDoubleSlash)).IsEqualTo("console.log('app')");
+    }
+
+    [Test]
+    public async Task ServeAsync_DirectoryIndex_UsesExactIndexHtml()
+    {
+        var rootIndex = Encoding.UTF8.GetBytes("root index");
+        var subIndex = Encoding.UTF8.GetBytes("sub index");
+        var server = new StubAssetServerWithSpaFallback(path =>
+        {
+            var name = path.TrimStart('/');
+            if (string.Equals(name, "index.html", StringComparison.Ordinal)) return rootIndex;
+            if (string.Equals(name, "sub/index.html", StringComparison.Ordinal)) return subIndex;
+            return null;
+        });
+
+        var result = await server.ServeAsync("/sub/");
+
+        await Assert.That(Encoding.UTF8.GetString(result)).IsEqualTo("sub index");
+    }
+
+    [Test]
+    public async Task ServeAsync_DirectoryIndex_IgnoresIndexLookalikes()
+    {
+        var rootIndex = Encoding.UTF8.GetBytes("root index");
+        var lookalike = Encoding.UTF8.GetBytes("not an index");
+        var server = new StubAssetServerWithSpaFallback(path =>
+        {
+            var name = path.TrimStart('/');
+            if (string.Equals(name, "index.html", StringComparison.Ordinal)) return rootIndex;
+            if (string.Equals(name, "sub/not-index.html", StringComparison.Ordinal)) return lookalike;
+            return null;
+        });
+
+        var result = await server.ServeAsync("/sub/");
+
+        // 目录索引只认精确的 index.html，缺失时回退到根默认文档，而不是 not-index.html
+        await Assert.That(Encoding.UTF8.GetString(result)).IsEqualTo("root index");
+    }
+
+    [Test]
+    public async Task ServeHttpAsync_ExtensionlessAsset_UsesOctetStream()
+    {
+        // 未知二进制内容（不匹配任何嗅探签名且含控制字节）→ 回退 application/octet-stream
+        // 注意：Go 的 textSig 不校验 UTF-8，仅含高位字节（如 DE AD BE EF）会被嗅探为 text/plain。
+        var content = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF, 0x00 };
+        var response = await SendRequestAsync(
+            () => new StubAssetServerWithSpaFallback(
+                path => string.Equals(path.TrimStart('/'), "noextension", StringComparison.Ordinal) ? content : null,
+                enableSpaFallback: false),
+            "/noextension");
+
+        if (response is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Assert.That((int)response.StatusCode).IsEqualTo(200);
+            await Assert.That(response.Response.Content.Headers.ContentType?.MediaType ?? "")
+                .IsEqualTo("application/octet-stream");
+            await Assert.That(Convert.ToHexString(response.Body ?? [])).IsEqualTo("DEADBEEF00");
+        }
+        finally
+        {
+            response.Dispose();
+        }
+    }
+
+    // ========== MIME 内容嗅探测试（对应上游 PR #6398 与 http.DetectContentType）==========
+
+    /// <summary>
+    /// PNG 文件头（8 字节）+ 4 字节附加数据，用于嗅探测试。
+    /// </summary>
+    private static readonly byte[] PngBytes =
+        [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x01, 0x02, 0x03, 0x04];
+
+    [Test]
+    public async Task ServeHttpAsync_ExtensionlessPngContent_SniffsContentType()
+    {
+        var response = await SendRequestAsync(
+            () => new StubAssetServerWithSpaFallback(
+                path => string.Equals(path.TrimStart('/'), "logo", StringComparison.Ordinal) ? PngBytes : null,
+                enableSpaFallback: false),
+            "/logo");
+
+        if (response is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Assert.That((int)response.StatusCode).IsEqualTo(200);
+            // 无扩展名 → 嗅探结果为 image/png
+            await Assert.That(response.Response.Content.Headers.ContentType?.MediaType ?? "")
+                .IsEqualTo("image/png");
+            await Assert.That(response.Body?.Length ?? -1).IsEqualTo(PngBytes.Length);
+        }
+        finally
+        {
+            response.Dispose();
+        }
+    }
+
+    [Test]
+    public async Task ServeHttpAsync_KnownExtension_TakesPriorityOverContentSniffing()
+    {
+        // 扩展名为 .png 但内容为 HTML：已知扩展名映射优先，仍返回 image/png
+        var htmlBytes = Encoding.UTF8.GetBytes("<!DOCTYPE html><html></html>");
+        var response = await SendRequestAsync(
+            () => new StubAssetServerWithSpaFallback(
+                path => string.Equals(path.TrimStart('/'), "fake.png", StringComparison.Ordinal) ? htmlBytes : null,
+                enableSpaFallback: false),
+            "/fake.png");
+
+        if (response is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Assert.That((int)response.StatusCode).IsEqualTo(200);
+            await Assert.That(response.Response.Content.Headers.ContentType?.MediaType ?? "")
+                .IsEqualTo("image/png");
+        }
+        finally
+        {
+            response.Dispose();
+        }
+    }
+
+    [Test]
+    public async Task ServeHttpAsync_RangeRequest_ContentTypeUsesFullContent()
+    {
+        var headers = new Dictionary<string, string>
+        {
+            { AssetServer.Headers.Range, "bytes=0-7" }
+        };
+        var response = await SendRequestAsync(
+            () => new StubAssetServerWithSpaFallback(
+                path => string.Equals(path.TrimStart('/'), "ranged", StringComparison.Ordinal) ? PngBytes : null,
+                enableSpaFallback: false),
+            "/ranged",
+            "GET",
+            headers);
+
+        if (response is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Assert.That((int)response.StatusCode).IsEqualTo(206);
+            // 类型基于完整内容判定，Range 不改变类型
+            await Assert.That(response.Response.Content.Headers.ContentType?.MediaType ?? "")
+                .IsEqualTo("image/png");
+            await Assert.That(response.GetHeader(AssetServer.Headers.ContentRange))
+                .IsEqualTo($"bytes 0-7/{PngBytes.Length}");
+            await Assert.That(response.GetHeader(AssetServer.Headers.ContentLength)).IsEqualTo("8");
+        }
+        finally
+        {
+            response.Dispose();
+        }
+    }
+
+    [Test]
+    public async Task ServeHttpAsync_HeadRequest_SniffsContentTypeWithoutBody()
+    {
+        var response = await SendRequestAsync(
+            () => new StubAssetServerWithSpaFallback(
+                path => string.Equals(path.TrimStart('/'), "head-logo", StringComparison.Ordinal) ? PngBytes : null,
+                enableSpaFallback: false),
+            "/head-logo",
+            "HEAD");
+
+        if (response is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Assert.That((int)response.StatusCode).IsEqualTo(200);
+            await Assert.That(response.Response.Content.Headers.ContentType?.MediaType ?? "")
+                .IsEqualTo("image/png");
+            await Assert.That(response.GetHeader(AssetServer.Headers.ContentLength))
+                .IsEqualTo(PngBytes.Length.ToString());
+            await Assert.That(response.Body?.Length ?? -1).IsEqualTo(0);
+        }
+        finally
+        {
+            response.Dispose();
+        }
+    }
+
     // ========== ServeHttpAsync 测试（使用 HttpListener + HttpClient） ==========
 
     /// <summary>

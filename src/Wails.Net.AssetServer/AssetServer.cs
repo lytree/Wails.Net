@@ -36,6 +36,9 @@ public class AssetServer
         /// <summary>Range 头。</summary>
         public const string Range = "Range";
 
+        /// <summary>Accept 头，用于区分导航请求与子资源请求（SPA 回退判定）。</summary>
+        public const string Accept = "Accept";
+
         /// <summary>ETag 头。</summary>
         public const string ETag = "ETag";
 
@@ -488,7 +491,7 @@ public class AssetServer
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
 
-        var (content, _) = await TryReadAssetWithSpaFallbackAsync(path);
+        var (content, _, _) = await TryReadAssetWithSpaFallbackAsync(NormalizeRequestPath(path));
         return content ?? [];
     }
 
@@ -506,7 +509,7 @@ public class AssetServer
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
 
-        var (content, servedPath) = await TryReadAssetWithSpaFallbackAsync(path);
+        var (content, servedPath, _) = await TryReadAssetWithSpaFallbackAsync(NormalizeRequestPath(path));
         if (content is null || content.Length == 0)
         {
             return [];
@@ -557,9 +560,8 @@ public class AssetServer
         // 对应 §2.5 卫生项：静态资源 CORS 与 IPC 层白名单回显策略双轨并存）。
         response.Headers[Headers.AccessControlAllowOrigin] = _options.CorsOrigin;
 
-        var path = request.Url?.AbsolutePath ?? "/";
-        // 去除查询参数，仅保留路径部分
-        path = path.Split('?')[0];
+        // 路径归一化：折叠重复斜杠（含前导）、解析 "." / ".." 且禁止越出根路径（对应上游 #6483）。
+        var path = NormalizeRequestPath(request.Url?.AbsolutePath ?? "/");
 
         // P1-6：服务路由转发 — 在 CSP/Nonce/OPTIONS/中间件链之前优先匹配服务路由。
         // 服务作为独立的 HTTP 处理器，自行负责所有 HTTP 语义（包括 OPTIONS 预检和 CSP 头管理）。
@@ -658,11 +660,13 @@ public class AssetServer
         string? nonce = null)
     {
         var request = context.Request;
+        var isHead = IsHeadRequest(request);
 
         try
         {
-            // 尝试读取资源，若未找到且启用 SPA 回退，则尝试默认文档
-            var (content, servedPath) = await TryReadAssetWithSpaFallbackAsync(path);
+            // 尝试读取资源；SPA 回退仅用于导航请求，缺失的带扩展名资源直接 404（对应上游 #6424）。
+            var (content, servedPath, isFallback) = await TryReadAssetWithSpaFallbackAsync(
+                path, request.Headers[Headers.Accept]);
 
             if (content is null || content.Length == 0)
             {
@@ -671,6 +675,17 @@ public class AssetServer
             }
 
             var mimeType = GetMimeType(servedPath);
+
+            // 内容嗅探（对应上游 PR #6398）：仅当扩展名无法确定类型（默认 application/octet-stream）
+            // 且内容不是 SPA 回退资源时，依据完整资源内容嗅探 MIME。
+            // 已知扩展名映射始终优先；嗅探失败时仍回退 application/octet-stream。
+            // Range 切片在 CreateResult 中进行，故 Content-Type 始终基于完整内容判定；
+            // HEAD 复用同一结果，仅跳过响应体，Content-Type 与 GET 一致。
+            if (!isFallback &&
+                string.Equals(mimeType, ContentTypeSniffer.DefaultContentType, StringComparison.Ordinal))
+            {
+                mimeType = ContentTypeSniffer.Detect(content);
+            }
 
             // 仅对 HTML 内容应用 nonce + isolation 注入
             var isHtml = mimeType.StartsWith("text/html", StringComparison.OrdinalIgnoreCase);
@@ -697,8 +712,8 @@ public class AssetServer
             var etag = ComputeETag(content);
             var lastModified = GetLastModified(servedPath);
 
-            // 生成 IAssetResult
-            var result = CreateResult(content, mimeType, etag, lastModified, request);
+            // 生成 IAssetResult（回退资源不参与 Range 协商，避免把 Range 误用到 index.html）
+            var result = CreateResult(content, mimeType, etag, lastModified, request, isFallback);
 
             // M12：协商缓存命中（304）日志（Trace）
             if (result.StatusCode == 304)
@@ -712,7 +727,8 @@ public class AssetServer
                     request.Headers[Headers.Range], content.Length);
             }
 
-            await WriteResultAsync(result, context.Response, cancellationToken);
+            // HEAD 请求：保留与 GET 相同的响应头与状态码，但不写响应体（对应上游 #6401/#6425/#6451）。
+            await WriteResultAsync(result, context.Response, cancellationToken, isHead);
 
             // M12：请求处理完成日志（Information）
             _logger?.LogInformation("HTTP {Method} {Path} → {StatusCode} ({ContentLength} bytes)",
@@ -742,13 +758,18 @@ public class AssetServer
     /// <param name="etag">ETag 值（带双引号）。</param>
     /// <param name="lastModified">最后修改时间（UTC），可为 null。</param>
     /// <param name="request">HTTP 请求对象。</param>
+    /// <param name="isFallback">
+    /// 内容是否来自 SPA 回退（默认文档）。为 true 时忽略 Range 请求，返回完整 200 响应，
+    /// 避免把针对缺失资源的 Range 语义错误地应用到回退的 index.html（对应上游 #6398）。
+    /// </param>
     /// <returns>对应请求条件的 <see cref="IAssetResult"/> 实例。</returns>
     protected virtual IAssetResult CreateResult(
         byte[] content,
         string mimeType,
         string etag,
         DateTime? lastModified,
-        HttpListenerRequest request)
+        HttpListenerRequest request,
+        bool isFallback = false)
     {
         // 处理 If-None-Match（304 Not Modified）
         var ifNoneMatch = request.Headers[Headers.IfNoneMatch];
@@ -770,9 +791,9 @@ public class AssetServer
             }
         }
 
-        // 处理 Range 请求
+        // 处理 Range 请求（回退资源不支持 Range，始终返回完整内容）
         var rangeHeader = request.Headers[Headers.Range];
-        if (!string.IsNullOrEmpty(rangeHeader))
+        if (!isFallback && !string.IsNullOrEmpty(rangeHeader))
         {
             var range = ParseRangeHeader(rangeHeader, content.Length);
             if (range is not null)
@@ -799,10 +820,15 @@ public class AssetServer
     /// <param name="result">要写入的结果实例。</param>
     /// <param name="response">HTTP 响应对象。</param>
     /// <param name="cancellationToken">取消令牌。</param>
+    /// <param name="isHead">
+    /// 是否为 HEAD 请求。为 true 时仅写入状态码与响应头（Content-Length/Content-Type/ETag/
+    /// Accept-Ranges/Content-Range 等），不写响应体。
+    /// </param>
     protected virtual async Task WriteResultAsync(
         IAssetResult result,
         HttpListenerResponse response,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool isHead = false)
     {
         // 416 Range Not Satisfiable 需要设置 Content-Range 头
         if (result.StatusCode == 416)
@@ -812,40 +838,200 @@ public class AssetServer
             // 由原有的直接设置方式补充。但为保持兼容，此处仅设置状态码。
         }
 
-        await result.WriteAsync(response, cancellationToken);
+        if (isHead && result is BytesResult bytesResult)
+        {
+            // HEAD：头与 GET 完全一致（含 206 的 Content-Range），但不写响应体
+            await bytesResult.WriteAsync(response, cancellationToken, includeBody: false);
+        }
+        else
+        {
+            await result.WriteAsync(response, cancellationToken);
+        }
+
         response.Close();
     }
 
     /// <summary>
     /// 尝试读取指定路径的资源内容。
-    /// 若资源未找到且 <see cref="AssetOptions.EnableSpaFallback"/> 为 true，
-    /// 则回退到 <see cref="AssetOptions.DefaultDocument"/>。
+    /// 查找顺序：
+    /// <list type="number">
+    /// <item>请求路径本身。</item>
+    /// <item>目录索引：路径以 <c>/</c> 结尾时，仅尝试精确的 <c>index.html</c>（对应上游 #6400）。</item>
+    /// <item>SPA 回退：仅当请求属于导航请求（无扩展名 / <c>.html</c> / Accept 含 <c>text/html</c>）时回退到默认文档。</item>
+    /// </list>
     /// </summary>
-    /// <param name="path">请求的资源路径。</param>
+    /// <param name="path">已归一化的请求资源路径。</param>
+    /// <param name="acceptHeader">
+    /// 请求的 <c>Accept</c> 头，用于判定是否为导航请求；为 null 表示非 HTTP 调用（视为导航请求）。
+    /// </param>
     /// <returns>
-    /// 元组：资源内容（可能为 null）和实际服务的路径（用于 MIME 类型推导）。
+    /// 元组：资源内容（可能为 null）、实际服务的路径（用于 MIME 类型推导）、
+    /// 以及内容是否来自 SPA 回退。
     /// </returns>
-    private async Task<(byte[]? content, string servedPath)> TryReadAssetWithSpaFallbackAsync(string path)
+    private async Task<(byte[]? content, string servedPath, bool isFallback)> TryReadAssetWithSpaFallbackAsync(
+        string path,
+        string? acceptHeader = null)
     {
-        var content = await _middlewareChain.ExecuteAsync(path, p => Task.FromResult(ReadAssetCore(p)));
+        var content = await ReadAssetThroughMiddlewareAsync(path);
         if (content is not null && content.Length > 0)
         {
-            return (content, path);
+            return (content, path, false);
         }
 
-        // SPA 回退：若启用且默认文档有效，尝试读取默认文档
-        if (_options.EnableSpaFallback && !string.IsNullOrEmpty(_options.DefaultDocument))
+        // 目录索引：只认精确的 index.html，不匹配 "not-index.html" 或以 index.html 命名的目录。
+        var indexPath = GetDirectoryIndexPath(path);
+        if (indexPath is not null)
         {
-            var fallbackPath = _options.DefaultDocument;
-            var fallbackContent = await _middlewareChain.ExecuteAsync(
-                fallbackPath, p => Task.FromResult(ReadAssetCore(p)));
-            if (fallbackContent is not null && fallbackContent.Length > 0)
+            var indexContent = await ReadAssetThroughMiddlewareAsync(indexPath);
+            if (indexContent is not null && indexContent.Length > 0)
             {
-                return (fallbackContent, fallbackPath);
+                return (indexContent, indexPath, false);
             }
         }
 
-        return (null, path);
+        // SPA 回退：仅导航请求回退到默认文档，缺失的带扩展名资源保持 404（对应上游 #6424）。
+        if (_options.EnableSpaFallback &&
+            !string.IsNullOrEmpty(_options.DefaultDocument) &&
+            ShouldUseSpaFallback(path, acceptHeader))
+        {
+            var fallbackPath = _options.DefaultDocument;
+            var fallbackContent = await ReadAssetThroughMiddlewareAsync(fallbackPath);
+            if (fallbackContent is not null && fallbackContent.Length > 0)
+            {
+                return (fallbackContent, fallbackPath, true);
+            }
+        }
+
+        return (null, path, false);
+    }
+
+    /// <summary>
+    /// 通过中间件链读取资源内容。
+    /// </summary>
+    /// <param name="path">资源路径。</param>
+    /// <returns>资源内容；未找到时返回 null。</returns>
+    private Task<byte[]?> ReadAssetThroughMiddlewareAsync(string path)
+    {
+        return _middlewareChain.ExecuteAsync(path, p => Task.FromResult(ReadAssetCore(p)));
+    }
+
+    /// <summary>
+    /// 获取目录索引路径：仅当路径以 <c>/</c> 结尾时返回 <c>path + "index.html"</c>。
+    /// 对应上游 <c>fs.go</c> 中 <c>d.Name() == file</c> 的精确文件名判定。
+    /// </summary>
+    /// <param name="path">已归一化的资源路径。</param>
+    /// <returns>目录索引路径；非目录路径返回 null。</returns>
+    private static string? GetDirectoryIndexPath(string path)
+    {
+        return path.EndsWith("/", StringComparison.Ordinal) ? path + "index.html" : null;
+    }
+
+    /// <summary>
+    /// 判断缺失资源是否应回退到 SPA 默认文档。
+    /// <para>
+    /// 规则：根路径/目录导航（以 <c>/</c> 结尾）与 <c>.html</c> 始终回退；
+    /// 无扩展名路径视为导航请求（无 Accept 头时同样回退，兼容非 HTTP 调用）；
+    /// 带非 HTML 扩展名的路径仅在 Accept 明确包含 <c>text/html</c> 时回退，
+    /// 否则返回 404（避免缺失的 .js/.css 被错误地替换为 index.html）。
+    /// </para>
+    /// </summary>
+    /// <param name="path">已归一化的资源路径。</param>
+    /// <param name="acceptHeader">Accept 头。</param>
+    /// <returns>应回退返回 true。</returns>
+    private static bool ShouldUseSpaFallback(string path, string? acceptHeader)
+    {
+        if (path.EndsWith("/", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var extension = Path.GetExtension(path);
+        if (string.Equals(extension, ".html", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(extension, ".htm", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (string.IsNullOrEmpty(extension))
+        {
+            return string.IsNullOrEmpty(acceptHeader) || AcceptsHtml(acceptHeader);
+        }
+
+        return AcceptsHtml(acceptHeader);
+    }
+
+    /// <summary>
+    /// 判断 Accept 头是否明确接受 <c>text/html</c>。
+    /// 仅匹配 <c>text/html</c>，不把 <c>*/*</c> 视为导航请求，
+    /// 以免脚本/图片等子资源请求触发 HTML 回退。
+    /// </summary>
+    /// <param name="acceptHeader">Accept 头。</param>
+    /// <returns>接受 HTML 时返回 true。</param>
+    private static bool AcceptsHtml(string? acceptHeader)
+    {
+        return acceptHeader is not null &&
+               acceptHeader.Contains("text/html", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 归一化请求路径：折叠连续斜杠（含前导）、解析 <c>.</c> 与 <c>..</c> 段并禁止越出根路径。
+    /// 对应上游 <c>asset_fileserver.go</c> 中使用 <c>strings.TrimLeft(url, "/")</c> + <c>path.Clean</c> 的处理（#6483）。
+    /// </summary>
+    /// <param name="path">原始请求路径。</param>
+    /// <returns>归一化后的路径；保留是否以 <c>/</c> 开头及是否以 <c>/</c> 结尾。</returns>
+    private static string NormalizeRequestPath(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+        {
+            return "/";
+        }
+
+        var hasLeadingSlash = path[0] == '/';
+        var hasTrailingSlash = path[^1] == '/';
+        var segments = new List<string>();
+        foreach (var segment in path.Split('/'))
+        {
+            if (segment.Length == 0 || segment == ".")
+            {
+                continue;
+            }
+
+            if (segment == "..")
+            {
+                // 越出根路径的 ".." 直接丢弃，阻止路径穿越
+                if (segments.Count > 0)
+                {
+                    segments.RemoveAt(segments.Count - 1);
+                }
+
+                continue;
+            }
+
+            segments.Add(segment);
+        }
+
+        var normalized = string.Join('/', segments);
+        if (hasLeadingSlash)
+        {
+            normalized = "/" + normalized;
+        }
+
+        if (hasTrailingSlash && !normalized.EndsWith("/", StringComparison.Ordinal))
+        {
+            normalized += "/";
+        }
+
+        return normalized.Length == 0 ? "/" : normalized;
+    }
+
+    /// <summary>
+    /// 判断请求方法是否为 HEAD。
+    /// </summary>
+    /// <param name="request">HTTP 请求对象。</param>
+    /// <returns>HEAD 请求返回 true。</returns>
+    private static bool IsHeadRequest(HttpListenerRequest request)
+    {
+        return string.Equals(request.HttpMethod, "HEAD", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -874,7 +1060,13 @@ public class AssetServer
         response.ContentType = "text/plain; charset=utf-8";
         var body = Encoding.UTF8.GetBytes($"404 Not Found: {path}");
         response.ContentLength64 = body.Length;
-        response.OutputStream.Write(body, 0, body.Length);
+
+        // HEAD 请求保留与 GET 一致的 404 响应头，但不写响应体
+        if (!IsHeadRequest(context.Request))
+        {
+            response.OutputStream.Write(body, 0, body.Length);
+        }
+
         response.Close();
     }
 
@@ -900,7 +1092,13 @@ public class AssetServer
         response.ContentType = "text/plain; charset=utf-8";
         var body = Encoding.UTF8.GetBytes($"500 Internal Server Error: {ex.Message}");
         response.ContentLength64 = body.Length;
-        response.OutputStream.Write(body, 0, body.Length);
+
+        // HEAD 请求保留与 GET 一致的 500 响应头，但不写响应体
+        if (!IsHeadRequest(context.Request))
+        {
+            response.OutputStream.Write(body, 0, body.Length);
+        }
+
         response.Close();
     }
 

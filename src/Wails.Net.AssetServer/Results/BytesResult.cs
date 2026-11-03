@@ -99,7 +99,20 @@ public class BytesResult : IAssetResult
     /// </summary>
     /// <param name="response">HTTP 响应对象。</param>
     /// <param name="cancellationToken">取消令牌。</param>
-    public async Task WriteAsync(HttpListenerResponse response, CancellationToken cancellationToken = default)
+    public Task WriteAsync(HttpListenerResponse response, CancellationToken cancellationToken = default)
+    {
+        return WriteAsync(response, cancellationToken, includeBody: true);
+    }
+
+    /// <summary>
+    /// 异步将结果写入 HTTP 响应，可指定是否写入响应体。
+    /// HEAD 请求需要设置与 GET 相同的状态码和响应头，但不写响应体，
+    /// 因此 <paramref name="includeBody"/> 为 false 时仅设置头信息。
+    /// </summary>
+    /// <param name="response">HTTP 响应对象。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <param name="includeBody">是否写入响应体。</param>
+    internal async Task WriteAsync(HttpListenerResponse response, CancellationToken cancellationToken, bool includeBody)
     {
         response.StatusCode = StatusCode;
 
@@ -134,14 +147,20 @@ public class BytesResult : IAssetResult
                 $"bytes {offset}-{offset + length - 1}/{TotalLength}";
             response.ContentLength64 = length;
 
-            // 分块写入 Range 内容
-            await WriteRangeAsync(response, offset, length, cancellationToken);
+            // 分块写入 Range 内容（HEAD 请求跳过响应体）
+            if (includeBody)
+            {
+                await WriteRangeAsync(response, offset, length, cancellationToken);
+            }
         }
         else
         {
             // 200 完整内容
             response.ContentLength64 = Content.Length;
-            await response.OutputStream.WriteAsync(Content.AsMemory(0, Content.Length), cancellationToken);
+            if (includeBody)
+            {
+                await response.OutputStream.WriteAsync(Content.AsMemory(0, Content.Length), cancellationToken);
+            }
         }
     }
 
