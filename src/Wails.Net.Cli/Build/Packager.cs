@@ -82,55 +82,76 @@ public sealed class Packager
         var fileName = $"{options.AppName}-{options.Version}{extension}";
         var outputPath = Path.Combine(options.OutputDirectory, fileName);
 
-        // 删除已存在的输出文件
-        if (File.Exists(outputPath))
-        {
-            File.Delete(outputPath);
-        }
+        // 先暂存到输出目录下的临时文件夹，成功后再替换正式输出：
+        // 打包失败时保留上一次的产物（对应 Wails v3 #6480「preserve previous Linux packages on build failure」）。
+        var stagingDir = Path.Combine(options.OutputDirectory, $".wails-package-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(stagingDir);
+        var stagedOutputPath = Path.Combine(stagingDir, fileName);
 
         try
         {
-            switch (options.Format)
+            try
             {
-                case PackageFormat.Zip:
-                    ZipFile.CreateFromDirectory(publishDir, outputPath, CompressionLevel.Optimal, includeBaseDirectory: false);
-                    break;
+                switch (options.Format)
+                {
+                    case PackageFormat.Zip:
+                        ZipFile.CreateFromDirectory(publishDir, stagedOutputPath, CompressionLevel.Optimal, includeBaseDirectory: false);
+                        break;
 
-                case PackageFormat.TarGz:
-                    await CreateTarGzAsync(publishDir, outputPath, options.IncludeSymbols);
-                    break;
+                    case PackageFormat.TarGz:
+                        await CreateTarGzAsync(publishDir, stagedOutputPath, options.IncludeSymbols);
+                        break;
 
-                case PackageFormat.Nsis:
-                    await PackageNsisAsync(publishDir, outputPath, options);
-                    break;
+                    case PackageFormat.Nsis:
+                        await PackageNsisAsync(publishDir, stagedOutputPath, options);
+                        break;
 
-                case PackageFormat.AppImage:
-                    await PackageAppImageAsync(publishDir, outputPath, options);
-                    break;
+                    case PackageFormat.AppImage:
+                        await PackageAppImageAsync(publishDir, stagedOutputPath, options);
+                        break;
 
-                case PackageFormat.Deb:
-                    await PackageDebAsync(publishDir, outputPath, options);
-                    break;
+                    case PackageFormat.Deb:
+                        await PackageDebAsync(publishDir, stagedOutputPath, options);
+                        break;
 
-                case PackageFormat.Rpm:
-                    await PackageRpmAsync(publishDir, outputPath, options);
-                    break;
+                    case PackageFormat.Rpm:
+                        await PackageRpmAsync(publishDir, stagedOutputPath, options);
+                        break;
 
-                default:
-                    return new PackageResult
-                    {
-                        Success = false,
-                        ErrorMessage = $"不支持的打包格式：{options.Format}",
-                    };
+                    default:
+                        return new PackageResult
+                        {
+                            Success = false,
+                            ErrorMessage = $"不支持的打包格式：{options.Format}",
+                        };
+                }
+            }
+            catch (Exception ex)
+            {
+                return new PackageResult
+                {
+                    Success = false,
+                    ErrorMessage = $"打包失败：{ex.Message}",
+                };
+            }
+
+            try
+            {
+                PreserveUnixPermissions(stagedOutputPath, outputPath);
+                File.Move(stagedOutputPath, outputPath, overwrite: true);
+            }
+            catch (Exception ex)
+            {
+                return new PackageResult
+                {
+                    Success = false,
+                    ErrorMessage = $"打包失败：{ex.Message}",
+                };
             }
         }
-        catch (Exception ex)
+        finally
         {
-            return new PackageResult
-            {
-                Success = false,
-                ErrorMessage = $"打包失败：{ex.Message}",
-            };
+            try { Directory.Delete(stagingDir, recursive: true); } catch { }
         }
 
         var result = new PackageResult
@@ -145,6 +166,29 @@ public sealed class Packager
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// 将已有输出文件的 Unix 权限复制到暂存文件，使替换后保留上一次产物的权限
+    /// （对应 Wails v3 #6480）。Windows 不使用 Unix 权限位，直接跳过。
+    /// </summary>
+    /// <param name="stagedPath">暂存文件路径。</param>
+    /// <param name="outputPath">已有输出文件路径（可能不存在）。</param>
+    private static void PreserveUnixPermissions(string stagedPath, string outputPath)
+    {
+        if (OperatingSystem.IsWindows() || !File.Exists(outputPath))
+        {
+            return;
+        }
+
+        try
+        {
+            File.SetUnixFileMode(stagedPath, File.GetUnixFileMode(outputPath));
+        }
+        catch (IOException)
+        {
+            // 权限读取或设置失败时保留默认权限，不阻断打包。
+        }
     }
 
     /// <summary>

@@ -570,5 +570,81 @@ public sealed class PackagerTests
         }
     }
 
+    [Test]
+    public async Task PackageAsync_UnsupportedFormat_PreservesPreviousOutput()
+    {
+        var tempDir = CreateTempDirectory();
+        var outputDir = Path.Combine(Path.GetTempPath(), "wailsnet-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outputDir);
+        var previousOutput = Path.Combine(outputDir, "TestApp-1.0.0.zip");
+
+        try
+        {
+            File.WriteAllText(Path.Combine(tempDir, "test.txt"), "hello world");
+            await File.WriteAllTextAsync(previousOutput, "previous package");
+
+            var packager = new Packager();
+            var options = new PackageOptions
+            {
+                Format = (PackageFormat)99,
+                OutputDirectory = outputDir,
+                AppName = "TestApp",
+                Version = "1.0.0",
+                GenerateChecksum = false,
+            };
+
+            var result = await packager.PackageAsync(tempDir, options);
+
+            await Assert.That(result.Success).IsFalse();
+            await Assert.That(result.ErrorMessage).Contains("不支持的打包格式");
+            // 打包失败时上一次产物必须保留（Wails v3 #6480），且不残留暂存目录。
+            await Assert.That(await File.ReadAllTextAsync(previousOutput)).IsEqualTo("previous package");
+            await Assert.That(Directory.GetFileSystemEntries(outputDir).Length).IsEqualTo(1);
+        }
+        finally
+        {
+            try { Directory.Delete(tempDir, recursive: true); } catch { }
+            try { Directory.Delete(outputDir, recursive: true); } catch { }
+        }
+    }
+
+    [Test]
+    public async Task PackageAsync_ZipSuccess_ReplacesPreviousOutput()
+    {
+        var tempDir = CreateTempDirectory();
+        var outputDir = Path.Combine(Path.GetTempPath(), "wailsnet-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outputDir);
+        var previousOutput = Path.Combine(outputDir, "TestApp-1.0.0.zip");
+
+        try
+        {
+            File.WriteAllText(Path.Combine(tempDir, "test.txt"), "hello world");
+            await File.WriteAllTextAsync(previousOutput, "previous package");
+
+            var packager = new Packager();
+            var options = new PackageOptions
+            {
+                Format = PackageFormat.Zip,
+                OutputDirectory = outputDir,
+                AppName = "TestApp",
+                Version = "1.0.0",
+                GenerateChecksum = false,
+            };
+
+            var result = await packager.PackageAsync(tempDir, options);
+
+            await Assert.That(result.Success).IsTrue();
+            await Assert.That(result.OutputPath).IsEqualTo(previousOutput);
+            using var archive = System.IO.Compression.ZipFile.OpenRead(previousOutput);
+            await Assert.That(archive.Entries.Count).IsEqualTo(1);
+            await Assert.That(Directory.GetFileSystemEntries(outputDir).Length).IsEqualTo(1);
+        }
+        finally
+        {
+            try { Directory.Delete(tempDir, recursive: true); } catch { }
+            try { Directory.Delete(outputDir, recursive: true); } catch { }
+        }
+    }
+
     #endregion
 }
