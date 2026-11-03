@@ -8,14 +8,16 @@ namespace Wails.Net.Cli.Tests;
 
 /// <summary>
 /// FrontendDevServerReadiness 单元测试。
-/// 对应任务 P2-11：<c>wails dev</c> 前端 dev server HTTP 就绪检查
-/// （对齐 Wails v3 beta.28 <c>internal/commands/watcher.go</c> 的 applyFrontendReadiness）。
-/// 覆盖：立即可达、先失败后成功重试、始终不可达超时，以及单次探测的状态分类。
+/// 对应 <c>wails dev</c> 前端 dev server 就绪闸门
+/// （对齐 Wails v3 <c>v3.0.0</c> <c>internal/commands/watcher.go</c> 的 applyFrontendReadiness：
+/// <c>process.Readiness{TCP: host:port, Timeout:"60s"}</c>；beta.33 / PR #6209 起由 HTTP 改 TCP）。
+/// 覆盖：立即可达、先失败后成功重试、始终不可达超时、URL→TCP 目标解析，以及单次 TCP 探测的状态分类。
 /// </summary>
 [NotInParallel]
 public sealed class FrontendDevServerReadinessTests
 {
-    private static readonly Uri Target = new("http://127.0.0.1:59999/");
+    private static readonly FrontendDevServerReadiness.ProbeTarget Target =
+        new("127.0.0.1", 59999);
 
     // ============== WaitForReadyAsync（注入探测委托的纯逻辑） ==============
 
@@ -29,7 +31,7 @@ public sealed class FrontendDevServerReadinessTests
         {
             attempts++;
             return Task.FromResult(new FrontendDevServerReadiness.ProbeResult(
-                FrontendDevServerReadiness.ProbeStatus.Ready, "HTTP 200"));
+                FrontendDevServerReadiness.ProbeStatus.Ready, "TCP 127.0.0.1:59999 已接受连接"));
         }
 
         // Act
@@ -39,7 +41,7 @@ public sealed class FrontendDevServerReadinessTests
         // Assert
         await Assert.That(result.Ready).IsTrue();
         await Assert.That(attempts).IsEqualTo(1);
-        await Assert.That(result.Message).Contains("HTTP 200");
+        await Assert.That(result.Message).Contains("已接受连接");
     }
 
     [Test]
@@ -55,7 +57,7 @@ public sealed class FrontendDevServerReadinessTests
                 ? new FrontendDevServerReadiness.ProbeResult(
                     FrontendDevServerReadiness.ProbeStatus.ConnectionRefused, "连接被拒绝")
                 : new FrontendDevServerReadiness.ProbeResult(
-                    FrontendDevServerReadiness.ProbeStatus.Ready, "HTTP 200");
+                    FrontendDevServerReadiness.ProbeStatus.Ready, "TCP 127.0.0.1:59999 已接受连接");
             return Task.FromResult(outcome);
         }
 
@@ -115,84 +117,124 @@ public sealed class FrontendDevServerReadinessTests
         await Assert.That(threw).IsTrue();
     }
 
-    // ============== ProbeHttpOnceAsync（HTTP 状态分类） ==============
+    // ============== TryCreateTarget（URL → TCP 目标，对齐 Go frontendTCPTarget） ==============
 
     [Test]
-    public async Task ProbeHttpOnceAsync_2xx_ReturnsReady()
+    public async Task TryCreateTarget_HttpWithExplicitPort_ReturnsHostAndPort()
     {
-        using var client = CreateClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var created = FrontendDevServerReadiness.TryCreateTarget(
+            new Uri("http://localhost:5173/"), out var target);
 
-        var result = await FrontendDevServerReadiness.ProbeHttpOnceAsync(client, Target, TimeSpan.FromSeconds(1));
+        await Assert.That(created).IsTrue();
+        await Assert.That(target.Host).IsEqualTo("localhost");
+        await Assert.That(target.Port).IsEqualTo(5173);
+    }
+
+    [Test]
+    public async Task TryCreateTarget_WithoutPort_UsesSchemeDefault()
+    {
+        // 对齐 Go：未指定端口时 http → 80、https → 443。
+        var httpCreated = FrontendDevServerReadiness.TryCreateTarget(
+            new Uri("http://127.0.0.1/"), out var httpTarget);
+        var httpsCreated = FrontendDevServerReadiness.TryCreateTarget(
+            new Uri("https://app.example.com/"), out var httpsTarget);
+
+        await Assert.That(httpCreated).IsTrue();
+        await Assert.That(httpTarget.Port).IsEqualTo(80);
+        await Assert.That(httpsCreated).IsTrue();
+        await Assert.That(httpsTarget.Port).IsEqualTo(443);
+    }
+
+    [Test]
+    public async Task TryCreateTarget_NonHttpScheme_ReturnsFalse()
+    {
+        // 非 HTTP(S) 的绝对 URL 无法确定 TCP 语义（如 wails:// 自定义 scheme）。
+        await Assert.That(FrontendDevServerReadiness.TryCreateTarget(
+            new Uri("ftp://example.com:21/"), out _)).IsFalse();
+        await Assert.That(FrontendDevServerReadiness.TryCreateTarget(
+            new Uri("wails://localhost/"), out _)).IsFalse();
+    }
+
+    [Test]
+    public async Task TryCreateTarget_Fragment_ReturnsFalse()
+    {
+        // 对齐 Go：带片段的 URL 不合法（片段不影响 TCP，但属于误配置）。
+        await Assert.That(FrontendDevServerReadiness.TryCreateTarget(
+            new Uri("http://localhost:5173/#app"), out _)).IsFalse();
+    }
+
+    [Test]
+    public async Task TryCreateTarget_NullUrl_ThrowsArgumentNullException()
+    {
+        await Assert.That(() => FrontendDevServerReadiness.TryCreateTarget(null!, out _))
+            .ThrowsExactly<ArgumentNullException>();
+    }
+
+    // ============== ProbeTcpOnceAsync（TCP 状态分类） ==============
+
+    [Test]
+    public async Task ProbeTcpOnceAsync_ConnectSucceeds_ReturnsReady()
+    {
+        // 注入连接委托：成功即就绪，无需真实网络。
+        var result = await FrontendDevServerReadiness.ProbeTcpOnceAsync(
+            Target,
+            TimeSpan.FromSeconds(1),
+            connect: (_, _) => Task.CompletedTask);
 
         await Assert.That(result.Status).IsEqualTo(FrontendDevServerReadiness.ProbeStatus.Ready);
-        await Assert.That(result.Detail).Contains("200");
+        await Assert.That(result.Detail).Contains("已接受连接");
     }
 
     [Test]
-    public async Task ProbeHttpOnceAsync_3xx_ReturnsReady()
+    public async Task ProbeTcpOnceAsync_ConnectionRefused_ReturnsConnectionRefused()
     {
-        using var client = CreateClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Found)));
-
-        var result = await FrontendDevServerReadiness.ProbeHttpOnceAsync(client, Target, TimeSpan.FromSeconds(1));
-
-        await Assert.That(result.Status).IsEqualTo(FrontendDevServerReadiness.ProbeStatus.Ready);
-        await Assert.That(result.Detail).Contains("302");
-    }
-
-    [Test]
-    public async Task ProbeHttpOnceAsync_5xx_ReturnsServerError()
-    {
-        using var client = CreateClient((_, _) =>
-            Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)));
-
-        var result = await FrontendDevServerReadiness.ProbeHttpOnceAsync(client, Target, TimeSpan.FromSeconds(1));
-
-        await Assert.That(result.Status).IsEqualTo(FrontendDevServerReadiness.ProbeStatus.ServerError);
-        await Assert.That(result.Status).IsNotEqualTo(FrontendDevServerReadiness.ProbeStatus.Ready);
-    }
-
-    [Test]
-    public async Task ProbeHttpOnceAsync_ConnectionRefused_ReturnsConnectionRefused()
-    {
-        using var client = CreateClient((_, _) => throw new HttpRequestException(
-            "connection refused",
-            new SocketException((int)SocketError.ConnectionRefused)));
-
-        var result = await FrontendDevServerReadiness.ProbeHttpOnceAsync(client, Target, TimeSpan.FromSeconds(1));
+        var result = await FrontendDevServerReadiness.ProbeTcpOnceAsync(
+            Target,
+            TimeSpan.FromSeconds(1),
+            connect: (_, _) => throw new SocketException((int)SocketError.ConnectionRefused));
 
         await Assert.That(result.Status).IsEqualTo(FrontendDevServerReadiness.ProbeStatus.ConnectionRefused);
+        await Assert.That(result.Detail).Contains("被拒绝");
     }
 
     [Test]
-    public async Task ProbeHttpOnceAsync_AttemptTimeout_ReturnsTimeout()
+    public async Task ProbeTcpOnceAsync_OtherSocketError_ReturnsOtherError()
     {
-        // 探测请求挂起直至单次超时（50ms），应归类为“请求超时”。
-        using var client = CreateClient(async (_, ct) =>
-        {
-            await Task.Delay(System.Threading.Timeout.InfiniteTimeSpan, ct);
-            return new HttpResponseMessage(HttpStatusCode.OK);
-        });
+        // 例如 DNS 解析失败（HostNotFound）不应归类为「连接被拒绝」。
+        var result = await FrontendDevServerReadiness.ProbeTcpOnceAsync(
+            Target,
+            TimeSpan.FromSeconds(1),
+            connect: (_, _) => throw new SocketException((int)SocketError.HostNotFound));
 
-        var result = await FrontendDevServerReadiness.ProbeHttpOnceAsync(client, Target, TimeSpan.FromMilliseconds(50));
+        await Assert.That(result.Status).IsEqualTo(FrontendDevServerReadiness.ProbeStatus.OtherError);
+    }
+
+    [Test]
+    public async Task ProbeTcpOnceAsync_AttemptTimeout_ReturnsTimeout()
+    {
+        // 连接挂起直至单次超时（50ms），应归类为「连接超时」。
+        var result = await FrontendDevServerReadiness.ProbeTcpOnceAsync(
+            Target,
+            TimeSpan.FromMilliseconds(50),
+            connect: async (_, ct) => await Task.Delay(System.Threading.Timeout.InfiniteTimeSpan, ct));
 
         await Assert.That(result.Status).IsEqualTo(FrontendDevServerReadiness.ProbeStatus.Timeout);
     }
 
     [Test]
-    public async Task ProbeHttpOnceAsync_ExternalCancellation_Throws()
+    public async Task ProbeTcpOnceAsync_ExternalCancellation_Throws()
     {
-        using var client = CreateClient(async (_, ct) =>
-        {
-            await Task.Delay(System.Threading.Timeout.InfiniteTimeSpan, ct);
-            return new HttpResponseMessage(HttpStatusCode.OK);
-        });
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 
         var threw = false;
         try
         {
-            await FrontendDevServerReadiness.ProbeHttpOnceAsync(client, Target, TimeSpan.FromSeconds(5), cts.Token);
+            await FrontendDevServerReadiness.ProbeTcpOnceAsync(
+                Target,
+                TimeSpan.FromSeconds(5),
+                cts.Token,
+                connect: async (_, ct) => await Task.Delay(System.Threading.Timeout.InfiniteTimeSpan, ct));
         }
         catch (OperationCanceledException)
         {
@@ -202,20 +244,24 @@ public sealed class FrontendDevServerReadinessTests
         await Assert.That(threw).IsTrue();
     }
 
-    /// <summary>
-    /// 使用注入的发送委托构造 HttpClient（Timeout 设为无限，由调用方控制单次超时）。
-    /// </summary>
-    private static HttpClient CreateClient(
-        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handler)
-        => new(new StubHandler(handler)) { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
-
-    /// <summary>
-    /// 以委托驱动的 <see cref="HttpMessageHandler"/> 桩，避免测试依赖真实网络。
-    /// </summary>
-    private sealed class StubHandler(
-        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handler) : HttpMessageHandler
+    [Test]
+    public async Task ProbeTcpOnceAsync_RealListener_ReturnsReady()
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-            => handler(request, cancellationToken);
+        // 真实 TCP 连接回归：监听 loopback 临时端口即应判定就绪（Vite 返回 404 的场景不再误判）。
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        try
+        {
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            var result = await FrontendDevServerReadiness.ProbeTcpOnceAsync(
+                new FrontendDevServerReadiness.ProbeTarget("127.0.0.1", port),
+                TimeSpan.FromSeconds(2));
+
+            await Assert.That(result.Status).IsEqualTo(FrontendDevServerReadiness.ProbeStatus.Ready);
+        }
+        finally
+        {
+            listener.Stop();
+        }
     }
 }

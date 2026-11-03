@@ -212,6 +212,30 @@ internal static class DevProcessCleanup
 
         return new DevCleanupResult(killed, alreadyExited, timedOut);
     }
+
+    /// <summary>
+    /// 同步终止给定进程树集合（不等待退出）。
+    /// <para>
+    /// 用于无法等待异步完成的路径：<see cref="DevProcessLifetimeGuard"/> 的 Unix 信号处理器
+    /// （终端被关闭时的 <c>SIGHUP</c> / <c>SIGTERM</c>）需要同步终止派生进程，随后沿用信号默认终止语义。
+    /// 已退出进程直接跳过，重复调用安全（<see cref="IDevProcessHandle.KillTree"/> 对已退出进程为无效操作）。
+    /// </para>
+    /// </summary>
+    /// <param name="handles">待清理的进程句柄集合；null 元素忽略。</param>
+    internal static void TerminateSync(IReadOnlyList<IDevProcessHandle> handles)
+    {
+        ArgumentNullException.ThrowIfNull(handles);
+
+        foreach (var handle in handles)
+        {
+            if (handle is null || handle.HasExited)
+            {
+                continue;
+            }
+
+            handle.KillTree();
+        }
+    }
 }
 
 /// <summary>

@@ -108,10 +108,17 @@ public sealed class FrontendToolchain
     /// </summary>
     /// <param name="frontendDir">前端项目目录。</param>
     /// <param name="cancellationToken">取消令牌（触发时终止开发服务器）。</param>
+    /// <param name="onStarted">
+    /// 进程成功启动后的回调（可选），供 dev 命令把进程纳入
+    /// <see cref="DevProcessLifetimeGuard"/>（终端被直接关闭时终止派生进程）。
+    /// </param>
     /// <returns>进程退出码。</returns>
-    public async Task<int> DevAsync(string frontendDir, CancellationToken cancellationToken = default)
+    public async Task<int> DevAsync(
+        string frontendDir,
+        CancellationToken cancellationToken = default,
+        Action<Process>? onStarted = null)
     {
-        return await RunAsync($"{PackageManager} dev", frontendDir, cancellationToken, forwardSignals: true);
+        return await RunAsync($"{PackageManager} dev", frontendDir, cancellationToken, forwardSignals: true, onStarted);
     }
 
     /// <summary>
@@ -121,12 +128,14 @@ public sealed class FrontendToolchain
     /// <param name="workingDirectory">工作目录。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <param name="forwardSignals">是否向前台进程转发 Ctrl+C（用于 dev server）。</param>
+    /// <param name="onStarted">进程成功启动后的回调（可选）；回调异常被忽略，不影响 dev server 运行。</param>
     /// <returns>进程退出码。</returns>
     private async Task<int> RunAsync(
         string command,
         string workingDirectory,
         CancellationToken cancellationToken,
-        bool forwardSignals = false)
+        bool forwardSignals = false,
+        Action<Process>? onStarted = null)
     {
         var (fileName, args) = BuildShellCommand(command);
         using var proc = new Process
@@ -156,6 +165,16 @@ public sealed class FrontendToolchain
         if (!proc.Start())
         {
             throw new InvalidOperationException($"无法启动前端命令：{command}");
+        }
+
+        // 进程已启动：纳入终端生命周期守护（终端被直接关闭时随之终止）。注册失败静默降级。
+        try
+        {
+            onStarted?.Invoke(proc);
+        }
+        catch (Exception)
+        {
+            /* 生命周期守护注册失败：不影响 dev server 运行 */
         }
 
         proc.BeginOutputReadLine();

@@ -140,6 +140,33 @@ internal sealed class DevCommand : CliCommandBase
         // 用于统一终止前端开发服务器的取消源（dotnet watch 结束或 Ctrl+C 时取消）。
         using var devCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
+        // dev 派生进程（dotnet watch 及其应用进程、前端 dev server）在本次调用内被启动，
+        // 提前声明以便终端生命周期守卫的清理回调可以捕获。
+        Process? watchProcess = null;
+        var watchStarted = false;
+
+        // 终端被直接关闭（Windows 关闭控制台窗口 / Unix SIGHUP）时的兜底清理：
+        // 同步终止 dotnet watch 进程树（含派生的应用进程），并取消 devCts 终止前端 dev server。
+        // 信号可能重复触发，DevProcessCleanup.TerminateSync 对已退出进程为无效操作，重复调用安全。
+        void OnTerminalClosed()
+        {
+            try
+            {
+                DevProcessCleanup.TerminateSync(
+                    new IDevProcessHandle[] { new ProcessTreeHandle(watchProcess, watchStarted) });
+                devCts.Cancel();
+            }
+            catch (Exception)
+            {
+                // 清理期忽略异常：进程可能已退出或取消源已释放。
+            }
+        }
+
+        // 对应 Wails v3.1.0 PR #6371：终端生命周期守卫。
+        // Windows 走作业对象（KILL_ON_JOB_CLOSE），Unix 走 SIGHUP/SIGTERM；
+        // 注册失败静默降级，正常退出路径仍由下方 finally 的 DevProcessCleanup 负责清理。
+        using var lifetimeGuard = DevProcessLifetimeGuard.Create(OnTerminalClosed);
+
         // 加载 wails.json（若存在）
         var (config, configPath) = await ProjectConfig.FindAndLoadAsync(projectPath.FullName);
         if (config is not null)
@@ -221,7 +248,7 @@ internal sealed class DevCommand : CliCommandBase
                 {
                     try
                     {
-                        await toolchain!.DevAsync(frontendDir, devCts.Token);
+                        await toolchain!.DevAsync(frontendDir, devCts.Token, p => lifetimeGuard.TryAttach(p));
                     }
                     catch (OperationCanceledException)
                     {
@@ -277,8 +304,9 @@ internal sealed class DevCommand : CliCommandBase
             return 0;
         }
 
-        // 前端 dev server HTTP 就绪探测（对应 Wails v3 beta.28 watcher.go 的 applyFrontendReadiness：
-        // 注入 process.Readiness{HTTP: FRONTEND_DEVSERVER_URL, Timeout:"60s"}，在启动应用前等待前端就绪）。
+        // 前端 dev server TCP 就绪探测（对应 Wails v3 v3.0.0 watcher.go 的 applyFrontendReadiness：
+        // 注入 process.Readiness{TCP: host:port, Timeout:"60s"}。v3.0.0-beta.33 / PR #6209 起由 HTTP 改 TCP，
+        // 避免 Vite 等 dev server 对无 Accept 头的 HTTP 探测返回 404 而白等 60s）。
         // 仅在真正启动了前端 dev server 时探测；未配置 URL 时跳过（保持既有启动行为不变）。
         if (startFrontend && toolchain is not null)
         {
@@ -287,20 +315,18 @@ internal sealed class DevCommand : CliCommandBase
                 Info("未配置前端 dev server URL（wails.json 的 frontend.devServerUrl），跳过就绪探测。");
             }
             else if (!Uri.TryCreate(devServerUrl, UriKind.Absolute, out var devServerUri)
-                     || (devServerUri.Scheme != Uri.UriSchemeHttp && devServerUri.Scheme != Uri.UriSchemeHttps))
+                     || !FrontendDevServerReadiness.TryCreateTarget(devServerUri, out var probeTarget))
             {
-                Warn($"前端 dev server URL 非法，跳过就绪探测：{devServerUrl}（应为 http/https 绝对 URL）");
+                Warn($"前端 dev server URL 非法，跳过就绪探测：{devServerUrl}（应为 http/https 绝对 URL 且不含片段）");
             }
             else
             {
-                Info($"等待前端开发服务器就绪：{devServerUri}（超时 {FrontendDevServerReadiness.DefaultTimeout.TotalSeconds:0}s）…");
+                Info($"等待前端开发服务器就绪：{devServerUri}（TCP 探测 {probeTarget}，超时 {FrontendDevServerReadiness.DefaultTimeout.TotalSeconds:0}s）…");
                 try
                 {
-                    // Timeout 设为无限，单次请求超时由 ProbeHttpOnceAsync 控制（DefaultPerAttemptTimeout）。
-                    using var probeClient = new HttpClient { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
                     var readiness = await FrontendDevServerReadiness.WaitForReadyAsync(
-                        ct => FrontendDevServerReadiness.ProbeHttpOnceAsync(
-                            probeClient, devServerUri, FrontendDevServerReadiness.DefaultPerAttemptTimeout, ct),
+                        ct => FrontendDevServerReadiness.ProbeTcpOnceAsync(
+                            probeTarget, FrontendDevServerReadiness.DefaultPerAttemptTimeout, ct),
                         FrontendDevServerReadiness.DefaultTimeout,
                         FrontendDevServerReadiness.DefaultPollInterval,
                         cancellationToken);
@@ -308,8 +334,8 @@ internal sealed class DevCommand : CliCommandBase
                     if (!readiness.Ready)
                     {
                         Error($"前端开发服务器未就绪：{readiness.Message}");
-                        Error($"目标地址：{devServerUri}");
-                        Error("已取消应用启动。请检查前端 dev server（pnpm/npm dev）是否已在该地址提供服务。");
+                        Error($"目标地址：{probeTarget}（来自 {devServerUri}）");
+                        Error("已取消应用启动。请检查前端 dev server（pnpm/npm dev）是否已在该地址监听。");
                         // 终止前端 dev server，避免孤立进程（与既有退出清理路径一致）。
                         await StopFrontendDevServerAsync(devCts, devServerTask);
                         return 5;
@@ -347,8 +373,6 @@ internal sealed class DevCommand : CliCommandBase
         }
 
         var exitCode = 0;
-        Process? watchProcess = null;
-        var watchStarted = false;
         try
         {
             var psi = new ProcessStartInfo
@@ -365,6 +389,11 @@ internal sealed class DevCommand : CliCommandBase
             watchProcess = new Process { StartInfo = psi };
             watchProcess.Start();
             watchStarted = true;
+
+            // 立即加入终端生命周期守护：CLI 进程被强制结束（关闭控制台窗口）时，
+            // 作业对象关闭即终止 watch 进程及其派生的应用进程（Windows）/ 信号处理器兜底（Unix）。
+            lifetimeGuard.TryAttach(watchProcess);
+
             await watchProcess.WaitForExitAsync(cancellationToken);
             exitCode = watchProcess.ExitCode;
         }

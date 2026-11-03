@@ -112,6 +112,36 @@ public sealed class DevProcessCleanupTests
     }
 
     [Test]
+    public async Task TerminateSync_OnlyRunningProcessesAreKilledWithoutWaiting()
+    {
+        // Arrange：终端被关闭（SIGHUP）路径上的同步清理：已退出进程必须跳过，且不产生等待
+        var running = new FakeProcessHandle { HasExited = false };
+        var exited = new FakeProcessHandle { HasExited = true };
+
+        // Act
+        DevProcessCleanup.TerminateSync(new IDevProcessHandle[] { running, exited });
+
+        // Assert
+        await Assert.That(running.KillCount).IsEqualTo(1);
+        await Assert.That(running.WaitCount).IsEqualTo(0);
+        await Assert.That(exited.KillCount).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task TerminateSync_NullElementAndEmptyHandles_AreIgnored()
+    {
+        // Arrange：null 元素忽略；信号可能重复触发，空集合必须安全无操作
+        var running = new FakeProcessHandle { HasExited = false };
+
+        // Act
+        DevProcessCleanup.TerminateSync(new IDevProcessHandle[] { null!, running });
+        DevProcessCleanup.TerminateSync(Array.Empty<IDevProcessHandle>());
+
+        // Assert
+        await Assert.That(running.KillCount).IsEqualTo(1);
+    }
+
+    [Test]
     public async Task ProcessTreeHandle_NotStarted_ReportsExited()
     {
         // Arrange：Start() 未成功（或未调用）时句柄无需清理
