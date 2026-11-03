@@ -339,6 +339,54 @@ public sealed class ApplicationTests
     }
 
     [Test]
+    public async Task DispatchOnMainThread_BeforeRun_ExecutesFifoAfterRunStarts()
+    {
+        // Wails v3.1.0 #6287：Run 之前投递的主线程任务应入队，待 Run 启动后按 FIFO 执行。
+        var app = new Application(new ApplicationOptions { Name = "DispatchApp" });
+        var serverPlatform = new ServerPlatformApp(app.Options);
+        app.SetPlatformApp(serverPlatform);
+
+        var order = new List<int>();
+
+        // 操作 1：Run 之前投递，此时不应立即执行
+        app.DispatchOnMainThread(() => order.Add(1));
+        app.DispatchOnMainThread(() => order.Add(2));
+
+        // 断言 1：尚未执行
+        await Assert.That(order).IsEmpty();
+
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(100));
+            serverPlatform.SignalShutdown();
+        });
+
+        // 操作 2：Run 启动后刷新队列
+        app.Run();
+
+        // 断言 2：按 FIFO 顺序执行
+        await Assert.That(order).IsEquivalentTo(new[] { 1, 2 });
+    }
+
+    [Test]
+    public async Task DispatchOnMainThread_WhileRunning_InvokesImmediately()
+    {
+        // 安排：模拟已运行状态（反射设置 _isRunning，与既有用例一致）
+        var app = new Application(new ApplicationOptions());
+        var field = typeof(Application).GetField("_isRunning",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        field.SetValue(app, true);
+
+        var executed = 0;
+
+        // 操作
+        app.DispatchOnMainThread(() => executed++);
+
+        // 断言：运行中直接执行（无平台实现时在当前线程调用）
+        await Assert.That(executed).IsEqualTo(1);
+    }
+
+    [Test]
     public async Task Shutdown_WhenNotRunning_ReturnsImmediately()
     {
         // 安排：未调用 Run，_isRunning 为 false

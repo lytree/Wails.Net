@@ -16,13 +16,38 @@ public class DialogManager : IDialogManager
     private readonly IPlatformApp? _platformApp;
 
     /// <summary>
+    /// 应用运行状态判定（可为 null，表示不做运行前拦截）。
+    /// 对应 Wails v3.1.0 #6390：在 <c>Run</c> 之前请求的对话框直接返回“未选择”，
+    /// 避免在 GTK 等平台等待尚未启动的主循环而永久挂起。
+    /// </summary>
+    private Func<bool>? _isRunning;
+
+    /// <summary>
     /// 使用指定的平台应用构造 DialogManager 实例。
     /// </summary>
     /// <param name="platformApp">平台应用实例，可为 null（Server 模式）。</param>
-    public DialogManager(IPlatformApp? platformApp)
+    /// <param name="isRunning">应用运行状态判定；为 null 时不做运行前拦截。</param>
+    public DialogManager(IPlatformApp? platformApp, Func<bool>? isRunning = null)
     {
         _platformApp = platformApp;
+        _isRunning = isRunning;
     }
+
+    /// <summary>
+    /// 绑定应用运行状态判定（仅当尚未绑定时生效）。
+    /// DI 模式下 DialogManager 由容器创建，需由 <c>Application</c> 在初始化时补挂。
+    /// </summary>
+    /// <param name="isRunning">应用运行状态判定。</param>
+    internal void AttachRunningState(Func<bool> isRunning)
+    {
+        ArgumentNullException.ThrowIfNull(isRunning);
+        _isRunning ??= isRunning;
+    }
+
+    /// <summary>
+    /// 应用尚未运行（主循环未启动）时，对话框无法显示，直接返回“未选择”。
+    /// </summary>
+    private bool IsBlockedByNotRunning => _isRunning is not null && !_isRunning();
 
     /// <summary>
     /// 显示消息对话框。
@@ -34,6 +59,11 @@ public class DialogManager : IDialogManager
     /// <returns>被点击按钮的索引。</returns>
     public async Task<int> ShowMessageDialog(string title, string message, DialogStyle style, string[] buttons)
     {
+        if (IsBlockedByNotRunning)
+        {
+            return -1; // Run 之前无法显示对话框（v3.1.0 #6390）
+        }
+
         if (_platformApp is null)
         {
             return 0; // Server 模式下返回默认值
@@ -52,6 +82,11 @@ public class DialogManager : IDialogManager
     {
         ArgumentNullException.ThrowIfNull(options);
 
+        if (IsBlockedByNotRunning)
+        {
+            return -1; // Run 之前无法显示对话框（v3.1.0 #6390）
+        }
+
         if (_platformApp is null)
         {
             return 0; // Server 模式下返回默认值
@@ -67,6 +102,11 @@ public class DialogManager : IDialogManager
     /// <returns>选中的文件路径，可为 null。</returns>
     public async Task<string?> OpenFileDialog(OpenFileDialogOptions options)
     {
+        if (IsBlockedByNotRunning)
+        {
+            return null; // Run 之前无法显示对话框（v3.1.0 #6390）
+        }
+
         if (_platformApp is null)
         {
             return null;
@@ -82,6 +122,11 @@ public class DialogManager : IDialogManager
     /// <returns>保存的文件路径，可为 null。</returns>
     public async Task<string?> SaveFileDialog(SaveFileDialogOptions options)
     {
+        if (IsBlockedByNotRunning)
+        {
+            return null; // Run 之前无法显示对话框（v3.1.0 #6390）
+        }
+
         if (_platformApp is null)
         {
             return null;
@@ -97,6 +142,11 @@ public class DialogManager : IDialogManager
     /// <returns>选中的文件路径数组，可为 null。</returns>
     public async Task<string[]?> OpenMultipleFilesDialog(OpenFileDialogOptions options)
     {
+        if (IsBlockedByNotRunning)
+        {
+            return null; // Run 之前无法显示对话框（v3.1.0 #6390）
+        }
+
         if (_platformApp is null)
         {
             return null;

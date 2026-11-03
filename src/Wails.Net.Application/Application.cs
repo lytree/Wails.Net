@@ -142,6 +142,13 @@ public class Application
     private volatile bool _isRunning;
 
     /// <summary>
+    /// Run 之前投递的主线程任务队列（Wails v3.1.0 #6287）。
+    /// 主循环尚未启动时先入队，由 <see cref="Run"/> 在进入主循环前按 FIFO 顺序执行，
+    /// 避免在错误线程立即执行或任务被静默丢弃。
+    /// </summary>
+    private readonly System.Collections.Concurrent.ConcurrentQueue<Action> _pendingMainThreadActions = new();
+
+    /// <summary>
     /// 默认信号处理器（P2-21）：SIGINT / SIGTERM → 经 ShouldQuit 判定后退出应用。
     /// 仅在 <see cref="ApplicationOptions.DisableDefaultSignalHandler"/> 为 false 时安装。
     /// </summary>
@@ -307,7 +314,7 @@ public class Application
         _platformApp = platformApp;
         // R1-2：复用构造期创建的 WindowManager，避免再次 new 造成窗口注册表分离。
         _windowManager?.SetPlatformApp(platformApp);
-        _dialogManager = new DialogManager(platformApp);
+        _dialogManager = new DialogManager(platformApp, () => IsRunning);
         _screenManager = new ScreenManager(platformApp);
     }
 
@@ -347,6 +354,8 @@ public class Application
         var dialogManager = serviceProvider.GetService<DialogManager>();
         if (dialogManager is not null)
         {
+            // DI 工厂无法感知 Application 运行状态，这里补挂运行前拦截判定（v3.1.0 #6390）。
+            dialogManager.AttachRunningState(() => IsRunning);
             _dialogManager = dialogManager;
         }
 
@@ -1288,6 +1297,9 @@ public class Application
         _isRunning = true;
         LifecycleState = Hosting.ApplicationLifecycleState.Starting;
 
+        // Wails v3.1.0 #6287：先把 Run 之前排队的主线程任务在启动回调前按序执行。
+        FlushPendingMainThreadActions();
+
         // 触发启动回调
         _options.OnBeforeStart?.Invoke();
 
@@ -1831,6 +1843,16 @@ public class Application
     /// <param name="action">要执行的操作。</param>
     public virtual void DispatchOnMainThread(Action action)
     {
+        ArgumentNullException.ThrowIfNull(action);
+
+        if (!_isRunning)
+        {
+            // Wails v3.1.0 #6287：Run 之前的主线程任务先入队，
+            // 由 Run 进入主循环前在当前（主）线程上按 FIFO 执行。
+            _pendingMainThreadActions.Enqueue(action);
+            return;
+        }
+
         if (_platformApp is not null)
         {
             _platformApp.DispatchOnMainThread(action);
@@ -1838,6 +1860,25 @@ public class Application
         else
         {
             action();
+        }
+    }
+
+    /// <summary>
+    /// 执行 Run 之前排队的主线程任务（Wails v3.1.0 #6287）。
+    /// 仅在 <see cref="Run"/> 的主线程上调用。
+    /// </summary>
+    private void FlushPendingMainThreadActions()
+    {
+        while (_pendingMainThreadActions.TryDequeue(out var action))
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "执行 Run 之前排队的主线程任务失败");
+            }
         }
     }
 

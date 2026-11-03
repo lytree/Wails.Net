@@ -29,6 +29,13 @@ public class EventProcessor
     private readonly List<Func<CustomEvent, bool>> _hooks = new();
 
     /// <summary>
+    /// 保护 <see cref="_hooks"/> 的锁。
+    /// 对应 Wails v3.1.0 #6276：发布事件时必须在锁内快照钩子列表，
+    /// 否则并发 <see cref="RegisterHook"/> 会与 <see cref="EmitCore"/> 的遍历冲突。
+    /// </summary>
+    private readonly object _hooksLock = new();
+
+    /// <summary>
     /// 用于事件广播到传输层的监听器列表（如 IPC、WebSocket、EventIPC 兜底）。
     /// 对应 Wails v3 Go 版本 application.go 中的 <c>wailsEventListeners []WailsEventListener</c> 字段。
     /// <para>
@@ -197,7 +204,11 @@ public class EventProcessor
     /// <param name="hook">钩子函数，接收 CustomEvent，返回 false 取消事件。</param>
     public void RegisterHook(Func<CustomEvent, bool> hook)
     {
-        _hooks.Add(hook);
+        ArgumentNullException.ThrowIfNull(hook);
+        lock (_hooksLock)
+        {
+            _hooks.Add(hook);
+        }
     }
 
     /// <summary>
@@ -319,8 +330,15 @@ public class EventProcessor
     /// <param name="evt">事件实例。</param>
     private void EmitCore(CustomEvent evt)
     {
-        // 执行 pre-emit 钩子
-        foreach (var hook in _hooks)
+        // 执行 pre-emit 钩子：先在锁内快照，避免并发 RegisterHook 修改列表导致
+        // 遍历抛出 InvalidOperationException（Wails v3.1.0 #6276）。
+        Func<CustomEvent, bool>[] hooks;
+        lock (_hooksLock)
+        {
+            hooks = _hooks.ToArray();
+        }
+
+        foreach (var hook in hooks)
         {
             if (!hook(evt))
             {

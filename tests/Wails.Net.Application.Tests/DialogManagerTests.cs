@@ -243,4 +243,88 @@ public sealed class DialogManagerTests
         await Assert.That(call.buttons).IsEquivalentTo(new[] { "Yes", "No" });
     }
 
+    // ========== Run 之前调用（Wails v3.1.0 #6390） ==========
+
+    [Test]
+    public async Task ShowMessageDialog_BeforeRun_ReturnsMinusOneAndSkipsPlatform()
+    {
+        // 安排：运行状态判定为 false（Run 尚未开始）
+        var fakePlatform = new FakePlatformApp { ShowMessageDialogResult = 1 };
+        var manager = new DialogManager(fakePlatform, () => false);
+
+        // 操作
+        var result = await manager.ShowMessageDialog("T", "M", DialogStyle.Info, new[] { "OK" });
+
+        // 断言：直接返回 -1，且不调用平台对话框（避免 GTK 主循环未启动时永久挂起）
+        await Assert.That(result).IsEqualTo(-1);
+        await Assert.That(fakePlatform.ShowMessageDialogCalls).Count().IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task ShowMessageDialog_Options_BeforeRun_ReturnsMinusOne()
+    {
+        // 安排
+        var fakePlatform = new FakePlatformApp { ShowMessageDialogResult = 1 };
+        var manager = new DialogManager(fakePlatform, () => false);
+        var options = new MessageDialogOptions { Title = "T", Message = "M", Style = DialogStyle.Question };
+
+        // 操作
+        var result = await manager.ShowMessageDialog(options);
+
+        // 断言
+        await Assert.That(result).IsEqualTo(-1);
+        await Assert.That(fakePlatform.ShowMessageDialogCalls).Count().IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task FileDialogs_BeforeRun_ReturnNull()
+    {
+        // 安排
+        var fakePlatform = new FakePlatformApp { OpenFileDialogResult = "/tmp/a.txt", SaveFileDialogResult = "/tmp/b.txt" };
+        var manager = new DialogManager(fakePlatform, () => false);
+
+        // 操作
+        var open = await manager.OpenFileDialog(new OpenFileDialogOptions());
+        var save = await manager.SaveFileDialog(new SaveFileDialogOptions());
+        var multiple = await manager.OpenMultipleFilesDialog(new OpenFileDialogOptions());
+
+        // 断言
+        await Assert.That(open).IsNull();
+        await Assert.That(save).IsNull();
+        await Assert.That(multiple).IsNull();
+        await Assert.That(fakePlatform.OpenFileDialogCalls).Count().IsEqualTo(0);
+        await Assert.That(fakePlatform.SaveFileDialogCalls).Count().IsEqualTo(0);
+        await Assert.That(fakePlatform.OpenMultipleFilesDialogCalls).Count().IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task ShowMessageDialog_WhenRunning_Delegates()
+    {
+        // 安排：运行状态判定为 true
+        var fakePlatform = new FakePlatformApp { ShowMessageDialogResult = 1 };
+        var manager = new DialogManager(fakePlatform, () => true);
+
+        // 操作
+        var result = await manager.ShowMessageDialog("T", "M", DialogStyle.Info, new[] { "OK" });
+
+        // 断言
+        await Assert.That(result).IsEqualTo(1);
+        await Assert.That(fakePlatform.ShowMessageDialogCalls).Count().IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task AttachRunningState_OverridesOnlyWhenNotSet()
+    {
+        // 安排：构造时已提供判定，Attach 不应覆盖
+        var fakePlatform = new FakePlatformApp { ShowMessageDialogResult = 1 };
+        var manager = new DialogManager(fakePlatform, () => false);
+
+        // 操作
+        manager.AttachRunningState(() => true);
+        var result = await manager.ShowMessageDialog("T", "M", DialogStyle.Info, new[] { "OK" });
+
+        // 断言：仍使用构造时的 false 判定
+        await Assert.That(result).IsEqualTo(-1);
+        await Assert.That(fakePlatform.ShowMessageDialogCalls).Count().IsEqualTo(0);
+    }
 }

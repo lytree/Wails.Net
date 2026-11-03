@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using TUnit.Core;
 using Wails.Net.Application.Events;
 
@@ -289,5 +290,53 @@ public sealed class EventProcessorTests
         evt.Cancel();
 
         await Assert.That(evt.IsCancelled).IsTrue();
+    }
+
+    [Test]
+    public async Task RegisterHook_ConcurrentWithEmit_DoesNotThrow()
+    {
+        // Wails v3.1.0 #6276：Emit 必须在锁内快照钩子列表，否则并发注册钩子
+        // 会使遍历中的 List 抛出 InvalidOperationException。
+        var processor = new EventProcessor();
+        processor.On("tick", _ => { });
+
+        var exceptions = new ConcurrentBag<Exception>();
+
+        var emitter = new Thread(() =>
+        {
+            for (var i = 0; i < 2000; i++)
+            {
+                try
+                {
+                    processor.Emit("tick");
+                }
+                catch (Exception ex)
+                {
+                    exceptions.Add(ex);
+                }
+            }
+        });
+
+        var registrar = new Thread(() =>
+        {
+            for (var i = 0; i < 2000; i++)
+            {
+                try
+                {
+                    processor.RegisterHook(_ => true);
+                }
+                catch (Exception ex)
+                {
+                    exceptions.Add(ex);
+                }
+            }
+        });
+
+        emitter.Start();
+        registrar.Start();
+        emitter.Join();
+        registrar.Join();
+
+        await Assert.That(exceptions.Count).IsEqualTo(0);
     }
 }
