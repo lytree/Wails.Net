@@ -455,6 +455,16 @@ public sealed class MockPlatformApp : IPlatformApp, IDisposable
     }
 
     /// <inheritdoc />
+    public Task<int> ShowMessageDialog(MessageDialogOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        _recorder.Record(nameof(ShowMessageDialog), options.Title, options.Message, options.Style, options.GetButtonLabels());
+        options.InvokeButtonCallback(MessageDialogResult);
+        return Task.FromResult(MessageDialogResult);
+    }
+
+    /// <inheritdoc />
     public Task<string?> OpenFileDialog(OpenFileDialogOptions options)
     {
         _recorder.Record(nameof(OpenFileDialog), options.Title);

@@ -87,9 +87,9 @@ public class DialogPlugin : IPlugin
             return await dialog.ShowMessageDialog(title, message, DialogStyle.Error, ["OK"]);
         }), CommandSecurity.Require("dialog:allow-open"));
 
-        // 消息对话框：询问
+        // 消息对话框：询问（支持自定义按钮标签；未提供时默认 Yes/No）
         context.Commands.MapCommandAsync("dialog.question",
-            (Func<ICommandContext, string, string, Task<int>>)(async (ctx, title, message) =>
+            (Func<ICommandContext, string, string, string[]?, Task<int>>)(async (ctx, title, message, buttons) =>
         {
             var dialog = GetDialogManager(ctx);
             if (dialog is null)
@@ -97,7 +97,15 @@ public class DialogPlugin : IPlugin
                 return 0;
             }
 
-            return await dialog.ShowMessageDialog(title, message, DialogStyle.Question, ["Yes", "No"]);
+            var labels = buttons is { Length: > 0 } ? buttons : DefaultQuestionButtons;
+            var options = new MessageDialogOptions
+            {
+                Title = title,
+                Message = message,
+                Style = DialogStyle.Question,
+                Buttons = BuildQuestionButtons(labels),
+            };
+            return await dialog.ShowMessageDialog(options);
         }), CommandSecurity.Require("dialog:allow-open"));
 
         // 打开文件对话框
@@ -161,6 +169,33 @@ public class DialogPlugin : IPlugin
             };
             return await dialog.OpenMultipleFilesDialog(options);
         }), CommandSecurity.Require("dialog:allow-open"));
+    }
+
+    /// <summary>
+    /// 询问对话框的默认按钮标签。
+    /// </summary>
+    private static readonly string[] DefaultQuestionButtons = ["Yes", "No"];
+
+    /// <summary>
+    /// 将按钮标签转换为按钮定义。
+    /// 按钮数 >= 2 时把最后一个按钮标记为取消按钮，使 Esc/关闭对话框回退到该按钮
+    /// （对应 Go TaskDialog 的 TDF_ALLOW_DIALOG_CANCELLATION 语义）。
+    /// </summary>
+    /// <param name="labels">按钮标签数组。</param>
+    /// <returns>按钮定义数组。</returns>
+    private static MessageDialogButton[] BuildQuestionButtons(string[] labels)
+    {
+        var buttons = new MessageDialogButton[labels.Length];
+        for (var i = 0; i < labels.Length; i++)
+        {
+            buttons[i] = new MessageDialogButton
+            {
+                Label = labels[i],
+                IsCancel = labels.Length >= 2 && i == labels.Length - 1,
+            };
+        }
+
+        return buttons;
     }
 
     /// <summary>

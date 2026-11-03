@@ -19,6 +19,7 @@ using Menu = Wails.Net.Application.Menus.Menu;
 using Screen = Wails.Net.Application.Screens.Screen;
 using WinFormsMessageBox = System.Windows.Forms.MessageBox;
 using WinFormsMessageBoxButtons = System.Windows.Forms.MessageBoxButtons;
+using WinFormsMessageBoxDefaultButton = System.Windows.Forms.MessageBoxDefaultButton;
 using WinFormsMessageBoxIcon = System.Windows.Forms.MessageBoxIcon;
 using WinFormsOpenFileDialog = System.Windows.Forms.OpenFileDialog;
 using WinFormsSaveFileDialog = System.Windows.Forms.SaveFileDialog;
@@ -535,6 +536,64 @@ public sealed class WindowsPlatformApp : IPlatformApp
     /// <inheritdoc />
     public Task<int> ShowMessageDialog(string title, string message, DialogStyle style, string[] buttons)
     {
+        return Task.FromResult(ShowMessageBox(title, message, style, buttons));
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// 询问样式且提供按钮时优先使用 TaskDialogIndirect，以显示自定义按钮标签与默认/取消语义；
+    /// comctl32 v6 不可用（无 manifest）或调用失败时回退 MessageBox，并按标签/位置映射结果后触发回调。
+    /// 对应 Wails v3 Go 版本 dialogs_windows.go 中 <c>windowsDialog.show</c> 的分派逻辑。
+    /// </remarks>
+    public Task<int> ShowMessageDialog(MessageDialogOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        if (options.Style == DialogStyle.Question && options.Buttons.Count > 0)
+        {
+            if (Win32TaskDialog.TryShow(options, out var taskDialogIndex))
+            {
+                options.InvokeButtonCallback(taskDialogIndex);
+                return Task.FromResult(taskDialogIndex);
+            }
+
+            // 回退：MessageBox 无法渲染自定义标签，按 Go messageBoxButtonFor 的标签/位置规则映射。
+            var fallbackButtons = options.Buttons.Count >= 2
+                ? WinFormsMessageBoxButtons.YesNo
+                : WinFormsMessageBoxButtons.OK;
+            // 对应 Go calculateMessageDialogFlags：第二个按钮为默认时使用 MB_DEFBUTTON2。
+            var fallbackDefault = options.Buttons.Count >= 2 && options.Buttons[1].IsDefault
+                ? WinFormsMessageBoxDefaultButton.Button2
+                : WinFormsMessageBoxDefaultButton.Button1;
+            var fallbackResult = WinFormsMessageBox.Show(
+                options.Message, options.Title, fallbackButtons, WinFormsMessageBoxIcon.Question, fallbackDefault);
+            var fallbackId = DialogResultToMessageBoxId(fallbackResult);
+            var fallbackIndex = Win32TaskDialog.ResolveMessageBoxButtonIndex(options.Buttons, fallbackId);
+            if (fallbackIndex < 0 && fallbackId == 1)
+            {
+                // 单按钮对话框点击“确定”时按位置回退到第一个按钮。
+                fallbackIndex = 0;
+            }
+
+            options.InvokeButtonCallback(fallbackIndex);
+            return Task.FromResult(fallbackIndex);
+        }
+
+        var index = ShowMessageBox(options.Title, options.Message, options.Style, options.GetButtonLabels());
+        options.InvokeButtonCallback(index);
+        return Task.FromResult(index);
+    }
+
+    /// <summary>
+    /// 使用 WinForms MessageBox 显示消息对话框并返回按钮索引。
+    /// </summary>
+    /// <param name="title">对话框标题。</param>
+    /// <param name="message">消息内容。</param>
+    /// <param name="style">对话框样式。</param>
+    /// <param name="buttons">按钮文本数组（仅用于决定标准按钮数量）。</param>
+    /// <returns>被点击按钮的索引。</returns>
+    private static int ShowMessageBox(string title, string message, DialogStyle style, string[] buttons)
+    {
         // 根据 DialogStyle 映射 MessageBoxIcon。
         var icon = style switch
         {
@@ -557,7 +616,17 @@ public sealed class WindowsPlatformApp : IPlatformApp
         var result = WinFormsMessageBox.Show(message, title, buttonFlags, icon);
 
         // 将 DialogResult 映射回按钮索引。
-        var index = result switch
+        return MapDialogResultToIndex(result);
+    }
+
+    /// <summary>
+    /// 将 MessageBox 的 <see cref="DialogResult"/> 映射为按钮索引。
+    /// </summary>
+    /// <param name="result">MessageBox 返回值。</param>
+    /// <returns>按钮索引。</returns>
+    private static int MapDialogResultToIndex(DialogResult result)
+    {
+        return result switch
         {
             DialogResult.OK or DialogResult.Yes => 0,
             DialogResult.Cancel or DialogResult.No => 1,
@@ -565,8 +634,29 @@ public sealed class WindowsPlatformApp : IPlatformApp
             DialogResult.Ignore => 3,
             _ => 0
         };
+    }
 
-        return Task.FromResult(index);
+    /// <summary>
+    /// 将 MessageBox 的 <see cref="DialogResult"/> 映射为标准 MessageBox 返回 ID，
+    /// 供 <see cref="Win32TaskDialog.ResolveMessageBoxButtonIndex"/> 按 Go 语义匹配按钮。
+    /// </summary>
+    /// <param name="result">MessageBox 返回值。</param>
+    /// <returns>MessageBox 标准返回 ID（IDOK=1、IDCANCEL=2、IDYES=6、IDNO=7 等）。</returns>
+    private static int DialogResultToMessageBoxId(DialogResult result)
+    {
+        return result switch
+        {
+            DialogResult.OK => 1,
+            DialogResult.Cancel => 2,
+            DialogResult.Abort => 3,
+            DialogResult.Retry => 4,
+            DialogResult.Ignore => 5,
+            DialogResult.Yes => 6,
+            DialogResult.No => 7,
+            DialogResult.TryAgain => 10,
+            DialogResult.Continue => 11,
+            _ => 0
+        };
     }
 
     /// <inheritdoc />

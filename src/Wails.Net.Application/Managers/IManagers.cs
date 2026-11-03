@@ -77,6 +77,23 @@ public interface IDialogManager
     Task<int> ShowMessageDialog(string title, string message, DialogStyle style, string[] buttons);
 
     /// <summary>
+    /// 显示消息对话框，支持自定义按钮标签、默认/取消按钮与选中回调。
+    /// 默认实现回退到 <see cref="ShowMessageDialog(string, string, DialogStyle, string[])"/> 并触发按钮回调；
+    /// <see cref="DialogManager"/> 会将其转发到平台实现以启用原生自定义按钮。
+    /// </summary>
+    /// <param name="options">消息对话框选项。</param>
+    /// <returns>被点击按钮的索引；对话框被取消且未定义取消按钮时返回 -1。</returns>
+    async Task<int> ShowMessageDialog(MessageDialogOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        var labels = options.GetButtonLabels();
+        var index = await ShowMessageDialog(options.Title, options.Message, options.Style, labels).ConfigureAwait(false);
+        options.InvokeButtonCallback(index);
+        return index;
+    }
+
+    /// <summary>
     /// 打开文件对话框。
     /// </summary>
     /// <param name="options">打开文件对话框选项。</param>

@@ -195,6 +195,23 @@ public interface IPlatformApp
     Task<int> ShowMessageDialog(string title, string message, DialogStyle style, string[] buttons);
 
     /// <summary>
+    /// 异步显示消息对话框，支持自定义按钮标签、默认/取消按钮与选中回调。
+    /// 默认实现回退到 <see cref="ShowMessageDialog(string, string, DialogStyle, string[])"/>，
+    /// 并在对话框关闭后触发对应按钮的回调；平台实现可重写以提供原生自定义按钮（如 Windows TaskDialog）。
+    /// </summary>
+    /// <param name="options">消息对话框选项。</param>
+    /// <returns>被点击按钮的索引；对话框被取消且未定义取消按钮时返回 -1。</returns>
+    async Task<int> ShowMessageDialog(MessageDialogOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        var labels = options.GetButtonLabels();
+        var index = await ShowMessageDialog(options.Title, options.Message, options.Style, labels).ConfigureAwait(false);
+        options.InvokeButtonCallback(index);
+        return index;
+    }
+
+    /// <summary>
     /// 异步打开文件对话框。
     /// </summary>
     /// <param name="options">打开文件对话框选项。</param>

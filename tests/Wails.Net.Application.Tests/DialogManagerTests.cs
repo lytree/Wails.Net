@@ -183,4 +183,64 @@ public sealed class DialogManagerTests
         await Assert.That(fakePlatform.ShowMessageDialogCalls).Count().IsEqualTo(1);
         await Assert.That(fakePlatform.ShowMessageDialogCalls.ToArray()[0].buttons).IsEmpty();
     }
+
+    [Test]
+    public async Task ShowMessageDialog_Options_WithNullPlatformApp_ReturnsDefaultZero()
+    {
+        // 安排
+        var manager = new DialogManager(null);
+        var callbackInvoked = false;
+        var options = new MessageDialogOptions
+        {
+            Title = "Title",
+            Message = "Message",
+            Style = DialogStyle.Question,
+            Buttons =
+            [
+                new MessageDialogButton { Label = "是", IsDefault = true },
+                new MessageDialogButton { Label = "否", IsCancel = true, Callback = () => callbackInvoked = true },
+            ],
+        };
+
+        // 操作
+        var result = await manager.ShowMessageDialog(options);
+
+        // 断言：Server 模式返回默认值且不触发回调
+        await Assert.That(result).IsEqualTo(0);
+        await Assert.That(callbackInvoked).IsFalse();
+    }
+
+    [Test]
+    public async Task ShowMessageDialog_Options_DelegatesLabelsAndInvokesCallback()
+    {
+        // 安排：平台未重写 Options 重载时走接口默认实现（回退到 string[] 版本并触发回调）
+        var fakePlatform = new FakePlatformApp { ShowMessageDialogResult = 1 };
+        var manager = new DialogManager(fakePlatform);
+        var callbackInvoked = false;
+        var options = new MessageDialogOptions
+        {
+            Title = "Confirm",
+            Message = "Are you sure?",
+            Style = DialogStyle.Question,
+            Buttons =
+            [
+                new MessageDialogButton { Label = "Yes", IsDefault = true },
+                new MessageDialogButton { Label = "No", IsCancel = true, Callback = () => callbackInvoked = true },
+            ],
+        };
+
+        // 操作
+        var result = await manager.ShowMessageDialog(options);
+
+        // 断言
+        await Assert.That(result).IsEqualTo(1);
+        await Assert.That(callbackInvoked).IsTrue();
+        await Assert.That(fakePlatform.ShowMessageDialogCalls).Count().IsEqualTo(1);
+        var call = fakePlatform.ShowMessageDialogCalls.ToArray()[0];
+        await Assert.That(call.title).IsEqualTo("Confirm");
+        await Assert.That(call.message).IsEqualTo("Are you sure?");
+        await Assert.That(call.style).IsEqualTo(DialogStyle.Question);
+        await Assert.That(call.buttons).IsEquivalentTo(new[] { "Yes", "No" });
+    }
+
 }

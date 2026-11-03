@@ -20,9 +20,9 @@ export const dialog = {
   /** 显示错误对话框，返回点击按钮的索引。 */
   error: (title: string, message: string) =>
     call<number>("dialog.error", [title, message]),
-  /** 显示询问对话框（Yes/No），返回点击按钮的索引。 */
-  question: (title: string, message: string) =>
-    call<number>("dialog.question", [title, message]),
+  /** 显示询问对话框（默认 Yes/No），返回点击按钮的索引；buttons 可自定义按钮标签。 */
+  question: (title: string, message: string, buttons?: string[] | null) =>
+    call<number>("dialog.question", [title, message, buttons ?? null]),
   /** 打开单文件选择对话框，返回选中文件路径；用户取消返回 null。filters 如 `["*.png","*.jpg"]`。 */
   openFile: (title?: string | null, directory?: string | null, filters?: string[] | null) =>
     call<string | null>("dialog.openFile", [title ?? null, directory ?? null, filters ?? null]),

@@ -43,6 +43,24 @@ public class DialogManager : IDialogManager
     }
 
     /// <summary>
+    /// 显示消息对话框，支持自定义按钮标签、默认/取消按钮与选中回调。
+    /// 直接转发到平台实现，由平台负责在对话框关闭后触发按钮回调。
+    /// </summary>
+    /// <param name="options">消息对话框选项。</param>
+    /// <returns>被点击按钮的索引；对话框被取消且未定义取消按钮时返回 -1。</returns>
+    public async Task<int> ShowMessageDialog(MessageDialogOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        if (_platformApp is null)
+        {
+            return 0; // Server 模式下返回默认值
+        }
+
+        return await _platformApp.ShowMessageDialog(options);
+    }
+
+    /// <summary>
     /// 打开文件对话框。
     /// </summary>
     /// <param name="options">打开文件对话框选项。</param>
