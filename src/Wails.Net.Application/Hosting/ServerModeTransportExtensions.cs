@@ -194,6 +194,13 @@ public static class ServerModeTransportExtensions
                 AllowedOrigins = ipcOptions.AllowedOrigins.ToList(),
             };
         }
+
+        // P0 安全加固（对齐 Wails v3 v3.0.0）：Host 校验（DNS rebinding 防护）+ 同源 Origin 校验。
+        transport.RequestGuard = new IpcRequestGuard(ipcOptions?.AllowedOrigins)
+        {
+            AllowAllOrigins = ipcOptions is not null && !ipcOptions.RequireOriginValidation,
+        };
+
         return transport;
     }
 

@@ -135,6 +135,20 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
     public IpcOriginValidator? OriginValidator { get; set; }
 
     /// <summary>
+    /// 获取或设置 Server 模式请求安全闸门（P0 安全加固，对齐 Wails v3 `v3.0.0`）。
+    /// 非空时启用以下策略：
+    /// <list type="bullet">
+    /// <item>全部请求校验 <c>Host</c> 头（loopback 绑定的 DNS rebinding 防护）；</item>
+    /// <item>WebSocket 升级按「请求 Host 同源 / <see cref="IpcOptions.AllowedOrigins"/> 白名单」校验
+    /// <c>Origin</c>（替代 <see cref="OriginValidator"/> 的本地源恒信任策略）；</item>
+    /// <item>WebSocket 端点的非升级请求返回 405（<c>Allow: GET</c>），不回退到资源服务器。</item>
+    /// </list>
+    /// 由 <c>DefaultIpcTransportStrategy</c> / <c>UseServerModeTransport</c> 在 Server 模式装配；
+    /// 为 null 时保持既有行为（裸构造传输层与既有单元测试不受影响）。
+    /// </summary>
+    public IpcRequestGuard? RequestGuard { get; set; }
+
+    /// <summary>
     /// 获取或设置 IPC handshake token（OPT-IPC-002）。
     /// 由框架装配时注入进程级随机 token（<see cref="Wails.Net.Application.Security.IpcHandshakeToken.Current"/>），
     /// 前端通过查询参数 <c>?token=</c> 或 <c>x-wails-token</c> 头回传。
@@ -322,6 +336,15 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
         var request = context.Request;
         var response = context.Response;
 
+        // P0 安全加固：loopback 绑定时拒绝非 localhost / IP 字面量 / 绑定主机 / 白名单的 Host 头，
+        // 防止 DNS rebinding 页面通过同源判定（对齐 Wails v3 v3.0.0 host_guard_server.go）。
+        if (RequestGuard is { } hostGuard && !hostGuard.IsHostAllowed(request))
+        {
+            await WriteTextResponseAsync(
+                response, 403, "403 Forbidden: Host not allowed", cancellationToken);
+            return;
+        }
+
         // 添加 CORS 响应头（使用 CorsOptions 若已设置，否则回退到默认 *）
         ApplyCorsHeaders(request, response);
 
@@ -346,9 +369,14 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
                 return;
             }
 
-            // IPC 来源校验：若设置了 OriginValidator 且校验失败则拒绝连接。
-            // 对应主题 C：IpcOriginValidator 接入传输层。
-            if (OriginValidator is not null && !OriginValidator.Validate(request.Headers["Origin"]))
+            // IPC 来源校验：
+            // - 已装配 Server 模式闸门时按「请求 Host 同源 / AllowedOrigins 白名单」严格校验；
+            // - 否则保持既有 IpcOriginValidator 行为（本地源恒允许）。
+            var originAllowed = RequestGuard is { } originGuard
+                ? originGuard.IsWebSocketOriginAllowed(request)
+                : OriginValidator is null || OriginValidator.Validate(request.Headers["Origin"]);
+
+            if (!originAllowed)
             {
                 response.StatusCode = 403;
                 response.Close();
@@ -370,6 +398,17 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
             }
 
             await HandleWebSocketAsync(context, cancellationToken);
+            return;
+        }
+
+        // P0 安全加固：WebSocket 端点的非升级请求返回 405（Allow: GET），
+        // 不再回退到资源服务器（对齐 Wails v3 仅允许升级语义）。
+        if (RequestGuard is not null &&
+            (string.Equals(path, WebSocketPath, StringComparison.Ordinal) ||
+             string.Equals(path, StreamWebSocketPath, StringComparison.Ordinal)))
+        {
+            await WriteTextResponseAsync(
+                response, 405, "405 Method Not Allowed", cancellationToken, allow: "GET");
             return;
         }
 
@@ -552,6 +591,12 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
             return true;
         }
 
+        // P0 安全加固：已装配 Server 模式闸门时按「请求 Host 同源 / 白名单」严格校验。
+        if (RequestGuard is { } guard)
+        {
+            return guard.IsWebSocketOriginAllowed(origin, request.Headers["Host"]);
+        }
+
         // 复用既有传输层来源校验（本地源恒允许 + 白名单）。
         if (OriginValidator is { } validator)
         {
@@ -680,6 +725,33 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
         await _broadcaster.SendToClientAsync(clientId, errorJson).ConfigureAwait(false);
     }
 
+
+    /// <summary>
+    /// 写入纯文本错误响应（供 P0 安全加固的 403/405 分支使用）。
+    /// </summary>
+    /// <param name="response">HTTP 响应。</param>
+    /// <param name="statusCode">HTTP 状态码。</param>
+    /// <param name="message">响应正文。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <param name="allow">可选的 <c>Allow</c> 响应头（405 时使用）。</param>
+    private static async Task WriteTextResponseAsync(
+        HttpListenerResponse response,
+        int statusCode,
+        string message,
+        CancellationToken cancellationToken,
+        string? allow = null)
+    {
+        if (allow is not null)
+        {
+            response.Headers["Allow"] = allow;
+        }
+
+        response.StatusCode = statusCode;
+        response.ContentType = "text/plain; charset=utf-8";
+        var body = Encoding.UTF8.GetBytes(message);
+        response.ContentLength64 = body.Length;
+        await response.OutputStream.WriteAsync(body, cancellationToken).ConfigureAwait(false);
+    }
 
     /// <summary>
     /// 应用 CORS 响应头。

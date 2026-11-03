@@ -93,6 +93,11 @@ public sealed class DefaultIpcTransportStrategy : IIpcTransportStrategy
                 transport.MaxConcurrentCallsPerConnection = ipcOptions.MaxConcurrentCallsPerConnection;
             }
 
+            // P0 安全加固（对齐 Wails v3 v3.0.0）：Server 模式一律装配请求闸门，
+            // 强制 Host 校验（DNS rebinding 防护）与同源 Origin 校验；
+            // RequireOriginValidation=false 对应 Go 的 WebSocketAllowAllOrigins（仅跳过 Origin 校验）。
+            transport.RequestGuard = CreateRequestGuard(ipcOptions);
+
             return transport;
         }
 
@@ -132,6 +137,23 @@ public sealed class DefaultIpcTransportStrategy : IIpcTransportStrategy
         }
 
         return new IpcOriginValidator(whitelist);
+    }
+
+    /// <summary>
+    /// 根据 <see cref="IpcOptions"/> 创建 Server 模式请求安全闸门（P0 安全加固）。
+    /// 白名单来自 <see cref="IpcOptions.AllowedOrigins"/>（对应 Go 的
+    /// <c>ServerOptions.WebSocketOriginPatterns</c>）；配置缺失时仍启用同源校验（安全默认）。
+    /// </summary>
+    /// <param name="ipcOptions">IPC 安全配置（可为 null）。</param>
+    /// <returns>请求安全闸门。</returns>
+    private static IpcRequestGuard CreateRequestGuard(IpcOptions? ipcOptions)
+    {
+        var patterns = ipcOptions?.AllowedOrigins ?? new List<string>();
+        return new IpcRequestGuard(patterns)
+        {
+            // 与 Go 一致：AllowAllOrigins 仅跳过 Origin 校验，Host 校验仍生效。
+            AllowAllOrigins = ipcOptions is not null && !ipcOptions.RequireOriginValidation,
+        };
     }
 
     /// <summary>
