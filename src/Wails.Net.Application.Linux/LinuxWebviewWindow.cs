@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Gio;
 using GLib;
 using Gtk;
@@ -389,6 +390,10 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     /// 使用 <see cref="UserContentManager.AddScript"/> 注册 <see cref="UserScript"/>，
     /// 确保运行时在页面任何脚本执行前就绪（否则页面脚本访问 wails 时会得到 undefined）。
     /// 仅注入一次，后续导航不重复注入。
+    /// <para>
+    /// §11.2 第 3 项（GHSA-2p5f-2gx8-mh8m 缓解）：先注册 <see cref="LinuxFrameGuard"/> 守卫脚本
+    /// （所有帧），再注册被守卫包裹的运行时标志脚本，使跨源 / 不透明源子帧无法使用后端 IPC。
+    /// </para>
     /// </summary>
     private void InjectRuntimeJs()
     {
@@ -413,8 +418,21 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
                 // UserContentInjectedFrames.AllFrames 确保主框架与子框架均注入。
                 // UserScriptInjectionTime.Start 对应 WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START。
                 var ucm = _webView.GetUserContentManager();
+
+                // §11.2 第 3 项（GHSA-2p5f-2gx8-mh8m 缓解）：先注入帧守卫（所有帧），
+                // 使跨源 / 不透明源子帧标记为不可信并阻断 wails: 端点访问；
+                // WebKit 按注册顺序在同一注入时机执行脚本，因此守卫先于运行时标志生效。
+                var guardScript = UserScript.New(
+                    LinuxFrameGuard.GetGuardScript(),
+                    UserContentInjectedFrames.AllFrames,
+                    UserScriptInjectionTime.Start,
+                    null,
+                    null);
+                ucm.AddScript(guardScript);
+
+                // 运行时标志仅在可信帧注入（守卫未执行时按可信处理，保持兼容）。
                 var script = UserScript.New(
-                    js,
+                    LinuxFrameGuard.WrapRuntimeScript(js),
                     UserContentInjectedFrames.AllFrames,
                     UserScriptInjectionTime.Start,
                     null,
@@ -487,18 +505,38 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
             // 因此此处保持原行为，未接独立 CancellationTokenSource；如后续 GirCore 暴露取消信号可在此接入。
             var pipeline = GetOrCreatePipeline();
             var bodyBytes = ReadRequestBodyBytes(request);
+            var method = request.GetHttpMethod();
+            var path = request.GetPath();
+            var headers = ReadRequestHeaders(request);
+
+            // §11.2 第 3 项（GHSA-2p5f-2gx8-mh8m 缓解）：IPC 来源校验。
+            // WebKitGTK 不暴露发起帧信息，改为校验 Origin / Sec-Fetch-Site 是否与窗口当前页面同源；
+            // 可疑的跨源 / 不透明源 IPC 请求直接返回 403（纵深防御见 LinuxFrameGuard 脚本守卫）。
+            if (!LinuxIpcOriginGuard.IsIpcRequestAllowed(method, path, headers, GetCurrentWindowUrl()))
+            {
+                WailsApplication.Get()?.Logger?.LogWarning(
+                    "已拒绝跨源 IPC 请求：window={WindowName} method={Method} path={Path}",
+                    _options.Name,
+                    method,
+                    path);
+                FinishWithStatus(request, 403, "Forbidden");
+                return;
+            }
+
+            headers.TryGetValue("Origin", out var requestOrigin);
+
             var webviewRequest = new WebviewRequest
             {
-                Method = request.GetHttpMethod(),
-                Path = request.GetPath(),
+                Method = method,
+                Path = path,
                 // P2-12：WebKitGTK 的 URISchemeRequest 不暴露查询串 API，无法透传 HMR 查询（保持 null）。
                 Query = null,
                 RequestBody = bodyBytes.Length == 0 ? "{}" : System.Text.Encoding.UTF8.GetString(bodyBytes),
                 RequestBodyBytes = bodyBytes,
                 WindowId = _id,
                 WindowName = _options.Name,
-                Origin = null,
-                Headers = ReadRequestHeaders(request)
+                Origin = requestOrigin,
+                Headers = headers
             };
             var response = await pipeline.HandleAsync(webviewRequest, CancellationToken.None).ConfigureAwait(true);
             FinishWithResponse(request, response);
@@ -2064,6 +2102,25 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     {
         var uri = _webView?.GetUri();
         return uri ?? _currentUrl;
+    }
+
+    /// <summary>
+    /// 获取窗口当前页面的 URL，供 IPC 来源（Origin）同源校验使用。
+    /// 优先读取 WebKit 当前 URI；WebView 尚未就绪或读取失败时回退到最近一次导航记录的 URL。
+    /// </summary>
+    /// <returns>窗口当前页面 URL；不可用时返回空字符串。</returns>
+    private string GetCurrentWindowUrl()
+    {
+        try
+        {
+            var uri = _webView?.GetUri();
+            return string.IsNullOrEmpty(uri) ? _currentUrl : uri;
+        }
+        catch
+        {
+            // WebView 已销毁 / 原生调用失败时回退到记录值。
+            return _currentUrl;
+        }
     }
 
     /// <inheritdoc />
