@@ -88,8 +88,13 @@ public sealed class WindowsPlatformAppTests
         // 安排：在当前线程构造
         var app = new WindowsPlatformApp(new ApplicationOptions { Name = "TestApp" });
 
-        // 操作：在不同线程调用
-        var result = await Task.Run(() => app.IsOnMainThread());
+        // 操作：在独立线程调用。
+        // 不使用 Task.Run/线程池：TUnit 的测试线程本身可能来自线程池，池线程复用会让
+        // 工作项偶发落在同一 OS 线程上，导致 IsOnMainThread 误判为 true（全量运行时偶发）。
+        bool? result = null;
+        var thread = new Thread(() => result = app.IsOnMainThread());
+        thread.Start();
+        thread.Join();
 
         // 断言：不同线程应返回 false
         await Assert.That(result).IsFalse();
