@@ -1192,6 +1192,11 @@ Wails.Net `HelperProcess.cs` 对齐：
    - `ContentTypeSniffer` 按 Go 源码整体重写（见第 8 条），修复上一轮与上游的语义偏差（RIFF 子类型误判、HTML 缺终止符、文本类型缺 charset、文本判定过严、Ogg/GZIP/ZIP/RAR/MP4 签名不一致）。
    - 其余审查范围（`EventProcessor`、`Application`、`DialogManager`、`LinuxAppearancePortal`、`Win32SystemTray`、`DevProcessLifetimeGuard`/`DevProcessCleanup`/`DevCommand`/`FrontendToolchain`、`LinuxDipCoordinates`/`LinuxWebviewWindow`、`AssetServer`/`BytesResult`、`IconCommand`、`Packager`）逐项复核：未发现阻塞性缺陷；`src/` 未新增反射违规（仅既有白名单 `PlatformFactory`、`CapabilityManifestValidator` 使用 `System.Reflection`）。
 
+13. **既有 7 项测试失败逐项定性修复（2026-11-04）**
+    - 定性：**环境依赖 2 项**（`Application.Linux.Tests` 平台工厂）、**测试写错 4 项**（插件 ID 断言 2、权限清单生成器测试源码缺 `using` 1、`Task.Run` 线程池复用 1）、**代码缺陷 1 项**（`MapCommandSecurityDiagnosticAnalyzer` 在已传 `CommandSecurity` 时仍报告 WNET001/WNET002）。
+    - 处理：新增 [LinuxOnlyAttribute.cs](../../tests/Wails.Net.Application.Linux.Tests/LinuxOnlyAttribute.cs)，非 Linux 主机跳过（Linux 实机保留 `LinuxPlatformApp`/`LinuxClipboard` 强类型断言，不改恒通过）；插件名称断言改为仓库规范的 kebab-case 插件 ID（`filesystem`、`fs-watch`；命令前缀 `fs.*`、`fswatch.*` 与实现/文档均一致，实现未改）；分析器在 `hasSecurityArgument` 为真时跳过 WNET001/WNET002（与 WNET003 判定一致，生成器产物路径未变）；`PluginPermissionManifestGeneratorTests` 4 段内联源码补 `using Microsoft.Extensions.DependencyInjection`（`IPlugin.ConfigureServices` 新增后测试源码未同步）；`IsOnMainThread_ReturnsFalse_WhenCalledFromDifferentThread` 改用独立 `Thread`+`Join`，线程 ID 与创建者必然不同。
+    - 复测：`Plugins.FileSystem.Tests` 1/1、`Plugins.FsWatch.Tests` 1/1、`SourceGenerators.Tests` 24/24、Linux 平台工厂定向 5 通过 2 跳过、`WindowsPlatformAppTests` 13 通过 6 跳过（GUI 默认跳过）。
+
 ### 12.5 验证结果
 
 - 构建（0 警告 0 错误）：`Wails.Net.Application`、`Wails.Net.Application.Linux`、`Wails.Net.Application.Tests`、`Wails.Net.Application.Linux.Tests`。
@@ -1209,8 +1214,8 @@ Wails.Net `HelperProcess.cs` 对齐：
   - 2026-11-04 追加（MIME 嗅探 + CLI 批次）：`ContentTypeSnifferTests` 45/45、资源服务器测试项目 354/354（其中 `AssetServerTests` 类 89/89，含 PNG 嗅探/扩展名优先/Range 206/HEAD）、`IconCommandTests` 15/15、`PackagerTests` 37/37、`PackagerDebRpmTests` 6 通过 2 跳过（Linux 专属用例）、`PackagerBundleTests` 3/3。
   - 2026-11-04 追加（macOS DIP + 审查修复）：`MacDipCoordinatesTests` 37/37（`Wails.Net.Application.MacOS.Tests` 全量 56/56）、`TrayIconRebuildSchedulerTests` 6/6、`PlatformMessageWindowTests` 2 通过 2 跳过（GUI 用例）。
 - **全量构建（2026-11-04，非 Android）**：`src/` 与 `tests/` 全部非 Android 项目编译通过，0 错误；仅 `Wails.Net.Plugins.Mobile.Tests` 失败（`CS0246: MobilePlugin`，`src/Wails.Net.Plugins.Mobile` 中无该类型，**既有问题**，本轮未触碰）。Android 4 个项目（`Application.Android`、`Bundle.Android`、`Application.Android.Tests`、`Demo.Android`）因本机未安装 `android` 工作负载报 `NETSDK1147`，按既有约定跳过。
-- **全量单元测试（2026-11-04，Windows 主机，GUI 默认跳过）**：共 3380 项，通过 3129、失败 7、跳过 244。
-  - 失败 7 项均为**既有环境/预期问题**，非本轮引入：`Application.Linux.Tests` 2 项（Windows 主机无 GirCore/GTK 与 Linux 平台注册）、`Plugins.FileSystem.Tests` 1 项（测试期望名称 `fs`，实现为 `filesystem`）、`Plugins.FsWatch.Tests` 1 项（期望 `fswatch`，实现为 `fs-watch`）、`SourceGenerators.Tests` 2 项（分析器/测试工程既有断言）、`Application.Windows.Tests` 1 项 `IsOnMainThread_ReturnsFalse_WhenCalledFromDifferentThread`（线程池线程复用导致全量运行时偶发；单独运行该类 8/8 通过）。
+- **全量单元测试（2026-11-04，Windows 主机，GUI 默认跳过；修复前基线）**：共 3380 项，通过 3129、失败 7、跳过 244。
+  - 失败 7 项已于同日逐项定性处理（见 §12.4 第 13 条，未重跑全量，全量数字待下次刷新）：Linux 平台工厂 2 项改为非 Linux 跳过；插件 ID 断言与权限清单测试源码 4 项属测试写错，已改测试；`MapCommand` 安全分析器 1 项属实现缺陷，已修；`IsOnMainThread` 偶发 1 项改用独立线程。
   - `Wails.Net.Application.GuiContract.Tests` 为共享库（无测试主机入口），其契约用例由 Windows/Linux/Android 测试工程执行，不计入独立运行。
 
 - GUI 用例按约定默认跳过（未设置 `WAILS_RUN_GUI_TESTS`）。
@@ -1220,6 +1225,6 @@ Wails.Net `HelperProcess.cs` 对齐：
 
 - 当前基线：**`v3.1.0`**（weekly，不含 nightly）。
 - 2026-11-04 复核：GitHub releases/tags 中最新正式版仍为 `v3.1.0`（2026-11-01），其上方仅有 `v3.2.0-nightly.20261101`/`0211`/`0311` 预发布，无 `v3.1.x` hotfix → **基线不变**。
-- 建议节奏：每次 weekly 发布后复核 release notes，按本表结构追加小节；本轮 P1（托盘重建、dev 终端关闭清理、GTK DIP）、资源服务器 P2 批次（含 MIME 内容嗅探）、CLI 批次核对、macOS DIP 补全与代码审查修复均已完成，并完成一次非 Android 全量构建/测试（3380 项，失败 7 项均为既有环境/预期问题）；后续待办为 `#6498` Linux 实机复核、macOS `#if MACOS` 实机编译验证，以及真实桌面环境下的托盘重建/信号清理/多 DPI 验证。
+- 建议节奏：每次 weekly 发布后复核 release notes，按本表结构追加小节；本轮 P1（托盘重建、dev 终端关闭清理、GTK DIP）、资源服务器 P2 批次（含 MIME 内容嗅探）、CLI 批次核对、macOS DIP 补全与代码审查修复均已完成，并完成一次非 Android 全量构建/测试（3380 项，失败 7 项已在同日逐项定性修复，见 §12.4 第 13 条）；后续待办为 `#6498` Linux 实机复核、macOS `#if MACOS` 实机编译验证，以及真实桌面环境下的托盘重建/信号清理/多 DPI 验证。
 
 
