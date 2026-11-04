@@ -76,9 +76,9 @@ public static class ManifestGeneratorRunner
 
 public class PluginPermissionManifestGeneratorTests
 {
-    private const string SinglePluginSource = "using Wails.Net.Application.Plugins;\nnamespace TestApp.Plugins { public class FooPlugin : IPlugin { public string Name => \"foo\"; public void ConfigureServices(IServiceCollection s) { } public void Configure(IPluginContext c) { c.Permissions.RegisterPermissionSet(\"foo:default\", \"Foo 默认权限集\", \"foo:allow-read\", \"foo:allow-write\"); c.Permissions.DeclarePermission(\"foo:allow-read\", \"允许读取\"); c.Permissions.DeclarePermission(\"foo:allow-write\", \"允许写入\"); } } }";
+    private const string SinglePluginSource = "using Wails.Net.Application.Plugins;\nusing Microsoft.Extensions.DependencyInjection;\nnamespace TestApp.Plugins { public class FooPlugin : IPlugin { public string Name => \"foo\"; public void ConfigureServices(IServiceCollection s) { } public void Configure(IPluginContext c) { c.Permissions.RegisterPermissionSet(\"foo:default\", \"Foo 默认权限集\", \"foo:allow-read\", \"foo:allow-write\"); c.Permissions.DeclarePermission(\"foo:allow-read\", \"允许读取\"); c.Permissions.DeclarePermission(\"foo:allow-write\", \"允许写入\"); } } }";
 
-    private const string MobileUmbrellaSource = "using Wails.Net.Application.Plugins;\nnamespace TestApp.Plugins.Mobile { public class CameraPlugin : IPlugin { public string Name => \"camera\"; public void ConfigureServices(IServiceCollection s) { } public void Configure(IPluginContext c) { c.Permissions.RegisterPermissionSet(\"mobile:default\", \"mobile 默认权限集\", \"mobile:allow-default\"); c.Permissions.RegisterPermissionSet(\"camera:default\", \"相机默认权限集\", \"camera:allow-capture\"); c.Permissions.DeclarePermission(\"camera:allow-capture\", \"允许拍照\"); } } }";
+    private const string MobileUmbrellaSource = "using Wails.Net.Application.Plugins;\nusing Microsoft.Extensions.DependencyInjection;\nnamespace TestApp.Plugins.Mobile { public class CameraPlugin : IPlugin { public string Name => \"camera\"; public void ConfigureServices(IServiceCollection s) { } public void Configure(IPluginContext c) { c.Permissions.RegisterPermissionSet(\"mobile:default\", \"mobile 默认权限集\", \"mobile:allow-default\"); c.Permissions.RegisterPermissionSet(\"camera:default\", \"相机默认权限集\", \"camera:allow-capture\"); c.Permissions.DeclarePermission(\"camera:allow-capture\", \"允许拍照\"); } } }";
 
     [Test]
     public async Task SinglePlugin_GeneratesManifestWithAllPermissions()
@@ -117,7 +117,7 @@ public class PluginPermissionManifestGeneratorTests
     [Test]
     public async Task MultiplePlugins_GenerateMultipleInnerClasses()
     {
-        const string source = "using Wails.Net.Application.Plugins;\nnamespace TestApp.Plugins { public class FooPlugin : IPlugin { public string Name => \"foo\"; public void ConfigureServices(IServiceCollection s) { } public void Configure(IPluginContext c) { c.Permissions.DeclarePermission(\"foo:allow-x\", \"X\"); } } public class BarPlugin : IPlugin { public string Name => \"bar\"; public void ConfigureServices(IServiceCollection s) { } public void Configure(IPluginContext c) { c.Permissions.DeclarePermission(\"bar:allow-y\", \"Y\"); } } }";
+        const string source = "using Wails.Net.Application.Plugins;\nusing Microsoft.Extensions.DependencyInjection;\nnamespace TestApp.Plugins { public class FooPlugin : IPlugin { public string Name => \"foo\"; public void ConfigureServices(IServiceCollection s) { } public void Configure(IPluginContext c) { c.Permissions.DeclarePermission(\"foo:allow-x\", \"X\"); } } public class BarPlugin : IPlugin { public string Name => \"bar\"; public void ConfigureServices(IServiceCollection s) { } public void Configure(IPluginContext c) { c.Permissions.DeclarePermission(\"bar:allow-y\", \"Y\"); } } }";
         var (_, _, generated, _) = ManifestGeneratorRunner.Run(source);
         await Assert.That(generated).Contains("public static class Foo");
         await Assert.That(generated).Contains("public static class Bar");
@@ -138,7 +138,7 @@ public class PluginPermissionManifestGeneratorTests
     [Test]
     public async Task NameFromBlockProperty_StillExtracted()
     {
-        const string source = "using Wails.Net.Application.Plugins;\nnamespace TestApp { public class FooPlugin : IPlugin { public string Name { get { return \"foo\"; } } public void ConfigureServices(IServiceCollection s) { } public void Configure(IPluginContext c) { c.Permissions.DeclarePermission(\"foo:allow-x\", \"X\"); } } }";
+        const string source = "using Wails.Net.Application.Plugins;\nusing Microsoft.Extensions.DependencyInjection;\nnamespace TestApp { public class FooPlugin : IPlugin { public string Name { get { return \"foo\"; } } public void ConfigureServices(IServiceCollection s) { } public void Configure(IPluginContext c) { c.Permissions.DeclarePermission(\"foo:allow-x\", \"X\"); } } }";
         var (_, _, generated, _) = ManifestGeneratorRunner.Run(source);
         await Assert.That(generated).Contains("PluginName = \"foo\"");
     }

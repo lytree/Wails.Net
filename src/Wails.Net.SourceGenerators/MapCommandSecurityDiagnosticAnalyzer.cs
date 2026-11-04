@@ -122,7 +122,14 @@ public sealed class MapCommandSecurityDiagnosticAnalyzer : DiagnosticAnalyzer
                 Wnet003, invocation.Syntax.GetLocation(), commandName ?? "<unknown>"));
         }
 
-        // 遍历各参数，解析委托引用到的方法，检查其安全特性
+        // 遍历各参数，解析委托引用到的方法，检查其安全特性。
+        // 已传入 CommandSecurity 时，方法上的 [RequireCapability] / 参数上的 [ScopeParameter]
+        // 会在运行时被读取，不属于"声明被丢弃"场景，故不报告 WNET001 / WNET002。
+        if (hasSecurityArgument)
+        {
+            return;
+        }
+
         foreach (var arg in invocation.Arguments)
         {
             var target = ResolveTargetMethod(arg.Value);
