@@ -37,6 +37,7 @@ public sealed class PlatformFactoryLinuxTests
     }
 
     [Test]
+    [LinuxOnly]
     public async Task CreatePlatformApp_OnLinux_ReturnsLinuxPlatformApp()
     {
         // 操作：通过工厂创建平台应用
@@ -48,6 +49,7 @@ public sealed class PlatformFactoryLinuxTests
     }
 
     [Test]
+    [LinuxOnly]
     public async Task CreateClipboard_OnLinux_ReturnsLinuxClipboard()
     {
         // 操作：通过工厂创建剪贴板
