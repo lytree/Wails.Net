@@ -1213,14 +1213,15 @@ Wails.Net `HelperProcess.cs` 对齐：
   - `AssetServerTests`：85/85 通过（资源服务器批次；项目全量 305 项由实现方跑通）。
   - 2026-11-04 追加（MIME 嗅探 + CLI 批次）：`ContentTypeSnifferTests` 45/45、资源服务器测试项目 354/354（其中 `AssetServerTests` 类 89/89，含 PNG 嗅探/扩展名优先/Range 206/HEAD）、`IconCommandTests` 15/15、`PackagerTests` 37/37、`PackagerDebRpmTests` 6 通过 2 跳过（Linux 专属用例）、`PackagerBundleTests` 3/3。
   - 2026-11-04 追加（macOS DIP + 审查修复）：`MacDipCoordinatesTests` 37/37（`Wails.Net.Application.MacOS.Tests` 全量 56/56）、`TrayIconRebuildSchedulerTests` 6/6、`PlatformMessageWindowTests` 2 通过 2 跳过（GUI 用例）。
-- **全量构建（2026-11-04，非 Android）**：89 个非 Android 项目（`src/` + `tests/`，排除 `Templates/content`）。此前唯一失败项 `Wails.Net.Plugins.Mobile.Tests`（`CS0246: MobilePlugin`）已修复：`MobilePlugin` 并非本仓库应有的聚合类型（`Plugins.Mobile` 按 Tauri v2 拆为 7 个独立插件，与仓库其余 46 个插件的组织形式一致），属**测试过时**；测试已重写为逐插件校验（该项目单独构建 0 警告 0 错误、5/5 通过），全量构建未重跑。已知警告 3 条（`MSB3277` WebView2/WindowsBase 版本冲突，既有）。Android 4 个项目（`Application.Android`、`Bundle.Android`、`Application.Android.Tests`、`Demo.Android`）因本机未安装 `android` 工作负载报 `NETSDK1147`，按既有约定跳过。
-- **全量单元测试（2026-11-04，Windows 主机，GUI 默认跳过；修复后复测）**：31 个测试项目、共 **3380 项**，通过 **3134**、失败 **0**、跳过 **246** —— **全绿**。
-  - 对比修复前基线（3380 项 / 通过 3129 / 失败 7 / 跳过 244）：总数不变，失败 7 → 0，通过 +5，跳过 +2。差异来源：Linux 平台工厂 2 项由"失败"转为"跳过"（`LinuxOnlyAttribute`，非 Linux 主机按预期跳过）；其余 5 项（`Plugins.FileSystem`/`Plugins.FsWatch` 插件 ID 2 项、`SourceGenerators` 2 项、`IsOnMainThread` 1 项）由"失败"转为"通过"。
+- **全量构建（2026-11-04，非 Android）**：89 个非 Android 项目（`src/` + `tests/`，排除 `Templates/content`）**全部编译通过**（0 错误、3 条既有 `MSB3277` WebView2/WindowsBase 版本冲突告警）。此前唯一失败项 `Wails.Net.Plugins.Mobile.Tests`（`CS0246: MobilePlugin`）已修复并纳入全量：`MobilePlugin` 并非本仓库应有的聚合类型（`Plugins.Mobile` 按 Tauri v2 拆为 7 个独立插件，与仓库其余 46 个插件的组织形式一致），属**测试过时**，测试已重写为逐插件校验。Android 4 个项目（`Application.Android`、`Bundle.Android`、`Application.Android.Tests`、`Demo.Android`）因本机未安装 `android` 工作负载报 `NETSDK1147`，按既有约定跳过。
+- **全量单元测试（2026-11-04，Windows 主机，GUI 默认跳过；含 Mobile 修复后复测）**：32 个测试项目、共 **3385 项**，通过 **3139**、失败 **0**、跳过 **246** —— **全绿**。
+  - 与上次复测（31 个项目 / 3380 项 / 通过 3134 / 失败 0 / 跳过 246）对比：项目 +1、总数 +5、通过 +5、失败与跳过不变；增量全部来自 `Wails.Net.Plugins.Mobile.Tests`（重写后的 5 项用例，此前因编译失败未计入）。
+  - 与修复前基线（3380 项 / 通过 3129 / 失败 7 / 跳过 244）对比：总数 +5（`Mobile` 5 项用例首次计入），通过 +10（7 项原有失败中 5 项转为通过 + Mobile 新增 5 项），跳过 +2（Linux 平台工厂 2 项改为 `LinuxOnlyAttribute` 跳过），失败 −7（清零）；7 项原有失败全部消除且无回归。
   - 跳过构成：`Application.Windows.Tests` 133（GUI 用例）、`Application.Linux.Tests` 110（GUI 用例 + 2 项 `LinuxOnly`）、`Cli.Tests` 3；滚动合计 246。
   - `IsOnMainThread_ReturnsFalse_WhenCalledFromDifferentThread`：全量并发场景下通过，另单独连续复跑 3 次均 1/1 通过（独立 `Thread` + `Join`，与创建线程 ID 必然不同，不再依赖线程池复用）。
   - 安全分析器（WNET001/002/003）：`SourceGenerators.Tests` 24/24 通过，覆盖三种诊断及"已传 `CommandSecurity` 时不报告 WNET001/WNET002"用例；89 个项目全量构建未产生任何 WNET001/002/003 告警（`TreatWarningsAsErrors=true` 下若有即为构建错误）→ **无新增、无丢失诊断**；分析器仅跳过报告，不改代码生成，生成产物与权限清单未变化（`git status` 干净、生成器源码未改）。
   - `LinuxOnlyAttribute` 在 Windows 主机按预期跳过，跳过理由为"仅在 Linux 平台运行：依赖 Linux 平台程序集注册的实际实现"，未被误判为失败。
-  - `Wails.Net.Application.GuiContract.Tests` 为共享库（无测试主机入口），其契约用例由 Windows/Linux/Android 测试工程执行，不计入独立运行。`Wails.Net.Plugins.Mobile.Tests` 修复后单独运行 5/5 通过（逐插件校验 7 个移动端插件的 ID、命令前缀、`mobile:allow-default` 能力声明、权限集/权限声明与 `ConfigureServices` 降级注册），此前因编译失败未计入 3380 项统计，全量测试未重跑。
+  - `Wails.Net.Application.GuiContract.Tests` 为共享库（无测试主机入口），其契约用例由 Windows/Linux/Android 测试工程执行，不计入独立运行。`Wails.Net.Plugins.Mobile.Tests` 已计入本次统计：5/5 通过（逐插件校验 7 个移动端插件的 ID、命令前缀、`mobile:allow-default` 能力声明、权限集/权限声明与 `ConfigureServices` 降级注册）。
 
 - GUI 用例按约定默认跳过（未设置 `WAILS_RUN_GUI_TESTS`）。
 - **未验证**：真实 Explorer 重启后的托盘重建、真实关闭控制台窗口 / 终端 SIGHUP 的派生进程清理、真实 WebKitGTK 下 portal 读取与 GTK4/wmctrl 多 DPI 坐标、macOS `#if MACOS` 分支（Windows 主机不参与编译，需 macOS 实机编译/运行验证）、`#6498` 在 Linux 实机的权限保留行为。
@@ -1229,6 +1230,6 @@ Wails.Net `HelperProcess.cs` 对齐：
 
 - 当前基线：**`v3.1.0`**（weekly，不含 nightly）。
 - 2026-11-04 复核：GitHub releases/tags 中最新正式版仍为 `v3.1.0`（2026-11-01），其上方仅有 `v3.2.0-nightly.20261101`/`0211`/`0311` 预发布，无 `v3.1.x` hotfix → **基线不变**。
-- 建议节奏：每次 weekly 发布后复核 release notes，按本表结构追加小节；本轮 P1（托盘重建、dev 终端关闭清理、GTK DIP）、资源服务器 P2 批次（含 MIME 内容嗅探）、CLI 批次核对、macOS DIP 补全与代码审查修复均已完成，并完成一次非 Android 全量构建/测试；修复 7 项既有失败后已重跑全量复测：**31 个测试项目 3380 项，通过 3134 / 失败 0 / 跳过 246（全绿）**（见 §12.5）。后续待办为 `#6498` Linux 实机复核、macOS `#if MACOS` 实机编译验证，以及真实桌面环境下的托盘重建/信号清理/多 DPI 验证。
+- 建议节奏：每次 weekly 发布后复核 release notes，按本表结构追加小节；本轮 P1（托盘重建、dev 终端关闭清理、GTK DIP）、资源服务器 P2 批次（含 MIME 内容嗅探）、CLI 批次核对、macOS DIP 补全与代码审查修复均已完成，并完成一次非 Android 全量构建/测试；修复 7 项既有失败并重写 Mobile 测试后已重跑全量复测：**89 个项目全部编译通过（0 错误），32 个测试项目 3385 项，通过 3139 / 失败 0 / 跳过 246（全绿）**（见 §12.5）。后续待办为 `#6498` Linux 实机复核、macOS `#if MACOS` 实机编译验证，以及真实桌面环境下的托盘重建/信号清理/多 DPI 验证。
 
 
