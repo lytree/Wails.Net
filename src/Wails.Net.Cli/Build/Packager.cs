@@ -37,6 +37,16 @@ public sealed class Packager
     private const int TarBlockSize = 512;
 
     /// <summary>
+    /// tar 条目默认权限（0644 = 420）：数据与配置文件。
+    /// </summary>
+    private const int DefaultTarFileMode = 420;
+
+    /// <summary>
+    /// tar 条目可执行权限（0755 = 493）：主程序及应可执行产物。
+    /// </summary>
+    private const int ExecutableTarFileMode = 493;
+
+    /// <summary>
     /// 将 BundleConfig 映射到 PackageOptions（不覆盖命令行已设值）。
     /// 对应 Tauri v2 的 bundle 配置应用到打包流程。
     /// </summary>
@@ -99,7 +109,13 @@ public sealed class Packager
                         break;
 
                     case PackageFormat.TarGz:
-                        await CreateTarGzAsync(publishDir, stagedOutputPath, options.IncludeSymbols);
+                        // 与 deb/rpm 的 0755 保持一致：主程序必须带可执行位，解包后可直接运行
+                        // （对应 Wails v3 #6498）。
+                        await CreateTarGzAsync(
+                            publishDir,
+                            stagedOutputPath,
+                            options.IncludeSymbols,
+                            FindLinuxExecutable(publishDir, options.AppName));
                         break;
 
                     case PackageFormat.Nsis:
@@ -213,11 +229,13 @@ public sealed class Packager
     /// <param name="sourceDir">源目录。</param>
     /// <param name="outputPath">输出路径。</param>
     /// <param name="includeSymbols">是否包含调试符号文件。</param>
-    private static async Task CreateTarGzAsync(string sourceDir, string outputPath, bool includeSymbols)
+    /// <param name="mainExecutable">主可执行文件名（可为 null）。</param>
+    private static async Task CreateTarGzAsync(
+        string sourceDir, string outputPath, bool includeSymbols, string? mainExecutable)
     {
         await using var outputStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None);
         await using var gzipStream = new GZipStream(outputStream, CompressionLevel.Optimal);
-        await WriteTarAsync(gzipStream, sourceDir, includeSymbols);
+        await WriteTarAsync(gzipStream, sourceDir, includeSymbols, mainExecutable);
     }
 
     /// <summary>
@@ -226,7 +244,9 @@ public sealed class Packager
     /// <param name="output">输出流。</param>
     /// <param name="sourceDir">源目录。</param>
     /// <param name="includeSymbols">是否包含调试符号文件。</param>
-    private static async Task WriteTarAsync(Stream output, string sourceDir, bool includeSymbols)
+    /// <param name="mainExecutable">主可执行文件名（可为 null）。</param>
+    private static async Task WriteTarAsync(
+        Stream output, string sourceDir, bool includeSymbols, string? mainExecutable)
     {
         var baseDir = new DirectoryInfo(sourceDir);
         var allFiles = baseDir.EnumerateFiles("*", SearchOption.AllDirectories);
@@ -242,7 +262,7 @@ public sealed class Packager
                 continue;
             }
 
-            await WriteTarEntryAsync(output, file, relativePath);
+            await WriteTarEntryAsync(output, file, relativePath, mainExecutable);
         }
 
         // 写入两个空块作为文件结束标记
@@ -256,9 +276,11 @@ public sealed class Packager
     /// <param name="output">输出流。</param>
     /// <param name="file">文件信息。</param>
     /// <param name="archivePath">归档内路径。</param>
-    private static async Task WriteTarEntryAsync(Stream output, FileInfo file, string archivePath)
+    /// <param name="mainExecutable">主可执行文件名（可为 null）。</param>
+    private static async Task WriteTarEntryAsync(
+        Stream output, FileInfo file, string archivePath, string? mainExecutable)
     {
-        var header = CreateTarHeader(file, archivePath);
+        var header = CreateTarHeader(file, archivePath, ResolveTarEntryMode(file, archivePath, mainExecutable));
         await output.WriteAsync(header);
 
         var fileBytes = await File.ReadAllBytesAsync(file.FullName);
@@ -274,12 +296,57 @@ public sealed class Packager
     }
 
     /// <summary>
+    /// 解析 tar 条目应写入的 Unix 权限位。
+    /// <para>
+    /// 主可执行文件统一写 0755（与 deb/rpm 的 <c>install -m 0755</c> 一致）；
+    /// 其余文件在 Unix 主机上保留源文件权限位，Windows 主机（无 Unix 权限位）
+    /// 按 0644 写入，避免数据/配置文件被误提权。
+    /// </para>
+    /// </summary>
+    /// <param name="file">源文件。</param>
+    /// <param name="archivePath">归档内相对路径（正斜杠）。</param>
+    /// <param name="mainExecutable">主可执行文件名（归档根目录下的文件名，可为 null）。</param>
+    /// <returns>八进制权限值（如 0755 = 493）。</returns>
+    private static int ResolveTarEntryMode(FileInfo file, string archivePath, string? mainExecutable)
+    {
+        if (mainExecutable is not null &&
+            string.Equals(archivePath, mainExecutable, StringComparison.Ordinal))
+        {
+            return ExecutableTarFileMode;
+        }
+
+        if (!OperatingSystem.IsWindows())
+        {
+            try
+            {
+                // 仅保留 rwx 九位权限，不传播 setuid/setgid/sticky，避免误提权。
+                var mode = (int)file.UnixFileMode & 0x1FF;
+                if (mode != 0)
+                {
+                    return mode;
+                }
+            }
+            catch (IOException)
+            {
+                // 权限读取失败时回退默认权限，不阻断打包。
+            }
+            catch (PlatformNotSupportedException)
+            {
+                // 运行时不支持 Unix 权限位时回退默认权限。
+            }
+        }
+
+        return DefaultTarFileMode;
+    }
+
+    /// <summary>
     /// 创建 tar 文件头（512 字节）。
     /// </summary>
     /// <param name="file">文件信息。</param>
     /// <param name="archivePath">归档内路径。</param>
+    /// <param name="mode">Unix 权限位（八进制值）。</param>
     /// <returns>512 字节 tar 头。</returns>
-    private static byte[] CreateTarHeader(FileInfo file, string archivePath)
+    private static byte[] CreateTarHeader(FileInfo file, string archivePath, int mode)
     {
         var header = new byte[TarBlockSize];
 
@@ -288,8 +355,8 @@ public sealed class Packager
         var nameLength = Math.Min(nameBytes.Length, 99);
         Array.Copy(nameBytes, 0, header, 0, nameLength);
 
-        // mode (100-107, 8 bytes) - 默认 0644（八进制）= 420（十进制）
-        WriteOctal(header, 100, 8, 420);
+        // mode (100-107, 8 bytes) - 主程序 0755，其余按源权限/0644
+        WriteOctal(header, 100, 8, mode);
 
         // uid (108-115, 8 bytes)
         WriteOctal(header, 108, 8, 0);
