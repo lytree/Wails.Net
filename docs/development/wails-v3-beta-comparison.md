@@ -1197,6 +1197,16 @@ Wails.Net `HelperProcess.cs` 对齐：
     - 处理：新增 [LinuxOnlyAttribute.cs](../../tests/Wails.Net.Application.Linux.Tests/LinuxOnlyAttribute.cs)，非 Linux 主机跳过（Linux 实机保留 `LinuxPlatformApp`/`LinuxClipboard` 强类型断言，不改恒通过）；插件名称断言改为仓库规范的 kebab-case 插件 ID（`filesystem`、`fs-watch`；命令前缀 `fs.*`、`fswatch.*` 与实现/文档均一致，实现未改）；分析器在 `hasSecurityArgument` 为真时跳过 WNET001/WNET002（与 WNET003 判定一致，生成器产物路径未变）；`PluginPermissionManifestGeneratorTests` 4 段内联源码补 `using Microsoft.Extensions.DependencyInjection`（`IPlugin.ConfigureServices` 新增后测试源码未同步）；`IsOnMainThread_ReturnsFalse_WhenCalledFromDifferentThread` 改用独立 `Thread`+`Join`，线程 ID 与创建者必然不同。
     - 复测：`Plugins.FileSystem.Tests` 1/1、`Plugins.FsWatch.Tests` 1/1、`SourceGenerators.Tests` 24/24、Linux 平台工厂定向 5 通过 2 跳过、`WindowsPlatformAppTests` 13 通过 6 跳过（GUI 默认跳过）。
 
+14. **tar.gz 权限位修复（`#6498` 代码侧，2026-11-05）**
+    - [Packager.cs](../../src/Wails.Net.Cli/Build/Packager.cs)：新增 `ExecutableTarFileMode`（0755）与 `DefaultTarFileMode`（0644）；`PackageAsync` 在 TarGz 分支先经 `FindLinuxExecutable(publishDir, options.AppName)` 定位主程序，`ResolveTarEntryMode` 对主程序统一写 0755（与 deb/rpm 的 `install -m 0755` 一致），其余文件在 Unix 主机保留源文件 rwx 九位（`& 0x1FF`，不传播 setuid/setgid/sticky），Windows 主机回退 0644，避免数据/配置文件被误提权。
+    - 测试：`PackagerTests` 新增 3 项 —— 主程序 0755、数据文件 0644/0640 不被提权、Unix 主机保留次级脚本可执行位（Windows 主机跳过）。
+    - **未验证**：tar.gz/deb/rpm 解包后的实际权限位仍需 Linux 实机复核（实机清单 L3）。
+
+15. **Android GUI 契约能力边界（2026-11-05）**
+    - [AndroidWebviewWindowFixture.cs](../../tests/Wails.Net.Application.Android.Tests/AndroidWebviewWindowFixture.cs) 的 `HasRealGuiEnvironment` **保持 `false`**，并改写 XML 注释说明依据：测试工程以普通 TUnit 宿主运行在 `net10.0-android36.0`，未声明 `ApplicationId`/`AndroidApplication`，无 `MainActivity`/`AndroidManifest.xml`，进程内没有可承载 `SurfaceView` 的 Activity（`AndroidPlatformApp.GetActivity()` 恒为 null）；`AndroidWebviewWindow` 构造仅缓存参数，真正创建 WebView 需在 `Show()` 时附加 Activity 视图层级。
+    - 结论：基类 `CreateWindow` 在 `HasRealGuiEnvironment=false` 时抛 `SkipTestException`，109 项契约中仅少量"创建窗口前 `if (!HasRealGuiEnvironment) return;` 早退"的用例真实执行，其余跳过——这是能力边界，**不记为验证通过**。不能改为返回 `true` 伪装可跑（会因缺少 Activity 失败或挂起），也未降低任何断言的强度。
+    - 不新增可部署测试宿主的决策：补齐最小宿主需 `MainActivity` + `ApplicationId` + `AndroidManifest.xml`（以及把测试结果回写 logcat/文件的入口），属 Android 专有脚手架；本机未安装 `android` 工作负载（4 个项目 `NETSDK1147`），改动无法编译验证。设备端功能验证继续由 [run-android-e2e.fsx](../../tests/Wails.Net.Android.E2E/run-android-e2e.fsx) 覆盖。建议路径：新增 `MainActivity` 在 `OnCreate` 启动测试入口，结果写入 logcat 或应用私有文件，由 `adb` 脚本判定。
+
 ### 12.5 验证结果
 
 - 构建（0 警告 0 错误）：`Wails.Net.Application`、`Wails.Net.Application.Linux`、`Wails.Net.Application.Tests`、`Wails.Net.Application.Linux.Tests`。
@@ -1213,6 +1223,7 @@ Wails.Net `HelperProcess.cs` 对齐：
   - `AssetServerTests`：85/85 通过（资源服务器批次；项目全量 305 项由实现方跑通）。
   - 2026-11-04 追加（MIME 嗅探 + CLI 批次）：`ContentTypeSnifferTests` 45/45、资源服务器测试项目 354/354（其中 `AssetServerTests` 类 89/89，含 PNG 嗅探/扩展名优先/Range 206/HEAD）、`IconCommandTests` 15/15、`PackagerTests` 37/37、`PackagerDebRpmTests` 6 通过 2 跳过（Linux 专属用例）、`PackagerBundleTests` 3/3。
   - 2026-11-04 追加（macOS DIP + 审查修复）：`MacDipCoordinatesTests` 37/37（`Wails.Net.Application.MacOS.Tests` 全量 56/56）、`TrayIconRebuildSchedulerTests` 6/6、`PlatformMessageWindowTests` 2 通过 2 跳过（GUI 用例）。
+  - 2026-11-05 追加（tar.gz 权限位）：`Wails.Net.Cli` 构建 0 警告 0 错误；`PackagerTests` 定向 40 项 — 通过 39、跳过 1（`PackageAsync_TarGz_PreservesExecutableBitOfSecondaryScript`，仅 Unix 主机运行）。
 - **全量构建（2026-11-04，非 Android）**：89 个非 Android 项目（`src/` + `tests/`，排除 `Templates/content`）**全部编译通过**（0 错误、3 条既有 `MSB3277` WebView2/WindowsBase 版本冲突告警）。此前唯一失败项 `Wails.Net.Plugins.Mobile.Tests`（`CS0246: MobilePlugin`）已修复并纳入全量：`MobilePlugin` 并非本仓库应有的聚合类型（`Plugins.Mobile` 按 Tauri v2 拆为 7 个独立插件，与仓库其余 46 个插件的组织形式一致），属**测试过时**，测试已重写为逐插件校验。Android 4 个项目（`Application.Android`、`Bundle.Android`、`Application.Android.Tests`、`Demo.Android`）因本机未安装 `android` 工作负载报 `NETSDK1147`，按既有约定跳过。
 - **全量单元测试（2026-11-04，Windows 主机，GUI 默认跳过；含 Mobile 修复后复测）**：32 个测试项目、共 **3385 项**，通过 **3139**、失败 **0**、跳过 **246** —— **全绿**。
   - 与上次复测（31 个项目 / 3380 项 / 通过 3134 / 失败 0 / 跳过 246）对比：项目 +1、总数 +5、通过 +5、失败与跳过不变；增量全部来自 `Wails.Net.Plugins.Mobile.Tests`（重写后的 5 项用例，此前因编译失败未计入）。
@@ -1224,12 +1235,13 @@ Wails.Net `HelperProcess.cs` 对齐：
   - `Wails.Net.Application.GuiContract.Tests` 为共享库（无测试主机入口），其契约用例由 Windows/Linux/Android 测试工程执行，不计入独立运行。`Wails.Net.Plugins.Mobile.Tests` 已计入本次统计：5/5 通过（逐插件校验 7 个移动端插件的 ID、命令前缀、`mobile:allow-default` 能力声明、权限集/权限声明与 `ConfigureServices` 降级注册）。
 
 - GUI 用例按约定默认跳过（未设置 `WAILS_RUN_GUI_TESTS`）。
-- **未验证**：真实 Explorer 重启后的托盘重建、真实关闭控制台窗口 / 终端 SIGHUP 的派生进程清理、真实 WebKitGTK 下 portal 读取与 GTK4/wmctrl 多 DPI 坐标、macOS `#if MACOS` 分支（Windows 主机不参与编译，需 macOS 实机编译/运行验证）、`#6498` 在 Linux 实机的权限保留行为。
+- **未验证**：真实 Explorer 重启后的托盘重建、真实关闭控制台窗口 / 终端 SIGHUP 的派生进程清理、真实 WebKitGTK 下 portal 读取与 GTK4/wmctrl 多 DPI 坐标、macOS `#if MACOS` 分支（Windows 主机不参与编译，需 macOS 实机编译/运行验证）、`#6498` 在 Linux 实机的权限保留行为（代码侧已修复，见 §12.4 第 14 条，仍需实机解包复核）。
+- **Android GUI 契约能力边界（2026-11-05）**：`AndroidWebviewWindowFixture.HasRealGuiEnvironment` 保持 `false`，109 项共享契约在 Android 执行器上仅少量"创建窗口前早退"用例真实执行，其余跳过——**不记为验证通过**；设备端 WebView/IPC 验证由 `Wails.Net.Android.E2E` 覆盖，未新增设备端测试宿主（决策理由见 §12.4 第 15 条）。
 
 ### 12.6 基线维护结论
 
 - 当前基线：**`v3.1.0`**（weekly，不含 nightly）。
 - 2026-11-04 复核：GitHub releases/tags 中最新正式版仍为 `v3.1.0`（2026-11-01），其上方仅有 `v3.2.0-nightly.20261101`/`0211`/`0311` 预发布，无 `v3.1.x` hotfix → **基线不变**。
-- 建议节奏：每次 weekly 发布后复核 release notes，按本表结构追加小节；本轮 P1（托盘重建、dev 终端关闭清理、GTK DIP）、资源服务器 P2 批次（含 MIME 内容嗅探）、CLI 批次核对、macOS DIP 补全与代码审查修复均已完成，并完成一次非 Android 全量构建/测试；修复 7 项既有失败并重写 Mobile 测试后已重跑全量复测：**89 个项目全部编译通过（0 错误），32 个测试项目 3385 项，通过 3139 / 失败 0 / 跳过 246（全绿）**（见 §12.5）。后续待办为 `#6498` Linux 实机复核、macOS `#if MACOS` 实机编译验证，以及真实桌面环境下的托盘重建/信号清理/多 DPI 验证。
+- 建议节奏：每次 weekly 发布后复核 release notes，按本表结构追加小节；本轮 P1（托盘重建、dev 终端关闭清理、GTK DIP）、资源服务器 P2 批次（含 MIME 内容嗅探）、CLI 批次核对、macOS DIP 补全与代码审查修复均已完成，并完成一次非 Android 全量构建/测试；修复 7 项既有失败并重写 Mobile 测试后已重跑全量复测：**89 个项目全部编译通过（0 错误），32 个测试项目 3385 项，通过 3139 / 失败 0 / 跳过 246（全绿）**（见 §12.5）。2026-11-05 追加：`#6498` tar.gz 权限位代码侧已修复（主程序 0755、其余保留源权限，`PackagerTests` 39 通过 1 跳过），剩余仅 Linux 实机解包复核；Android GUI 契约执行器与设备端测试宿主缺口已明确能力边界并记录决策（见 §12.4 第 15 条），后续待办为 `#6498` Linux 实机复核、macOS `#if MACOS` 实机编译验证，以及真实桌面环境下的托盘重建/信号清理/多 DPI 验证。
 
 
