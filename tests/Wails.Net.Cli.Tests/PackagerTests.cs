@@ -1,3 +1,5 @@
+using System.IO.Compression;
+using System.Text;
 using TUnit.Assertions;
 using TUnit.Assertions.Extensions;
 using TUnit.Core;
@@ -20,6 +22,61 @@ public sealed class PackagerTests
         var dir = Path.Combine(Path.GetTempPath(), "wailsnet-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         return dir;
+    }
+
+    /// <summary>
+    /// 读取 tar.gz 归档内每个文件的 Unix 权限位。
+    /// </summary>
+    /// <param name="archivePath">tar.gz 路径。</param>
+    /// <returns>归档内路径到八进制权限值的映射。</returns>
+    private static async Task<Dictionary<string, int>> ReadTarGzModesAsync(string archivePath)
+    {
+        var modes = new Dictionary<string, int>(StringComparer.Ordinal);
+        await using var fileStream = File.OpenRead(archivePath);
+        await using var gzipStream = new GZipStream(fileStream, CompressionMode.Decompress);
+
+        var header = new byte[512];
+        while (true)
+        {
+            var read = 0;
+            while (read < header.Length)
+            {
+                var chunk = await gzipStream.ReadAsync(header.AsMemory(read, header.Length - read));
+                if (chunk == 0)
+                {
+                    return modes;
+                }
+                read += chunk;
+            }
+
+            if (header[0] == 0)
+            {
+                // 两个全零块为归档结束标记
+                return modes;
+            }
+
+            var name = Encoding.UTF8.GetString(header, 0, 100).TrimEnd('\0');
+            var modeText = Encoding.ASCII.GetString(header, 100, 8).Trim('\0', ' ');
+            modes[name] = Convert.ToInt32(modeText, 8);
+
+            var sizeText = Encoding.ASCII.GetString(header, 124, 12).Trim('\0', ' ');
+            var size = Convert.ToInt64(sizeText, 8);
+            if (size > 0)
+            {
+                var total = (int)size + (512 - (int)(size % 512)) % 512;
+                var body = new byte[total];
+                var skipped = 0;
+                while (skipped < body.Length)
+                {
+                    var chunk = await gzipStream.ReadAsync(body.AsMemory(skipped, body.Length - skipped));
+                    if (chunk == 0)
+                    {
+                        return modes;
+                    }
+                    skipped += chunk;
+                }
+            }
+        }
     }
 
     #region GenerateNsisScript
@@ -638,6 +695,130 @@ public sealed class PackagerTests
             using var archive = System.IO.Compression.ZipFile.OpenRead(previousOutput);
             await Assert.That(archive.Entries.Count).IsEqualTo(1);
             await Assert.That(Directory.GetFileSystemEntries(outputDir).Length).IsEqualTo(1);
+        }
+        finally
+        {
+            try { Directory.Delete(tempDir, recursive: true); } catch { }
+            try { Directory.Delete(outputDir, recursive: true); } catch { }
+        }
+    }
+
+    [Test]
+    public async Task PackageAsync_TarGz_MainExecutableHasExecutableMode()
+    {
+        var tempDir = CreateTempDirectory();
+        var outputDir = Path.Combine(Path.GetTempPath(), "wailsnet-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            // 主程序命名为 AppName，命中 FindLinuxExecutable 的优先匹配路径。
+            await File.WriteAllTextAsync(Path.Combine(tempDir, "TestApp"), "#!/bin/sh\necho app");
+            await File.WriteAllTextAsync(Path.Combine(tempDir, "data.txt"), "config");
+
+            var packager = new Packager();
+            var options = new PackageOptions
+            {
+                Format = PackageFormat.TarGz,
+                OutputDirectory = outputDir,
+                AppName = "TestApp",
+                Version = "1.0.0",
+                GenerateChecksum = false,
+            };
+
+            var result = await packager.PackageAsync(tempDir, options);
+
+            await Assert.That(result.Success).IsTrue();
+            var modes = await ReadTarGzModesAsync(result.OutputPath!);
+            // 0755（八进制）= 493：与 deb/rpm 的 install -m 0755 一致。
+            await Assert.That(modes["TestApp"]).IsEqualTo(493);
+        }
+        finally
+        {
+            try { Directory.Delete(tempDir, recursive: true); } catch { }
+            try { Directory.Delete(outputDir, recursive: true); } catch { }
+        }
+    }
+
+    [Test]
+    public async Task PackageAsync_TarGz_NonExecutableFileIsNotElevated()
+    {
+        var tempDir = CreateTempDirectory();
+        var outputDir = Path.Combine(Path.GetTempPath(), "wailsnet-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(tempDir, "TestApp"), "#!/bin/sh\necho app");
+            var dataPath = Path.Combine(tempDir, "data.txt");
+            await File.WriteAllTextAsync(dataPath, "config");
+
+            // Unix 主机上显式设为 0640，验证保留源权限且不被提权；Windows 无 Unix 权限位，预期默认 0644。
+            var expectedMode = 420;
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(
+                    dataPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead);
+                expectedMode = 416;
+            }
+
+            var packager = new Packager();
+            var options = new PackageOptions
+            {
+                Format = PackageFormat.TarGz,
+                OutputDirectory = outputDir,
+                AppName = "TestApp",
+                Version = "1.0.0",
+                GenerateChecksum = false,
+            };
+
+            var result = await packager.PackageAsync(tempDir, options);
+
+            await Assert.That(result.Success).IsTrue();
+            var modes = await ReadTarGzModesAsync(result.OutputPath!);
+            await Assert.That(modes["data.txt"]).IsEqualTo(expectedMode);
+            await Assert.That(modes["data.txt"]).IsNotEqualTo(493);
+        }
+        finally
+        {
+            try { Directory.Delete(tempDir, recursive: true); } catch { }
+            try { Directory.Delete(outputDir, recursive: true); } catch { }
+        }
+    }
+
+    [Test]
+    public async Task PackageAsync_TarGz_PreservesExecutableBitOfSecondaryScript()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Skip.Test("仅在 Unix 主机上验证源文件可执行位保留");
+            return;
+        }
+
+        var tempDir = CreateTempDirectory();
+        var outputDir = Path.Combine(Path.GetTempPath(), "wailsnet-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(tempDir, "TestApp"), "#!/bin/sh\necho app");
+            var scriptPath = Path.Combine(tempDir, "helper.sh");
+            await File.WriteAllTextAsync(scriptPath, "#!/bin/sh\necho helper");
+            File.SetUnixFileMode(
+                scriptPath,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
+                | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+
+            var packager = new Packager();
+            var options = new PackageOptions
+            {
+                Format = PackageFormat.TarGz,
+                OutputDirectory = outputDir,
+                AppName = "TestApp",
+                Version = "1.0.0",
+                GenerateChecksum = false,
+            };
+
+            var result = await packager.PackageAsync(tempDir, options);
+
+            await Assert.That(result.Success).IsTrue();
+            var modes = await ReadTarGzModesAsync(result.OutputPath!);
+            await Assert.That(modes["helper.sh"]).IsEqualTo(493);
         }
         finally
         {
