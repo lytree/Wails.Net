@@ -1233,6 +1233,12 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// GTK4 未提供对已显示窗口重新设置尺寸的公开 API（<c>gtk_window_resize</c> 已在 GTK4 中移除），
+    /// <c>gtk_window_set_default_size</c> 只记录默认尺寸，对已实现（realize）的窗口通常不立即生效。
+    /// 此处与 Wails v3.1.0（<c>linuxWebviewWindow.setSize</c> → <c>gtk_window_set_default_size</c>）完全一致，
+    /// 属于 GTK4 平台限制而非移植缺陷；窗口的实际尺寸请以 <see cref="GetSize"/> 为准。
+    /// </remarks>
     public void SetSize(int width, int height)
     {
         if (_window is null)
@@ -1271,16 +1277,15 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         _x = x;
         _y = y;
         // GTK4 中窗口位置由窗口管理器控制。
-        // X11 后端可通过 wmctrl 设置位置；Wayland 后端下应用无法直接控制窗口位置，
-        // 仅缓存坐标供 GetPosition 查询，由 compositor 决定实际位置。
+        // X11 后端可通过 wmctrl 设置位置；Wayland 协议不允许客户端定位顶层窗口，
+        // 应用无法直接控制窗口位置（上游 Wails v3.1.0 window_move_x11 同样在非 X11 直接返回），
+        // 此时仅缓存坐标，且 GetPosition 按上游语义报告 (0, 0) 而非缓存的请求值。
         if (!LinuxBackendDetector.SupportsWindowPositionControl() || _window is null)
         {
             return;
         }
 
-        // GTK 返回的默认尺寸同样是 DIP。
-        _window.GetDefaultSize(out var width, out var height);
-        MoveWindowByDipBounds(x, y, width, height);
+        MoveWindowByDipBounds(x, y);
     }
 
     /// <inheritdoc />
@@ -1594,6 +1599,11 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// 与 Wails v3.1.0 <c>linuxWebviewWindow.size()</c> 对齐：优先读取窗口已分配的实际尺寸
+    /// （<c>gtk_widget_get_width/get_height</c>），仅在窗口尚未布局（返回 0）时回退到默认尺寸。
+    /// 这样用户或窗口管理器改变尺寸后不会返回过期的默认值。
+    /// </remarks>
     public (int Width, int Height) GetSize()
     {
         if (_window is null)
@@ -1601,10 +1611,17 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
             return (0, 0);
         }
 
-        // GTK 的默认尺寸以应用像素（即 DIP 逻辑像素）返回，
+        // GTK 的分配尺寸与默认尺寸都以应用像素（即 DIP 逻辑像素）表示，
         // 与 Wails v3 PR #6346 的 GTK DIP 语义一致，无需再按缩放因子换算。
-        _window.GetDefaultSize(out var width, out var height);
-        return (width, height);
+        var width = _window.GetWidth();
+        var height = _window.GetHeight();
+        if (width > 0 && height > 0)
+        {
+            return (width, height);
+        }
+
+        _window.GetDefaultSize(out var defaultWidth, out var defaultHeight);
+        return (defaultWidth, defaultHeight);
     }
 
     /// <inheritdoc />
@@ -1627,11 +1644,30 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// 与 Wails v3.1.0 <c>linuxWebviewWindow.position()</c> 对齐：仅 X11 后端可定位窗口，
+    /// 非 X11（Wayland 等）返回 <c>(0, 0)</c>，而不是把未生效的请求坐标当作真实位置返回。
+    /// X11 下返回调用方传入的 DIP 坐标（GTK4 没有查询窗口绝对位置的公开 API，只能缓存请求值）。
+    /// </remarks>
     public (int X, int Y) GetPosition()
     {
-        // 返回缓存的窗口位置（DIP 逻辑像素，GTK4 窗口位置由窗口管理器控制，无法直接获取）。
-        // 依据 Wails v3 PR #6346，缓存的是调用方传入的 DIP 坐标，而非 wmctrl 使用的物理像素。
-        return (_x, _y);
+        return ResolveReportedPosition(
+            LinuxBackendDetector.SupportsWindowPositionControl(), _x, _y);
+    }
+
+    /// <summary>
+    /// 计算 <see cref="GetPosition"/> 对外报告的坐标。
+    /// 与 Wails v3.1.0 <c>linuxWebviewWindow.position()</c> 对齐：
+    /// 后端不支持窗口定位（Wayland 等）时返回 <c>(0, 0)</c>。
+    /// </summary>
+    /// <param name="supportsPositionControl">当前后端是否支持窗口定位。</param>
+    /// <param name="cachedX">缓存的 X 坐标（DIP）。</param>
+    /// <param name="cachedY">缓存的 Y 坐标（DIP）。</param>
+    /// <returns>对外报告的位置。</returns>
+    internal static (int X, int Y) ResolveReportedPosition(
+        bool supportsPositionControl, int cachedX, int cachedY)
+    {
+        return supportsPositionControl ? (cachedX, cachedY) : (0, 0);
     }
 
     /// <inheritdoc />
@@ -2019,7 +2055,9 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         }
 
         var geometry = monitor.Geometry;
-        _window.GetDefaultSize(out var width, out var height);
+        // 与 Wails v3.1.0 center() 对齐：按窗口实际尺寸（而非默认尺寸）计算居中坐标；
+        // 窗口尚未布局时 GetSize 回退到默认尺寸。
+        var (width, height) = GetSize();
 
         // 计算居中坐标（DIP）。
         var x = geometry.X + (geometry.Width - width) / 2;
@@ -2029,27 +2067,27 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
 
         // X11 后端通过 wmctrl 移动窗口到计算后的居中坐标；
         // Wayland 后端下应用无法直接控制窗口位置，compositor 通常会自动居中，
-        // 仅缓存坐标供 GetPosition 查询。
+        // 此时坐标仅缓存，GetPosition 按上游语义返回 (0, 0)。
         if (LinuxBackendDetector.SupportsWindowPositionControl())
         {
-            MoveWindowByDipBounds(x, y, width, height);
+            MoveWindowByDipBounds(x, y);
         }
 
         _window.Present();
     }
 
     /// <summary>
-    /// 按 DIP 边界移动窗口（X11 下通过 wmctrl 实现）。
+    /// 按 DIP 坐标移动窗口（X11 下通过 wmctrl 实现）。
     /// 依据 Wails v3 PR #6346，窗口对外坐标与显示器几何都在 DIP 空间，
     /// 而 wmctrl 使用 X11 根窗口坐标（物理像素），因此仅在真正调用 wmctrl 前
     /// 按目标显示器的缩放因子换算，避免把缩放后的像素坐标暴露给调用方。
+    /// 宽度/高度参数传 <c>-1</c> 表示保持当前尺寸（wmctrl 不设置对应 presence 标志），
+    /// 与上游 Wails v3.1.0 <c>linuxWebviewWindow.move()</c> 只移动不改变尺寸的行为一致。
     /// 不具备位置控制能力（Wayland）或 wmctrl 不可用时静默忽略，坐标仍已缓存。
     /// </summary>
     /// <param name="dipX">窗口左上角 X 坐标（DIP）。</param>
     /// <param name="dipY">窗口左上角 Y 坐标（DIP）。</param>
-    /// <param name="dipWidth">窗口宽度（DIP）。</param>
-    /// <param name="dipHeight">窗口高度（DIP）。</param>
-    private void MoveWindowByDipBounds(int dipX, int dipY, int dipWidth, int dipHeight)
+    private void MoveWindowByDipBounds(int dipX, int dipY)
     {
         if (!LinuxBackendDetector.SupportsWindowPositionControl() || _window is null)
         {
@@ -2070,13 +2108,12 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
 
             var x = LinuxDipCoordinates.DipToPhysical(dipX, scaleFactor);
             var y = LinuxDipCoordinates.DipToPhysical(dipY, scaleFactor);
-            var width = LinuxDipCoordinates.DipToPhysical(dipWidth, scaleFactor);
-            var height = LinuxDipCoordinates.DipToPhysical(dipHeight, scaleFactor);
 
             var psi = new System.Diagnostics.ProcessStartInfo
             {
                 FileName = "wmctrl",
-                Arguments = $"-r \"{title}\" -e 0,{x},{y},{width},{height}",
+                // 宽度/高度传 -1：wmctrl 据此清空对应的 presence 标志，只移动、不改尺寸。
+                Arguments = $"-r \"{title}\" -e 0,{x},{y},-1,-1",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
