@@ -1116,7 +1116,7 @@ Wails.Net `HelperProcess.cs` 对齐：
 | 生命周期/主线程 | `#6287` Run 前任务暂存 | 已实现 |
 | 对话框 | `#6390` Run 前不挂起 | 已实现 |
 | Linux 外观 | `#6072` settings portal | 已实现（需 Linux 桌面验证） |
-| Linux 窗口 | `#6346` 多 DPI DIP 坐标 | 已实现（换算为纯函数并有单测；真实 GTK4/wmctrl 需 Linux 桌面验证） |
+| Linux 窗口 | `#6346` 多 DPI DIP 坐标 | 已实现（换算为纯函数并有单测；真实 GTK4/wmctrl 需 Linux 桌面验证）。2026-11-07 排查：`setSize` 仅 `SetDefaultSize` 与上游 `setSize` 一致（GTK4 已移除 `gtk_window_resize`，平台限制）；`getSize` 改为优先读实际分配尺寸（对齐上游 `size()`）；Wayland 定位为协议固有限制（上游 `window_move_x11` 同样 no-op，`position()` 返回 `(0,0)`，本实现已对齐） |
 | macOS 窗口/屏幕 | `#6346` Point/DIP 语义 | 已实现纯逻辑层（`MacDipCoordinates`）与窗口/屏幕接线；`#if MACOS` 分支需 macOS 实机编译验证 |
 | Windows 托盘 | `#6386` Explorer 重启重建 | 已实现（去抖 1 秒；真实 Explorer 重启需 GUI 验证） |
 | 资源服务器 | HEAD/404/斜杠/index/嗅探系列 | 已实现 HEAD、404、斜杠归一化、精确 index、回退 Range/头、MIME 内容嗅探 |
@@ -1171,7 +1171,8 @@ Wails.Net `HelperProcess.cs` 对齐：
 9. **GTK 多 DPI DIP 坐标（`#6346`）**
    - 新增 `LinuxDipCoordinates`（纯函数）：`NormalizeScaleFactor`（<=0/NaN/Infinity 回退 1.0）、`DipToPhysical`（floor）、`PhysicalToDip`（ceil）、`SelectTargetMonitor`（命中→最近→null）；`LinuxMonitorInfo` 描述 DIP 几何与缩放因子。
    - `LinuxWebviewWindow`：`SetPosition`/`Centre` 全程 DIP 计算并缓存（`GetPosition`/`GetSize` 保持 DIP 语义），抽出 `MoveWindowByDipBounds` 仅在 `wmctrl` 调用前按目标显示器缩放因子换算物理像素。
-   - 测试：`LinuxDipCoordinatesTests`（27 项：多缩放往返、负坐标、无效因子回退、显示器选择/最近距离/负原点）。
+   - 2026-11-07 实机清单疑点排查（对齐上游 v3.1.0 后修正）：`GetSize` 优先读取 GTK4 实际分配尺寸、仅未布局时回退默认尺寸（对齐上游 `size()`）；`MoveWindowByDipBounds` 改为只移动（`wmctrl -e` 宽/高传 `-1`，避免 `SetPosition`/`Centre` 把窗口改回过期默认尺寸）；`GetPosition` 在非 X11 后端返回 `(0,0)`（对齐上游 `position()`，不再返回未生效的缓存请求值；X11 仍为 DIP 缓存语义）。
+   - 测试：`LinuxDipCoordinatesTests`（27 项：多缩放往返、负坐标、无效因子回退、显示器选择/最近距离/负原点）；`LinuxWebviewWindowPositionTests`（2 项：X11 返回缓存 DIP、非 X11 返回 `(0,0)`，纯逻辑无需 GTK）。
 
 10. **CLI 批次 `#6412`–`#6498` 适用性核对与实现**
    - ✅ `#6478`：[IconCommand.cs](../../src/Wails.Net.Cli/Commands/IconCommand.cs) 新增 `--sizes`（默认 `256,128,64,48,32,16`）：先校验尺寸再读源文件，非法尺寸/超范围（>256）退出码 1 且不写 `icon.ico`；`GenerateIcoAsync` 按尺寸缩放并生成多帧 PNG 帧 ICO。
