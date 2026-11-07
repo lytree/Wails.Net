@@ -1208,6 +1208,11 @@ Wails.Net `HelperProcess.cs` 对齐：
     - 结论：基类 `CreateWindow` 在 `HasRealGuiEnvironment=false` 时抛 `SkipTestException`，109 项契约中仅少量"创建窗口前 `if (!HasRealGuiEnvironment) return;` 早退"的用例真实执行，其余跳过——这是能力边界，**不记为验证通过**。不能改为返回 `true` 伪装可跑（会因缺少 Activity 失败或挂起），也未降低任何断言的强度。
     - 不新增可部署测试宿主的决策：补齐最小宿主需 `MainActivity` + `ApplicationId` + `AndroidManifest.xml`（以及把测试结果回写 logcat/文件的入口），属 Android 专有脚手架；本机未安装 `android` 工作负载（4 个项目 `NETSDK1147`），改动无法编译验证。设备端功能验证继续由 [run-android-e2e.fsx](../../tests/Wails.Net.Android.E2E/run-android-e2e.fsx) 覆盖。建议路径：新增 `MainActivity` 在 `OnCreate` 启动测试入口，结果写入 logcat 或应用私有文件，由 `adb` 脚本判定。
 
+16. **Linux 窗口状态事件与状态查询对齐上游（2026-11-07）**
+    - [LinuxWebviewWindow.cs](../../src/Wails.Net.Application.Linux/LinuxWebviewWindow.cs)：新增 `LinuxWindowState` 三态快照与 `ChangedWindowStateEvents`，对齐 `webview_window_linux.go` 的 `changedLinuxWindowStateEvents` 与 `linux_purego_callbacks.go` 的 `handleSurfaceStateChangedPtr`：首次观测只派发当前处于激活态（最大化/最小化/全屏）的事件，之后按最大化→最小化→全屏顺序差分派发。`Maximise`/`UnMaximise`/`Minimise`/`UnMinimise`/`Fullscreen`/`UnFullscreen`/`Restore` 不再直接派发事件、也不再乐观写 `_minimised`，统一由 GDK Toplevel 状态观察者在状态实际变化后派发，窗口管理器/标题栏按钮触发的变化因此同样可被应用层感知。
+    - `UnFullscreen` 追加 `Unmaximize`（对齐 `linux_purego.go` 的 `unfullscreen()`：窗口通常由最大化进入全屏，退出全屏需同时恢复最大化前尺寸）；`IsMaximised` 排除全屏窗口（对齐 `linux_purego.go` 的 `isMaximised() = gtk_window_is_maximized && !isFullscreen()`）；`IsMinimised` 在已 realize 时实时读取 GDK Toplevel 状态位（对齐 `linux_purego.go` 的 `isMinimised()`），未 realize 时回退到上次观测值。
+    - 测试：新增 `LinuxWebviewWindowStateEventsTests` 7 项（对齐上游 `TestChangedLinuxWindowStateEvents`：首次普通态无事件、首次最大化/最小化、退出最大化/最小化、最大化→全屏保留 `WindowUnmaximised` 并追加 `WindowFullscreen`、退出全屏），Windows 主机纯逻辑运行 7/7 通过（无需 GTK/GUI）。
+
 ### 12.5 验证结果
 
 - 构建（0 警告 0 错误）：`Wails.Net.Application`、`Wails.Net.Application.Linux`、`Wails.Net.Application.Tests`、`Wails.Net.Application.Linux.Tests`。

@@ -16,6 +16,15 @@ using WailsApplication = Wails.Net.Application.Application;
 namespace Wails.Net.Application.Platform;
 
 /// <summary>
+/// Linux 窗口的三态快照，对应 Go 版 webview_window_linux.go 中的 <c>linuxWindowState</c>。
+/// 用于比较 GDK Toplevel 状态位变化并派发窗口事件。
+/// </summary>
+/// <param name="Minimised">是否最小化。</param>
+/// <param name="Maximised">是否最大化。</param>
+/// <param name="Fullscreen">是否全屏。</param>
+internal readonly record struct LinuxWindowState(bool Minimised, bool Maximised, bool Fullscreen);
+
+/// <summary>
 /// Linux 平台的 Webview 窗口实现，对应 Go 版的 webview_window_linux.go。
 /// 通过 Gtk.Window 创建原生窗口，使用 WebKitGTK 承载 Web 内容。
 /// </summary>
@@ -105,9 +114,26 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     private bool _visible;
 
     /// <summary>
-    /// 窗口是否已最小化。
+    /// 上次观测到的窗口最小化状态（由 GDK Toplevel state 派生）。
     /// </summary>
     private bool _minimised;
+
+    /// <summary>
+    /// 上次观测到的窗口最大化状态（由 GDK Toplevel state 派生）。
+    /// </summary>
+    private bool _maximised;
+
+    /// <summary>
+    /// 上次观测到的窗口全屏状态（由 GDK Toplevel state 派生）。
+    /// </summary>
+    private bool _fullscreen;
+
+    /// <summary>
+    /// 是否已建立 GDK Toplevel 状态基线。
+    /// 首次观测只派发当前处于激活态（最大化/最小化/全屏）的事件，
+    /// 对应 Go 版 <c>changedLinuxWindowStateEvents</c> 的 <c>observed</c> 参数。
+    /// </summary>
+    private bool _surfaceStateObserved;
 
     /// <summary>
     /// 窗口的 GDK Surface（Toplevel），用于订阅 surface 级信号（state 通知 / 尺寸布局）。
@@ -1125,9 +1151,10 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     }
 
     /// <summary>
-    /// 读取 GDK Toplevel 的状态位，检测 <c>Minimized</c> 标志变化并按需派发窗口最小化/恢复事件。
-    /// 与程序化 <see cref="Minimise"/> / <see cref="UnMinimise"/> 共用 <c>_minimised</c> 状态，
-    /// 仅在状态实际发生变化时派发，避免重复事件。
+    /// 读取 GDK Toplevel 的状态位，检测最小化 / 最大化 / 全屏三态变化并派发窗口事件。
+    /// 与 Go 版 <c>handleSurfaceStateChangedPtr</c>（linux_purego_callbacks.go）一致：
+    /// 首次观测（<c>observed = false</c>）只派发当前处于激活态的事件，
+    /// 之后按前后状态差分派发；窗口的管理器/标题栏按钮触发的状态变化因此可被应用层感知。
     /// 使用 <c>Gdk.Internal.Toplevel.GetState</c>（对应 C API <c>gdk_toplevel_get_state</c>），
     /// 与本文件 StartDrag/StartResize 使用 <c>Gdk.Internal.Toplevel</c> 的方式一致。
     /// </summary>
@@ -1139,18 +1166,81 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         }
 
         var state = Gdk.Internal.Toplevel.GetState(_surface.Handle.DangerousGetHandle());
-        var minimised = state.HasFlag(Gdk.ToplevelState.Minimized);
-        if (minimised == _minimised)
+        var current = new LinuxWindowState(
+            Minimised: state.HasFlag(Gdk.ToplevelState.Minimized),
+            Maximised: state.HasFlag(Gdk.ToplevelState.Maximized),
+            Fullscreen: state.HasFlag(Gdk.ToplevelState.Fullscreen));
+
+        var previous = new LinuxWindowState(_minimised, _maximised, _fullscreen);
+        var events = ChangedWindowStateEvents(previous, current, _surfaceStateObserved);
+
+        _minimised = current.Minimised;
+        _maximised = current.Maximised;
+        _fullscreen = current.Fullscreen;
+        _surfaceStateObserved = true;
+
+        var app = WailsApplication.Get();
+        if (app is null)
         {
             return;
         }
 
-        _minimised = minimised;
-        WailsApplication.Get()?.DispatchWindowEvent(
-            _id,
-            minimised
-                ? (uint)WindowEventType.WindowMinimised
-                : (uint)WindowEventType.WindowUnminimised);
+        foreach (var eventType in events)
+        {
+            app.DispatchWindowEvent(_id, (uint)eventType);
+        }
+    }
+
+    /// <summary>
+    /// 计算窗口状态变化对应的事件列表，对应 Go 版 <c>changedLinuxWindowStateEvents</c>
+    /// （webview_window_linux.go）。
+    /// </summary>
+    /// <param name="previous">上一次观测到的状态。</param>
+    /// <param name="current">当前观测到的状态。</param>
+    /// <param name="observed">是否已建立基线；为 false 时只报告当前处于激活态的事件。</param>
+    /// <returns>需要派发的窗口事件，顺序为最大化、最小化、全屏。</returns>
+    internal static IReadOnlyList<WindowEventType> ChangedWindowStateEvents(
+        LinuxWindowState previous, LinuxWindowState current, bool observed)
+    {
+        var events = new List<WindowEventType>(3);
+
+        if (!observed)
+        {
+            if (current.Maximised)
+            {
+                events.Add(WindowEventType.WindowMaximised);
+            }
+            if (current.Minimised)
+            {
+                events.Add(WindowEventType.WindowMinimised);
+            }
+            if (current.Fullscreen)
+            {
+                events.Add(WindowEventType.WindowFullscreen);
+            }
+            return events;
+        }
+
+        if (previous.Maximised != current.Maximised)
+        {
+            events.Add(current.Maximised
+                ? WindowEventType.WindowMaximised
+                : WindowEventType.WindowUnmaximised);
+        }
+        if (previous.Minimised != current.Minimised)
+        {
+            events.Add(current.Minimised
+                ? WindowEventType.WindowMinimised
+                : WindowEventType.WindowUnminimised);
+        }
+        if (previous.Fullscreen != current.Fullscreen)
+        {
+            events.Add(current.Fullscreen
+                ? WindowEventType.WindowFullscreen
+                : WindowEventType.WindowUnfullscreen);
+        }
+
+        return events;
     }
 
     /// <summary>
@@ -1321,73 +1411,61 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// 对齐 Wails v3.1.0 <c>linuxWebviewWindow.maximise()</c>：只调用 GTK，
+    /// 事件由 GDK Toplevel 状态观察者（<see cref="EvaluateToplevelState"/>）在状态实际变化后派发，
+    /// 避免与窗口管理器触发的状态变化重复发事件。
+    /// </remarks>
     public void Maximise()
     {
         _window?.Maximize();
-
-        // 分发 WindowMaximised 事件，通知应用层窗口已最大化。
-        WailsApplication.Get()?.DispatchWindowEvent(
-            _id, (uint)WindowEventType.WindowMaximised);
     }
 
     /// <inheritdoc />
     public void UnMaximise()
     {
         _window?.Unmaximize();
-
-        // 分发 WindowUnmaximised 事件，通知应用层窗口已从最大化状态恢复。
-        WailsApplication.Get()?.DispatchWindowEvent(
-            _id, (uint)WindowEventType.WindowUnmaximised);
     }
 
     /// <inheritdoc />
     public void Minimise()
     {
         _window?.Minimize();
-        _minimised = true;
-
-        // 分发 WindowMinimised 事件，通知应用层窗口已最小化。
-        WailsApplication.Get()?.DispatchWindowEvent(
-            _id, (uint)WindowEventType.WindowMinimised);
     }
 
     /// <inheritdoc />
     public void UnMinimise()
     {
         _window?.Unminimize();
-        _minimised = false;
-
-        // 分发 WindowUnminimised 事件，通知应用层窗口已从最小化状态恢复。
-        WailsApplication.Get()?.DispatchWindowEvent(
-            _id, (uint)WindowEventType.WindowUnminimised);
     }
 
     /// <inheritdoc />
     public void Fullscreen()
     {
         _window?.Fullscreen();
-
-        // 分发 WindowFullscreen 事件，通知应用层窗口已进入全屏。
-        WailsApplication.Get()?.DispatchWindowEvent(
-            _id, (uint)WindowEventType.WindowFullscreen);
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// 对齐 Wails v3.1.0 <c>linux_purego.go</c> 的 <c>unfullscreen()</c>：
+    /// 退出全屏后仍会调用一次 <c>gtk_window_unmaximize</c>，
+    /// 因为窗口通常是由最大化状态进入全屏的，上游要求同时恢复最大化前的尺寸。
+    /// </remarks>
     public void UnFullscreen()
     {
         _window?.Unfullscreen();
-
-        // 分发 WindowUnfullscreen 事件，通知应用层窗口已退出全屏。
-        WailsApplication.Get()?.DispatchWindowEvent(
-            _id, (uint)WindowEventType.WindowUnfullscreen);
+        _window?.Unmaximize();
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// 上游 Go 版 <c>restore()</c> 为空实现（注释 <c>FIXME: never called!</c>），
+    /// 本实现保留“退出最大化 + 取消最小化”的合理行为，事件同样由状态观察者派发。
+    /// </remarks>
     public void Restore()
     {
         _window?.Unmaximize();
         _window?.Unminimize();
-        _minimised = false;
     }
 
     /// <inheritdoc />
@@ -1539,15 +1617,31 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// 对齐 Wails v3.1.0 <c>linux_purego.go</c> 的 <c>isMaximised()</c>：
+    /// 最大化后进入全屏时 GTK 仍可能保留 maximized 状态位，
+    /// 上游要求全屏窗口不得同时报告为最大化，故显式排除全屏。
+    /// </remarks>
     public bool IsMaximised()
     {
-        return _window is not null && _window.IsMaximized();
+        return _window is not null && _window.IsMaximized() && !_window.IsFullscreen();
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// 对齐 Wails v3.1.0 <c>linux_purego.go</c> 的 <c>isMinimised()</c>：
+    /// 窗口已 realize 时直接读取 GDK Toplevel 状态位（实时），
+    /// 尚未 realize 时回退到上次观测值（上游此时同样返回 false）。
+    /// </remarks>
     public bool IsMinimised()
     {
-        return _minimised;
+        if (_surface is null)
+        {
+            return _minimised;
+        }
+
+        var state = Gdk.Internal.Toplevel.GetState(_surface.Handle.DangerousGetHandle());
+        return state.HasFlag(Gdk.ToplevelState.Minimized);
     }
 
     /// <inheritdoc />
