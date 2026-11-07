@@ -72,6 +72,14 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     private static extern IntPtr GBytesGetData(IntPtr bytes, out nuint size);
 
     /// <summary>
+    /// 应用内页面（含 <see cref="SetHTML"/> 生成的文档）的基线 URL。
+    /// 对齐 Wails v3.1.0 <c>linux_purego.go</c> 的 <c>setHTML</c>：使用 <c>wails://</c> 作为基线 URL
+    /// （<c>webkit_web_view_load_alternate_html</c>），而不是 <c>about:blank</c>。
+    /// 这里采用带 host 的形式，使相对资源解析与 IPC 同源校验都能正常工作。
+    /// </summary>
+    private const string WailsBaseUrl = "wails://localhost/";
+
+    /// <summary>
     /// 窗口 ID。
     /// </summary>
     private readonly uint _id;
@@ -219,6 +227,13 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     private int _y = -1;
 
     /// <summary>
+    /// 初始屏幕摆放是否尚未在窗口呈现后应用。
+    /// 上游 Wails v3.1.0 在 run() 中于 show() 前后各应用一次 applyScreenPlacement
+    /// （webview_window_linux.go:504-514），因为未映射的 GTK 窗口无法被 WM 定位。
+    /// </summary>
+    private bool _initialPlacementPending;
+
+    /// <summary>
     /// 是否总置顶（GTK4 需 X11 窗口管理器支持，此处缓存状态）。
     /// </summary>
     private bool _alwaysOnTop;
@@ -316,7 +331,7 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         }
         else if (!string.IsNullOrEmpty(options.HTML))
         {
-            _webView?.LoadHtml(options.HTML, "about:blank");
+            LoadHtmlWithWailsBase(options.HTML);
         }
         else
         {
@@ -327,10 +342,35 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
             if (app?.AssetServer is not null)
             {
                 EnsureWailsSchemeRegistered();
-                const string wailsUrl = "wails://localhost/";
-                _webView?.LoadUri(wailsUrl);
-                _currentUrl = wailsUrl;
+                _webView?.LoadUri(WailsBaseUrl);
+                _currentUrl = WailsBaseUrl;
             }
+        }
+
+        // 对齐 Wails v3.1.0 linuxWebviewWindow.run()（webview_window_linux.go:465,484,504-514）：
+        // 显示前应用初始缩放、置顶状态、屏幕摆放与起始窗口状态。
+        SetZoom(_options.Zoom);
+        if (_options.AlwaysOnTop)
+        {
+            // 仅缓存；实际置顶在 Show() 中 present 后通过 wmctrl 应用
+            // （对应上游 windowShow() 的 windowApplyPendingAlwaysOnTop）。
+            _alwaysOnTop = true;
+        }
+
+        _initialPlacementPending = true;
+        ApplyInitialPlacement();
+
+        if (_options.Maximised)
+        {
+            Maximise();
+        }
+        else if (_options.Minimised)
+        {
+            Minimise();
+        }
+        else if (_options.Fullscreen)
+        {
+            Fullscreen();
         }
 
         // 若不隐藏，则显示窗口。
@@ -367,16 +407,6 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         _window.SetDefaultSize(width, height);
 
         _window.SetResizable(_options.Resizable);
-
-        if (_options.Fullscreen)
-        {
-            _window.Fullscreen();
-        }
-
-        if (_options.AlwaysOnTop)
-        {
-            // GTK4 中置顶通过 SetTransientFor 或 wm_class 实现，简化实现暂留空。
-        }
     }
 
     /// <summary>
@@ -1389,6 +1419,20 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         _window.Present();
         _visible = true;
 
+        // 对齐上游 windowShow()：present 后重新应用待生效的置顶状态
+        // （linux_purego.go 的 windowApplyPendingAlwaysOnTop），
+        // 以及首次显示时的初始屏幕摆放（未映射窗口此前无法被 WM 定位）。
+        if (_alwaysOnTop)
+        {
+            ApplyAlwaysOnTop(true);
+        }
+
+        if (_initialPlacementPending)
+        {
+            _initialPlacementPending = false;
+            ApplyInitialPlacement();
+        }
+
         // 分发 WindowShow 事件，通知应用层窗口已显示。
         WailsApplication.Get()?.DispatchWindowEvent(
             _id, (uint)WindowEventType.WindowShow);
@@ -1547,6 +1591,11 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// 对齐 Wails v3.1.0 <c>windowShow()</c> / <c>setAlwaysOnTop()</c> 的延迟应用语义：
+    /// 窗口尚未显示时仅缓存状态，待 <see cref="Show"/> 呈现后再通过 X11 EWMH 应用，
+    /// 避免此时 <c>wmctrl :ACTIVE:</c> 命中其它窗口。
+    /// </remarks>
     public void SetAlwaysOnTop(bool onTop)
     {
         _alwaysOnTop = onTop;
@@ -1555,11 +1604,22 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
             return;
         }
 
-        // GDK4 移除了 gtk_window_set_keep_above API。
-        // X11 后端：通过 wmctrl 工具设置 _NET_WM_STATE_ABOVE 窗口属性（EWMH 协议）。
-        // Wayland 后端：没有通用的置顶协议，需 compositor 专有扩展（如 layer-shell），
-        // 此处仅缓存状态供查询，实际置顶行为由 compositor 决定。
-        // 对应 Go 版 webview_window_linux.go 中通过 SetKeepAbove 的实现。
+        if (!_visible)
+        {
+            return;
+        }
+
+        ApplyAlwaysOnTop(onTop);
+    }
+
+    /// <summary>
+    /// 通过 X11 EWMH（wmctrl）应用置顶状态。
+    /// GDK4 移除了 <c>gtk_window_set_keep_above</c>；Wayland 后端没有通用置顶协议，
+    /// 需 compositor 专有扩展（如 layer-shell），此时仅缓存状态供查询。
+    /// </summary>
+    /// <param name="onTop">是否置顶。</param>
+    private void ApplyAlwaysOnTop(bool onTop)
+    {
         if (!LinuxBackendDetector.SupportsAlwaysOnTop())
         {
             return;
@@ -1818,9 +1878,31 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// 对齐 Wails v3.1.0 <c>linux_purego.go</c> 的 <c>setHTML</c>：以 <c>wails://</c> 作为基线 URL，
+    /// 而不是 <c>about:blank</c>。否则文档来源变成不透明源，<see cref="LinuxIpcOriginGuard"/>
+    /// 会按安全策略拒绝该页面的 <c>/wails/*</c> 请求，导致 SetHTML 窗口无法调用绑定。
+    /// </remarks>
     public void SetHTML(string html)
     {
-        _webView?.LoadHtml(html, "about:blank");
+        LoadHtmlWithWailsBase(html);
+    }
+
+    /// <summary>
+    /// 以 <see cref="WailsBaseUrl"/> 为基线加载 HTML 文档，并同步记录当前 URL。
+    /// 加载前确保 <c>wails</c> URI scheme 已注册，使页面内的 IPC 请求有处理器可用。
+    /// </summary>
+    /// <param name="html">HTML 内容。</param>
+    private void LoadHtmlWithWailsBase(string html)
+    {
+        if (_webView is null)
+        {
+            return;
+        }
+
+        EnsureWailsSchemeRegistered();
+        _webView.LoadHtml(html, WailsBaseUrl);
+        _currentUrl = WailsBaseUrl;
     }
 
     /// <inheritdoc />
@@ -2118,6 +2200,14 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// 对齐 Wails v3.1.0 <c>linuxWebviewWindow.center()</c>（webview_window_linux.go:187-199）：
+    /// 使用窗口<strong>当前所在显示器</strong>的几何信息（<c>gdk_display_get_monitor_at_surface</c>），
+    /// 而不是固定取主显示器；且只移动窗口、不改变窗口可见性。
+    /// 依据 Wails v3 PR #6346，GDK 的显示器几何是 DIP（逻辑像素），
+    /// 而窗口尺寸同为 DIP，故居中计算全程在 DIP 空间完成，
+    /// 仅在调用 wmctrl 时再按显示器缩放因子换算为物理像素。
+    /// </remarks>
     public void Centre()
     {
         if (_window is null || !OperatingSystem.IsLinux())
@@ -2125,24 +2215,7 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
             return;
         }
 
-        // 获取主显示器几何信息以计算居中位置。
-        // 对应 Go 版 webview_window_linux.go 中的 Centre 实现。
-        // 依据 Wails v3 PR #6346，GDK 的显示器几何是 DIP（逻辑像素），
-        // 而窗口默认尺寸同为 DIP，故居中计算全程在 DIP 空间完成，
-        // 仅在调用 wmctrl 时再按显示器缩放因子换算为物理像素。
-        var display = Gdk.Display.GetDefault();
-        if (display is null)
-        {
-            return;
-        }
-
-        var monitors = display.GetMonitors();
-        if (monitors.GetNItems() == 0)
-        {
-            return;
-        }
-
-        var monitor = monitors.GetObject(0) as Gdk.Monitor;
+        var monitor = ResolveCurrentMonitor();
         if (monitor is null)
         {
             return;
@@ -2166,8 +2239,62 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         {
             MoveWindowByDipBounds(x, y);
         }
+    }
 
-        _window.Present();
+    /// <summary>
+    /// 应用初始屏幕摆放。对应 Wails v3.1.0 <c>applyScreenPlacement()</c>：
+    /// 居中或未给出有效坐标时调用 <see cref="Centre"/>，否则按 DIP 绝对坐标定位。
+    /// </summary>
+    private void ApplyInitialPlacement()
+    {
+        if (ShouldCenterOnInitialPlacement(_options.X, _options.Y, _options.Centered))
+        {
+            Centre();
+            return;
+        }
+
+        SetPosition(_options.X, _options.Y);
+    }
+
+    /// <summary>
+    /// 判断初始摆放是否应居中。对应上游 <c>applyScreenPlacement()</c> 的居中分支；
+    /// 本移植的选项模型沿用 Windows 语义，<c>X/Y = -1</c> 表示“未指定”，同样按居中处理。
+    /// </summary>
+    /// <param name="x">窗口 X 坐标（DIP，-1 表示未指定）。</param>
+    /// <param name="y">窗口 Y 坐标（DIP，-1 表示未指定）。</param>
+    /// <param name="centered">调用方是否显式要求居中。</param>
+    /// <returns>应居中返回 true。</returns>
+    internal static bool ShouldCenterOnInitialPlacement(int x, int y, bool centered)
+    {
+        return centered || x < 0 || y < 0;
+    }
+
+    /// <summary>
+    /// 解析窗口当前所在显示器，对应 Go 版 <c>getCurrentMonitor()</c>（linux_purego.go:684-693）：
+    /// 已 realize 时使用 <c>gdk_display_get_monitor_at_surface</c>；
+    /// 尚未 realize 时回退到首显示器（上游此时返回 0 并放弃居中，
+    /// 这里为保持“创建后默认居中”的可预期行为而回退）。
+    /// </summary>
+    private Gdk.Monitor? ResolveCurrentMonitor()
+    {
+        var display = Gdk.Display.GetDefault();
+        if (display is null)
+        {
+            return null;
+        }
+
+        if (_surface is not null)
+        {
+            return display.GetMonitorAtSurface(_surface);
+        }
+
+        var monitors = display.GetMonitors();
+        if (monitors.GetNItems() == 0)
+        {
+            return null;
+        }
+
+        return monitors.GetObject(0) as Gdk.Monitor;
     }
 
     /// <summary>

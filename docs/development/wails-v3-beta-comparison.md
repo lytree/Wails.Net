@@ -1213,6 +1213,13 @@ Wails.Net `HelperProcess.cs` 对齐：
     - `UnFullscreen` 追加 `Unmaximize`（对齐 `linux_purego.go` 的 `unfullscreen()`：窗口通常由最大化进入全屏，退出全屏需同时恢复最大化前尺寸）；`IsMaximised` 排除全屏窗口（对齐 `linux_purego.go` 的 `isMaximised() = gtk_window_is_maximized && !isFullscreen()`）；`IsMinimised` 在已 realize 时实时读取 GDK Toplevel 状态位（对齐 `linux_purego.go` 的 `isMinimised()`），未 realize 时回退到上次观测值。
     - 测试：新增 `LinuxWebviewWindowStateEventsTests` 7 项（对齐上游 `TestChangedLinuxWindowStateEvents`：首次普通态无事件、首次最大化/最小化、退出最大化/最小化、最大化→全屏保留 `WindowUnmaximised` 并追加 `WindowFullscreen`、退出全屏），Windows 主机纯逻辑运行 7/7 通过（无需 GTK/GUI）。
 
+17. **Linux 初始窗口状态、置顶、居中与 SetHTML 基线对齐上游（2026-11-07）**
+    - [LinuxWebviewWindow.cs](../../src/Wails.Net.Application.Linux/LinuxWebviewWindow.cs)：`Centre()` 改用窗口**当前所在显示器**的几何（`Gdk.Display.GetMonitorAtSurface`，对齐 `linux_purego.go` 的 `getCurrentMonitor()` 与 `webview_window_linux.go` 的 `center()`），尚未 realize 时回退首显示器；移除居中末尾多余的 `Present()`（只移动、不改变可见性）。
+    - 构造函数对齐 `linuxWebviewWindow.run()`（`webview_window_linux.go:465,484,504-514`）：显示前应用 `SetZoom(options.Zoom)`、缓存 `AlwaysOnTop`、`ApplyInitialPlacement()`（`Centered` 或 `X/Y=-1` 时居中，否则 `SetPosition`），并按 `Maximised → Minimised → Fullscreen` 应用起始窗口状态；`CreateNativeWindow()` 移除重复的全屏与空置顶分支。
+    - `Show()` present 后重新应用待生效的置顶状态（对齐 `windowShow()` 的 `windowApplyPendingAlwaysOnTop`，`linux_purego.go:942-949`）与首次屏幕摆放（未映射的 GTK 窗口此前无法被窗口管理器定位，对齐 run() 中 show 前后各应用一次 `applyScreenPlacement()`）；`SetAlwaysOnTop` 在窗口不可见时只缓存，抽出 `ApplyAlwaysOnTop` 供 `Show()` 复用。
+    - `SetHTML` 与 HTML 初始化改用 `wails://localhost/` 基线（对齐 `linux_purego.go` 的 `setHTML`：`webkit_web_view_load_alternate_html(..., "wails://", "")`），并确保 `wails` scheme 已注册；避免 `about:blank` 的不透明源被 `LinuxIpcOriginGuard` 拒绝，导致 app 内 HTML 页面无法调用绑定。
+    - 测试：`LinuxWebviewWindowPositionTests` 新增 3 项（`ShouldCenterOnInitialPlacement` 的显式居中/有效坐标/未指定坐标），与既有 2 项合计 5/5 通过。
+
 ### 12.5 验证结果
 
 - 构建（0 警告 0 错误）：`Wails.Net.Application`、`Wails.Net.Application.Linux`、`Wails.Net.Application.Tests`、`Wails.Net.Application.Linux.Tests`。
@@ -1230,6 +1237,7 @@ Wails.Net `HelperProcess.cs` 对齐：
   - 2026-11-04 追加（MIME 嗅探 + CLI 批次）：`ContentTypeSnifferTests` 45/45、资源服务器测试项目 354/354（其中 `AssetServerTests` 类 89/89，含 PNG 嗅探/扩展名优先/Range 206/HEAD）、`IconCommandTests` 15/15、`PackagerTests` 37/37、`PackagerDebRpmTests` 6 通过 2 跳过（Linux 专属用例）、`PackagerBundleTests` 3/3。
   - 2026-11-04 追加（macOS DIP + 审查修复）：`MacDipCoordinatesTests` 37/37（`Wails.Net.Application.MacOS.Tests` 全量 56/56）、`TrayIconRebuildSchedulerTests` 6/6、`PlatformMessageWindowTests` 2 通过 2 跳过（GUI 用例）。
   - 2026-11-05 追加（tar.gz 权限位）：`Wails.Net.Cli` 构建 0 警告 0 错误；`PackagerTests` 定向 40 项 — 通过 39、跳过 1（`PackageAsync_TarGz_PreservesExecutableBitOfSecondaryScript`，仅 Unix 主机运行）。
+  - 2026-11-07 追加（Linux 窗口状态/IPC 上游对齐）：`Wails.Net.Application.Linux`、`Wails.Net.Application.Linux.Tests` 构建 0 警告 0 错误；`LinuxWebviewWindowStateEventsTests` 7/7、`LinuxWebviewWindowPositionTests` 5/5 通过（Windows 主机纯逻辑，无需 GTK）；窗口实际状态切换、X11 多屏居中/置顶、`setHTML` 页面 IPC 仍需 Linux 实机（实机清单 L2/L4）确认。
 - **全量构建（2026-11-04，非 Android）**：89 个非 Android 项目（`src/` + `tests/`，排除 `Templates/content`）**全部编译通过**（0 错误、3 条既有 `MSB3277` WebView2/WindowsBase 版本冲突告警）。此前唯一失败项 `Wails.Net.Plugins.Mobile.Tests`（`CS0246: MobilePlugin`）已修复并纳入全量：`MobilePlugin` 并非本仓库应有的聚合类型（`Plugins.Mobile` 按 Tauri v2 拆为 7 个独立插件，与仓库其余 46 个插件的组织形式一致），属**测试过时**，测试已重写为逐插件校验。Android 4 个项目（`Application.Android`、`Bundle.Android`、`Application.Android.Tests`、`Demo.Android`）因本机未安装 `android` 工作负载报 `NETSDK1147`，按既有约定跳过。
 - **全量单元测试（2026-11-04，Windows 主机，GUI 默认跳过；含 Mobile 修复后复测）**：32 个测试项目、共 **3385 项**，通过 **3139**、失败 **0**、跳过 **246** —— **全绿**。
   - 与上次复测（31 个项目 / 3380 项 / 通过 3134 / 失败 0 / 跳过 246）对比：项目 +1、总数 +5、通过 +5、失败与跳过不变；增量全部来自 `Wails.Net.Plugins.Mobile.Tests`（重写后的 5 项用例，此前因编译失败未计入）。

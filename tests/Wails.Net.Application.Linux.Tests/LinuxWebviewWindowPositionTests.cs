@@ -39,4 +39,36 @@ public sealed class LinuxWebviewWindowPositionTests
         // 断言
         await Assert.That(position).IsEqualTo((0, 0));
     }
+
+    /// <summary>
+    /// 显式要求居中时，无论 X/Y 如何都走居中分支（对应上游 applyScreenPlacement 的居中分支）。
+    /// </summary>
+    [Test]
+    public async Task ShouldCenterOnInitialPlacement_WhenCenteredRequested_ReturnsTrue()
+    {
+        await Assert.That(LinuxWebviewWindow.ShouldCenterOnInitialPlacement(
+            x: 100, y: 200, centered: true)).IsTrue();
+    }
+
+    /// <summary>
+    /// X/Y 均有效且未要求居中时，按绝对 DIP 坐标定位（不居中）。
+    /// </summary>
+    [Test]
+    public async Task ShouldCenterOnInitialPlacement_WithValidCoordinates_ReturnsFalse()
+    {
+        await Assert.That(LinuxWebviewWindow.ShouldCenterOnInitialPlacement(
+            x: 0, y: 0, centered: false)).IsFalse();
+    }
+
+    /// <summary>
+    /// 选项模型沿用 Windows 语义，X 或 Y 为 -1 表示“未指定”，此时按居中处理。
+    /// </summary>
+    [Test]
+    public async Task ShouldCenterOnInitialPlacement_WithUnspecifiedCoordinate_ReturnsTrue()
+    {
+        await Assert.That(LinuxWebviewWindow.ShouldCenterOnInitialPlacement(
+            x: -1, y: 200, centered: false)).IsTrue();
+        await Assert.That(LinuxWebviewWindow.ShouldCenterOnInitialPlacement(
+            x: 100, y: -1, centered: false)).IsTrue();
+    }
 }
