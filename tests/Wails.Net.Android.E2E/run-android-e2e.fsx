@@ -335,9 +335,15 @@ let startApp () =
             inForeground
 
 let uiAutomatorDump (name: string) =
-    // 先删旧文件：uiautomator 对已存在的目标文件行为不一致（部分版本报错不写入）
+    // 先删旧文件：uiautomator 对已存在的目标文件行为不一致（部分版本报错不写入），
+    // 且删除后能保证"命令失败 → cat 读不到 → 判定为未命中"，避免读到上一轮的陈旧内容。
     adb (sprintf "shell rm -f /sdcard/%s" name) |> ignore
-    adb (sprintf "shell uiautomator dump /sdcard/%s" name) |> ignore
+    // dump 可能较慢（模拟器负载高时实测出现过 uiautomator 被 SIGKILL、exit=137），
+    // 用更长的超时，失败由调用方的重试覆盖。
+    log (sprintf "adb shell uiautomator dump /sdcard/%s" name)
+    let code, _, err = runProcess "adb" (sprintf "shell uiautomator dump /sdcard/%s" name) 60000
+    if code <> 0 then
+        log (sprintf "uiautomator dump exit=%d stderr=%s" code err)
     adb (sprintf "shell cat /sdcard/%s" name)
 
 /// 轮询 uiautomator dump 直到命中判定条件。
@@ -374,9 +380,12 @@ let tryFindNodeCenter (xml: string) (text: string) =
 let verifyWebView () =
     info "步骤 4/4：验证 WebView 加载与 IPC 绑定"
     // 1. 通过 uiautomator dump 验证 WebView 渲染（轮询等待无障碍树构建完成）
-    let pageSignatures = [ "问候服务"; "打招呼"; "Wails.Net Demo" ]
+    //    特征只取只存在于页面 DOM 里的文字。"Wails.Net Demo" 不能用：它同时是
+    //    Activity 的 ActionBar 标题，WebView 尚未暴露内容时也会命中，造成
+    //    "渲染正常"的假阳性，随后又因找不到按钮而失败（实测踩过）。
+    let pageSignatures = [ "问候服务"; "打招呼" ]
     let uiXml, pageVisible =
-        uiAutomatorDumpUntil "wails_ui.xml" (fun xml -> pageSignatures |> List.exists xml.Contains) 6
+        uiAutomatorDumpUntil "wails_ui.xml" (fun xml -> pageSignatures |> List.exists xml.Contains) 12
 
     if not pageVisible then
         fail "WebView 渲染失败（uiautomator dump 未检测到 Wails.Net Demo 页面元素）"
