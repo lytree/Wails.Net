@@ -305,7 +305,11 @@ Task("Dist-Windows")
                 Runtime = rid,
                 SelfContained = true,
                 OutputDirectory = outputDir,
-                NoRestore = true,
+                // 不能沿用 Restore 任务的产物：带 Runtime 的 publish 要求 assets 文件里
+                // 存在形如 net10.0/<rid> 的目标，而未指定 RID 的 Restore 不会生成它，
+                // 会报 NETSDK1047（assets file doesn't have a target for 'net10.0/win-x64'）。
+                // 这里让 publish 自己按 RID 还原，多花几秒换取可重复的自包含构建。
+                NoRestore = false,
                 MSBuildSettings = CreateMSBuildSettings(),
             };
             publishSettings.MSBuildSettings.Properties["PublishSingleFile"] = new[] { "true" };
@@ -373,7 +377,11 @@ Task("Dist-Linux")
                 Runtime = rid,
                 SelfContained = true,
                 OutputDirectory = outputDir,
-                NoRestore = true,
+                // 不能沿用 Restore 任务的产物：带 Runtime 的 publish 要求 assets 文件里
+                // 存在形如 net10.0/<rid> 的目标，而未指定 RID 的 Restore 不会生成它，
+                // 会报 NETSDK1047（assets file doesn't have a target for 'net10.0/win-x64'）。
+                // 这里让 publish 自己按 RID 还原，多花几秒换取可重复的自包含构建。
+                NoRestore = false,
                 MSBuildSettings = CreateMSBuildSettings(),
             };
             publishSettings.MSBuildSettings.Properties["PublishSingleFile"] = new[] { "true" };
@@ -452,7 +460,11 @@ Task("Dist-Android")
                 Configuration = configuration,
                 Runtime = rid,
                 SelfContained = true,
-                NoRestore = true,
+                // 不能沿用 Restore 任务的产物：带 Runtime 的 publish 要求 assets 文件里
+                // 存在形如 net10.0/<rid> 的目标，而未指定 RID 的 Restore 不会生成它，
+                // 会报 NETSDK1047（assets file doesn't have a target for 'net10.0/win-x64'）。
+                // 这里让 publish 自己按 RID 还原，多花几秒换取可重复的自包含构建。
+                NoRestore = false,
                 MSBuildSettings = CreateMSBuildSettings(),
             };
             publishSettings.MSBuildSettings.Properties["AndroidPackageFormat"] = new[] { "apk" };
