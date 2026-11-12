@@ -25,7 +25,7 @@ interface UpdateManifest {
 
 describe("defineCommand — none 模式", () => {
   it("无参数命令发送空数组 wire", async () => {
-    callMock.mockResolvedValue({ version: "1.0.0" });
+    callMock.mockResolvedValue("1.0.0");
 
     const getCurrentVersion = defineCommand<[], string>("updater.getCurrentVersion", "none");
     const result = await getCurrentVersion();

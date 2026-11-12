@@ -8,7 +8,8 @@ describe("fnv1a", () => {
   it("matches known FNV-1a 32-bit vectors (与后端 BindingManager.FNV1aHash 一致)", () => {
     expect(fnv1a("")).toBe(2166136261);
     expect(fnv1a("a")).toBe(0xe40c292c);
-    expect(fnv1a("foobar")).toBe(0x85944171);
+    // FNV-1a 32 位标准测试向量；0x85944171 是 FNV-1（非 1a）的同输入结果，不可混用
+    expect(fnv1a("foobar")).toBe(0xbf9cf968);
   });
 
   it("is stable across calls", () => {
