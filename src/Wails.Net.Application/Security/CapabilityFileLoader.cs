@@ -8,16 +8,13 @@ namespace Wails.Net.Application.Security;
 /// 能力文件加载器，从 JSON 文件扫描加载能力声明。
 /// 对应 Tauri v2 的 capabilities/*.json 文件加载机制：
 /// 应用可在指定目录放置 JSON 文件声明窗口所需的权限，启动时自动扫描加载。
+/// <para>
+/// 反序列化走 <see cref="CapabilityJsonSerializerContext"/> 的编译期元数据，
+/// 不使用反射式 <see cref="JsonSerializer"/> 路径，以保证 NativeAOT 裁剪发布可用（无 IL2026 / IL3050）。
+/// </para>
 /// </summary>
 public static class CapabilityFileLoader
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        ReadCommentHandling = JsonCommentHandling.Skip,
-        AllowTrailingCommas = true,
-    };
-
     /// <summary>
     /// 从指定目录加载所有 .json 能力文件。
     /// 文件格式示例：
@@ -50,7 +47,7 @@ public static class CapabilityFileLoader
             try
             {
                 var json = File.ReadAllText(file);
-                var capability = JsonSerializer.Deserialize<Capability>(json, JsonOptions);
+                var capability = JsonSerializer.Deserialize(json, CapabilityJsonSerializerContext.Default.Capability);
                 if (capability is not null && !string.IsNullOrEmpty(capability.Identifier))
                 {
                     capabilities.Add(capability);
@@ -87,7 +84,7 @@ public static class CapabilityFileLoader
         try
         {
             var json = File.ReadAllText(filePath);
-            var capability = JsonSerializer.Deserialize<Capability>(json, JsonOptions);
+            var capability = JsonSerializer.Deserialize(json, CapabilityJsonSerializerContext.Default.Capability);
             if (capability is not null && !string.IsNullOrEmpty(capability.Identifier))
             {
                 logger?.LogDebug("已加载能力文件: {File}（{Identifier}）", filePath, capability.Identifier);
