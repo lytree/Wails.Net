@@ -1,4 +1,4 @@
-# Wails.Net 当前架构融合审计
+# Wails.Net 当前架构策略审计
 
 审计基线：2026-08-18 当前工作树。  
 审计方式：只读静态分析，未修改文件、未执行构建或测试。  
@@ -6,11 +6,11 @@
 
 ## 1. 总体结论
 
-三条融合路线选择正确，不建议改变：
+三条架构主线选择正确，不建议改变：
 
 - Host/DI/Config/Logging 继续采用 Microsoft.Extensions.*。
 - Runtime/Window/IPC 保持 Wails v3 的对象模型。
-- Plugin/Security/Capability 继续采用 Tauri v2 的默认拒绝思路。
+- Plugin/Security/Capability 继续采用默认拒绝（deny-by-default）思路。
 
 当前主要问题不是缺少抽象，而是“控制面已经建立，执行面仍有分叉”：
 
@@ -26,24 +26,24 @@
 
 1. `DesktopApplicationBuilder` 正确封装 `HostApplicationBuilder`，向外暴露 Services、Configuration、Logging：
 
-   [DesktopApplicationBuilder.cs](E:/github/Wails.Net/src/Wails.Net.Application/Hosting/DesktopApplicationBuilder.cs:47)
+   [DesktopApplicationBuilder.cs](../../src/Wails.Net.Application/Hosting/DesktopApplicationBuilder.cs:47)
 
 2. `DesktopHostOptions`、`PermissionOptions`、`IpcOptions` 均已绑定 Options、Validator 和 `ValidateOnStart`。
 
 3. 插件初始化已经移除临时 `BuildServiceProvider`，通过 `DeferredPermissionRegistrar` 延迟物化权限，避免双 Singleton：
 
-   [DesktopApplicationBuilder.cs](E:/github/Wails.Net/src/Wails.Net.Application/Hosting/DesktopApplicationBuilder.cs:436)
+   [DesktopApplicationBuilder.cs](../../src/Wails.Net.Application/Hosting/DesktopApplicationBuilder.cs:436)
 
 4. 生产绑定使用源生成强类型调用器，没有回退到运行时反射。
 
 5. `WebviewWindow.Impl` 断链问题已经修复，两条窗口创建路径均会回填平台实现：
 
-   [Application.cs](E:/github/Wails.Net/src/Wails.Net.Application/Application.cs:919)  
-   [WindowManager.cs](E:/github/Wails.Net/src/Wails.Net.Application/Managers/WindowManager.cs:106)
+   [Application.cs](../../src/Wails.Net.Application/Application.cs:919)  
+   [WindowManager.cs](../../src/Wails.Net.Application/Managers/WindowManager.cs:106)
 
 6. Strict 模式下 Capability 加载条件已改为与 `PermissionManager.Enabled` 一致：
 
-   [DesktopApplicationBuilder.cs](E:/github/Wails.Net/src/Wails.Net.Application/Hosting/DesktopApplicationBuilder.cs:379)
+   [DesktopApplicationBuilder.cs](../../src/Wails.Net.Application/Hosting/DesktopApplicationBuilder.cs:379)
 
 7. 事件系统已具备通配符、发送窗口、目标窗口和应用事件钩子；IPC 已具备调用取消和分块大小限制。
 
@@ -55,11 +55,11 @@
 
 `Application` 自己创建 `BindingManager` 和 `EventProcessor`：
 
-[Application.cs](E:/github/Wails.Net/src/Wails.Net.Application/Application.cs:48)
+[Application.cs](../../src/Wails.Net.Application/Application.cs:48)
 
 DI 又注册另一套 Singleton：
 
-[ServiceCollectionExtensions.cs](E:/github/Wails.Net/src/Wails.Net.Application/Hosting/ServiceCollectionExtensions.cs:31)
+[ServiceCollectionExtensions.cs](../../src/Wails.Net.Application/Hosting/ServiceCollectionExtensions.cs:31)
 
 Server Mode 的 `MessageProcessor` 使用 DI 实例，而 `Application.RegisterService/RegisterBindings` 写入 Application 自有实例。这会导致不同传输看到不同的绑定、事件和服务状态。
 
@@ -75,15 +75,15 @@ Server Mode 的 `MessageProcessor` 使用 DI 实例，而 `Application.RegisterS
 
 1. Strict 只检查“声明了 required capability”的命令；没有安全声明的命令仍可执行：
 
-   [CommandDispatcher.cs](E:/github/Wails.Net/src/Wails.Net.Application/Commands/CommandDispatcher.cs:136)
+   [CommandDispatcher.cs](../../src/Wails.Net.Application/Commands/CommandDispatcher.cs:136)
 
 2. `[Binding]` 调用先直接进入 `Bindings.Call`，绕过 `CommandDispatcher` 和 `PermissionManager`：
 
-   [MessageProcessor.cs](E:/github/Wails.Net/src/Wails.Net.Application/Transport/MessageProcessor.cs:327)
+   [MessageProcessor.cs](../../src/Wails.Net.Application/Transport/MessageProcessor.cs:327)
 
 3. `window.*` 命令找不到插件命令时，会进入无权限检查的硬编码 fallback：
 
-   [MessageProcessor.cs](E:/github/Wails.Net/src/Wails.Net.Application/Transport/MessageProcessor.cs:818)
+   [MessageProcessor.cs](../../src/Wails.Net.Application/Transport/MessageProcessor.cs:818)
 
 静态扫描显示，47 个插件约 304 个命令注册点中，只有约 29 个接入 `CommandSecurity`。Process、Stronghold、Store、Updater、Window 等高敏插件仍存在大量匿名命令。
 
@@ -109,13 +109,13 @@ Strict 终态必须满足：
 
 原生 IPC 仅在消息没有 WindowId 时写入真实窗口 ID，前端可主动携带另一个窗口 ID：
 
-[NativeIpcTransport.cs](E:/github/Wails.Net/src/Wails.Net.Application/Transport/NativeIpcTransport.cs:118)
+[NativeIpcTransport.cs](../../src/Wails.Net.Application/Transport/NativeIpcTransport.cs:118)
 
 Origin 也来自前端 JSON，而不是平台观测结果。低权限窗口因此可能冒充高权限窗口，remote capability 也无法建立可信边界。
 
 此外，本地来源使用字符串前缀判断：
 
-[IpcOriginValidator.cs](E:/github/Wails.Net/src/Wails.Net.Application/Security/IpcOriginValidator.cs:64)
+[IpcOriginValidator.cs](../../src/Wails.Net.Application/Security/IpcOriginValidator.cs:64)
 
 这会错误接受 `http://localhost.evil.example`。
 
@@ -136,8 +136,8 @@ Origin 也来自前端 JSON，而不是平台观测结果。低权限窗口因�
 - 各平台 `_windows`
 - `NativeIpcTransport._windowImpls`
 
-[Application.cs](E:/github/Wails.Net/src/Wails.Net.Application/Application.cs:32)  
-[WindowManager.cs](E:/github/Wails.Net/src/Wails.Net.Application/Managers/WindowManager.cs:18)
+[Application.cs](../../src/Wails.Net.Application/Application.cs:32)  
+[WindowManager.cs](../../src/Wails.Net.Application/Managers/WindowManager.cs:18)
 
 `Application.CreateWebviewWindow()` 不登记到 `WindowManager`，但 `EventIPCTransport` 从 `WindowManager` 枚举窗口，因此非 Native IPC 平台可能找不到需要投递事件的窗口。
 
@@ -152,7 +152,7 @@ Origin 也来自前端 JSON，而不是平台观测结果。低权限窗口因�
 
 `DesktopHostedService` 先注册并启动；`ServerModeTransportInitializer` 后注册。Application 进入 Run 时 transport 尚未注入，后续 initializer 只赋值、不调用 `StartAsync`：
 
-[ServerModeTransportExtensions.cs](E:/github/Wails.Net/src/Wails.Net.Application/Hosting/ServerModeTransportExtensions.cs:205)
+[ServerModeTransportExtensions.cs](../../src/Wails.Net.Application/Hosting/ServerModeTransportExtensions.cs:205)
 
 结果可能是 Server Mode 拥有一个“已注入但未监听”的 WebSocketTransport。
 
@@ -162,7 +162,7 @@ Origin 也来自前端 JSON，而不是平台观测结果。低权限窗口因�
 
 `PlatformStarted` 在调用 `_platformApp.Run()` 前置位；如果平台主循环立即失败，TCS 已成功完成，异常随后又被捕获：
 
-[Application.cs](E:/github/Wails.Net/src/Wails.Net.Application/Application.cs:1085)
+[Application.cs](../../src/Wails.Net.Application/Application.cs:1085)
 
 Host 可能报告启动成功，但 UI 主循环实际已经失败。
 
@@ -192,8 +192,8 @@ WebSocket 接收循环串行等待长命令，同连接后续的 cancel 消息�
 
 Stronghold 创建金库时生成一次 AES-GCM nonce，后续多次保存继续复用同一 key/nonce：
 
-[StrongholdPlugin.cs](E:/github/Wails.Net/src/Wails.Net.Plugins.Stronghold/StrongholdPlugin.cs:254)  
-[StrongholdPlugin.cs](E:/github/Wails.Net/src/Wails.Net.Plugins.Stronghold/StrongholdPlugin.cs:381)
+[StrongholdPlugin.cs](../../src/Wails.Net.Plugins.Stronghold/StrongholdPlugin.cs:254)  
+[StrongholdPlugin.cs](../../src/Wails.Net.Plugins.Stronghold/StrongholdPlugin.cs:381)
 
 AES-GCM 在同一密钥下禁止复用 nonce。应每次加密生成新 nonce，并与本次密文一同持久化；文件写入还应采用临时文件加原子替换。该问题应独立于架构重构立即修复。
 
@@ -243,7 +243,7 @@ Windows、Linux、macOS、Android 分别复制了：
 - `PortStart`
 - `PortEnd`
 
-[IpcOptions.cs](E:/github/Wails.Net/src/Wails.Net.Application/Security/IpcOptions.cs:17)
+[IpcOptions.cs](../../src/Wails.Net.Application/Security/IpcOptions.cs:17)
 
 应建立 Options→行为的契约测试；无法实现的字段应删除，避免形成配置已生效的错觉。
 
@@ -298,7 +298,7 @@ RequiredServices
 
 3. 日志桥接应实现 `ISupportExternalScope`，保留结构化 state、EventId、Exception 和 Scope，而不是拼接成字符串：
 
-   [LogServiceLoggerProvider.cs](E:/github/Wails.Net/src/Wails.Net.Application/Logging/LogServiceLoggerProvider.cs:85)
+   [LogServiceLoggerProvider.cs](../../src/Wails.Net.Application/Logging/LogServiceLoggerProvider.cs:85)
 
 4. `LogService` 的内存日志列表应设容量上限，避免长期运行持续增长。
 
@@ -335,7 +335,7 @@ RequiredServices
 - WebSocket mailbox、控制通道和背压。
 - 四平台 WebviewRequestPipeline 异步化。
 
-### R3：完成 Tauri 风格 ACL
+### R3：完成自研 ACL 能力模型
 
 - 全量迁移插件到 `Require/Public`。
 - 权限清单随 NuGet 包分发。
@@ -368,7 +368,7 @@ RequiredServices
 
 ## 8. 文档治理
 
-现有 [refactor-and-hardening-plan.md](E:/github/Wails.Net/docs/architecture/refactor-and-hardening-plan.md:140) 已出现状态漂移：文档仍将 WebviewWindow Impl 断链和 Strict Capability 加载列为未修复，但当前代码已经完成修正。
+现有 [refactor-and-hardening-plan.md](../../docs/architecture/refactor-and-hardening-plan.md:140) 已出现状态漂移：文档仍将 WebviewWindow Impl 断链和 Strict Capability 加载列为未修复，但当前代码已经完成修正。
 
 后续建议所有架构问题统一维护状态：
 

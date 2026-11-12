@@ -3,7 +3,7 @@
 > 本文档定义 Wails.Net 插件在 **桌面端 / 安卓端 / 平台特有** 三个维度的前后端拆分模型，目标是在保持「一个插件 = NuGet 后端包 + npm 前端包」双包形态的同时，让平台能力边界清晰、开发与发布可落地。
 >
 > - **更新日期**：2026-08-07
-> - **前置文档**：[plugin-packaging.md](plugin-packaging.md)（双包模型与 vite 调用）、[ADR-0002](../../ADR/0002-plugin-architecture.md)（插件架构决策）
+> - **前置文档**：[plugin-packaging.md](plugin-packaging.md)（双包模型与 vite 调用）、[ADR-0002](../ADR/0002-plugin-architecture.md)（插件架构决策）
 > - **适用**：Wails.Net `0.1.0-alpha.1` 及以上
 
 ---
@@ -144,7 +144,7 @@ src/
 
 > **目录位置硬约束**：插件包必须直接位于 `src/Wails.Net.Plugins.{Name}/`（不要套 `src/plugins/` 子目录）——`PluginBuilder.DiscoverPlugins` 按 `src/Wails.Net.Plugins.*` 模式扫描，`wails plugin build/publish` 依赖此规则自动发现插件。
 
-> **决策点（移动端聚合 vs 逐插件拆分）**：移动端 8 插件共用同一套 Android 平台实现（`Wails.Net.Application.Android/Mobile`）、同一 `net10.0-android36.0` TFM、同一 Activity 委托注入管道，**推荐聚合为 `Wails.Net.Plugins.Mobile` 单包**（对齐 Android 工程整体发布形态），npm 侧可对应 `@wails-net/plugin-mobile` 一个包 + 命名空间导出。若生态需要逐插件安装（对齐 Tauri），再拆分为 `Wails.Net.Plugins.Biometric` 等独立包——拆分成本低（类无交叉依赖）。
+> **决策点（移动端聚合 vs 逐插件拆分）**：移动端 8 插件共用同一套 Android 平台实现（`Wails.Net.Application.Android/Mobile`）、同一 `net10.0-android36.0` TFM、同一 Activity 委托注入管道，**推荐聚合为 `Wails.Net.Plugins.Mobile` 单包**（对齐 Android 工程整体发布形态），npm 侧可对应 `@wails-net/plugin-mobile` 一个包 + 命名空间导出。若生态需要逐插件安装，再拆分为 `Wails.Net.Plugins.Biometric` 等独立包——拆分成本低（类无交叉依赖）。
 
 ### 3.2 移动端包的 TFM 双目标
 
@@ -368,9 +368,9 @@ flowchart LR
 | 文档 | 关联点 |
 |------|--------|
 | [plugin-packaging.md](plugin-packaging.md) | 双包模型、defineCommand、发布流程（本方案是其平台分层细化） |
-| [ADR-0002](../../ADR/0002-plugin-architecture.md) | 插件架构决策与替代方案 |
+| [ADR-0002](../ADR/0002-plugin-architecture.md) | 插件架构决策与替代方案 |
 | [AGENTS.md](../../AGENTS.md) | §3.4 禁反射、§3.4.6 CancellationToken 约定 |
-| [plugins.md](../../plugins.md) | 47 插件功能总览（拆分后需同步命令前缀表） |
+| [plugins.md](../plugins.md) | 47 插件功能总览（拆分后需同步命令前缀表） |
 | [project-structure-and-modes.md](project-structure-and-modes.md) | 前后端项目分布与 Debug/Release 模式 |
 
 ---

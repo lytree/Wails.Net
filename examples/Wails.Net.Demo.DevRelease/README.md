@@ -1,7 +1,7 @@
 # Wails.Net DevRelease Demo
 
 > 演示 Wails.Net 项目的 **Debug / Release 模式** 与 **前后端项目分布**，
-> 对应 Tauri v2 / Wails v3 的运行模式。
+> 对应 Wails v3 的运行模式。
 
 ## 项目结构
 
@@ -35,10 +35,10 @@ Wails.Net.Demo.DevRelease/
 ### 方式一：通过 Wails.Net CLI（推荐）
 
 ```bash
-# Debug 模式（参照 Tauri `tauri dev` / Wails v3 `wails dev`）
+# Debug 模式（参照 Wails v3 `wails dev`）
 wails dev --project examples/Wails.Net.Demo.DevRelease/Wails.Net.Demo.DevRelease.csproj
 
-# Release 模式（参照 Tauri `tauri build` / Wails v3 `wails build`）
+# Release 模式（参照 Wails v3 `wails build`）
 wails build --project examples/Wails.Net.Demo.DevRelease/Wails.Net.Demo.DevRelease.csproj
 
 # 全平台构建
@@ -66,16 +66,16 @@ dotnet run --project examples/Wails.Net.Demo.DevRelease -c Release
 
 F5 启动时 `launchSettings.json` 自动设置 `WAILS_DEBUG` 等环境变量。
 
-## 与 Tauri / Wails 对照
+## 与 Wails v3 对照
 
-| 维度 | Tauri v2 | Wails v3 | **本 Demo** |
-|------|----------|----------|-------------|
-| 开发命令 | `tauri dev` | `wails dev` | `wails dev` |
-| 发布命令 | `tauri build` | `wails build` | `wails build` |
-| DevTools 自动打开 | ❌ 手动 F12 | ✅ 默认 | ✅ Debug 模式自动 |
-| WAILS_DEBUG 环境变量 | ❌ | ✅（`wails dev` 设置） | ✅（`wails dev` 与 F5 profile 都设置） |
-| launchSettings.json | ❌（VSCode launch.json） | ❌（GoLand Run Config） | ✅ .NET 惯例 |
-| 前后端项目分布 | `src/` + `src-tauri/` | `frontend/` | **`frontend/` + 后端根** |
+| 维度 | Wails v3 | **本 Demo** |
+|------|----------|-------------|
+| 开发命令 | `wails dev` | `wails dev` |
+| 发布命令 | `wails build` | `wails build` |
+| DevTools 自动打开 | ✅ 默认 | ✅ Debug 模式自动 |
+| WAILS_DEBUG 环境变量 | ✅（`wails dev` 设置） | ✅（`wails dev` 与 F5 profile 都设置） |
+| launchSettings.json | ❌（GoLand Run Config） | ✅ .NET 惯例 |
+| 前后端项目分布 | `frontend/` | **`frontend/` + 后端根** |
 
 ## 演示要点
 
@@ -89,10 +89,10 @@ F5 启动时 `launchSettings.json` 自动设置 `WAILS_DEBUG` 等环境变量。
 
 ## 进一步阅读
 
-- [项目结构与调试/发布模式指南](../docs/development/project-structure-and-modes.md)
-- [构建与打包指南](../docs/development/build-and-pack.md)
-- [功能对比：Wails.Net vs Tauri 2 vs Wails 3](../docs/comparison-with-tauri2-wails3.md)
-- [快速入门](../docs/getting-started.md)
+- [项目结构与调试/发布模式指南](../../docs/development/project-structure-and-modes.md)
+- [构建与打包指南](../../docs/development/build-and-pack.md)
+- [能力矩阵：Wails.Net vs Wails v3](../../docs/comparison-with-wails-v3.md)
+- [快速入门](../../docs/getting-started.md)
 
 ---
 

@@ -18,7 +18,7 @@
 
 
 > - **分析日期**：2026-08-16（基线提交 `9efef61`）
-> - **分析方法**：对 `src/`（核心宿主层、IPC/传输层、安全/权限层、四平台实现、40 个插件包）、`packages/`（npm 前端包）、`tests/`（36 个测试项目）、CLI/源生成器/模板/CI 做全量事实调研，并与 **Wails v3 `v3.0.0-beta.4`**（2026-08-05）与 **Tauri v2 GA `2.11.5`**（2026-07-01）的关键机制逐项对标。
+> - **分析方法**：对 `src/`（核心宿主层、IPC/传输层、安全/权限层、四平台实现、40 个插件包）、`packages/`（npm 前端包）、`tests/`（36 个测试项目）、CLI/源生成器/模板/CI 做全量事实调研，并与 **Wails v3 `v3.0.0-beta.4`**（2026-08-05）的关键机制逐项对标。
 > - **与既有文档的关系**：本文是 `fusion-architecture-audit.md`（2026-08-15 审计）与 `optimization-roadmap.md`（OPT-* 系列）的**下一轮升级**。差异在于：**本文明确允许不兼容变更与破坏性更改（Breaking Changes）**，用于在 1.0 之前的版本窗口一次性收敛结构性债务；OPT-* 未完成项在本文中以 RH-* 编号继承并扩展。
 > - **本文件同时补齐一个悬空引用**：`tests/Wails.Net.Application.Tests/Security/CommandSecurityEnforcementTests.cs:14` 引用了本文件 §2.1.4，此前该文件在仓库中不存在。
 > - **本文只做分析与方案设计，不伴随任何代码修改。**
@@ -27,25 +27,25 @@
 
 ## 1. 总体结论
 
-三条融合主线（Host/DI/Config/Logging 学 ASP.NET Core；Runtime/Window/IPC 学 Wails v3；Plugin/Security/Capability 学 Tauri v2）**方向判定维持不变**，前两轮审计列出的 P0/P1 大部分已真实落地（复核确认：DeferredPermissionRegistrar、ApplicationLifecycleState、IIpcTransportStrategy、事件通配符/定向、manifest 三件套、Strict 模板、`wails-net check`、NativeAOT CI 均存在且有效）。
+三条架构主线（Host/DI/Config/Logging 参考 ASP.NET Core；Runtime/Window/IPC 参考 Wails v3；Plugin/Security/Capability 自研）**方向判定维持不变**，前两轮审计列出的 P0/P1 大部分已真实落地（复核确认：DeferredPermissionRegistrar、ApplicationLifecycleState、IIpcTransportStrategy、事件通配符/定向、manifest 三件套、Strict 模板、`wails-net check`、NativeAOT CI 均存在且有效）。
 
 本轮深度调研**新发现四类结构性问题**，它们无法靠增量修补解决，适合在允许破坏性更改的前提下集中处理：
 
 | # | 问题 | 性质 | 对标差距 | 编号 |
 |---|------|------|---------|------|
 | 1 | **核心 `WebviewWindow` facade 与平台实现断链**：`Impl` 属性全仓库无赋值点，facade 全部方法抛 `InvalidOperationException`；Linux/macOS/Android 的事件下行与 contextmenu 路径实际不可用或空转 | P0 级缺陷 | Wails v3：窗口对象模型端到端可用 | RH-WIN-01 |
-| 2 | **安全模型"机制完备、接入率 6%"**：40 个插件中仅 FileSystem/Shell/Http（4/5）接入 `CommandSecurity`；`[RequireCapability]` 零使用；Strict 与 capability 加载存在脱节 bug；`window.*` 硬编码 switch 绕过权限链 | 缺陷 + 覆盖缺口 | Tauri v2：ACL 默认拒绝、权限随插件分发、core 命令同样受 ACL 管辖 | RH-SEC-* |
+| 2 | **安全模型"机制完备、接入率 6%"**：40 个插件中仅 FileSystem/Shell/Http（4/5）接入 `CommandSecurity`；`[RequireCapability]` 零使用；Strict 与 capability 加载存在脱节 bug；`window.*` 硬编码 switch 绕过权限链 | 缺陷 + 覆盖缺口 | 设计要求：ACL 默认拒绝、权限随插件分发、core 命令同样受 ACL 管辖 | RH-SEC-* |
 | 3 | **四平台各持一份 IPC+资源+ready 管线拷贝**：POST /wails/\* 处理 4 份、静态资源+SPA 回退 4 份、runtime 注入 3 份、WindowRuntimeReady 4 处不同触发点，且全部在 UI 线程同步阻塞等待异步命令 | 结构性重复 + 阻塞风险 | Wails v3：平台层共享 messageProcessor/assetserver 装配 | RH-IPC-02 |
 | 4 | **四套并行窗口注册表 + 静态服务定位器**：`Application._windows` 与 `WindowManager._windows` 互不同步、各平台 App 自持 `_windows`、`NativeIpcTransport` 再持一份；`Application.Get()` 被 20+ 平台文件静态调用 | 结构性耦合 | ASP.NET Core：无全局静态定位器；Wails v3：单一 window registry | RH-WIN-02 / RH-HOST-03 |
 
 **对标差距 Top 清单**（详见 §2–§5 分项）：
 
 - 对 Wails v3 beta.4：可安装插件（前端资产随插件分发）、Channel 前后端协议、dev server 反向代理、窗口对象模型完整性。
-- 对 Tauri v2：权限清单随包分发 + JSON Schema 自动生成（IDE 补全）、`convertFileSrc` 资产协议 scope、默认拒绝的实际全覆盖、core 命令纳入 ACL。
+- 设计目标：权限清单随包分发 + JSON Schema 自动生成（IDE 补全）、`convertFileSrc` 资产协议 scope、默认拒绝的实际全覆盖、core 命令纳入 ACL。
 
 ---
 
-## 2. 安全加固主线（SEC-H 系列，对标 Tauri v2 ACL）
+## 2. 安全加固主线（SEC-H 系列，自研 ACL 加固）
 
 > SEC-H-001（CommandSecurity API）、SEC-H-002（源生成器安全诊断分析器）已落地；SEC-H-005 已用于 store.watch 泄漏修复。SEC-H-003/004/006+ 为本文**提议**的后续编号（原始计划文档缺失，本文即其重建）。
 
@@ -111,18 +111,17 @@
 - `DenyByDefault` 在两种模式下行为都与其字面语义一致；
 - 存量 Compatibility 项目的迁移路径在 `permission-migration-guide.md` 中可一站式完成。
 
-### 2.3 权限清单随插件包分发 + JSON Schema 自动生成（SEC-H-006，对标 Tauri `permissions/*.toml` + tauri-build schema）
+### 2.3 权限清单随插件包分发 + JSON Schema 自动生成（SEC-H-006，权限清单随包分发 + Schema 生成）
 
 #### 对标事实
 
-- **Tauri v2**：每个插件 crate 内 `permissions/*.toml` 声明权限与默认集，构建期由 tauri-build 汇总生成 **JSON Schema**，capability 文件在 IDE 中获得全部可用权限的自动补全；`core:` 前缀的核心权限同样走 ACL。capability 支持 `local: true/false`、`remote`、`platforms`、`windows`、`webview-extensions` 等维度。
 - **Wails.Net 现状**：权限只存在于代码中的 `RegisterPermissionSet` 调用；CLI `check` 需要**手动传 `--permissions-manifest`** 目录才能校验权限存在性（`Check/CapabilityChecker.cs:289-341`）；无 schema 生成，capability 编写无补全；`window.*` 等核心命令的权限模型依赖 WindowPlugin 是否注册（见 2.2 缺陷 C）。
 
 #### 重构方案
 
 1. **NuGet 包内携带权限清单**：每个 `Wails.Net.Plugins.*` 在 csproj 中以内容文件打包 `permissions/plugin.json`（插件名、权限标识、权限集、scope 描述），与 `plugins.manifest.json` 生成链打通（SEC-H-003 的数据源）。
 2. **CLI 自动发现**：`wails-net check` / `build` 前置校验默认从项目引用的 NuGet 包（`PackageReference` 解析 + 包内 `permissions/` 目录）收集已知权限，替代手动 `--permissions-manifest`。
-3. **Schema 生成**：`wails-net generate schema`（或 check 附带）输出 capability JSON Schema（含全部已知权限枚举），供 IDE 补全——对齐 tauri-build 体验。
+3. **Schema 生成**：`wails-net generate schema`（或 check 附带）输出 capability JSON Schema（含全部已知权限枚举），供 IDE 补全。
 4. **核心命令 ACL 化**：`MessageProcessor.ProcessWindowAsync` 的硬编码 `DispatchWindowAction` switch（`MessageProcessor.cs:871-1077`）**不做任何权限检查**——当 WindowPlugin 未注册时，前端发 `window.*` 消息可直接操纵窗口（SetTitle/Fullscreen/Close…），绕过整个权限链（缺陷 C）。方案：硬编码 switch 仅保留为 Strict 之外的兼容回退；Strict 模式下 `window.*` 必须走 WindowPlugin 注册的命令路径（受 `window:default` 等权限约束），未注册即拒绝。
 
 #### 验收标准
@@ -135,7 +134,7 @@
 
 维持 `optimization-roadmap.md` §6.4 方案（`wails-asset://` 协议 + `AssetProtocolScope` + capability 授权 + 前端 `convertFileSrc`），本文补充两点：
 
-1. **与 Tauri 行为对齐**：Tauri 要求 `core:default`（asset 协议权限）**且** `app.security.assetProtocol.scope` 双重配置；Wails.Net 应收敛为 capability 单一来源（`asset:allow-read-<pattern>` 权限 + scope），避免双配置漂移。
+1. **配置单一来源**：asset 协议访问应由 capability 单一来源授权（`asset:allow-read-<pattern>` 权限 + scope），避免多处配置漂移。
 2. **实现落点**：四平台 scheme/请求拦截层统一后（RH-IPC-02）只需实现一次；Range 请求支持 AssetServer 已有（`AssetServer.cs:912` 起），协议层透传即可。
 
 ### 2.5 安全卫生修复清单（小项，随批处理）
@@ -249,12 +248,12 @@
 
 ### 3.5 Channel 协议落地缺口与 opt-in 加密（RH-IPC-05，继承 OPT-RUNTIME-003）
 
-现状复核：`channel:open/message/close` **只存在于注释**（`ChannelManager.cs:10-11`），`MessageProcessor.MessageTypes` 无 channel 类型、`DispatchMessage`（`:102`）无任何调用方、前端 runtime 无对应发送实现。即：**前端无法创建通道，Channel 仅后端单侧可用**（`ChannelManager.Create` + 注入 sender）。这与 Wails v3（Channel 为前后端双向流原语）和 Tauri v2（Channel 作为命令参数自动建立）均有实质差距。
+现状复核：`channel:open/message/close` **只存在于注释**（`ChannelManager.cs:10-11`），`MessageProcessor.MessageTypes` 无 channel 类型、`DispatchMessage`（`:102`）无任何调用方、前端 runtime 无对应发送实现。即：**前端无法创建通道，Channel 仅后端单侧可用**（`ChannelManager.Create` + 注入 sender）。这与 Wails v3（Channel 为前后端双向流原语）存在实质差距。
 
 方案：
 
 1. 协议落地：`channel:open`（前端创建通道，返回 channelId）/ `channel:message` / `channel:close` 进入 MessageProcessor；前端 `wails.channel` API（`createChannel`/`onMessage`/`send`）。
-2. 与命令系统打通：`MapCommand` 委托参数支持 `IChannel`（由 dispatcher 从 payload 的 channelId 解析注入，与 `ICommandContext` 同类特殊参数）——对齐 Tauri v2 的 Channel-on-argument 模式，这是长耗时任务进度回传的关键原语（Updater 下载进度等场景直接受益）。
+2. 与命令系统打通：`MapCommand` 委托参数支持 `IChannel`（由 dispatcher 从 payload 的 channelId 解析注入，与 `ICommandContext` 同类特殊参数）——即 Channel-on-argument 模式，这是长耗时任务进度回传的关键原语（Updater 下载进度等场景直接受益）。
 3. 加密（opt-in）：`IpcOptions.ChannelEncryption`（默认 false）；开启后建链时下发会话密钥（CSPRNG，随 runtime bootstrap 注入），消息体 AES-GCM 加密，前端 WebCrypto 对应解密；关闭时零开销。仅 Server 模式模板建议默认开启。
 4. 顺带修正：`ChannelManager` 为 static class（见 §4.4 DI 化破坏项）。
 
@@ -329,7 +328,7 @@ static `ConcurrentDictionary` 全进程共享，多测试宿主/多 Application 
 
 ---
 
-## 5. 插件生态主线（Wails v3 可安装插件 + Tauri v2 双包）
+## 5. 插件生态主线（可安装插件 + 双包模型）
 
 ### 5.1 前端资产承载（RH-PLUGIN-01，继承 OPT-PLUGIN-001/002）
 
@@ -341,7 +340,7 @@ static `ConcurrentDictionary` 全进程共享，多测试宿主/多 Application 
 ### 5.2 npm 前端包治理（RH-PLUGIN-02）
 
 - 40 个 `wails-net-plugin-*` 中绝大多数为 4 行 stub；`wails-net-plugin-updater` 的 `dist/index.js` 与 4 行 `src` 不一致（dist 疑为旧产物）——**发布产物与源漂移**，应 CI 化（`verify-versions.mjs` 扩展为 dist 新鲜度校验：dist 必须由当前 src 构建）；
-- SEC-H-003 迁移时同步补齐每个插件的 TS wrapper（从 commands.manifest 生成，对齐 Tauri `plugin-<name>-api` 的模式），stub 包降级为纯类型包或删除。
+- SEC-H-003 迁移时同步补齐每个插件的 TS wrapper（从 commands.manifest 生成，统一 `plugin-<name>-api` 命名），stub 包降级为纯类型包或删除。
 
 ### 5.3 manifest 生成链补全（RH-PLUGIN-03）
 
@@ -362,7 +361,7 @@ AGENTS.md 与 docs 多处称 macOS 为"骨架/ServerMode 降级"，实际 `#if M
 ### 6.3 Android 专项
 
 - `WailsBridge.invoke` 同步桥在 JS 线程阻塞等待后端（`WailsWebMessageListener.cs:59-60`）——长命令冻结前端主线程；短期：文档警示 + Updater 等长任务改 Channel/事件回传；长期：评估 AndroidX `WebMessageListener`（port 消息异步通道，注释 `:12-18` 记录了未采用的现状）。
-- `AndroidWebviewWindow` 大量 no-op（Maximise/Frameless 等，`:309-653`）符合移动端预期，但建议在 `WebviewWindowOptions` 校验层给出显式 warning（而非静默 no-op），对齐 Tauri mobile 的能力矩阵文档。
+- `AndroidWebviewWindow` 大量 no-op（Maximise/Frameless 等，`:309-653`）符合移动端预期，但建议在 `WebviewWindowOptions` 校验层给出显式 warning（而非静默 no-op），并在文档中记录移动端能力矩阵。
 
 ### 6.4 文档治理
 
@@ -437,8 +436,7 @@ AGENTS.md 与 docs 多处称 macOS 为"骨架/ServerMode 降级"，实际 `#if M
 ## 附：本轮对标参考
 
 - Wails v3 `v3.0.0-beta.4`：Services 模型（`application.NewService`/`NewServiceWithOptions`，生命周期感知）、静态分析生成 TS 绑定、统一事件系统、Channel 原语、可安装插件（前端资源随插件分发）、updater manifest 协议 —— 见 [v3 文档](https://v3.wails.io/) 与仓库内 `docs/development/wails-v3-beta-comparison.md`。
-- Tauri v2 `2.11.5`：capabilities（`src-tauri/capabilities/*.json`：permissions/windows/local/remote/platforms）、tauri-build 生成权限 JSON Schema（IDE 补全）、`core:*` 权限、`app.security.assetProtocol.scope` + `convertFileSrc`（需 capability + scope 双配置）、插件 `permissions/*.toml` 随 crate 分发 —— 见 [Capabilities](https://v2.tauri.app/security/capabilities/)、[Core Permissions](https://v2.tauri.app/reference/acl/core-permissions/)、[Using Plugin Permissions](https://v2.tauri.app/learn/security/using-plugin-permissions/)、[Configuration Reference](https://v2.tauri.app/reference/config/)。
 
 ---
 
-**最后更新**：2026-08-16（首版：五路代码事实调研 + Wails v3 beta.4 / Tauri v2 2.11.5 对标；同时补齐 `CommandSecurityEnforcementTests.cs` 引用的缺失文档）
+**最后更新**：2026-08-16（首版：五路代码事实调研 + Wails v3 beta.4 对标；同时补齐 `CommandSecurityEnforcementTests.cs` 引用的缺失文档）

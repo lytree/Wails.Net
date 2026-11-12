@@ -413,7 +413,7 @@ app.Options.ShouldQuit = () =>
 
 ### 1. MenuRole 角色菜单项（P2-1）
 
-参考 Wails v3 `MenuRole` 与 Tauri v2 `PredefinedMenuItem`，新增 21 个角色枚举与 3 个标准菜单工厂方法，跨平台共享逻辑（macOS 专属角色在其他平台静默 no-op）：
+参考 Wails v3 `MenuRole`，新增 21 个角色枚举与 3 个标准菜单工厂方法，跨平台共享逻辑（macOS 专属角色在其他平台静默 no-op）：
 
 ```csharp
 // 后端：构造标准 Edit 菜单（Undo/Redo/Separator/Cut/Copy/Paste/SelectAll）
@@ -520,5 +520,5 @@ await wails.call('toast.show', [{
 - [插件开发指南](plugins.md) - 学习如何创建自定义插件
 - [前端 API 参考](api/frontend-api.md) - 完整的 JavaScript API 文档
 - [构建与打包](development/build-and-pack.md) - 三平台构建与分发指南
-- [功能对比](comparison-with-tauri2-wails3.md) - 与 Tauri v2 / Wails v3 的对比
+- [能力矩阵](comparison-with-wails-v3.md) - 与 Wails v3 的对比
 - [Demo 项目](../examples/Wails.Net.Demo/) - 完整的示例应用

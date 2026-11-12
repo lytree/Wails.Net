@@ -43,46 +43,46 @@ Wails.Net 在 Webview 启动时由后端注入一段轻量 `window._wails` 标�
 | `wails.bindings` | 按 FNV-1a ID 调用后端方法 | [`internal/transport.ts`](../../packages/wails-net-runtime/src/internal/transport.ts) |
 | `wails.events` | 事件订阅与发布 | Wails v3 Events |
 | `wails.channels` | 双向流式通道（订阅/推送/关闭） | Wails v3 Channels |
-| `wails.window` | 当前窗口操作 | Tauri v2 window / Wails v3 Window |
-| `wails.tray` | 系统托盘 | Tauri v2 tray / Wails v3 SystemTray |
-| `wails.windows` | 多窗口管理 | Tauri v2 getAllWindows |
+| `wails.window` | 当前窗口操作 | Wails v3 Window |
+| `wails.tray` | 系统托盘 | Wails v3 SystemTray |
+| `wails.windows` | 多窗口管理 | — |
 | `wails.screen` | 屏幕信息 | Wails v3 Screen |
-| `wails.clipboard` | 剪贴板 | Tauri v2 clipboard-manager |
+| `wails.clipboard` | 剪贴板 | — |
 | `wails.dialog` | 对话框 | Wails v3 Dialog |
 | `wails.menu` | 菜单 | Wails v3 Menu |
 | `wails.application` | 应用级操作 | Wails v3 App |
-| `wails.stronghold` | 加密安全存储 | Tauri v2 plugin-stronghold |
-| `wails.scope` | 文件系统范围 | Tauri v2 plugin-persisted-scope |
-| `wails.localhost` | 本地 HTTP 服务 | Tauri v2 plugin-localhost |
-| `wails.fswatch` | 文件监听 | Tauri v2 plugin-fs-watch |
-| `wails.system` | 系统信息 | Tauri v2 plugin-os |
-| `wails.power` | 电源管理 | Tauri v2 plugin-os |
+| `wails.stronghold` | 加密安全存储 | — |
+| `wails.scope` | 文件系统范围 | — |
+| `wails.localhost` | 本地 HTTP 服务 | — |
+| `wails.fswatch` | 文件监听 | — |
+| `wails.system` | 系统信息 | — |
+| `wails.power` | 电源管理 | — |
 | `wails.process` | 进程管理 | — |
-| `wails.fs` | 文件系统 | Tauri v2 plugin-fs |
-| `wails.shell` | Shell 调用 | Tauri v2 plugin-shell |
-| `wails.notification` | 系统通知 | Tauri v2 plugin-notification |
-| `wails.store` | 持久化键值存储 | Tauri v2 plugin-store |
-| `wails.log` | 日志（P1-3：与 `ILogger` 双向桥接） | Tauri v2 plugin-log |
+| `wails.fs` | 文件系统 | — |
+| `wails.shell` | Shell 调用 | — |
+| `wails.notification` | 系统通知 | — |
+| `wails.store` | 持久化键值存储 | — |
+| `wails.log` | 日志（P1-3：与 `ILogger` 双向桥接） | — |
 | `wails.updater` | 自动更新（P1-8：多 Provider） | Wails v3 Updater |
 | `wails.dpi` | DPI 缩放查询与设置 | — |
-| `wails.deeplink` | 深度链接注册与解析 | Tauri v2 plugin-deep-link |
+| `wails.deeplink` | 深度链接注册与解析 | — |
 | `wails.windowstate` | 窗口状态持久化 | — |
-| `wails.positioner` | 窗口定位（9 种方位） | Tauri v2 plugin-positioner |
+| `wails.positioner` | 窗口定位（9 种方位） | — |
 | `wails.fileassoc` | 文件关联 | — |
-| `wails.i18n` | 国际化（语言切换） | Tauri v2 plugin-localization |
-| `wails.shortcut` | 全局快捷键 | Tauri v2 plugin-global-shortcut |
-| `wails.autostart` | 开机自启动 | Tauri v2 plugin-autostart |
-| `wails.opener` | 安全打开 URL/文件 | Tauri v2 plugin-opener |
+| `wails.i18n` | 国际化（语言切换） | — |
+| `wails.shortcut` | 全局快捷键 | — |
+| `wails.autostart` | 开机自启动 | — |
+| `wails.opener` | 安全打开 URL/文件 | — |
 | `wails.appinfo` | 应用信息（名称/版本/路径） | — |
 | `wails.path` | 路径操作 | — |
 | `wails.upload` | 文件上传 | — |
 | `wails.websocket` | WebSocket 连接 | — |
 | `wails.cookie` | Cookie 管理 | — |
-| `wails.sql` | SQLite 数据库 | Tauri v2 plugin-sql |
-| `wails.biometric` | 生物识别（仅 Android） | Tauri v2 plugin-biometric |
+| `wails.sql` | SQLite 数据库 | — |
+| `wails.biometric` | 生物识别（仅 Android） | — |
 | `wails.nfc` | NFC 读写（仅 Android） | — |
 | `wails.barcode-scanner` | 条码/二维码扫描（仅 Android） | — |
-| `wails.haptics` | 触觉反馈（仅 Android） | Tauri v2 plugin-haptics |
+| `wails.haptics` | 触觉反馈（仅 Android） | — |
 | `wails.device` / `wails.toast` | Android 设备信息 / Toast 提示（仅 Android） | Wails v3 androidDeviceInfo / androidShowToast |
 | `wails.MenuRole` | MenuRole 常量枚举（21 个值，供 `menu.addRoleItem` 使用） | Wails v3 Role 常量 |
 
@@ -1079,7 +1079,7 @@ await wails.menu.popup([
 
 ### wails.menu.addRoleItem(parentId, role, label?)
 
-向指定父菜单追加一个 MenuRole 角色菜单项，返回新菜单项 ID（字符串形式的 uint）。对应 [MenuPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/MenuPlugin.cs) 与 [MenuRole](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Menus/MenuRole.cs)。
+向指定父菜单追加一个 MenuRole 角色菜单项，返回新菜单项 ID（字符串形式的 uint）。对应 [MenuPlugin](../../src/Wails.Net.Plugins.Menu/MenuPlugin.cs) 与 [MenuRole](../../src/Wails.Net.Application/Menus/MenuRole.cs)。
 
 **签名**
 
@@ -1104,7 +1104,7 @@ const aboutId = await wails.menu.addRoleItem(parentId, wails.MenuRole.About, "�
 
 ### wails.menu.addStandardEditMenu(parentId)
 
-向指定父菜单追加标准编辑菜单项（Undo / Redo / Separator / Cut / Copy / Paste / SelectAll）。对应 [Menu.AddStandardEditMenu](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Menus/Menu.cs)。
+向指定父菜单追加标准编辑菜单项（Undo / Redo / Separator / Cut / Copy / Paste / SelectAll）。对应 [Menu.AddStandardEditMenu](../../src/Wails.Net.Application/Menus/Menu.cs)。
 
 ```javascript
 await wails.menu.addStandardEditMenu(parentId);
@@ -1161,7 +1161,7 @@ wails.MenuRole = {
 };
 ```
 
-> macOS 专属角色（`Hide` / `HideOthers` / `ShowAll` / `Services` / `BringAllToFront` / `Zoom` / `ToggleFullScreen`）在 Windows / Linux 上静默 no-op，由 [MenuRoleHelper.IsMacOSExclusive](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Menus/MenuRoleHelper.cs) 在运行时判定。
+> macOS 专属角色（`Hide` / `HideOthers` / `ShowAll` / `Services` / `BringAllToFront` / `Zoom` / `ToggleFullScreen`）在 Windows / Linux 上静默 no-op，由 [MenuRoleHelper.IsMacOSExclusive](../../src/Wails.Net.Application/Menus/MenuRoleHelper.cs) 在运行时判定。
 
 ## 应用 API (wails.application)
 
@@ -1244,7 +1244,7 @@ const unsub = await wails.application.onThemeChanged((isDark) => {
 
 ## 加密存储 API (wails.stronghold)
 
-加密安全存储。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `stronghold` 命名空间，参考 Tauri v2 plugin-stronghold。
+加密安全存储。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `stronghold` 命名空间，参考 —。
 
 所有方法均支持可选的 `vaultPath` 参数以指定不同的保险库文件，省略时使用默认保险库。
 
@@ -1342,7 +1342,7 @@ await wails.stronghold.changePassword("old-pwd", "new-pwd");
 
 ## 文件系统范围 API (wails.scope)
 
-文件系统范围持久化管理。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `scope` 命名空间，参考 Tauri v2 plugin-persisted-scope。
+文件系统范围持久化管理。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `scope` 命名空间，参考 —。
 
 `scopePath` 参数可选，用于指定不同的范围持久化文件路径，省略时使用默认范围。
 
@@ -1412,7 +1412,7 @@ await wails.scope.load();
 
 ## 本地 HTTP API (wails.localhost)
 
-嵌入式本地 HTTP 服务器。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `localhost` 命名空间，参考 Tauri v2 plugin-localhost。
+嵌入式本地 HTTP 服务器。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `localhost` 命名空间，参考 —。
 
 所有方法均以 `port` 作为服务器标识。
 
@@ -1491,7 +1491,7 @@ const routes = await wails.localhost.listRoutes(8080);
 
 ## 文件监听 API (wails.fswatch)
 
-文件系统监听。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `fswatch` 命名空间，参考 Tauri v2 plugin-fs-watch。
+文件系统监听。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `fswatch` 命名空间，参考 —。
 
 ### wails.fswatch.watch(path, recursive?, extensions?)
 
@@ -1547,7 +1547,7 @@ const active = await wails.fswatch.isWatching(watchId);
 
 ## 系统信息 API (wails.system)
 
-系统信息查询。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `system` 命名空间，参考 Tauri v2 plugin-os。
+系统信息查询。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `system` 命名空间，参考 —。
 
 ### wails.system.platform()
 
@@ -1671,7 +1671,7 @@ const pid = await wails.process.getPid();
 
 ## 文件系统 API (wails.fs)
 
-文件系统操作。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `fs` 命名空间，参考 Tauri v2 plugin-fs。
+文件系统操作。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `fs` 命名空间，参考 —。
 
 ### wails.fs.readTextFile(path)
 
@@ -1780,7 +1780,7 @@ entries.forEach(e => console.log(e.name, e.isDirectory));
 
 ## Shell API (wails.shell)
 
-Shell 调用。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `shell` 命名空间，参考 Tauri v2 plugin-shell。
+Shell 调用。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `shell` 命名空间，参考 —。
 
 ### wails.shell.execute(command, args?, cwd?)
 
@@ -1821,7 +1821,7 @@ await wails.shell.openUrl("https://github.com");
 
 ## 通知 API (wails.notification)
 
-系统通知。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `notification` 命名空间，参考 Tauri v2 plugin-notification。
+系统通知。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `notification` 命名空间，参考 —。
 
 ### wails.notification.show(title, body)
 
@@ -1857,7 +1857,7 @@ const ok = await wails.notification.hasPermission();
 
 ## 存储 API (wails.store)
 
-持久化键值存储。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `store` 命名空间，参考 Tauri v2 plugin-store。
+持久化键值存储。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `store` 命名空间，参考 —。
 
 ### wails.store.get(key)
 
@@ -1917,7 +1917,7 @@ const exists = await wails.store.has("lastLogin");
 
 ## 日志 API (wails.log)
 
-日志记录。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `log` 命名空间，参考 Tauri v2 plugin-log。所有日志最终通过 `Microsoft.Extensions.Logging` 输出到后端日志管线。
+日志记录。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `log` 命名空间，参考 —。所有日志最终通过 `Microsoft.Extensions.Logging` 输出到后端日志管线。
 
 ### wails.log.debug(message)
 
@@ -1961,7 +1961,7 @@ await wails.log.trace("state = " + JSON.stringify(state));
 
 ## 通道 API (wails.channels)
 
-双向流式通信通道，对应 Wails v3 Channels。由 [ChannelManager](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Channels/ChannelManager.cs) 管理，支持长连接、消息推送、双向消息流。
+双向流式通信通道，对应 Wails v3 Channels。由 [ChannelManager](../../src/Wails.Net.Application/Channels/ChannelManager.cs) 管理，支持长连接、消息推送、双向消息流。
 
 通道适用于：进度推送、流式数据、长轮询替代、自定义协议通信。
 
@@ -2024,7 +2024,7 @@ const names = await wails.channels.list();
 
 ## 更新 API (wails.updater)
 
-自动更新检查与下载（P1-8：多 Provider）。对应 [UpdaterPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/UpdaterPlugin.cs)，后端使用 `UpdaterService` 链式查询多个 Provider（Http/GitHub/GitLab/自定义）。
+自动更新检查与下载（P1-8：多 Provider）。对应 [UpdaterPlugin](../../src/Wails.Net.Plugins.Updater/UpdaterPlugin.cs)，后端使用 `UpdaterService` 链式查询多个 Provider（Http/GitHub/GitLab/自定义）。
 
 ### wails.updater.check()
 
@@ -2104,7 +2104,7 @@ const names = await wails.updater.providers();
 
 ## 深度链接 API (wails.deeplink)
 
-深度链接（Custom URL Scheme）注册与解析。对应 [DeepLinkPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Plugins.Deeplink/DeepLinkPlugin.cs)（M3 已拆分为独立插件包），参考 Tauri v2 plugin-deep-link。
+深度链接（Custom URL Scheme）注册与解析。对应 [DeepLinkPlugin](../../src/Wails.Net.Plugins.Deeplink/DeepLinkPlugin.cs)（M3 已拆分为独立插件包），参考 —。
 
 ### wails.deeplink.register(scheme)
 
@@ -2182,7 +2182,7 @@ const registered = await wails.deeplink.isRegistered("myapp");
 
 ## DPI 缩放 API (wails.dpi)
 
-DPI 缩放查询与设置。对应 [DpiScalePlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Plugins.Dpiscale/DpiScalePlugin.cs)（M3 已拆分为独立插件包）。
+DPI 缩放查询与设置。对应 [DpiScalePlugin](../../src/Wails.Net.Plugins.Dpiscale/DpiScalePlugin.cs)（M3 已拆分为独立插件包）。
 
 ### wails.dpi.getScale()
 
@@ -2203,7 +2203,7 @@ await wails.dpi.setScale(1.5);
 
 ## 应用信息 API (wails.appinfo)
 
-应用信息查询。对应 [AppInfoPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/AppInfoPlugin.cs)。
+应用信息查询。对应 [AppInfoPlugin](../../src/Wails.Net.Plugins.Appinfo/AppinfoPlugin.cs)。
 
 ### wails.appinfo.getName()
 
@@ -2232,7 +2232,7 @@ const paths = await wails.appinfo.getPath();
 
 ## 路径 API (wails.path)
 
-跨平台路径操作。对应 [PathPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/PathPlugin.cs)。
+跨平台路径操作。对应 [PathPlugin](../../src/Wails.Net.Plugins.Path/PathPlugin.cs)。
 
 ### wails.path.join(...segments)
 
@@ -2293,7 +2293,7 @@ const sep = await wails.path.sep();
 
 ### 生物识别 API (wails.biometric)
 
-对应 [BiometricPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/Mobile/BiometricPlugin.cs)，调用 Android BiometricPrompt。
+对应 [BiometricPlugin](../../src/Wails.Net.Plugins.Mobile/BiometricPlugin.cs)，调用 Android BiometricPrompt。
 
 #### wails.biometric.checkAvailability()
 
@@ -2314,7 +2314,7 @@ const ok = await wails.biometric.authenticate("请验证指纹以登录");
 
 ### NFC API (wails.nfc)
 
-对应 [NfcPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/Mobile/NfcPlugin.cs)。
+对应 [NfcPlugin](../../src/Wails.Net.Plugins.Mobile/NfcPlugin.cs)。
 
 #### wails.nfc.read()
 
@@ -2343,7 +2343,7 @@ await wails.nfc.cancel();
 
 ### 条码扫描 API (wails.barcode-scanner)
 
-对应 [BarcodeScannerPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/Mobile/BarcodeScannerPlugin.cs)，调用 Android CameraX / ML Kit。
+对应 [BarcodeScannerPlugin](../../src/Wails.Net.Plugins.Mobile/BarcodeScannerPlugin.cs)，调用 Android CameraX / ML Kit。
 
 #### wails.barcode-scanner.scan(options?)
 
@@ -2367,7 +2367,7 @@ await wails.barcode-scanner.cancel();
 
 ### 触觉反馈 API (wails.haptics)
 
-对应 [HapticsPlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/Mobile/HapticsPlugin.cs)。
+对应 [HapticsPlugin](../../src/Wails.Net.Plugins.Mobile/HapticsPlugin.cs)。
 
 #### wails.haptics.vibrate(duration?)
 
@@ -2395,7 +2395,7 @@ await wails.haptics.cancel();
 
 ### Android 运行时 API (wails.device / wails.toast)
 
-对应 [AndroidRuntimePlugin](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/Mobile/AndroidRuntimePlugin.cs)，提供 Android 平台专属的设备信息与 Toast 提示能力。对应 Wails v3 `messageprocessor_android.go` 中的 `androidDeviceInfo` / `androidShowToast`。
+对应 [AndroidRuntimePlugin](../../src/Wails.Net.Application.Android/Mobile/AndroidRuntimePlugin.cs)，提供 Android 平台专属的设备信息与 Toast 提示能力。对应 Wails v3 `messageprocessor_android.go` 中的 `androidDeviceInfo` / `androidShowToast`。
 
 #### wails.device.info()
 
@@ -2501,5 +2501,5 @@ window._wailsEmitEvent("myCustomEvent", { foo: "bar" });
 - 传输层实现：[`internal/transport.ts`](../../packages/wails-net-runtime/src/internal/transport.ts)（HTTP / 原生 postMessage / WebSocket 三态通道 + 分块上传 + 调用取消）
 - ContextMenu 钩子：[`core/contextmenu.ts`](../../packages/wails-net-runtime/src/core/contextmenu.ts)（CSS 变量驱动，自动安装）
 - 后端标志注入：[`Application.GenerateRuntimeJs`](../../src/Wails.Net.Application/Application.cs)（`window._wails` 标志对象）
-- 项目架构文档：[architecture.md](file:///f:/Code/Dotnet/Wails.Net/docs/architecture.md)
-- 传输层与 IPC：[transport-and-ipc.md](file:///f:/Code/Dotnet/Wails.Net/docs/architecture/transport-and-ipc.md)
+- 项目架构文档：[architecture.md](../../docs/architecture.md)
+- 传输层与 IPC：[transport-and-ipc.md](../../docs/architecture/transport-and-ipc.md)

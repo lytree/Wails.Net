@@ -2,20 +2,20 @@
 
 ## 概述
 
-Wails.Net 通过**接口驱动的平台抽象**策略支持 Windows、Linux 与 Server（无 GUI）三种运行环境。核心程序集 `Wails.Net.Application` 仅包含平台无关的接口与默认实现（如 [ServerPlatformApp.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Platform/ServerMode/ServerPlatformApp.cs)），而具体的原生调用代码则分别位于 `Wails.Net.Application.Windows` 与 `Wails.Net.Application.Linux` 两个独立项目中。核心项目通过反射在运行时按需加载平台程序集，避免了对平台包的硬依赖，从而保证同一份核心代码可以在三平台之间复用。
+Wails.Net 通过**接口驱动的平台抽象**策略支持 Windows、Linux 与 Server（无 GUI）三种运行环境。核心程序集 `Wails.Net.Application` 仅包含平台无关的接口与默认实现（如 [ServerPlatformApp.cs](../../src/Wails.Net.Application/Platform/ServerMode/ServerPlatformApp.cs)），而具体的原生调用代码则分别位于 `Wails.Net.Application.Windows` 与 `Wails.Net.Application.Linux` 两个独立项目中。核心项目通过反射在运行时按需加载平台程序集，避免了对平台包的硬依赖，从而保证同一份核心代码可以在三平台之间复用。
 
 平台抽象层的设计要点：
 
 - **接口位于核心项目**：`IPlatformApp`、`IWebviewWindowImpl`、`IClipboardImpl`、`IMenuImpl`、`ISystemTrayImpl` 等接口都定义在 `Wails.Net.Application` 中。
 - **实现位于平台项目**：Windows 平台使用 CsWin32 + WebView2；Linux 平台使用 GirCore 0.8.0 + GTK4 + WebKitGTK；Server 模式提供 no-op 桩实现。
 - **托管封装（Managed Wrappers）策略**：不使用 C++/CLI 混合模式，所有原生调用均通过源生成器（CsWin32）或托管绑定（GirCore）完成。
-- **工厂模式加载**：[PlatformFactory](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Platform/PlatformFactory.cs) 通过反射 `Assembly.Load` 加载平台程序集，确保核心项目不直接引用平台包。
+- **工厂模式加载**：[PlatformFactory](../../src/Wails.Net.Application/Platform/PlatformFactory.cs) 通过反射 `Assembly.Load` 加载平台程序集，确保核心项目不直接引用平台包。
 
 ## 核心接口
 
 ### IPlatformApp — 平台应用接口
 
-[IPlatformApp.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Platform/IPlatformApp.cs) 定义平台应用顶层契约，对应 Wails v3 Go 版本中的 `platformApp` 接口。它涵盖主循环、单实例锁、窗口创建、对话框、屏幕信息、菜单、系统事件分发等能力：
+[IPlatformApp.cs](../../src/Wails.Net.Application/Platform/IPlatformApp.cs) 定义平台应用顶层契约，对应 Wails v3 Go 版本中的 `platformApp` 接口。它涵盖主循环、单实例锁、窗口创建、对话框、屏幕信息、菜单、系统事件分发等能力：
 
 ```csharp
 public interface IPlatformApp
@@ -54,7 +54,7 @@ public interface IPlatformApp
 
 ### IWebviewWindowImpl — Webview 窗口实现接口
 
-[IWebviewWindowImpl.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Windows/IWebviewWindowImpl.cs) 对应 Go 版的 `webviewWindowImpl`，是平台抽象层中最大的接口。它包含窗口尺寸/位置/状态、菜单、调试、JS 执行、URL/HTML 加载、打印、拖拽、特效（Mica/Acrylic）、任务栏进度等约 60 个方法。接口提供了大量**默认实现方法**（default interface methods），用于渐进式扩展：
+[IWebviewWindowImpl.cs](../../src/Wails.Net.Application/Windows/IWebviewWindowImpl.cs) 对应 Go 版的 `webviewWindowImpl`，是平台抽象层中最大的接口。它包含窗口尺寸/位置/状态、菜单、调试、JS 执行、URL/HTML 加载、打印、拖拽、特效（Mica/Acrylic）、任务栏进度等约 60 个方法。接口提供了大量**默认实现方法**（default interface methods），用于渐进式扩展：
 
 ```csharp
 public interface IWebviewWindowImpl
@@ -71,7 +71,7 @@ public interface IWebviewWindowImpl
     (int Width, int Height) GetSize();
 
     // 默认空实现的可选方法（平台按需重写）
-    void SetOpacity(float opacity) { }                    // Tauri v2 兼容
+    void SetOpacity(float opacity) { }                    // 平台兼容接口
     void SetTaskbarProgress(TaskbarProgressState state,
                             ulong completed, ulong total) { } // Windows ITaskbarList3
     void SetEffects(WindowEffects effects) { }            // Mica/Acrylic/BlurBehind
@@ -82,7 +82,7 @@ public interface IWebviewWindowImpl
 }
 ```
 
-此设计借鉴了 Tauri v2 的 `WebviewWindow` API 形状，使平台实现可以只关注自身支持的功能，未实现的能力退化为 no-op。
+此设计参考 Wails v3 的 `WebviewWindow` API 形状，使平台实现可以只关注自身支持的功能，未实现的能力退化为 no-op。
 
 ### 子接口列表
 
@@ -102,13 +102,13 @@ public interface IWebviewWindowImpl
 | `IPlatformBarcodeScanner` | `Wails.Net.Application.Plugins.Mobile` | （未实现） | （未实现） | `AndroidBarcodeScanner` | （未实现） | （未实现） |
 | `IPlatformHaptics` | `Wails.Net.Application.Plugins.Mobile` | （未实现） | （未实现） | `AndroidHaptics` | （未实现） | （未实现） |
 
-> **Android 移动端插件抽象**：5 个移动端接口（`IPlatformBiometric` / `IPlatformNfc` / `IPlatformBarcodeScanner` / `IPlatformHaptics` + `AndroidRuntimePlugin` 平台类）的 Android 实现位于 [Wails.Net.Application.Android/Mobile](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/Mobile)，通过 `AndroidPlatformApp` 注入委托解耦 Activity 生命周期。
+> **Android 移动端插件抽象**：5 个移动端接口（`IPlatformBiometric` / `IPlatformNfc` / `IPlatformBarcodeScanner` / `IPlatformHaptics` + `AndroidRuntimePlugin` 平台类）的 Android 实现位于 [Wails.Net.Application.Android/Mobile](../../src/Wails.Net.Application.Android/Mobile)，通过 `AndroidPlatformApp` 注入委托解耦 Activity 生命周期。
 
-[IManagers.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Managers/IManagers.cs) 还包含一组与平台无关的管理器接口（`IWindowManager`、`IDialogManager`、`IEventManager`、`IScreenManager`、`ISystemTrayManager`、`IBrowserManager`、`IAutostartManager`、`IEnvironmentManager` 等），它们位于核心层，委托到上述平台子接口完成实际工作。
+[IManagers.cs](../../src/Wails.Net.Application/Managers/IManagers.cs) 还包含一组与平台无关的管理器接口（`IWindowManager`、`IDialogManager`、`IEventManager`、`IScreenManager`、`ISystemTrayManager`、`IBrowserManager`、`IAutostartManager`、`IEnvironmentManager` 等），它们位于核心层，委托到上述平台子接口完成实际工作。
 
 ## PlatformFactory — 工厂模式与反射加载
 
-[PlatformFactory.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Platform/PlatformFactory.cs) 是平台抽象层的入口。它的核心思路是**通过反射加载平台程序集，让核心项目对平台包保持零引用**：
+[PlatformFactory.cs](../../src/Wails.Net.Application/Platform/PlatformFactory.cs) 是平台抽象层的入口。它的核心思路是**通过反射加载平台程序集，让核心项目对平台包保持零引用**：
 
 ```csharp
 public static class PlatformFactory
@@ -168,7 +168,7 @@ public static bool IsServerMode()
 
 ### WindowsPlatformApp — WebView2 + Win32 API
 
-[WindowsPlatformApp.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Windows/WindowsPlatformApp.cs) 是 Windows 平台的 `IPlatformApp` 实现，整合了 Win32 API、WinForms 对话框与系统注册表查询。关键实现：
+[WindowsPlatformApp.cs](../../src/Wails.Net.Application.Windows/WindowsPlatformApp.cs) 是 Windows 平台的 `IPlatformApp` 实现，整合了 Win32 API、WinForms 对话框与系统注册表查询。关键实现：
 
 - **主循环**：标准 Win32 消息循环 `GetMessage → TranslateMessage → DispatchMessage`，并在循环中处理线程级热键（`hwnd == NULL` 的 `WM_HOTKEY`）。
 - **DPI 感知**：构造时优先调用 `SetProcessDpiAwarenessContext(Per-Monitor V2)`，失败时回退到 `SetProcessDPIAware`。
@@ -194,7 +194,7 @@ while ((int)PInvoke.GetMessage(out var msg, default, 0, 0) > 0)
 
 ### Win32WebviewWindow — CoreWebView2 封装
 
-[Win32WebviewWindow.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Windows/Win32WebviewWindow.cs) 是 Windows 平台的 `IWebviewWindowImpl` 实现。关键设计：
+[Win32WebviewWindow.cs](../../src/Wails.Net.Application.Windows/Win32WebviewWindow.cs) 是 Windows 平台的 `IWebviewWindowImpl` 实现。关键设计：
 
 - **窗口创建**：通过 `CreateWindowEx` 注册窗口类 `"WailsNetWebviewWindow"`，使用 `WNDPROC` 委托（保存在静态字段以防 GC 回收）。
 - **WebView2 异步初始化**：使用 `TaskCompletionSource<bool>` 等待 `CoreWebView2Controller` 初始化完成。
@@ -223,7 +223,7 @@ CsWin32 在编译期根据 NativeMethods.txt 中的目标 API 名称生成强类
 
 ### LinuxPlatformApp — GTK4 + WebKitGTK
 
-[LinuxPlatformApp.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Linux/LinuxPlatformApp.cs) 使用 GirCore 0.8.0 提供的 GTK4 托管绑定。关键设计：
+[LinuxPlatformApp.cs](../../src/Wails.Net.Application.Linux/LinuxPlatformApp.cs) 使用 GirCore 0.8.0 提供的 GTK4 托管绑定。关键设计：
 
 - **GTK 初始化**：`EnsureGtkInitialized()` 使用 `Interlocked.Exchange` 保证 `Gtk.Functions.Init()` 仅调用一次，必须在 UI 线程上执行。
 - **主循环**：通过 `GLib.MainLoop` 驱动，`Run()` 阻塞直到 `Destroy()` 调用 `_mainLoop.Quit()`。
@@ -243,7 +243,7 @@ if (scheme is not null && scheme.Contains("dark", StringComparison.OrdinalIgnore
 
 ### LinuxWebviewWindow — WebKitGTK 封装
 
-[LinuxWebviewWindow.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Linux/LinuxWebviewWindow.cs) 是 Linux 平台的 `IWebviewWindowImpl` 实现。关键设计：
+[LinuxWebviewWindow.cs](../../src/Wails.Net.Application.Linux/LinuxWebviewWindow.cs) 是 Linux 平台的 `IWebviewWindowImpl` 实现。关键设计：
 
 - **窗口组合**：`Gtk.Window` 作为顶层容器，`Gtk.Box` 内嵌 `PopoverMenuBar`（应用菜单）与 `WebKit.WebView`。
 - **WebKitGTK**：通过 `WebKit.WebView` 加载网页内容，支持 HTML/URL 加载、JS 执行、CSS 注入、前进后退、DevTools。
@@ -251,7 +251,7 @@ if (scheme is not null && scheme.Contains("dark", StringComparison.OrdinalIgnore
 
 ### wails:// 自定义协议注册
 
-为避免 `file://` 协议带来的安全与跨域问题，Linux 实现仿照 Wails v3 / Tauri v2 注册了 `wails://` 自定义 URI scheme。由于所有窗口共享同一 `WebContext`，注册只执行一次：
+为避免 `file://` 协议带来的安全与跨域问题，Linux 实现仿照 Wails v3 注册了 `wails://` 自定义 URI scheme。由于所有窗口共享同一 `WebContext`，注册只执行一次：
 
 ```csharp
 private static bool _wailsSchemeRegistered;
@@ -276,13 +276,13 @@ _webView?.LoadUri(wailsUrl);
 
 ### AndroidPlatformApp — .NET Android + WebView
 
-[AndroidPlatformApp](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/AndroidPlatformApp.cs) 是 Android 平台的 `IPlatformApp` 实现，使用 .NET Android 工作负载（`net10.0-android36.0`，最低 API Level 24）直接调用 `Android.Webkit.WebView` 等原生 API。关键设计：
+[AndroidPlatformApp](../../src/Wails.Net.Application.Android/AndroidPlatformApp.cs) 是 Android 平台的 `IPlatformApp` 实现，使用 .NET Android 工作负载（`net10.0-android36.0`，最低 API Level 24）直接调用 `Android.Webkit.WebView` 等原生 API。关键设计：
 
 - **Activity 模型**：`MainActivity` 继承 `WailsActivity`，在 `OnCreate` 中初始化 `AndroidPlatformApp`，并通过 `AndroidApplicationExtensions` 提供扩展方法。
 - **WebView**：通过 `Android.Webkit.WebView` 加载前端，使用 `WebViewClient.ShouldInterceptRequest` 拦截 `wails://` 资源请求并委托到 `AssetServer`；通过 `WebMessageListener` 实现 IPC 双向通信。
 - **主线程分发**：通过 `Handler(Looper.MainLooper)` 将回调投递到 Android 主线程。
 - **单实例锁**：Android 系统默认单 Activity 实例，无需额外锁。
-- **平台事件**：[AndroidPlatformEvents](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/AndroidPlatformEvents.cs) 定义 12 个 Android 平台事件 ID（1267–1273, 1281–1285），对应 Activity 生命周期、电池、网络、主题、屏幕锁定等系统广播。`MapToCommonEvent(uint)` 将其中 7 个事件映射到公共 `ApplicationEventType`，由 `HandlePlatformEvent(uint)` 调用 `Application.Get()?.HandlePlatformEvent` 分发到事件系统。
+- **平台事件**：[AndroidPlatformEvents](../../src/Wails.Net.Application.Android/AndroidPlatformEvents.cs) 定义 12 个 Android 平台事件 ID（1267–1273, 1281–1285），对应 Activity 生命周期、电池、网络、主题、屏幕锁定等系统广播。`MapToCommonEvent(uint)` 将其中 7 个事件映射到公共 `ApplicationEventType`，由 `HandlePlatformEvent(uint)` 调用 `Application.Get()?.HandlePlatformEvent` 分发到事件系统。
 
 ### AndroidWebviewWindow — Android.Webkit.WebView 封装
 
@@ -292,7 +292,7 @@ _webView?.LoadUri(wailsUrl);
 
 ### 移动端插件平台后端
 
-5 个移动端插件的 Android 实现位于 [Wails.Net.Application.Android/Mobile](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/Mobile)：
+5 个移动端插件的 Android 实现位于 [Wails.Net.Application.Android/Mobile](../../src/Wails.Net.Application.Android/Mobile)：
 
 | 平台类 | 底层 Android API | 关键设计 |
 |------|------|------|
@@ -306,7 +306,7 @@ _webView?.LoadUri(wailsUrl);
 
 ## macOS 平台实现
 
-macOS 实现参照 Wails v3 官方源码（`v3/pkg/application/*_darwin.go` / `*.m`，参考版本 `v3.0.0`（GA）；最初移植时为 `v3.0.0-beta.4`）移植，位于 [Wails.Net.Application.MacOS](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.MacOS)。由于 AppKit / WebKit 绑定（`net10.0-macos`）只能在 macOS 宿主编译，采用**双 TFM + 条件编译**策略：
+macOS 实现参照 Wails v3 官方源码（`v3/pkg/application/*_darwin.go` / `*.m`，参考版本 `v3.0.0`（GA）；最初移植时为 `v3.0.0-beta.4`）移植，位于 [Wails.Net.Application.MacOS](../../src/Wails.Net.Application.MacOS)。由于 AppKit / WebKit 绑定（`net10.0-macos`）只能在 macOS 宿主编译，采用**双 TFM + 条件编译**策略：
 
 | 目标 | 编译内容 | 说明 |
 |------|---------|------|
@@ -317,7 +317,7 @@ macOS 实现参照 Wails v3 官方源码（`v3/pkg/application/*_darwin.go` / `*
 
 ### MacOSPlatformApp — NSApplication 主循环
 
-[MacOSPlatformApp.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.MacOS/MacOSPlatformApp.cs) 对应 Go 版 `application_darwin.go`：
+[MacOSPlatformApp.cs](../../src/Wails.Net.Application.MacOS/MacOSPlatformApp.cs) 对应 Go 版 `application_darwin.go`：
 
 - **主循环**：`NSApplication.SharedApplication.Run()` 阻塞，`Destroy()` 调 `Terminate`。
 - **应用菜单**：`SetApplicationMenu(null)` 构建 macOS 默认菜单（App/Edit/Window/Help 角色菜单），否则由 `MacOSMenu` 构建 `NSApp.MainMenu`。
@@ -330,7 +330,7 @@ macOS 实现参照 Wails v3 官方源码（`v3/pkg/application/*_darwin.go` / `*
 
 ### MacOSWebviewWindow — WKWebView + NSWindow
 
-[MacOSWebviewWindow.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.MacOS/MacOSWebviewWindow.cs) 对应 Go 版 `webview_window_darwin.go` + `.m`，并参照 DevToys（`DevToys.MacOS/Controls/BlazorWebView/BlazorWKWebView.cs`）验证 `.NET for macOS` 绑定 API：
+[MacOSWebviewWindow.cs](../../src/Wails.Net.Application.MacOS/MacOSWebviewWindow.cs) 对应 Go 版 `webview_window_darwin.go` + `.m`，并参照 DevToys（`DevToys.MacOS/Controls/BlazorWebView/BlazorWKWebView.cs`）验证 `.NET for macOS` 绑定 API：
 
 - **窗口创建**：按 `Frameless` / `CornerType` / `CornerRadius` 组合 `NSWindowStyleMask`（Borderless 或 Titled|Closable|Miniaturizable|Resizable|FullSizeContentView）。
 - **运行时注入**：`WKUserScript`（document start）注入 `Application.GenerateRuntimeJs(false)` 生成的 `window._wails` 标志，与 Linux `InjectRuntimeJs` 时机一致。
@@ -365,7 +365,7 @@ macOS 实现参照 Wails v3 官方源码（`v3/pkg/application/*_darwin.go` / `*
 
 ### 选项模型
 
-`ApplicationOptions.Mac`（[MacOptions.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Options/MacOptions.cs)）与 `WebviewWindowOptions.Mac`（`WebviewWindowMacOptions`）承载平台配置：激活策略、标题栏（AppearsTransparent/Hide/HideTitle/FullSizeContent/Toolbar）、背景类型（Normal/Transparent/Translucent）、圆角、窗口层级、WKWebView 偏好（TabFocusesLinks、AllowsMagnification、EnableAutoplayWithoutUserAction 等），对齐 Wails v3 `Options.Mac` 结构。
+`ApplicationOptions.Mac`（[MacOptions.cs](../../src/Wails.Net.Application/Options/MacOptions.cs)）与 `WebviewWindowOptions.Mac`（`WebviewWindowMacOptions`）承载平台配置：激活策略、标题栏（AppearsTransparent/Hide/HideTitle/FullSizeContent/Toolbar）、背景类型（Normal/Transparent/Translucent）、圆角、窗口层级、WKWebView 偏好（TabFocusesLinks、AllowsMagnification、EnableAutoplayWithoutUserAction 等），对齐 Wails v3 `Options.Mac` 结构。
 
 ### 分发与验证
 
@@ -378,7 +378,7 @@ Server 模式提供无 GUI 的 no-op 实现，用于容器化部署、CI/CD 测�
 
 ### ServerPlatformApp
 
-[ServerPlatformApp.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Platform/ServerMode/ServerPlatformApp.cs) 的核心是使用 `ManualResetEventSlim` 模拟阻塞主循环：
+[ServerPlatformApp.cs](../../src/Wails.Net.Application/Platform/ServerMode/ServerPlatformApp.cs) 的核心是使用 `ManualResetEventSlim` 模拟阻塞主循环：
 
 ```csharp
 private readonly ManualResetEventSlim _shutdownEvent = new(initialState: false);
@@ -396,11 +396,11 @@ public void SignalShutdown() => _shutdownEvent.Set();
 
 ### ServerWebviewWindow
 
-[ServerWebviewWindow.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Platform/ServerMode/ServerWebviewWindow.cs) 是最大的桩类 —— 为 `IWebviewWindowImpl` 的所有方法提供空实现，状态查询返回 `false` / `(0, 0)` / 空字符串。
+[ServerWebviewWindow.cs](../../src/Wails.Net.Application/Platform/ServerMode/ServerWebviewWindow.cs) 是最大的桩类 —— 为 `IWebviewWindowImpl` 的所有方法提供空实现，状态查询返回 `false` / `(0, 0)` / 空字符串。
 
 ### ServerClipboard
 
-[ServerClipboard.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Platform/ServerMode/ServerClipboard.cs) 的 `GetText()` 返回 `""`，`GetImage()` 返回 `null`，`GetFiles()` 返回空数组。
+[ServerClipboard.cs](../../src/Wails.Net.Application/Platform/ServerMode/ServerClipboard.cs) 的 `GetText()` 返回 `""`，`GetImage()` 返回 `null`，`GetFiles()` 返回空数组。
 
 **用途**：
 
@@ -410,7 +410,7 @@ public void SignalShutdown() => _shutdownEvent.Set();
 
 ## WebView 抽象 — IWebView
 
-[IWebView.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/WebView/IWebView.cs) 是平台无关的 WebView 抽象接口，统一 Windows WebView2 与 Linux WebKitGTK 的事件模型。它定义了所有 WebView 共有的能力：
+[IWebView.cs](../../src/Wails.Net.Application/WebView/IWebView.cs) 是平台无关的 WebView 抽象接口，统一 Windows WebView2 与 Linux WebKitGTK 的事件模型。它定义了所有 WebView 共有的能力：
 
 ```csharp
 public interface IWebView : IDisposable

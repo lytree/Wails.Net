@@ -327,7 +327,6 @@ dotnet fsi script.fsx
 | 资源 | 链接 |
 |------|------|
 | Wails v3 源码 | https://github.com/wailsapp/wails/tree/v3.0.0 |
-| Tauri v2 源码 | https://github.com/tauri-apps/tauri |
 | GirCore | https://github.com/gircore/gir.core |
 | TUnit | https://github.com/thomhurst/TUnit |
 | CsWin32 | https://github.com/microsoft/CsWin32 |
@@ -335,7 +334,7 @@ dotnet fsi script.fsx
 | 实施计划 | `.trae/documents/wails-net-dotnet10-implementation-plan.md` |
 | 问题反馈 | GitHub Issues |
 
-**架构融合策略**：Host/DI/Config/Logging 学 ASP.NET Core；Runtime/Window/IPC 学 Wails v3；Plugin/Security/Capability 学 Tauri v2。绑定方法 ID 使用 FNV-1a 32 位哈希（`offsetBasis=2166136261u`、`prime=16777619u`），必须与 Go 版本 `fnv.New32a()` 一致。
+**架构策略**：Host/DI/Config/Logging 参考 ASP.NET Core；Runtime/Window/IPC 参考 Wails v3；Plugin/Security/Capability 自研。绑定方法 ID 使用 FNV-1a 32 位哈希（`offsetBasis=2166136261u`、`prime=16777619u`），必须与 Go 版本 `fnv.New32a()` 一致。
 
 ---
 

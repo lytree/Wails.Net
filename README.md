@@ -1,6 +1,6 @@
 # Wails.Net
 
-> 基于 .NET 10 的 [Wails v3](https://github.com/wailsapp/wails/tree/v3.0.0-beta.4) 移植实现，专注于 Windows、Linux 和 Android 平台。
+> 基于 .NET 10 的 [Wails v3](https://github.com/wailsapp/wails/tree/v3.1.0) 移植实现，专注于 Windows、Linux 和 Android 平台。
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20Android%20%7C%20macOS(skeleton)-lightgrey.svg)](#平台支持)
@@ -27,7 +27,7 @@
 
 **R3-E 关键变更**（2026-08-20）：
 
-- 库默认 `PermissionMode = Strict`（取代 0.1.x 的 `Compatibility` 默认），对齐 Tauri v2 默认行为。
+- 库默认 `PermissionMode = Strict`（取代 0.1.x 的 `Compatibility` 默认），默认采用最小权限模型。
 - SemVer `0.1.0-alpha.x` → `1.0.0-alpha.x`（破坏性变更标记 `feat!`）。
 - 引入 `capability` 子命令（`wails.net capability generate|validate|init`）辅助生成 capability JSON。
 
@@ -45,7 +45,7 @@ Wails.Net 是一个使用 .NET 10 和 Web 前端技术构建跨平台桌面应�
 - **Server 模式**：支持无 GUI 的容器化部署（`ServerPlatformApp` + `ServerBrowserManager` + 事件 API）
 - **完整 CLI 工具**：项目脚手架、构建、TS 绑定生成、打包分发
 - **TypeScript 绑定生成器**：自动生成前端类型定义
-- **插件系统**：内置 47 个插件（39 桌面 + 7 移动端 + 1 Android 专属 `AndroidRuntimePlugin`），借鉴 Tauri v2 权限模型与 Capability 自动加载
+- **插件系统**：内置 47 个插件（39 桌面 + 7 移动端 + 1 Android 专属 `AndroidRuntimePlugin`），自研权限模型与 Capability 自动加载
 - **移动端扩展插件**：haptics（震动）、barcode-scanner（条码扫描）、nfc（NFC 读写）、biometric（生物识别）、camera（相机）、geolocation（定位）、permissions（权限）、android-runtime（设备信息/Toast）
 - **Channel API**：前后端双向流式通信（`IChannel` + `ChannelManager`）
 - **CancellablePromise + 原生 IPC**：前端可取消后端长任务，三平台原生 IPC 通道（Windows WebView2 `PostWebMessage`/Linux WebKit `WebView:userMessageReceived`/Android `WebMessageListener`），`EventIPCTransport` 作为 HTTP 失败回退
@@ -60,7 +60,7 @@ Wails.Net 是一个使用 .NET 10 和 Web 前端技术构建跨平台桌面应�
 - **DPI 缩放**：`DpiScalePlugin` 提供屏幕缩放因子查询与控制
 - **平台检测**：`PlatformFactory` 6 级回退检测链，保证任何环境可降级运行
 - **cake.cs 构建**：仓库根 `cake.cs`（Cake SDK 文件式脚本）统一构建，支持三平台自包含打包 + Linux .deb/.rpm + Windows Authenticode 自动签名
-- **MenuRole 角色菜单项**：21 个角色枚举 + 13 个工厂方法 + 3 个标准菜单组合（Edit/Window/Help），对齐 Wails v3 Role 常量与 Tauri v2 PredefinedMenuItem，macOS 专属角色在其他平台静默 no-op
+- **MenuRole 角色菜单项**：21 个角色枚举 + 13 个工厂方法 + 3 个标准菜单组合（Edit/Window/Help），对齐 Wails v3 Role 常量，macOS 专属角色在其他平台静默 no-op
 - **Android 平台事件系统**：12 个 Android 平台事件 ID（1267–1285）映射到 7 个公共 `ApplicationEventType`（LowMemory/ScreenLocked/ScreenUnlocked 等），前端可使用统一事件名跨平台订阅
 
 ## 快速开始
@@ -302,7 +302,7 @@ dotnet run --project tests/Wails.Net.AssetServer.Tests/Wails.Net.AssetServer.Tes
 dotnet run --project tests/Wails.Net.Application.Android.Tests/Wails.Net.Application.Android.Tests.csproj
 ```
 
-> **提示**：Linux 测试需在 Linux 或 WSL 环境中运行。在 Windows 上可通过 `wsl -d kali-linux -- bash -c "cd /mnt/f/Code/Dotnet/Wails.Net && dotnet run --project tests/Wails.Net.Application.Linux.Tests"` 运行。
+> **提示**：Linux 测试需在 Linux 或 WSL 环境中运行。在 Windows 上可通过 `wsl -d kali-linux -- bash -c "cd /mnt/f/Code/github/Wails.Net && dotnet run --project tests/Wails.Net.Application.Linux.Tests"` 运行。
 
 #### NuGet 包打包与冒烟测试
 
@@ -360,11 +360,11 @@ dotnet run cake.cs -- --target=Build --solution=src/Wails.Net.Application/Wails.
 
 ### 功能对齐阶段（P0/P1/P2）
 
-在 8 阶段基础之上，与 Tauri v2 / Wails v3 进行功能对齐：
+在 8 阶段基础之上，与 Wails v3 进行功能对齐：
 
-- ✅ **P0 阶段（40 项）** — CancellablePromise + CancelCall、原生 IPC（三平台）、`EventIPCTransport` 回退、Server 模式事件 API、`senderWindowId` 跨窗口传播、`ChunkStore` 分块上传、`MessageProcessor` 路由表对齐等。详见 [功能对比文档](docs/comparison-with-tauri2-wails3.md)。
+- ✅ **P0 阶段（40 项）** — CancellablePromise + CancelCall、原生 IPC（三平台）、`EventIPCTransport` 回退、Server 模式事件 API、`senderWindowId` 跨窗口传播、`ChunkStore` 分块上传、`MessageProcessor` 路由表对齐等。详见 [能力矩阵文档](docs/comparison-with-wails-v3.md)。
 - ✅ **P1 阶段（8 项）** — 三平台 `BrowserManager` 统一 API、Logger 双向桥接（`UseBrowserConsoleLogReceiver`/`UseBrowserConsoleLogForwarder`）、`PostShutdown`/`ShouldQuit` Event Hooks 补齐、ContextMenu 行为对齐、Frameless 拖拽 CSS 变量统一、Service Route 挂载（`IHttpServiceHandler`）、多 Provider Updater（Http/GitHub/GitLab/自定义）。
-- ✅ **P2 阶段（3 项）** — MenuRole 角色菜单项系统（21 角色 + 13 工厂方法 + 3 标准菜单组合，对齐 Wails v3 Role 与 Tauri v2 PredefinedMenuItem）、Android 平台事件系统（12 个事件 ID 映射到 7 个公共事件类型）、4 个 Android 移动端插件平台实现补齐（`AndroidBiometric`/`AndroidNfc`/`AndroidBarcodeScanner`/`AndroidHaptics`）+ `AndroidRuntimePlugin` 新增（`device.info` / `toast.show`）。
+- ✅ **P2 阶段（3 项）** — MenuRole 角色菜单项系统（21 角色 + 13 工厂方法 + 3 标准菜单组合，对齐 Wails v3 Role）、Android 平台事件系统（12 个事件 ID 映射到 7 个公共事件类型）、4 个 Android 移动端插件平台实现补齐（`AndroidBiometric`/`AndroidNfc`/`AndroidBarcodeScanner`/`AndroidHaptics`）+ `AndroidRuntimePlugin` 新增（`device.info` / `toast.show`）。
 - ✅ **P3 阶段** — 新增 20 个聚焦单一主题的 Demo 项目（Binding/CancelAsync/Clipboard/ContextMenus/Dialogs/DragAndDrop/Environment/Events/Frameless/Keybindings/Menu/MultiWindow/Notifications/Screen/Server/Services/SingleInstance/Store/SystemTray/Updater），Demo 总数达 24 个。
 
 参考 [Demo 项目](examples/Wails.Net.Demo/) 可查看 P1/P2 全部能力的端到端示例，[构建打包指南](docs/development/build-and-pack.md) 涵盖从开发到分发的完整流程。

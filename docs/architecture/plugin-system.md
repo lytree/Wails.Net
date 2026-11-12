@@ -2,7 +2,7 @@
 
 ## 1. 概述
 
-Wails.Net 的插件框架借鉴 **Tauri v2 的"核心即插件"哲学**：系统原生操作（窗口、剪贴板、文件、通知、托盘等）不再是绑定对象上的散落方法，而是统一以插件命令（Command）形式注册到全局命令注册表，前端通过 `wails.call('<plugin>.<action>', args)` 路径访问。
+Wails.Net 的插件框架采用 **「核心即插件」的插件化设计**：系统原生操作（窗口、剪贴板、文件、通知、托盘等）不再是绑定对象上的散落方法，而是统一以插件命令（Command）形式注册到全局命令注册表，前端通过 `wails.call('<plugin>.<action>', args)` 路径访问。
 
 这一设计带来三个关键收益：
 
@@ -29,7 +29,7 @@ Wails.Net 的插件框架借鉴 **Tauri v2 的"核心即插件"哲学**：系统
 
 ### 2.1 IPlugin — 三方法契约
 
-[IPlugin.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/IPlugin.cs) 定义了所有插件必须实现的最小契约：
+[IPlugin.cs](../../src/Wails.Net.Application/Plugins/IPlugin.cs) 定义了所有插件必须实现的最小契约：
 
 ```csharp
 public interface IPlugin
@@ -52,7 +52,7 @@ public interface IPlugin
 
 ### 2.2 IPluginContext — 配置上下文
 
-[IPluginContext.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/IPluginContext.cs) 在 `Configure` 阶段向插件提供四项核心依赖：
+[IPluginContext.cs](../../src/Wails.Net.Application/Plugins/IPluginContext.cs) 在 `Configure` 阶段向插件提供四项核心依赖：
 
 ```csharp
 public interface IPluginContext
@@ -68,13 +68,13 @@ public interface IPluginContext
 
 ### 2.3 PluginContext 实现
 
-[PluginContext.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/PluginContext.cs) 是 `IPluginContext` 的 `internal sealed` 实现，由 `PluginManager.InitializeAll` 在初始化阶段构造并传递给每个插件的 `Configure` 方法。其实现为不可变值对象——四个属性在构造时一次性赋值，插件读取后无法修改全局状态，保证配置阶段的安全性。
+[PluginContext.cs](../../src/Wails.Net.Application/Plugins/PluginContext.cs) 是 `IPluginContext` 的 `internal sealed` 实现，由 `PluginManager.InitializeAll` 在初始化阶段构造并传递给每个插件的 `Configure` 方法。其实现为不可变值对象——四个属性在构造时一次性赋值，插件读取后无法修改全局状态，保证配置阶段的安全性。
 
 ## 3. 插件管理
 
 ### 3.1 PluginManager — 注册与生命周期
 
-[PluginManager.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/PluginManager.cs) 是插件生命周期的核心协调器，提供四种注册入口：
+[PluginManager.cs](../../src/Wails.Net.Application/Plugins/PluginManager.cs) 是插件生命周期的核心协调器，提供四种注册入口：
 
 ```csharp
 // 1. 直接注册实例
@@ -96,7 +96,7 @@ manager.DiscoverFromAssembly(Assembly.GetExecutingAssembly());
 
 ### 3.2 PluginBuilderExtensions — Fluent API
 
-[PluginBuilderExtensions.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/PluginBuilderExtensions.cs) 提供 `UsePlugin<T>()` 扩展，作为应用启动时启用插件的标准入口：
+[PluginBuilderExtensions.cs](../../src/Wails.Net.Application/Plugins/PluginBuilderExtensions.cs) 提供 `UsePlugin<T>()` 扩展，作为应用启动时启用插件的标准入口：
 
 ```csharp
 var builder = DesktopApplication.CreateBuilder(args);
@@ -120,7 +120,7 @@ builder
 
 ### 4.1 MapCommand 扩展方法
 
-[MapCommandExtensions.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/../../Commands/MapCommandExtensions.cs) 提供 Minimal API 风格的命令注册，支持多种委托签名：
+[MapCommandExtensions.cs](../../src/Wails.Net.Application/Commands/MapCommandExtensions.cs) 提供 Minimal API 风格的命令注册，支持多种委托签名：
 
 ```csharp
 // 无参数无返回值（action）
@@ -143,7 +143,7 @@ commands.MapCommand("fs.readAsync",
 
 ### 4.2 Options 对象模式
 
-带参数的命令采用强类型 Options 对象作为参数载体。前端传入的 JSON 对象（如 `{title:'标题'}`）由 `CommandDispatcher` 反序列化为对应 Options 类型，编译期即可捕获参数不匹配错误。以 [WindowPlugin.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/WindowPlugin.cs) 为例：
+带参数的命令采用强类型 Options 对象作为参数载体。前端传入的 JSON 对象（如 `{title:'标题'}`）由 `CommandDispatcher` 反序列化为对应 Options 类型，编译期即可捕获参数不匹配错误。以 [WindowPlugin.cs](../../src/Wails.Net.Plugins.Window/WindowPlugin.cs) 为例：
 
 ```csharp
 public sealed class WindowSetTitleOptions
@@ -172,7 +172,7 @@ public sealed class WindowSizeOptions
 
 ### 4.4 双名注册（向后兼容）
 
-[FileSystemPlugin.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/FileSystemPlugin.cs) 展示了双名注册模式——同一命令注册短名（向后兼容）和前端 API 名两套别名：
+[FileSystemPlugin.cs](../../src/Wails.Net.Plugins.FileSystem/FileSystemPlugin.cs) 展示了双名注册模式——同一命令注册短名（向后兼容）和前端 API 名两套别名：
 
 ```csharp
 // 短名（向后兼容）
@@ -181,7 +181,7 @@ context.Commands.MapCommand("fs.read", (Func<string, string>)(path => ...));
 context.Commands.MapCommand("fs.readTextFile", (Func<string, string>)(path => ...));
 ```
 
-[NotificationPlugin.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/NotificationPlugin.cs) 类似地为权限查询注册了 `notification.isPermissionGranted` 和 `notification.hasPermission` 两个别名，前者兼容历史调用，后者对齐前端 API 命名。
+[NotificationPlugin.cs](../../src/Wails.Net.Plugins.Notification/NotificationPlugin.cs) 类似地为权限查询注册了 `notification.isPermissionGranted` 和 `notification.hasPermission` 两个别名，前者兼容历史调用，后者对齐前端 API 命名。
 
 ## 5. 内置插件清单
 
@@ -261,7 +261,7 @@ Wails.Net 在 `src/Wails.Net.Application/Plugins/BuiltIn/` 下提供 **37 个桌
 
 #### WindowPlugin（54 命令）
 
-[WindowPlugin.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/WindowPlugin.cs) 是命令量最大的插件，对应 Wails v3 前端的 `wails.window.*` API。命令通过 `ICommandContext.WindowId` 定位目标 `WebviewWindow` 实例：
+[WindowPlugin.cs](../../src/Wails.Net.Plugins.Window/WindowPlugin.cs) 是命令量最大的插件，对应 Wails v3 前端的 `wails.window.*` API。命令通过 `ICommandContext.WindowId` 定位目标 `WebviewWindow` 实例：
 
 ```csharp
 private static WebviewWindow GetWindowOrThrow(ICommandContext ctx)
@@ -277,11 +277,11 @@ private static WebviewWindow GetWindowOrThrow(ICommandContext ctx)
 
 #### ApplicationPlugin
 
-[ApplicationPlugin.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Plugins.Application/ApplicationPlugin.cs)（M3 已拆分为独立插件包 `Wails.Net.Plugins.Application`，基座 BuiltIn 版本已移除）通过 `Application.Get()` 静态单例定位应用实例，暴露 12 个应用级命令（quit/hide/show/getName/getVersion/getDescription/setIcon/isDarkMode/getAccentColor/getPrimaryScreen/getScreens/showAboutDialog）。
+[ApplicationPlugin.cs](../../src/Wails.Net.Plugins.Application/ApplicationPlugin.cs)（M3 已拆分为独立插件包 `Wails.Net.Plugins.Application`，基座 BuiltIn 版本已移除）通过 `Application.Get()` 静态单例定位应用实例，暴露 12 个应用级命令（quit/hide/show/getName/getVersion/getDescription/setIcon/isDarkMode/getAccentColor/getPrimaryScreen/getScreens/showAboutDialog）。
 
 #### TrayPlugin
 
-[TrayPlugin.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/TrayPlugin.cs) 是**唯一在 `ConfigureServices` 中注册 DI 服务**的示例插件——注册 `TrayHolder` 单例持有当前活动托盘实例：
+[TrayPlugin.cs](../../src/Wails.Net.Plugins.Tray/TrayPlugin.cs) 是**唯一在 `ConfigureServices` 中注册 DI 服务**的示例插件——注册 `TrayHolder` 单例持有当前活动托盘实例：
 
 ```csharp
 public void ConfigureServices(IServiceCollection services)
@@ -294,7 +294,7 @@ public void ConfigureServices(IServiceCollection services)
 
 #### FileSystemPlugin（沙箱防护）
 
-[FileSystemPlugin.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/FileSystemPlugin.cs) 演示了**安全沙箱模式**——构造时传入 `sandboxRoot`，所有路径解析经 `GetSafePath` 校验是否在沙箱范围内：
+[FileSystemPlugin.cs](../../src/Wails.Net.Plugins.FileSystem/FileSystemPlugin.cs) 演示了**安全沙箱模式**——构造时传入 `sandboxRoot`，所有路径解析经 `GetSafePath` 校验是否在沙箱范围内：
 
 ```csharp
 if (_sandboxRoot is not null)
@@ -309,30 +309,23 @@ if (_sandboxRoot is not null)
 
 此插件同时注册短名（`fs.read`）和前端 API 名（`fs.readTextFile`）两套命令共 21 个。
 
-## 6. 与 Tauri v2 的对比
+## 6. 设计特征
 
-### 6.1 相似点
+| 维度 | Wails.Net 实现 |
+|------|---------------|
+| 核心哲学 | 核心能力即插件（窗口/剪贴板/对话框/通知等都是插件），内置 42 插件（37 桌面 + 5 移动端）覆盖系统原生能力 |
+| 命令注册 | `CommandRegistry.MapCommand` + C# 委托 |
+| 命令路径 | `<plugin>.<action>` 命名约定 |
+| Options 模式 | C# POCO + `System.Text.Json` 反序列化 |
+| 权限模型 | Capability 配置文件 + `PermissionManager` 三层 ACL |
+| DI 容器 | `Microsoft.Extensions.DependencyInjection` 全栈集成 |
+| 服务生命周期 | `ConfigureServices`（注册）→ `Configure`（命令注册）→ `StartupAsync` / `ShutdownAsync`（运行时） |
+| 类型系统 | C# 编译期 + 表达式树编译的强类型调用器，运行时零反射 |
+| 命令发现 | `DiscoverFromAssembly` 程序集扫描自动发现 |
+| 双名兼容 | 同一命令可注册多别名，向后兼容旧前端 API |
+| 沙箱安全 | `FileSystemPlugin` 构造参数注入沙箱根，运行时校验 |
 
-| 维度 | Tauri v2 | Wails.Net |
-|------|---------|-----------|
-| 核心哲学 | 核心能力即插件（窗口/剪贴板/对话框/通知等都是插件） | 完全一致——内置 42 插件（37 桌面 + 5 移动端）覆盖系统原生能力 |
-| 命令注册 | `app.invoke_handler` + Rust 函数 | `CommandRegistry.MapCommand` + C# 委托 |
-| 命令路径 | `plugin://command` 路由 | `<plugin>.<action>` 命名约定 |
-| Options 模式 | Rust 结构体反序列化 | C# POCO + `System.Text.Json` 反序列化 |
-| 权限模型 | Capability 配置文件 | （已规划）`persisted-scope`/`persisted-scope` 插件雏形 |
-
-### 6.2 差异点
-
-| 维度 | Tauri v2 | Wails.Net |
-|------|---------|-----------|
-| DI 容器 | Rust 无 DI，命令在 `Builder` 上链式注册 | `Microsoft.Extensions.DependencyInjection` 全栈集成 |
-| 服务生命周期 | 无显式生命周期管理 | `ConfigureServices`（注册）→ `Configure`（命令注册）两阶段 |
-| 类型系统 | Rust 编译期保证 | C# 编译期 + 表达式树编译的强类型调用器，运行时零反射 |
-| 命令发现 | 显式注册 | `DiscoverFromAssembly` 程序集扫描自动发现 |
-| 双名兼容 | 不支持 | 同一命令可注册多别名，向后兼容旧前端 API |
-| 沙箱安全 | 通过 Capability 文件配置 | `FileSystemPlugin` 构造参数注入沙箱根，运行时校验 |
-
-Wails.Net 在保留 Tauri 哲学的同时，借助 .NET 的 DI 与表达式树编译实现更强的类型安全与更优的运行时性能。
+Wails.Net 的插件框架借助 .NET 的 DI 与表达式树编译，在保持「核心即插件」设计的同时实现了编译期类型安全与运行时零反射。
 
 ## 7. 自定义插件开发指南
 
@@ -441,13 +434,13 @@ const forecast = await wails.call('weather.fetchForecast', ['Shanghai']);
 ---
 
 **参考文件**：
-- [IPlugin.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/IPlugin.cs)
-- [IPluginContext.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/IPluginContext.cs)
-- [PluginContext.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/PluginContext.cs)
-- [PluginManager.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/PluginManager.cs)
-- [PluginBuilderExtensions.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/PluginBuilderExtensions.cs)
-- [CommandRegistry.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Commands/CommandRegistry.cs)
-- [MapCommandExtensions.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Commands/MapCommandExtensions.cs)
-- [BuiltIn 目录](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn)
+- [IPlugin.cs](../../src/Wails.Net.Application/Plugins/IPlugin.cs)
+- [IPluginContext.cs](../../src/Wails.Net.Application/Plugins/IPluginContext.cs)
+- [PluginContext.cs](../../src/Wails.Net.Application/Plugins/PluginContext.cs)
+- [PluginManager.cs](../../src/Wails.Net.Application/Plugins/PluginManager.cs)
+- [PluginBuilderExtensions.cs](../../src/Wails.Net.Application/Plugins/PluginBuilderExtensions.cs)
+- [CommandRegistry.cs](../../src/Wails.Net.Application/Commands/CommandRegistry.cs)
+- [MapCommandExtensions.cs](../../src/Wails.Net.Application/Commands/MapCommandExtensions.cs)
+- [BuiltIn 目录](../../src/Wails.Net.Application/Plugins/BuiltIn)
 
 **最后更新**：2026-07-20

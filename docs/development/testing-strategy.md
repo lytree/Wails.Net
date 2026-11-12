@@ -1,6 +1,6 @@
 # Wails.Net 测试方案设计
 
-> 本文档基于对 **Wails v3 (Go)** 与 **Tauri v2 (Rust)** 测试体系的对标分析，设计 Wails.Net 的分层测试架构。
+> 本文档基于对 **Wails v3 (Go)** 测试体系的分析，设计 Wails.Net 的分层测试架构。
 >
 > - 本文回答**「测什么、怎么分层、缺什么」**（战略层）
 > - 具体的**「怎么写一个测试」**（战术层）见 [testing-guide.md](./testing-guide.md)
@@ -13,15 +13,15 @@
 
 ## 1. 背景
 
-Wails.Net 是 Wails v3 的 .NET 10 移植，同时在插件/安全/能力模型上吸收 Tauri v2 的设计。测试体系也应当同样"融合"：
+Wails.Net 是 Wails v3 的 .NET 10 移植，插件/安全/能力模型为本项目自研设计。测试体系需要覆盖这些自有设计：
 
-| 领域 | 对标对象 | 理由 |
+| 领域 | 依据 | 理由 |
 |------|---------|------|
 | 后端逻辑单测组织 | Wails v3 | Service-centric，业务逻辑天然可测 |
-| **无头运行时 / IPC 全链路测试** | **Tauri v2** | MockRuntime 是 Tauri 最强的一环，Wails 完全缺失 |
-| 前端 Runtime mock | Tauri v2 | `@tauri-apps/api/mocks` 是官方一等公民 |
-| 桌面 E2E | Tauri v2 | 驱动真实打包二进制，比 Wails 的 dev-server Playwright 更可信 |
-| 平台原生层契约 | **两者皆无，Wails.Net 自创** | 本项目已有的 GuiContract 是领先设计，应强化而非替换 |
+| **无头运行时 / IPC 全链路测试** | 自建（Wails v3 缺失） | 需在无 GUI 环境跑通 IPC 全链路 |
+| 前端 Runtime mock | 自建（Wails v3 缺失） | 前端单测需要稳定的 mock 入口 |
+| 桌面 E2E | 自建（Wails v3 仅 dev-server） | 驱动真实打包二进制更接近生产形态 |
+| 平台原生层契约 | Wails.Net 自创 | 本项目已有的 GuiContract 是领先设计，应强化而非替换 |
 
 ---
 
@@ -71,87 +71,21 @@ func TestUserService_Create(t *testing.T) {
 | `-race` 是并发正确性的强力保障 | E2E 打的是 dev server 而非打包产物，与生产形态有差 |
 | | 窗口 / 菜单 / 托盘 / 对话框全靠人工验证 |
 
-### 2.2 Tauri v2 (Rust)
+### 2.2 横向对比与 Wails.Net 现状定位
 
-Tauri 明确划分**三层**，职责边界清晰。
+| 维度 | **Wails.Net 现状** |
+|------|-------------------|
+| 后端单测 | ✅ TUnit，**2283 个 `[Test]`**，7 个工程 |
+| 无头运行时（测试用） | ⚠️ 有 `ServerMode`（625 行）但**定位是生产降级，非测试设施** |
+| IPC 全链路断言 | ⚠️ 仅 `CommandTestHelper`，覆盖 Command 层未及传输层 |
+| **平台原生层测试** | ✅✅ **GuiContract 三平台分级契约（L1/L2/L3，109 项）— 领先上游** |
+| 前端 Runtime mock | ❌ 无（`Runtime.Js` 1141 行**零测试**） |
+| 桌面 E2E | ⚠️ 仅 Android adb 脚本（`run-android-e2e.fsx`） |
+| 覆盖率 | ❌ **完全没有** |
+| 竞态 / 并发 | ⚠️ 零星 `Parallel.For` 压测 |
+| 源生成器测试 | ❌ **1402 行零测试**（禁反射架构的基石） |
 
-#### 第 1 层：Rust 单测 + `MockRuntime`（杀手锏）
-
-启用 `tauri = { features = ["test"] }` 后，`tauri::test` 模块提供一整套**假运行时**：
-
-| API | 作用 |
-|-----|------|
-| `mock_builder()` | 用 `MockRuntime` 替换真实 wry/tao runtime |
-| `mock_context(noop_assets())` | 假 Context + 空 Assets |
-| `MockWebviewDispatcher` / `MockWindowDispatcher` / `MockWindowBuilder` | 完整实现 `Runtime` trait 的假实现 |
-| `get_ipc_response()` / `assert_ipc_response()` | 构造 `InvokeRequest` 跑完整 IPC 管线并断言 |
-| `INVOKE_KEY` | 绕过 invoke key 校验的测试常量 |
-
-```rust
-let app = create_app(mock_builder());
-let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
-    .build().unwrap();
-
-let res = tauri::test::get_ipc_response(&webview, tauri::webview::InvokeRequest {
-    cmd: "ping".into(),
-    callback: tauri::ipc::CallbackFn(0),
-    error: tauri::ipc::CallbackFn(1),
-    url: "http://tauri.localhost".parse().unwrap(),
-    body: tauri::ipc::InvokeBody::default(),
-    headers: Default::default(),
-    invoke_key: tauri::test::INVOKE_KEY.to_string(),
-}).map(|b| b.deserialize::<String>().unwrap());
-```
-
-**关键价值**：能建窗口、能注入 `State`、能挂插件、能跑完整 IPC —— **全程没有真实 webview**。CI 上无需显示器即可覆盖后端全栈。
-
-社区共识的配套实践：**业务逻辑抽成纯函数，`#[tauri::command]` 只做薄包装**。
-
-#### 第 2 层：前端 mock（`@tauri-apps/api/mocks`）
-
-| API | 作用 |
-|-----|------|
-| `mockIPC(cb, opts)` | 拦截 `window.__TAURI_INTERNALS__.invoke` |
-| `mockWindows('main','second')` | 伪造窗口标签（只造存在性，不造属性） |
-| `mockConvertFileSrc` | 伪造资源协议转换 |
-| `clearMocks()` | **每个测试后必调**，否则状态串味 |
-| `{ shouldMockEvents: true }` | 2.7.0+ 支持 `listen`/`emit`（`emitTo`/`emit_filter` 尚不支持） |
-
-配 Vitest + jsdom（需手动补 WebCrypto），可用 `vi.spyOn` 断言调用次数。
-
-#### 第 3 层：WebDriver E2E
-
-- **推荐**：`@wdio/tauri-service`，Windows/Linux/macOS 全覆盖
-- 默认 **embedded WebDriver server**（应用内嵌 `tauri-plugin-wdio-webdriver`），无需外部 driver —— **macOS 因此得以支持**
-- 或走 `tauri-driver` 驱动原生 driver（msedgedriver / WebKitWebDriver），**仅 Windows + Linux**
-- `tauri-plugin-wdio` 提供 `browser.tauri.execute()`、IPC mock、前后端日志抓取
-- 另有 **browser mode**：Chrome + Vite dev server 跑纯渲染层快测，不需要二进制
-- 驱动对象是 **真实打包二进制**（`appBinaryPath`）
-
-**结论**
-
-| ✅ 优点 | ❌ 硬伤 |
-|--------|--------|
-| MockRuntime 让后端全栈可测且不需 GUI | `tauri::test` 官方标注 **unstable** |
-| 三层职责边界极清晰 | MockRuntime **无契约保证**与真实 runtime 行为一致，存在漂移风险 |
-| E2E 打真实二进制，可信度高 | 原生行为（窗口特效、菜单）仍只能靠 E2E / 人工 |
-| 前端 mock 是官方一等公民 | |
-
-### 2.3 横向对比与 Wails.Net 现状定位
-
-| 维度 | Wails v3 | Tauri v2 | **Wails.Net 现状** |
-|------|----------|----------|-------------------|
-| 后端单测 | `go test` 原生 | `cargo test` | ✅ TUnit，**2283 个 `[Test]`**，7 个工程 |
-| 无头运行时（测试用） | ❌ 无 | ✅ MockRuntime | ⚠️ 有 `ServerMode`（625 行）但**定位是生产降级，非测试设施** |
-| IPC 全链路断言 | ❌ | ✅ `get_ipc_response` | ⚠️ 仅 `CommandTestHelper`，覆盖 Command 层未及传输层 |
-| **平台原生层测试** | ❌ | ❌ | ✅✅ **GuiContract 三平台分级契约（L1/L2/L3，109 项）— 领先两个上游** |
-| 前端 Runtime mock | 手工 `vi.mock` | ✅ 官方 mocks | ❌ 无（`Runtime.Js` 1141 行**零测试**） |
-| 桌面 E2E | Playwright + dev server | WebDriver + 真实二进制 | ⚠️ 仅 Android adb 脚本（`run-android-e2e.fsx`） |
-| 覆盖率 | `go cover` | `cargo-llvm-cov` | ❌ **完全没有** |
-| 竞态 / 并发 | ✅ `-race` | — | ⚠️ 零星 `Parallel.For` 压测 |
-| 源生成器测试 | N/A | trybuild | ❌ **1402 行零测试**（禁反射架构的基石） |
-
-**一句话定位**：Wails.Net 的**广度**（2283 个测试）与**平台契约深度**已超越两个上游，但缺三样 Tauri 有的关键基础设施——**无头 Mock 运行时、前端 mock、覆盖率门禁**，外加一个自身架构特有的空白——**源生成器与禁反射约束无自动化验证**。
+**一句话定位**：Wails.Net 的**广度**（2283 个测试）与**平台契约深度**已超越上游，但缺三样关键基础设施——**无头 Mock 运行时、前端 mock、覆盖率门禁**，外加一个自身架构特有的空白——**源生成器与禁反射约束无自动化验证**。
 
 ---
 
@@ -185,8 +119,8 @@ let res = tauri::test::get_ipc_response(&webview, tauri::webview::InvokeRequest 
 **设计原则**
 
 1. **越往下越多、越快、越强制**。L0/L1/L2 必须在每个 PR 全绿，L3/L4 允许分级降级。
-2. **L2 是新增的重心** —— 对标 Tauri MockRuntime，把"需要 GUI 才能测"的东西压到不需要 GUI。
-3. **L2 的 Mock 必须受 L3 契约约束**，避免 Tauri MockRuntime 那种"mock 与真实行为漂移"的问题。这是本方案相对 Tauri 的改进点。
+2. **L2 是新增的重心** —— 通过 Mock 运行时，把"需要 GUI 才能测"的东西压到不需要 GUI。
+3. **L2 的 Mock 必须受 L3 契约约束**，避免 mock 与真实行为漂移的问题。
 
 ---
 
@@ -198,7 +132,7 @@ let res = tauri::test::get_ipc_response(&webview, tauri::webview::InvokeRequest 
 
 **放 `src/` 而非 `tests/`，作为可发布 NuGet 包。**
 
-理由：Tauri 把 `tauri::test` 放在主 crate 里用 feature 开关，就是因为**下游用户写自己的 App 也需要它**。Wails.Net 的用户需要能测自己的 Service/Plugin 而不启动 WebView2/GTK。这是产品能力，不是内部测试代码。
+理由：用户需要能测自己的 Service/Plugin 而不启动 WebView2/GTK。这是产品能力，不是内部测试代码。
 
 ```
 src/Wails.Net.Testing/
@@ -261,17 +195,17 @@ public sealed class WailsTestHost : IAsyncDisposable
     public IServiceProvider Services { get; }
     public EventBus Events { get; }
 
-    /// 对标 Tauri get_ipc_response：走完整 传输层 → MessageProcessor → BindingManager
+    /// 对应 IPC 全链路断言：走完整 传输层 → MessageProcessor → BindingManager
     public Task<InvokeResult> InvokeAsync(string command, object? args = null, uint windowId = 1);
 
-    /// 对标 Tauri assert_ipc_response
+    /// 对应 IPC 响应断言
     public Task AssertInvokeAsync<T>(string command, object? args, T expected);
 
     public MockWebviewWindow CreateWindow(WebviewWindowOptions? options = null);
 }
 ```
 
-使用效果（对比 Tauri 的 `get_ipc_response`）：
+使用效果：
 
 ```csharp
 [Test]
@@ -328,7 +262,7 @@ internal static class MockPlatformRegistrar
 
 #### 4.1.5 ★ 用契约测试锁住 Mock 与真实实现的一致性
 
-这是本方案**优于 Tauri** 的关键一招。Tauri 的 MockRuntime 没有任何机制保证它和真实 runtime 行为一致；本项目已有 `WebviewWindowContractTests`（2237 行抽象基类），直接把 Mock 接成第 4 个平台：
+这是本方案的关键设计：Mock 运行时必须有机制保证与真实实现行为一致；本项目已有 `WebviewWindowContractTests`（2237 行抽象基类），直接把 Mock 接成第 4 个平台：
 
 ```csharp
 // tests/Wails.Net.Testing.Tests/MockWebviewWindowContractTests.cs
@@ -432,7 +366,7 @@ public async Task Src_MustNotUseRuntimeReflection()
 
 ### 4.4 前端测试（`@wails-net/runtime` 1141 行零测试）
 
-对标 `@tauri-apps/api/mocks`，为 `@wails-net/runtime` 增加 `/mocks` 子路径导出：
+为 `@wails-net/runtime` 增加 `/mocks` 子路径导出：
 
 ```js
 // @wails-net/runtime/mocks
@@ -466,14 +400,14 @@ test('Call.ByName 走 IPC 并回传结果', async () => {
 
 ### 4.5 桌面 E2E（分两级，避免一步到位）
 
-现有 `run-android-e2e.fsx` 是很好的模板（adb → `am start` → logcat → `uiautomator dump` → `input tap`）。桌面侧参考 Tauri 的 WebDriver 路线：
+现有 `run-android-e2e.fsx` 是很好的模板（adb → `am start` → logcat → `uiautomator dump` → `input tap`）。桌面侧采用 WebDriver 路线：
 
 | 级别 | 触发 | 手段 | 断言对象 |
 |------|------|------|---------|
 | **E2E-Lite** | 每 PR | 启动真实构建产物 → 通过 AssetServer HTTP 端口 + **测试后门 IPC**（named pipe）直接调命令 | 进程存活、窗口创建、命令返回值、日志无 ERROR |
 | **E2E-Full** | nightly / tag | Windows：Playwright .NET over **WebView2 CDP**（`CallDevToolsProtocolMethodAsync`）<br>Linux：`WebKitWebDriver` + Selenium，`xvfb-run` 提供虚拟显示<br>Android：现有 fsx 脚本 | 真实 DOM 交互、截图对比 |
 
-**测试后门**：对标 `tauri-plugin-wdio`，实现为一个 `Wails.Net.Testing.E2E` 插件，仅在 `WAILS_E2E=1` 时注册，暴露 named pipe 供测试进程调用。**绝不能进生产构建**——用 MSBuild 条件引用隔离。
+**测试后门**：实现为一个 `Wails.Net.Testing.E2E` 插件，仅在 `WAILS_E2E=1` 时注册，暴露 named pipe 供测试进程调用。**绝不能进生产构建**——用 MSBuild 条件引用隔离。
 
 统一 `WailsE2EFixture` 抽象，三平台共用生命周期（启动 → 就绪探测 → 操作 → 日志收集 → 清理）。
 
@@ -543,7 +477,7 @@ ReportGenerator 合并多工程报告 + PR 覆盖率增量评论。
 | `coverage` ★新 | — | 合并报告 + 阈值门禁 + PR 评论 |
 | `e2e-full` | Android only，main/tag | 扩展三平台，保持 nightly |
 
-关键改进：**Linux 用 `xvfb-run` 提供虚拟显示**（Tauri CI 的标准做法），让 L2 功能契约在 CI 真跑起来，而不是因 `HasRealGuiEnvironment == false` 静默跳过。
+关键改进：**Linux 用 `xvfb-run` 提供虚拟显示**（CI 环境通行做法），让 L2 功能契约在 CI 真跑起来，而不是因 `HasRealGuiEnvironment == false` 静默跳过。
 
 ### 契约测试接线统一
 
@@ -607,19 +541,19 @@ public async Task ContractTestCount_MustMatchAcrossPlatforms()
 
 ---
 
-## 附录 B：三方测试能力速查
+## 附录 B：测试能力速查
 
-| 能力 | Wails v3 | Tauri v2 | Wails.Net（目标态） |
-|------|----------|----------|---------------------|
-| 无头跑 IPC | ❌ | `get_ipc_response` | `WailsTestHost.InvokeAsync` |
-| 无头建窗口 | ❌ | `MockRuntime` | `MockWebviewWindow` |
-| Mock 行为一致性保证 | — | ❌ 无 | ✅ **GuiContract 约束** |
-| 前端 IPC 拦截 | `vi.mock` | `mockIPC` | `@wails-net/runtime/mocks` |
-| 真实二进制 E2E | ❌ dev server | ✅ WebDriver | CDP / WebKitWD / adb |
-| 平台原生分级契约 | ❌ | ❌ | ✅ L1/L2/L3 × 4 实现 |
-| 竞态检测 | ✅ `-race` | — | 压测 + Coyote（可选） |
-| 编译期架构守卫 | — | trybuild | 禁反射扫描 + 生成器快照 |
+| 能力 | Wails.Net（目标态） |
+|------|---------------------|
+| 无头跑 IPC | `WailsTestHost.InvokeAsync` |
+| 无头建窗口 | `MockWebviewWindow` |
+| Mock 行为一致性保证 | ✅ **GuiContract 约束** |
+| 前端 IPC 拦截 | `@wails-net/runtime/mocks` |
+| 真实二进制 E2E | CDP / WebKitWD / adb |
+| 平台原生分级契约 | ✅ L1/L2/L3 × 4 实现 |
+| 竞态检测 | 压测 + Coyote（可选） |
+| 编译期架构守卫 | 禁反射扫描 + 生成器快照 |
 
 ---
 
-**参考**：[Wails v3 Testing](https://v3.wails.io/guides/testing/) · [Tauri v2 Mocking](https://v2.tauri.app/develop/tests/mocking/) · [Tauri v2 WebDriver](https://v2.tauri.app/develop/tests/webdriver/) · [`tauri::test` API](https://docs.rs/tauri/latest/tauri/test/)
+**参考**：[Wails v3 Testing](https://v3.wails.io/guides/testing/)

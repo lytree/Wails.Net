@@ -342,7 +342,7 @@ wails-net --help
 
 ## Capability 自动加载
 
-Wails.Net 默认从 `{ContentRoot}/capabilities/` 目录自动加载 Capability JSON 文件并注册到 `PermissionManager`，对齐 Tauri v2 的默认行为。
+Wails.Net 默认从 `{ContentRoot}/capabilities/` 目录自动加载 Capability JSON 文件并注册到 `PermissionManager`，默认采用最小权限姿态。
 
 ### 配置
 

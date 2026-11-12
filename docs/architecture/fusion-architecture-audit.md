@@ -1,16 +1,16 @@
-# Wails.Net 架构融合审计与优化清单
+# Wails.Net 架构策略审计与优化清单
 
-> 本文基于 2026-08-15 对当前仓库代码、测试与架构文档的再次深度读取，确认 Wails.Net 的三条融合主线、已完成的架构调整，以及下一批可优化项：
+> 本文基于 2026-08-15 对当前仓库代码、测试与架构文档的再次深度读取，确认 Wails.Net 的三条架构主线、已完成的架构调整，以及下一批可优化项：
 >
-> - **Host / DI / Config / Logging** → 学 ASP.NET Core（Microsoft.Extensions.* 全栈）
-> - **Runtime / Window / IPC** → 学 Wails v3（对象模型、IPC、多窗口、事件总线）
-> - **Plugin / Security / Capability** → 学 Tauri v2（插件能力、权限模型、安全设计）
+> - **Host / DI / Config / Logging** → 参考 ASP.NET Core（Microsoft.Extensions.* 全栈）
+> - **Runtime / Window / IPC** → 参考 Wails v3（对象模型、IPC、多窗口、事件总线）
+> - **Plugin / Security / Capability** → 自研能力模型（插件契约与 Wails v3 对齐）
 >
 > 本文是“事实基线 + 优化 backlog”，不是新的技术选型；所有建议均以不违反 AGENTS.md 中 .NET 10、禁反射、TUnit、F# 脚本等约束为前提。
 
 ## 1. 总体结论
 
-当前项目已经形成“**ASP.NET Core 宿主骨架 + Wails v3 运行时对象模型 + Tauri v2 插件权限边界**”的融合架构，并且相较上一轮审计，若干此前列为 P0/P1 的闭环项已经落地：
+当前项目已经形成“**ASP.NET Core 宿主骨架 + Wails v3 运行时对象模型 + 自研插件权限边界**”的分层架构，并且相较上一轮审计，若干此前列为 P0/P1 的闭环项已经落地：
 
 1. **Host/DI/Config/Logging 主线已基本闭环**：`DesktopApplicationBuilder` 封装 `HostApplicationBuilder`，默认注册 Options、Validator、核心管理器、插件生命周期适配器和日志 Provider；`CommandDispatcher` 也已经从 DI 收集 `ICommandMiddleware`，补齐了 ASP.NET Core 风格命令管道扩展入口。
 2. **Runtime/Window/IPC 主线具备 Wails v3 风格核心且开始模块化**：`Application` 仍作为用户友好的 facade，但生命周期 ready 语义、事件通配符、定向窗口事件和 `IIpcTransportStrategy` 已经补上，运行时逐步从“大聚合根”向 coordinator/strategy 过渡。
@@ -211,7 +211,7 @@ Options 已统一绑定 `Wails` 根节及其子节，并通过 Validators + `Val
 
 > ✅ **已落地（2026-08-15）**：`docs/architecture/binding-and-command-system.md` §1.1 已含双轨职责边界与推荐路径表；本次增补 §1.1.1（命令命名规范、capability 来源优先级表、禁止反射绑定路径检查清单），并同步 P1-2 机器可读清单（commands/capabilities/plugins manifest）说明。
 
-## 5. 主线 C：Plugin / Security / Capability → Tauri v2
+## 5. 主线 C：Plugin / Security / Capability → 自研能力模型
 
 ### 5.1 已落地设计
 
@@ -221,7 +221,7 @@ Options 已统一绑定 `Wails` 根节及其子节，并通过 Validators + `Val
 | 命令注册 | `CommandRegistry` + `MapCommand`，Minimal API 风格 | 体验清晰 |
 | 权限校验 | `CommandDispatcher` 调用 `PermissionManager` | 权限链已接入 |
 | Capability | `CapabilityFileLoader`、`Capability`、`PermissionSet`、`RequireCapabilityAttribute` | 已具备声明模型 |
-| deny 优先 | `PermissionManager` 有 denied permissions，支持 `!permission` | 接近 Tauri deny 语义 |
+| deny 优先 | `PermissionManager` 有 denied permissions，支持 `!permission` | 具备 deny 优先语义 |
 | Window/Remote | capability 支持窗口范围和 remote URL 限制 | 已支持核心安全边界 |
 | Platform | `Capability.Platforms` + `PermissionManager.CurrentPlatform` | 平台级隔离已落地 |
 | Scope | `IScope`、`ScopeParameterAttribute`、文件/路径类插件参数级限制 | 方向正确 |
@@ -230,7 +230,7 @@ Options 已统一绑定 `Wails` 根节及其子节，并通过 Validators + `Val
 
 ### 5.2 架构评价
 
-插件安全模型已经不只是“命令命名空间”，而是具备 Tauri v2 capability 的关键元素：权限可以声明、组合为 permission set、限定窗口、限定 remote origin、deny、按平台过滤、对参数做 scope 校验。对 Wails.Net 来说，这是一条重要差异化路线：保持 Wails 的轻量运行时，同时引入 Tauri 的显式安全边界。
+插件安全模型已经不只是“命令命名空间”，而是具备 capability 模型的关键元素：权限可以声明、组合为 permission set、限定窗口、限定 remote origin、deny、按平台过滤、对参数做 scope 校验。对 Wails.Net 来说，这是一条重要差异化路线：保持 Wails 的轻量运行时，同时引入显式安全边界。
 
 ### 5.3 已完成的架构调整
 
@@ -240,7 +240,7 @@ Options 已统一绑定 `Wails` 根节及其子节，并通过 Validators + `Val
 
 #### C-DONE-2：Capability 平台过滤和构建期校验已落地
 
-`Capability.platforms` 已进入运行时授权路径，CLI `check` / build 前置校验可发现 JSON schema、平台名、权限标识格式与权限存在性问题。安全错误从运行期提前到构建期，是 Tauri v2 风格能力模型的重要补强。
+`Capability.platforms` 已进入运行时授权路径，CLI `check` / build 前置校验可发现 JSON schema、平台名、权限标识格式与权限存在性问题。安全错误从运行期提前到构建期，是自研能力模型的重要补强。
 
 #### C-DONE-3：CSP 模板默认启用
 
@@ -273,7 +273,7 @@ Options 已统一绑定 `Wails` 根节及其子节，并通过 Validators + `Val
 
 建议新增架构测试：解析项目引用图，断言 `src/Wails.Net.Application/Wails.Net.Application.csproj` 不引用 `Wails.Net.Plugins.*`，Bundle 不被核心项目引用。
 
-#### C-3：asset protocol scope / `convertFileSrc` 仍是 Tauri 对齐缺口
+#### C-3：asset protocol scope / `convertFileSrc` 仍是能力对齐缺口
 
 当前静态资源与 CSP 已增强，但“前端受控访问本地文件”的 asset protocol scope 尚未闭环。建议新增：
 
@@ -314,10 +314,10 @@ Options 已统一绑定 `Wails` 根节及其子节，并通过 Validators + `Val
 | 编号 | 优化项 | 收益 | 风险 |
 |------|--------|------|------|
 | P2-1 | Runtime API wrapper 从 manifest 全量生成 | 消除前后端 API 漂移 | 中高 |
-| P2-2 | asset protocol scope / `convertFileSrc` | 对齐 Tauri v2 本地文件安全体验 | 中 |
+| P2-2 | asset protocol scope / `convertFileSrc` | 补齐本地文件安全体验 | 中 |
 | P2-3 | Channels 对称加密 | 对齐 Wails v3 channel 加密能力 | 中 |
 | P2-4 | NativeAOT / trimming 发布专项 CI | 验证禁反射收益 | 中 |
-| P2-5 | Capability 与 Store/Stronghold/PersistedScope 深度整合 | 接近 Tauri 安全体验 | 中 |
+| P2-5 | Capability 与 Store/Stronghold/PersistedScope 深度整合 | 提升安全体验 | 中 |
 
 ## 7. 建议的目标架构边界
 
@@ -419,10 +419,10 @@ Wails.Net.Bundle.*
 - WebSocket mailbox、控制通道和背压机制。
 - 四平台 `WebviewRequestPipeline` 异步化（消除 UI 线程 `.GetAwaiter().GetResult()` 阻塞）。
 
-### 10.4 R3：完成 Tauri 风格 ACL
+### 10.4 R3：完成自研 ACL 能力模型
 
 - 全量迁移 47 插件 304 命令到 `Require/Public`。
-- 权限清单随 NuGet 包分发（对齐 Tauri `permissions/*.toml`）。
+- 权限清单随 NuGet 包分发（权限清单随包分发）。
 - Capability JSON Schema 与构建期校验。
 - Scope 与 capability/window/origin grant 绑定。
 - 完成后再将库默认从 Compatibility 翻转为 Strict（破坏性变更，需配合迁移指南）。

@@ -1,6 +1,6 @@
 # Wails.Net × Wails v3 最新开发分支对比：可参考项确认
 
-> 分析日期：2026-08-07（beta.4 基线）；2026-10-17 再确认：演进至 v3.0.0-beta.28（见 §9）；2026-10-22 再确认：beta.28 仍为最新（见 §9.14）；**2026-10-31 基线升级：Wails v3 `v3.0.0` 已于 2026-10-26 正式发布（GA），beta.29–beta.34 与 GA 差异、安全项及待对齐清单见 §11**；**2026-11-03 基线升级：最新 weekly 为 `v3.1.0`（2026-11-01，`v3.2.0-nightly.*` 为预发布不作基线），差异清单、实现与待办见 §12**；**2026-11-12 复核：上游无新正式版（基线保持 `v3.1.0`），Tauri v2 仍为 `2.12.5`，上一轮遗留的 2 项 P2（图标句柄生命周期、`DisableIcon` 选项）已补齐，见 §13**
+> 分析日期：2026-08-07（beta.4 基线）；2026-10-17 再确认：演进至 v3.0.0-beta.28（见 §9）；2026-10-22 再确认：beta.28 仍为最新（见 §9.14）；**2026-10-31 基线升级：Wails v3 `v3.0.0` 已于 2026-10-26 正式发布（GA），beta.29–beta.34 与 GA 差异、安全项及待对齐清单见 §11**；**2026-11-03 基线升级：最新 weekly 为 `v3.1.0`（2026-11-01，`v3.2.0-nightly.*` 为预发布不作基线），差异清单、实现与待办见 §12**；**2026-11-12 复核：上游无新正式版（基线保持 `v3.1.0`），上一轮遗留的 2 项 P2（图标句柄生命周期、`DisableIcon` 选项）已补齐，见 §13**
 > **2026-10-17 源码级复核**：§9.2/§9.1 各项已对照 Wails v3 `v3.0.0-beta.28` 官方 Go 源码（tag `v3.0.0-beta.28`，`v3/` 目录）逐项确认，结论与更正见 **§9.7**。
 > 对比对象：wailsapp/wails **v3 发布流**（`v3/` 目录；v3.0.0 GA 后按周更 minor + nightly 预发布）
 > 基线：AGENTS.md 参考版本 **`v3.1.0`**（2026-11-01 weekly；§1–§10 为 beta 时代结论、§11 为 v3.0.0 GA 基线，均保留原文与日期，**以 §12–§13 为当前基线**）
@@ -52,7 +52,7 @@
   - 插件元数据增加 `Assets`/`Scripts` 声明（类似 `PluginManifest`）
   - 插件资源挂载到 `AssetServer`（新增虚拟路径如 `/plugins/{name}/`）
   - 插件前端脚本注入（页面加载时注入 `<script>`，复用现有 `window._wails` 注入管道）
-  - 对齐 Tauri v2 的插件权限模型（Wails.Net 已有 Security/Capability 基础，可挂接）
+  - 完善插件权限模型（Wails.Net 已有 Security/Capability 基础，可挂接）
 
 ### P0-2：Updater 的 Wails Update Manifest 协议 + endpoint provider
 
@@ -123,11 +123,11 @@
 
 | 维度 | 评估 |
 |------|------|
-| **收益** | ① 插件生态基础：第三方插件可将「前端组件/页面 + 后端 API」作为整体分发，是 v3/Tauri 插件模型的核心差异点；② 框架竞争力：Wails.Net 目前插件只有命令注册，无法做开箱即用的 UI 型插件（如托盘增强、调试面板、开发者工具）；③ 与 Tauri v2 插件权限模型（已有 Security/Capability 基础）形成闭环 |
+| **收益** | ① 插件生态基础：第三方插件可将「前端组件/页面 + 后端 API」作为整体分发，是插件双包模型的核心差异点；② 框架竞争力：Wails.Net 目前插件只有命令注册，无法做开箱即用的 UI 型插件（如托盘增强、调试面板、开发者工具）；③ 与插件权限模型（已有 Security/Capability 基础）形成闭环 |
 | **成本（实施）** | 中高：插件 manifest 规范（Assets/Scripts 声明）+ AssetServer 虚拟路径挂载（`/plugins/{name}/`）+ 前端脚本注入管道 + 安全边界（资源隔离、权限校验）+ 模板/文档/测试 ≈ 3-5 个工作日 |
 | **成本（维护）** | 中：新概念面（插件清单格式、资源打包约定），需长期维护并保持与 CLI/模板一致 |
 | **风险** | 无硬性依赖阻塞；前端注入管道已有现成机制（window._wails 注入）可复用 |
-| **决策建议** | **已定方向（2026-08-07）**：采纳「前后端一体双包」模型——每插件 = NuGet 后端包 + npm 前端包，同仓库同版本发布，vite 项目经 npm 依赖调用并获得完整 TS 类型提示（对齐 Tauri v2 插件模型）。完整方案见 `docs/development/plugin-packaging.md`，落地按 M1 示范插件（Updater）→ M2 联调验证 → M3 批量拆分 → M4 发布闭环推进。原"暂缓跟进"结论因前端类型按需安装与生态分发诉求调整为**分阶段执行** |
+| **决策建议** | **已定方向（2026-08-07）**：采纳「前后端一体双包」模型——每插件 = NuGet 后端包 + npm 前端包，同仓库同版本发布，vite 项目经 npm 依赖调用并获得完整 TS 类型提示（插件双包模型）。完整方案见 `docs/development/plugin-packaging.md`，落地按 M1 示范插件（Updater）→ M2 联调验证 → M3 批量拆分 → M4 发布闭环推进。原"暂缓跟进"结论因前端类型按需安装与生态分发诉求调整为**分阶段执行** |
 
 ### P0-2 Updater：wails:// manifest 协议 + endpoint provider
 
@@ -144,26 +144,16 @@
 
 ---
 
-## 7. 附：Tauri 最新版本基线确认（v2 GA，非 beta）
+## 7. 附：上游版本基线确认
 
-> 用户询问"与 Tauri 最新 beta 版的差异"时需先澄清版本状态：**Tauri 2 已于 2024-10-02 GA**，当前稳定版 **2.12.5**（2026-10-21；npm `@tauri-apps/api` 为 2.12.4，2026-11-12 复核无变化），**不存在 beta 阶段**；Tauri 3 已从早期 **CLI-CEF 实验**（`@tauri-apps/cli-cef-v3.0.0-cef.0`，2026-05-04）推进到**核心全量 alpha**：`tauri-v3.0.0-alpha.6` + `tauri-runtime-wry`/`tauri-bundler`/`@tauri-apps/cli` alpha.5–.7（2026-11-06），仍属预览阶段、**不作参考**。因此 Wails.Net 的对比基线是 **Tauri v2 GA 2.12.5**（AGENTS.md §1 已同步）。
+> **基线状态（2026-11-12 复核）**：Wails v3 当前基线为 **`v3.1.0`**（2026-11-01 weekly）。
 >
-> 2.11.5（2026-07-01）→ 2.12.5（2026-10-21）主要变化（2.12.0 起）：`limitNavigationsToAppBoundDomains`（限制导航域，安全）、`appDirectoriesOverride`（统一数据目录）、`@tauri-apps/api/app` 新增 `exit` 命令、`convertFileSrc` 的 Rust 等价 API、`setFullscreenOnMonitor`、wry 权限处理器 API（摄像头/麦克风/字体/剪贴板等运行时决策）、macOS Liquid Glass `Regular`/`Clear` + `interactive`、ACL 拒绝作用域修复（此前一个 capability 的拒绝会影响所有 origin）、`asset://` 多范围响应与异步加载修复，以及 NSIS 降级拦截修复。
-
-| # | Tauri 2.12.x 特性 | Wails.Net 现状 | 可参考性 |
-|---|-------------------|----------------|----------|
-| 1 | 插件生态（官方 30+ 插件，前端资源/权限分离打包） | IPlugin 后端命令注册 + Security/Capability 基础（学 Tauri 设计） | P1（对齐插件权限模型，已有基础） |
-| 2 | 动态 ACL（`dynamic-acl` feature，可关闭减体积） | 无动态 ACL 概念（静态 Capability 声明） | 观望 |
-| 3 | `data-tauri-drag-region` 拖拽区域 | ✅ 原生拖拽已有（HasNativeDrag=true） | 无需 |
-| 4 | Linux D-Bus 主题检测 | ✅ Linux 平台层已有 D-Bus 系统主题事件监听 | 无需 |
-| 5 | `Webview::eval_with_callback` | ❌ 需核对 WebView eval 是否支持回调 | P3 |
-| 6 | Android 多窗口（activity embedding） | ❌ Android 单 Activity | P3（远期） |
-| 7 | `limitNavigationsToAppBoundDomains`（2.12.0） | ❓ 未见导航域限制（仅有资产/IPC 源校验） | P2（安全） |
-| 8 | ACL 拒绝作用域按 local/remote 区分（2.12.0 修复） | ❓ Capability 拒绝是否按源区分需核对 | P2 |
-| 9 | wry 权限处理器 API（运行时 Allow/Deny） | ⚠️ 有 `WebViewPermissionRequest` 抽象，需核对是否覆盖 9 类权限 | P3 |
-| 10 | `asset://` 多范围响应与异步加载（2.12.0 修复） | ✅ 分块/范围请求已有（`AssetServer` 分块传输、异步读取） | 无需（建议回归） |
-
-**结论**：Wails.Net 与 Tauri 的差异集中在插件生态丰富度（Tauri 30+ 官方插件 vs Wails.Net 45+ BuiltIn 命令）与 ACL 机制（Tauri 动态 ACL vs Wails.Net 静态 Capability）；架构融合策略（AGENTS.md §1.1.1 维度 3）无需调整，方向一致。
+> - 发布节奏：每周 bump minor（`v3.1.0`、`v3.2.0` …），每日 `v3.x.0-nightly.YYYYMMDD` 预发布，hotfix 走 patch
+> - 基线取值：以 **最新 weekly / hotfix（不含 nightly）** 为准
+> - `@wailsio/runtime` npm 版本与 Wails 发布版本号一致（当前 `3.1.0`）
+> - 本项目 **仅以 Wails v3 作为唯一上游参考**，不引入其他桌面框架作为对比基线（见 `AGENTS.md` §1）
+>
+> 基线升级记录见 §9 / §11 / §12 / §13。
 
 ---
 
@@ -208,7 +198,7 @@
 
 | # | v3 特性（版本） | Wails.Net 现状 |
 |---|----------------|----------------|
-| 1 | **Streams 双向字节流**（beta.8）：Go↔JS WebSocket 形态双向流，`app.HandleStream(name, handler)` + 前端 `Stream(name)`，不绑 TCP 端口、不走 evalJS；server 构建走真实 WebSocket，应用代码跨构建一致 | ❌ 未实现。注意：现有 `Wails.Net.Plugins.Websocket` 是**前端 WS 客户端**（Tauri 式连接外部服务器），不是 in-app 双向流，二者不等价 |
+| 1 | **Streams 双向字节流**（beta.8）：Go↔JS WebSocket 形态双向流，`app.HandleStream(name, handler)` + 前端 `Stream(name)`，不绑 TCP 端口、不走 evalJS；server 构建走真实 WebSocket，应用代码跨构建一致 | ❌ 未实现。注意：现有 `Wails.Net.Plugins.Websocket` 是**前端 WS 客户端**（连接外部服务器），不是 in-app 双向流，二者不等价 |
 | 2 | **事件投递硬化**（beta.6 #5930 / beta.7 #5934 / beta.8 #5851）：每窗口有序 JS 事件队列 + 背压 + 超大事件宿主侧有界存储 + 通用异步 FIFO mailbox | ❌ 未实现（src/ 无 backpressure/oversized event 处理；R2-2 WebSocketBroadcaster 单写者茧有有序性，但无背压与上界） |
 | 3 | **WebView2 进程故障恢复**（beta.26 #6002、beta.28 #6220/#6222/#6184）：WebView2 崩溃后恢复而非白窗/卡死；回调保持存活至原生释放 | ❌ 未实现（`Wails.Net.Application.Windows` 无 ProcessFailed/恢复处理） |
 
@@ -924,7 +914,7 @@ Wails.Net `HelperProcess.cs` 对齐：
 
 ## 11. 2026-10-31 基线升级：v3.0.0-beta.28 → v3.0.0（GA）
 
-> 复核方式：GitHub Releases（`wailsapp/wails`、`tauri-apps/tauri`）+ npm registry（`@wailsio/runtime`、`@tauri-apps/api`）+ 本仓库 `src/` 代码逐项确认。**未做 v3.0.0 tag 源码逐行复核**（本地参考源码目录 `F:\Code\Dotnet\wails-v3-ref` 不存在），下表标 ❓ 的项为依据 changelog 与本仓库代码的初步判断，落地前需对照 tag 源码确认。
+> 复核方式：GitHub Releases（`wailsapp/wails`）+ npm registry（`@wailsio/runtime`）+ 本仓库 `src/` 代码逐项确认。**未做 v3.0.0 tag 源码逐行复核**（本地参考源码目录 `F:\Code\Dotnet\wails-v3-ref` 不存在），下表标 ❓ 的项为依据 changelog 与本仓库代码的初步判断，落地前需对照 tag 源码确认。
 
 ### 11.1 版本现状（2026-10-31）
 
@@ -934,7 +924,6 @@ Wails.Net `HelperProcess.cs` 对齐：
 | Wails 预发布 | `v3.0.0-beta.29` … `v3.0.0-beta.34` | 2026-10-13 … 2026-10-20 | beta.31/GA 含安全修复，beta.30 及更早应升级 |
 | Wails nightly | `v3.1.0-nightly.20261028` | 2026-10-28 | 预览下一个 weekly，不作基线 |
 | `@wailsio/runtime` | `3.0.0` | 与 Wails 发布一致 | GA 起固定同版本号，生产需 pin 精确版本 |
-| Tauri v2（对比基线） | **`tauri-v2.12.5`** | 2026-10-21 | npm `@tauri-apps/api` 为 `2.12.4` |
 
 **发布节奏（GA 起）**：每周 bump minor（`v3.1.0`、`v3.2.0` …）→ 每日 `v3.X.0-nightly.YYYYMMDD` 预发布 → hotfix 走 patch。Go `@latest` 只解析 weekly/hotfix，**基线维护以 weekly/hotfix 为准，不跟 nightly**。同时 GA 明确：**Linux 默认 GTK4 + WebKitGTK 6.0**，GTK3 仅保留到 v3.1（Wails.Net 已用 `GirCore.Gtk-4.0` / `GirCore.WebKit-6.0`，`Directory.Packages.props` 第 44–47 行，方向一致，无迁移负担）。
 
@@ -969,13 +958,13 @@ Wails.Net `HelperProcess.cs` 对齐：
 
 | 文件 | 变更 |
 |------|------|
-| `AGENTS.md` | §1 参考版本 → `v3.0.0`；§1 对比基线 → Tauri `2.12.5`；§1.1.1 参考基线新增周更节奏说明；§8 源码链接 → `tree/v3.0.0`；文末日期 |
-| `docs/development/wails-v3-beta-comparison.md` | 顶部基线声明、§1 版本现状、§7 Tauri 2.12.x 基线、§9.14.1 结论作废批注、新增 §11 |
-| `docs/README.md` | Wails v3 源码 tag、Tauri 版本 |
+| `AGENTS.md` | §1 参考版本 → `v3.0.0`；§1.1.1 参考基线新增周更节奏说明；§8 源码链接 → `tree/v3.0.0`；文末日期 |
+| `docs/development/wails-v3-beta-comparison.md` | 顶部基线声明、§1 版本现状、§7 上游基线确认、§9.14.1 结论作废批注、新增 §11 |
+| `docs/README.md` | Wails v3 源码 tag、版本基线 |
 | `docs/development/contributing.md` | Wails v3 源码链接 |
-| `docs/development/plugin-packaging.md`、`project-structure-and-modes.md` | 参考版本由 beta.4 更新为 v3.0.0（Tauri 2.12.5） |
-| `docs/architecture/benchmark-audit-and-unified-sdk-plan.md`、`platform-abstraction.md` | 对标基线 / 参考版本更新为 v3.0.0（Tauri 2.12.5） |
-| `docs/comparison-with-tauri2-wails3.md`、`docs/fusion-strategy-comparison.md` | 文档头版本声明更新 |
+| `docs/development/plugin-packaging.md`、`project-structure-and-modes.md` | 参考版本由 beta.4 更新为 v3.1.0 |
+| `docs/architecture/benchmark-audit-and-unified-sdk-plan.md`、`platform-abstraction.md` | 对标基线 / 参考版本更新为 v3.1.0 |
+| `docs/comparison-with-wails-v3.md`、`docs/fusion-strategy-comparison.md` | 文档头版本声明更新 |
 
 > 历史文档（`docs/ADR/0001-technology-selection.md` 的 alpha.102 决策上下文、`docs/architecture/refactor-and-hardening-plan.md` 的 2026-08-16 beta.4 审计）保留原始版本号，作为当时决策/审计记录，不回写。
 
@@ -1238,7 +1227,7 @@ Wails.Net `HelperProcess.cs` 对齐：
   - 2026-11-04 追加（macOS DIP + 审查修复）：`MacDipCoordinatesTests` 37/37（`Wails.Net.Application.MacOS.Tests` 全量 56/56）、`TrayIconRebuildSchedulerTests` 6/6、`PlatformMessageWindowTests` 2 通过 2 跳过（GUI 用例）。
   - 2026-11-05 追加（tar.gz 权限位）：`Wails.Net.Cli` 构建 0 警告 0 错误；`PackagerTests` 定向 40 项 — 通过 39、跳过 1（`PackageAsync_TarGz_PreservesExecutableBitOfSecondaryScript`，仅 Unix 主机运行）。
   - 2026-11-07 追加（Linux 窗口状态/IPC 上游对齐）：`Wails.Net.Application.Linux`、`Wails.Net.Application.Linux.Tests` 构建 0 警告 0 错误；`LinuxWebviewWindowStateEventsTests` 7/7、`LinuxWebviewWindowPositionTests` 5/5 通过（Windows 主机纯逻辑，无需 GTK）；窗口实际状态切换、X11 多屏居中/置顶、`setHTML` 页面 IPC 仍需 Linux 实机（实机清单 L2/L4）确认。
-- **全量构建（2026-11-04，非 Android）**：89 个非 Android 项目（`src/` + `tests/`，排除 `Templates/content`）**全部编译通过**（0 错误、3 条既有 `MSB3277` WebView2/WindowsBase 版本冲突告警）。此前唯一失败项 `Wails.Net.Plugins.Mobile.Tests`（`CS0246: MobilePlugin`）已修复并纳入全量：`MobilePlugin` 并非本仓库应有的聚合类型（`Plugins.Mobile` 按 Tauri v2 拆为 7 个独立插件，与仓库其余 46 个插件的组织形式一致），属**测试过时**，测试已重写为逐插件校验。Android 4 个项目（`Application.Android`、`Bundle.Android`、`Application.Android.Tests`、`Demo.Android`）因本机未安装 `android` 工作负载报 `NETSDK1147`，按既有约定跳过。
+- **全量构建（2026-11-04，非 Android）**：89 个非 Android 项目（`src/` + `tests/`，排除 `Templates/content`）**全部编译通过**（0 错误、3 条既有 `MSB3277` WebView2/WindowsBase 版本冲突告警）。此前唯一失败项 `Wails.Net.Plugins.Mobile.Tests`（`CS0246: MobilePlugin`）已修复并纳入全量：`MobilePlugin` 并非本仓库应有的聚合类型（`Plugins.Mobile` 按平台拆为 7 个独立插件，与仓库其余 46 个插件的组织形式一致），属**测试过时**，测试已重写为逐插件校验。Android 4 个项目（`Application.Android`、`Bundle.Android`、`Application.Android.Tests`、`Demo.Android`）因本机未安装 `android` 工作负载报 `NETSDK1147`，按既有约定跳过。
 - **全量单元测试（2026-11-04，Windows 主机，GUI 默认跳过；含 Mobile 修复后复测）**：32 个测试项目、共 **3385 项**，通过 **3139**、失败 **0**、跳过 **246** —— **全绿**。
   - 与上次复测（31 个项目 / 3380 项 / 通过 3134 / 失败 0 / 跳过 246）对比：项目 +1、总数 +5、通过 +5、失败与跳过不变；增量全部来自 `Wails.Net.Plugins.Mobile.Tests`（重写后的 5 项用例，此前因编译失败未计入）。
   - 与修复前基线（3380 项 / 通过 3129 / 失败 7 / 跳过 244）对比：总数 +5（`Mobile` 5 项用例首次计入），通过 +10（7 项原有失败中 5 项转为通过 + Mobile 新增 5 项），跳过 +2（Linux 平台工厂 2 项改为 `LinuxOnlyAttribute` 跳过），失败 −7（清零）；7 项原有失败全部消除且无回归。
@@ -1263,7 +1252,7 @@ Wails.Net `HelperProcess.cs` 对齐：
 
 ## 13. 2026-11-12 基线复核与 v3.2.0-nightly P2 补齐
 
-> 复核日期：2026-11-12（Asia/Shanghai）。取证通道：GitHub Releases/Tags/Commits API（`wailsapp/wails`、`tauri-apps/tauri`）+ npm registry（`@wailsio/runtime`、`@tauri-apps/api`）+ 上游 PR #6502 patch + 本仓库 `src/`/`tests/` 代码与测试实跑。
+> 复核日期：2026-11-12（Asia/Shanghai）。取证通道：GitHub Releases/Tags/Commits API（`wailsapp/wails`）+ npm registry（`@wailsio/runtime`）+ 上游 PR #6502 patch + 本仓库 `src/`/`tests/` 代码与测试实跑。
 > 本轮性质：**基线复核（结论：不变）+ 上一轮报告遗留项的实现补齐**，不涉及新的上游变更同步。
 
 ### 13.1 版本复核（2026-11-12）
@@ -1275,13 +1264,10 @@ Wails.Net `HelperProcess.cs` 对齐：
 | Wails 最新 nightly | **`v3.2.0-nightly.20261103`** | 2026-11-03 15:21:58 | 预发布，不作基线；**2026-11-03 之后无新 nightly** |
 | 上游 master（2026-11-04 → 11-10） | 7 个提交 | — | 全部为 `chore`（sponsor/contributor 图片、star history），**无生产代码变更** |
 | npm `@wailsio/runtime` | `latest` = `3.1.0`；`nightly` = `3.2.0-nightly.20261103` | 2026-11-01 / 11-03 | 与正式版/nightly 一致 |
-| Tauri v2（对比基线） | **`tauri-v2.12.5`**；npm `@tauri-apps/api` = `2.12.4` | 2026-10-21 | 无变化，基线保持 |
-| Tauri v3（预览，不作基线） | **`tauri-v3.0.0-alpha.6`**（另有 `tauri-runtime-wry`/`tauri-bundler`/`@tauri-apps/cli` alpha.5–.7） | 2026-11-06 | 已从"仅 CLI-CEF 预览"进入**核心全量 alpha**，仍属预览阶段，不作参考 |
 
 **结论**：
 1. **Wails 基线不变**（`v3.1.0`），本轮**没有**新增需要同步的上游代码变更；2026-11-07 报告 §5 的"零代码改动批次"判断在 11-12 复核中依然成立。
-2. **Tauri 对比基线不变**（v2 GA `2.12.5`）；同时修正 AGENTS.md 与本文档 §3 中"Tauri 3 仅有 CLI-CEF alpha 预览"的旧表述——Tauri 3 已有 `3.0.0-alpha.6` 核心 alpha（2026-11-06），但仍不作基线。
-3. 因此"补充实现"落在 2026-11-07 报告 §5 遗留的 **2 项 P2**（图标句柄生命周期、`DisableIcon` 选项），本轮全部补齐。
+2. 因此"补充实现"落在 2026-11-07 报告 §5 遗留的 **2 项 P2**（图标句柄生命周期、`DisableIcon` 选项），本轮全部补齐。
 
 ### 13.2 差异清单（本轮补齐项）
 
@@ -1318,7 +1304,7 @@ Wails.Net `HelperProcess.cs` 对齐：
 
 ### 13.5 基线维护结论
 
-- 当前基线：**`v3.1.0`**（weekly，不含 nightly）；对比基线：**Tauri v2 GA `2.12.5`**。
+- 当前基线：**`v3.1.0`**（weekly，不含 nightly）
 - 2026-11-12 复核：上游最新正式版仍为 `v3.1.0`，无 `v3.1.x` hotfix、无新 nightly，master 自 2026-11-04 起仅维护性提交 → **基线不变**。
 - 下一轮触发条件：`v3.2.0` 正式版发布后，按 2026-11-07《`v3.2.0-nightly.20261103` 上游变更梳理报告》§3 表逐条复评，重点确认 `#6502` 的图标生命周期与 `#6314` 的托盘刷新是否在正式版中被进一步修改；本轮已把 `#6502` 的 P2 两项落地，届时只需比对差异。
 

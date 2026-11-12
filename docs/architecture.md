@@ -4,7 +4,7 @@
 
 ## 架构概览
 
-Wails.Net 采用**分层架构**，借鉴 ASP.NET Core 的 Generic Host 模式，融合 Wails v3 的窗口/IPC 对象模型和 Tauri v2 的插件/权限设计。
+Wails.Net 采用**分层架构**，借鉴 ASP.NET Core 的 Generic Host 模式，融合 Wails v3 的窗口/IPC 对象模型，插件/权限模型为本项目自研设计。
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -159,7 +159,7 @@ DispatchAsync(request)
 
 ### 6. 插件框架
 
-借鉴 Tauri v2 的插件设计：
+采用「核心即插件」的插件化设计：
 
 ```csharp
 public interface IPlugin
@@ -233,7 +233,7 @@ HTTP 请求 (http://wails.localhost/*)
 
 ### 9. 安全与权限
 
-借鉴 Tauri v2 的权限模型：
+采用自研的三层 ACL 权限模型：
 
 - **CSP** (`CspOptions`) - 内容安全策略
 - **URL 白名单** (`UrlWhitelist`) - 允许的外部链接

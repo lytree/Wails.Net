@@ -1,57 +1,56 @@
 # 项目结构与调试/发布模式
 
-> 本文档参照 **Tauri v2** 和 **Wails v3 (Go)** 的项目组织方式，介绍 Wails.Net 桌面应用的前后端项目分布、
+> 本文档参照 **Wails v3 (Go)** 的项目组织方式，介绍 Wails.Net 桌面应用的前后端项目分布、
 > 调试模式（`wails dev`）与发布模式（`wails build` / `wails publish` / `wails pack`）。
 >
 > - **更新日期**：2026-08-03
 > - **适用版本**：Wails.Net `0.1.0-alpha.1` 及以上
 > - **参考实现**：
 >   - Wails v3 `v3.0.0` 源码（`internal/project/project.go`、`cmd/wails3/dev.go`、`cmd/wails3/build.go`；写作时参考 `v3.0.0-beta.4`）
->   - Tauri v2 GA `2.12.5` CLI（`tauri dev` / `tauri build`）
 
 ---
 
 ## 目录
 
-1. [与 Tauri v2 / Wails v3 的结构对照](#1-与-tauri-v2--wails-v3-的结构对照)
+1. [与 Wails v3 的结构对照](#1-与-wails-v3-的结构对照)
 2. [前后端项目分布（约定布局）](#2-前后端项目分布约定布局)
 3. [Debug 模式（开发与热更新）](#3-debug-模式开发与热更新)
 4. [Release 模式（构建与分发）](#4-release-模式构建与分发)
 5. [完整文件清单与职责说明](#5-完整文件清单与职责说明)
 6. [CLI 命令速查](#6-cli-命令速查)
 7. [典型工作流示例](#7-典型工作流示例)
-8. [与 Tauri / Wails 差异与决策](#8-与-tauri--wails-差异与决策)
+8. [与 Wails v3 差异与决策](#8-与-wails-v3-差异与决策)
 
 ---
 
-## 1. 与 Tauri v2 / Wails v3 的结构对照
+## 1. 与 Wails v3 的结构对照
 
 Wails.Net 的项目布局与 Wails v3 保持**完全一致**（因为本项目是 Wails v3 的 .NET 10 移植实现），
-并参考 Tauri v2 的 `tauri.conf.json` 风格扩展 `wails.json` 的 `bundle` 字段。
+并在 `wails.json` 中以 `bundle` 字段承载打包配置。
 
-| 维度 | Tauri v2 | Wails v3 (Go) | **Wails.Net** |
-|------|----------|---------------|---------------|
-| 项目根 | `my-app/` | `my-app/` | `my-app/` |
-| 前端源码 | `src/` | `frontend/` | **`frontend/`**（与 Wails v3 一致） |
-| 前端构建产物 | `dist/`（Vite 默认） | `frontend/dist/`（嵌入到二进制） | **`frontend/dist/`**（嵌入到二进制） |
-| 后端源码 | `src-tauri/src/` | 根目录（`main.go` / `app.go`） | **根目录**（`Program.cs` / `*.csproj`） |
-| 后端构建产物 | `src-tauri/target/release/` | `build/bin/` | **`bin/Release/{tfm}/`** |
-| 项目元信息 | `package.json` + `tauri.conf.json` | `package.json` + `wails.json` | **`package.json`（根 + 前端）** + **`wails.json`** |
-| .NET 配置 | 无（Rust 用 `Cargo.toml`） | 无（Go 用 `go.mod`） | **`appsettings.json`**（继承 ASP.NET Core 风格） |
-| 图标 / 资源 | `src-tauri/icons/` | `build/` | **`build/`**（与 Wails v3 一致） |
-| F5 调试 | VSCode `launch.json` | GoLand Run Config | **`Properties/launchSettings.json`**（继承 .NET 惯例） |
-| Windows 清单 | `src-tauri/tauri.conf.json` 内嵌 | — | **`app.manifest`**（继承 .NET 惯例） |
-| 开发模式命令 | `tauri dev` | `wails dev` | **`wails dev`** |
-| 发布模式命令 | `tauri build` | `wails build` | **`wails build`** |
-| 全平台构建 | `tauri build --target universal` | `wails build -platform all` | **`wails build --all-platforms`** |
-| DevTools 自动打开 | ❌（手动 F12） | ✅ | ✅（`wails dev --open-devtools`） |
-| 前端开发服务器 | `vite dev` | `vite dev` | **`vite dev`**（自动检测 pnpm/npm） |
+| 维度 | Wails v3 (Go) | **Wails.Net** |
+|------|---------------|---------------|
+| 项目根 | `my-app/` | `my-app/` |
+| 前端源码 | `frontend/` | **`frontend/`**（与 Wails v3 一致） |
+| 前端构建产物 | `frontend/dist/`（嵌入到二进制） | **`frontend/dist/`**（嵌入到二进制） |
+| 后端源码 | 根目录（`main.go` / `app.go`） | **根目录**（`Program.cs` / `*.csproj`） |
+| 后端构建产物 | `build/bin/` | **`bin/Release/{tfm}/`** |
+| 项目元信息 | `package.json` + `wails.json` | **`package.json`（根 + 前端）** + **`wails.json`** |
+| .NET 配置 | 无（Go 用 `go.mod`） | **`appsettings.json`**（继承 ASP.NET Core 风格） |
+| 图标 / 资源 | `build/` | **`build/`**（与 Wails v3 一致） |
+| F5 调试 | GoLand Run Config | **`Properties/launchSettings.json`**（继承 .NET 惯例） |
+| Windows 清单 | — | **`app.manifest`**（继承 .NET 惯例） |
+| 开发模式命令 | `wails dev` | **`wails dev`** |
+| 发布模式命令 | `wails build` | **`wails build`** |
+| 全平台构建 | `wails build -platform all` | **`wails build --all-platforms`** |
+| DevTools 自动打开 | ✅ | ✅（`wails dev --open-devtools`） |
+| 前端开发服务器 | `vite dev` | **`vite dev`**（自动检测 pnpm/npm） |
 
 **关键决策**：
-- Wails.Net 沿用 Wails v3 的 **`frontend/` 目录**而非 Tauri 的 `src-tauri/` 风格，因为：
+- Wails.Net 沿用 Wails v3 的 **`frontend/` 目录**，因为：
   1. 本项目是 Wails v3 的 .NET 移植，结构与 Wails v3 保持一致便于 Go ↔ C# 双向对照
   2. 前后端都在项目根，IDE（F5 / Run）体验与 .NET 习惯一致
-  3. 前端 `dist/` 嵌入与 Tauri/Wails 一致，平台实现无需修改
+  3. 前端 `dist/` 嵌入方式与上游一致，平台实现无需修改
 - 增加 **`Properties/launchSettings.json`**：.NET 开发者习惯的 F5 调试入口（继承 ASP.NET Core 风格）
 
 ---
@@ -177,18 +176,18 @@ dotnet watch --project examples/Wails.Net.Demo.React/Wails.Net.Demo.React.csproj
 
 ### 3.3 Debug 模式行为
 
-| 行为 | Tauri v2 | Wails v3 | **Wails.Net** |
-|------|----------|----------|---------------|
-| 启动前端 dev server | ✅ 自动 | ✅ 自动 | ✅ 自动（`vite dev`，pnpm/npm 自动检测） |
-| 启动后端进程 | ✅ `cargo run` | ✅ `go run` | ✅ `dotnet watch` |
-| 前端变更 → HMR | ✅ Vite | ✅ Vite | ✅ Vite |
-| 后端 C# 变更 → 重启 | ❌ 需手动 | ❌ 需手动 | ✅ `dotnet watch` 热重启 |
-| CSS 实时注入（不刷新页） | ❌ | ✅ Live Reload | ✅ 通过 Vite HMR |
-| DevTools 自动打开 | ❌ | ✅ 默认 | ✅ `--open-devtools` 显式 |
-| 自定义钩子（`beforeDevCommand`） | ✅ `beforeDevCommand` | ✅ | ✅ |
-| 自定义钩子（`afterDevCommand`） | ✅ | ✅ | ✅ |
-| Ctrl+C 优雅退出 | ✅ | ✅ | ✅（同时关闭 vite + dotnet watch） |
-| 端口自动分配（防冲突） | ✅ | ✅ | ✅（vite 自动挑选可用端口） |
+| 行为 | Wails v3 | **Wails.Net** |
+|------|----------|---------------|
+| 启动前端 dev server | ✅ 自动 | ✅ 自动（`vite dev`，pnpm/npm 自动检测） |
+| 启动后端进程 | ✅ `go run` | ✅ `dotnet watch` |
+| 前端变更 → HMR | ✅ Vite | ✅ Vite |
+| 后端 C# 变更 → 重启 | ❌ 需手动 | ✅ `dotnet watch` 热重启 |
+| CSS 实时注入（不刷新页） | ✅ Live Reload | ✅ 通过 Vite HMR |
+| DevTools 自动打开 | ✅ 默认 | ✅ `--open-devtools` 显式 |
+| 自定义钩子（`beforeDevCommand`） | ✅ | ✅ |
+| 自定义钩子（`afterDevCommand`） | ✅ | ✅ |
+| Ctrl+C 优雅退出 | ✅ | ✅（同时关闭 vite + dotnet watch） |
+| 端口自动分配（防冲突） | ✅ | ✅（vite 自动挑选可用端口） |
 
 ### 3.4 wails.json 中的 dev 配置
 
@@ -281,16 +280,16 @@ dotnet watch --project examples/Wails.Net.Demo.React/Wails.Net.Demo.React.csproj
 
 ### 4.3 Release 模式行为
 
-| 行为 | Tauri v2 | Wails v3 | **Wails.Net** |
-|------|----------|----------|---------------|
-| 前端构建 | ✅ `pnpm build` | ✅ `pnpm build` | ✅ `pnpm build`（`frontend.buildCommand`） |
-| 前端嵌入 | ✅ `tauri-build` + `include_dir` | ✅ `//go:embed all:frontend/dist` | ✅ 源生成器（`Microsoft.Extensions.FileProviders.Embedded`） |
-| 后端构建 | ✅ `cargo build --release` | ✅ `go build` | ✅ `dotnet build -c Release` |
-| 自包含发布 | ✅ `--no-bundle` 关闭打包 | ❌ | ✅ `--self-contained` |
-| 全平台构建 | ✅ `--target universal` | ✅ `-platform all` | ✅ `--all-platforms` |
-| 平台分发包 | msi / dmg / deb / rpm / appimage | 同 Tauri | msi / deb / rpm / appimage / apk |
-| 代码签名 | ✅ `tauri sign` | ❌ | ✅ `wails signer` + `wails pack` 集成 |
-| CSP（生产） | ✅ `tauri.conf.json` | ✅ `wails.json` | ✅ `wails.json` `security.csp` |
+| 行为 | Wails v3 | **Wails.Net** |
+|------|----------|---------------|
+| 前端构建 | ✅ `pnpm build` | ✅ `pnpm build`（`frontend.buildCommand`） |
+| 前端嵌入 | ✅ `//go:embed all:frontend/dist` | ✅ 源生成器（`Microsoft.Extensions.FileProviders.Embedded`） |
+| 后端构建 | ✅ `go build` | ✅ `dotnet build -c Release` |
+| 自包含发布 | ❌ | ✅ `--self-contained` |
+| 全平台构建 | ✅ `-platform all` | ✅ `--all-platforms` |
+| 平台分发包 | msi / dmg / deb / rpm / appimage | msi / deb / rpm / appimage / apk |
+| 代码签名 | ❌ | ✅ `wails signer` + `wails pack` 集成 |
+| CSP（生产） | ✅ `wails.json` | ✅ `wails.json` `security.csp` |
 
 ### 4.4 wails.json 中的 build 配置
 
@@ -556,36 +555,36 @@ jobs:
 
 ---
 
-## 8. 与 Tauri / Wails 差异与决策
+## 8. 与 Wails v3 差异与决策
 
 ### 8.1 结构差异
 
-| 差异点 | Tauri v2 | Wails v3 | Wails.Net 决策 |
-|--------|----------|----------|----------------|
-| 后端目录 | `src-tauri/`（独立 Rust crate） | 根目录 | **根目录**（与 Wails v3 一致） |
-| 配置文件 | `tauri.conf.json` | `wails.json` | **`wails.json`**（融合 Tauri 的 `bundle` 字段） |
-| 前端目录 | `src/` 或任意 | `frontend/` | **`frontend/`**（与 Wails v3 一致） |
-| .NET 配置文件 | N/A | N/A | **`appsettings.json`**（继承 ASP.NET Core） |
-| F5 调试 | VSCode `launch.json` | GoLand Run Config | **`Properties/launchSettings.json`**（继承 .NET） |
+| 差异点 | Wails v3 | Wails.Net 决策 |
+|--------|----------|----------------|
+| 后端目录 | 根目录 | **根目录**（与 Wails v3 一致） |
+| 配置文件 | `wails.json` | **`wails.json`**（扩展 `bundle` 字段） |
+| 前端目录 | `frontend/` | **`frontend/`**（与 Wails v3 一致） |
+| .NET 配置文件 | N/A | **`appsettings.json`**（继承 ASP.NET Core） |
+| F5 调试 | GoLand Run Config | **`Properties/launchSettings.json`**（继承 .NET） |
 
 ### 8.2 行为差异
 
-| 差异点 | Tauri v2 | Wails v3 | Wails.Net |
-|--------|----------|----------|-----------|
-| 绑定调用 | Rust 宏展开（零反射） | 反射 | **源生成器**（零反射，AOT 友好） |
-| 平台抽象 | `tauri::Manager` trait | 接口 + Manager 模式 | **接口 + Manager 模式**（与 Wails v3 一致） |
-| 移动端 | iOS + Android | iOS + Android | **仅 Android**（iOS 暂不实现，参见 ADR-0004） |
-| DevTools | 手动 F12 | 自动打开 | **`--open-devtools` 显式**（避免开发时频繁弹出） |
-| 钩子 | `beforeDevCommand` | 同 | **同**（与 Wails v3 一致） |
+| 差异点 | Wails v3 | Wails.Net |
+|--------|----------|-----------|
+| 绑定调用 | 反射 | **源生成器**（零反射，AOT 友好） |
+| 平台抽象 | 接口 + Manager 模式 | **接口 + Manager 模式**（与 Wails v3 一致） |
+| 移动端 | iOS + Android | **仅 Android**（iOS 暂不实现，参见 ADR-0004） |
+| DevTools | 自动打开 | **`--open-devtools` 显式**（避免开发时频繁弹出） |
+| 钩子 | 同 | **同**（与 Wails v3 一致） |
 
 ### 8.3 主要决策记录
 
 | 决策 | 理由 |
 |------|------|
-| 沿用 Wails v3 的 `frontend/` 目录而非 Tauri 的 `src/` | 保持与 Go 版本的兼容性；Go ↔ C# 双向对照方便 |
-| 沿用 Wails v3 的项目根布局而非 Tauri 的 `src-tauri/` | .NET 开发者习惯在根目录运行 `dotnet run` |
+| 沿用 Wails v3 的 `frontend/` 目录 | 保持与 Go 版本的兼容性；Go ↔ C# 双向对照方便 |
+| 沿用 Wails v3 的项目根布局 | .NET 开发者习惯在根目录运行 `dotnet run` |
 | 增加 `Properties/launchSettings.json` | .NET 开发者习惯的 F5 调试入口；IDE 集成度高 |
-| 沿用 Wails v3 的 `wails.json` 而非 Tauri 的 `tauri.conf.json` | 字段命名与 Wails v3 一致；前端迁移成本低 |
+| 沿用 Wails v3 的 `wails.json` | 字段命名与 Wails v3 一致；前端迁移成本低 |
 | 增加 `appsettings.json` | 继承 ASP.NET Core 配置体系，与 Generic Host 集成 |
 | 沿用 Wails v3 的 `build/` 图标目录 | 与 Wails v3 工具链（`wails icon`）兼容 |
 

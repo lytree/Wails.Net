@@ -2,9 +2,9 @@
 
 ## 1. 概述
 
-`Wails.Net.Cli` 是 Wails.Net 项目（阶段 7）的命令行工具链，对应 Wails v3 Go 版本的 `cmd/wails3` 入口。它基于 [`System.CommandLine` 2.0.15](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Wails.Net.Cli.csproj)（项目约束中**禁止**使用 `McMaster.Extensions.CommandLineUtils`），为开发者提供从项目脚手架、绑定生成、构建发布到打包分发的一站式能力。
+`Wails.Net.Cli` 是 Wails.Net 项目（阶段 7）的命令行工具链，对应 Wails v3 Go 版本的 `cmd/wails3` 入口。它基于 [`System.CommandLine` 2.0.15](../../src/Wails.Net.Cli/Wails.Net.Cli.csproj)（项目约束中**禁止**使用 `McMaster.Extensions.CommandLineUtils`），为开发者提供从项目脚手架、绑定生成、构建发布到打包分发的一站式能力。
 
-CLI 通过 [`PackAsTool=true`](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Wails.Net.Cli.csproj) 打包为 .NET 全局工具，工具命令名为 `wails.net`。安装后即可在任意目录调用：
+CLI 通过 [`PackAsTool=true`](../../src/Wails.Net.Cli/Wails.Net.Cli.csproj) 打包为 .NET 全局工具，工具命令名为 `wails.net`。安装后即可在任意目录调用：
 
 ```bash
 dotnet tool install --global Wails.Net.Cli
@@ -17,7 +17,7 @@ CLI 项目引用了三个核心程序集：`Wails.Net.Generator`（绑定生成�
 
 ### 2.1 入口与命令树
 
-入口点位于 [Program.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Program.cs)，对应 Go 版 `cmd/wails3/main.go`。其 `Main` 方法仅做三件事：构建根命令、解析参数、异步调用：
+入口点位于 [Program.cs](../../src/Wails.Net.Cli/Program.cs)，对应 Go 版 `cmd/wails3/main.go`。其 `Main` 方法仅做三件事：构建根命令、解析参数、异步调用：
 
 ```csharp
 public static async Task<int> Main(string[] args)
@@ -37,7 +37,7 @@ public static async Task<int> Main(string[] args)
 
 ### 2.2 CliCommandBase 基类
 
-[CliCommandBase](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Commands/CliCommandBase.cs) 是所有命令的抽象基类，仅提供受控的控制台输出辅助方法，不持有状态：
+[CliCommandBase](../../src/Wails.Net.Cli/Commands/CliCommandBase.cs) 是所有命令的抽象基类，仅提供受控的控制台输出辅助方法，不持有状态：
 
 | 方法 | 输出流 | 颜色 | 用途 |
 |------|--------|------|------|
@@ -59,9 +59,9 @@ public static async Task<int> Main(string[] args)
 
 ## 3. 命令清单
 
-下表汇总了 [Program.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Program.cs) 中注册的全部命令（本文重点详述前 8 个核心命令）：
+下表汇总了 [Program.cs](../../src/Wails.Net.Cli/Program.cs) 中注册的全部命令（本文重点详述前 8 个核心命令）：
 
-| 命令 | 对应类 | 功能 | 对应 Go 版 / Tauri 对标 |
+| 命令 | 对应类 | 功能 | 对应 Go 版 |
 |------|--------|------|-----------|
 | `new` | `NewCommand` | 项目脚手架 | `cmd_new.go` |
 | `build` | `BuildCommand` | 编译项目 | `build.go` |
@@ -70,9 +70,9 @@ public static async Task<int> Main(string[] args)
 | `pack` | `PackCommand` | 打包分发 | `package.go` |
 | `publish` | `PublishCommand` | 发布可分发产物 | `build.go`（发布部分） |
 | `doctor` | `DoctorCommand` | 环境诊断 | `internal/doctor/doctor.go` |
-| `version` | `VersionCommand` | 显示版本信息 | Tauri `tauri version` |
+| `version` | `VersionCommand` | 显示版本信息 | — |
 | `plugin`（add/remove/list/build/publish） | `PluginCommand` | 插件引用管理 + 插件双包构建发布 | — |
-| `capability`（generate/validate/init） | `CapabilityCommand` | Capability JSON 自动生成与校验（R3-D.B/C） | Tauri `tauri capability` |
+| `capability`（generate/validate/init） | `CapabilityCommand` | Capability JSON 自动生成与校验（R3-D.B/C） | — |
 | `clean`/`info`/`icon`/`signer`/`platform`/`self-update` | — | 辅助命令 | — |
 
 ### 3.1 plugin build / plugin publish — 插件双包构建与发布
@@ -118,16 +118,16 @@ wails.net plugin publish --plugin updater --skip-build       # 直接发布已�
 
 ### 3.2 capability generate / capability validate — Capability JSON 生成与校验（R3-D.B/C）
 
-[CapabilityCommand](../../src/Wails.Net.Cli/Commands/CapabilityCommand.cs) 提供 capability 子命令，对应 Tauri v2 的 `tauri capability` 工具链。
+[CapabilityCommand](../../src/Wails.Net.Cli/Commands/CapabilityCommand.cs) 提供 capability 子命令，覆盖能力文件的生成、校验与初始化。
 在 R3-E 起库默认 `Mode=Strict` 后，capability JSON 是应用声明命令所需能力的唯一载体。
 
 **子命令**：
 
-| 子命令 | 功能 | 对应 Tauri 命令 |
+| 子命令 | 功能 | 说明 |
 |--------|------|----------------|
-| `capability generate` | 基于已注册插件清单（`<plugin>:default` 权限集）自动产出 `capabilities/default.json` | `tauri capability generate` |
-| `capability validate` | 检查项目内所有 capability JSON 的 schema 合法性与权限交叉引用 | `tauri capability validate` |
-| `capability init <plugin>` | 为指定插件生成最小可用的 capability JSON 模板 | （Tauri 无直接对标） |
+| `capability generate` | 基于已注册插件清单（`<plugin>:default` 权限集）自动产出 `capabilities/default.json` | 自动生成默认能力文件 |
+| `capability validate` | 检查项目内所有 capability JSON 的 schema 合法性与权限交叉引用 | 校验 schema 与权限引用 |
+| `capability init <plugin>` | 为指定插件生成最小可用的 capability JSON 模板 | 生成最小可用模板 |
 
 **用法**：
 
@@ -170,7 +170,7 @@ wails.net capability init filesystem --out capabilities/filesystem.json
 
 - `DefaultCapabilityGenerator`（[src/Wails.Net.Application/Security/DefaultCapabilityGenerator.cs](../../src/Wails.Net.Application/Security/DefaultCapabilityGenerator.cs)）：
   读取 `PluginPermissionManifestRegistry` 的所有插件清单，聚合每个插件的 `<plugin>:default` 权限集，
-  输出符合 Tauri v2 capability schema 的 JSON 文件（含 `identifier` / `description` / `windows` / `permissions` / `platforms` 等字段）。
+  输出符合 capability JSON Schema 的 JSON 文件（含 `identifier` / `description` / `windows` / `permissions` / `platforms` 等字段）。
 - `CapabilityManifestValidator`（[src/Wails.Net.Application/Security/CapabilityManifestValidator.cs](../../src/Wails.Net.Application/Security/CapabilityManifestValidator.cs)）：
   校验 JSON schema + 权限标识交叉引用（声明的权限必须在已注册插件清单中存在）。
 
@@ -178,7 +178,7 @@ wails.net capability init filesystem --out capabilities/filesystem.json
 
 ## 4. new 命令 — 项目脚手架
 
-[NewCommand](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Commands/NewCommand.cs) 负责创建新的 Wails.Net 项目，对应 Go 版 `cmd_new.go`。
+[NewCommand](../../src/Wails.Net.Cli/Commands/NewCommand.cs) 负责创建新的 Wails.Net 项目，对应 Go 版 `cmd_new.go`。
 
 **参数与选项**：
 
@@ -205,7 +205,7 @@ wails.net new MyApp --template react-ts --directory D:\Projects
 
 ### 4.1 ProjectScaffolder 模板系统
 
-[ProjectScaffolder](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Scaffolding/ProjectScaffolder.cs) 对应 Go 版 `internal/project/project.go`，内置 4 个前端模板：
+[ProjectScaffolder](../../src/Wails.Net.Cli/Scaffolding/ProjectScaffolder.cs) 对应 Go 版 `internal/project/project.go`，内置 4 个前端模板：
 
 ```csharp
 private static readonly string[] SupportedTemplates =
@@ -241,7 +241,7 @@ frontend/
 
 ## 5. build 命令 — 项目构建
 
-[BuildCommand](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Commands/BuildCommand.cs) 编译 Wails.Net 项目，对应 Go 版 `build.go`。
+[BuildCommand](../../src/Wails.Net.Cli/Commands/BuildCommand.cs) 编译 Wails.Net 项目，对应 Go 版 `build.go`。
 
 **选项**：
 
@@ -264,7 +264,7 @@ wails.net build --runtime win-x64 --self-contained
 
 ### 5.1 ProjectBuilder
 
-[ProjectBuilder](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Build/ProjectBuilder.cs) 封装 `dotnet build`/`dotnet publish` 子进程调用。`BuildAsync` 拼接参数列表（`build`、`project.FullName`、`-c`、`-r`、`--self-contained`），通过 `RunDotnetAsync` 启动 `dotnet` 进程并捕获 stdout/stderr。
+[ProjectBuilder](../../src/Wails.Net.Cli/Build/ProjectBuilder.cs) 封装 `dotnet build`/`dotnet publish` 子进程调用。`BuildAsync` 拼接参数列表（`build`、`project.FullName`、`-c`、`-r`、`--self-contained`），通过 `RunDotnetAsync` 启动 `dotnet` 进程并捕获 stdout/stderr。
 
 关键设计：**输出目录解析不硬编码 TFM**。`ParseOutputDirectory` 从 `dotnet build` 输出中查找 ` -> ` 箭头后的路径（如 `MyApp -> /path/to/bin/Release/net10.0/`），无法解析时回退到 `bin/{configuration}`。
 
@@ -277,7 +277,7 @@ var outputDir = ParseOutputDirectory(output)
 
 ## 6. dev 命令 — 开发模式
 
-[DevCommand](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Commands/DevCommand.cs) 启动开发服务器与热更新，对应 Go 版 `dev.go`。**不自行实现文件监视**，而是直接转发到 `dotnet watch`。
+[DevCommand](../../src/Wails.Net.Cli/Commands/DevCommand.cs) 启动开发服务器与热更新，对应 Go 版 `dev.go`。**不自行实现文件监视**，而是直接转发到 `dotnet watch`。
 
 **选项**：
 
@@ -313,7 +313,7 @@ await proc.WaitForExitAsync(cancellationToken);
 
 ## 7. generate 命令 — 绑定生成
 
-[GenerateCommand](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Commands/GenerateCommand.cs) 从 C# 程序集生成 TypeScript 绑定文件，对应 Go 版 `generate.go`，是前后端类型一致性的核心保证。
+[GenerateCommand](../../src/Wails.Net.Cli/Commands/GenerateCommand.cs) 从 C# 程序集生成 TypeScript 绑定文件，对应 Go 版 `generate.go`，是前后端类型一致性的核心保证。
 
 **选项**：
 
@@ -352,7 +352,7 @@ wails.net generate --assembly bin/Release/net10.0/MyApp.dll \
 
 ## 8. pack 命令 — 平台打包
 
-[PackCommand](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Commands/PackCommand.cs) 将项目打包为可分发应用，对应 Go 版 `package.go`，是**两阶段流水线**：先 `dotnet publish`，再调用 `Packager` 压缩/封装。
+[PackCommand](../../src/Wails.Net.Cli/Commands/PackCommand.cs) 将项目打包为可分发应用，对应 Go 版 `package.go`，是**两阶段流水线**：先 `dotnet publish`，再调用 `Packager` 压缩/封装。
 
 **选项**（共 8 个）：
 
@@ -384,7 +384,7 @@ wails.net pack --format appimage --runtime linux-x64 --self-contained
 
 ### 8.1 Packager 打包器
 
-[Packager](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Build/Packager.cs) 支持 4 种格式，输出文件名为 `{AppName}-{Version}{ext}`：
+[Packager](../../src/Wails.Net.Cli/Build/Packager.cs) 支持 4 种格式，输出文件名为 `{AppName}-{Version}{ext}`：
 
 | 格式 | 扩展名 | 实现 | 平台限制 |
 |------|--------|------|---------|
@@ -393,7 +393,7 @@ wails.net pack --format appimage --runtime linux-x64 --self-contained
 | `Nsis` | `.exe` | 生成 `.nsi` 脚本调用 `makensis` | 仅 Windows |
 | `AppImage` | `.AppImage` | 构造 AppDir 调用 `appimagetool` | 仅 Linux |
 
-**tar.gz 实现亮点**：`Packager` **不依赖第三方 tar 库**，自行实现 [POSIX ustar 格式](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Build/Packager.cs)。`CreateTarHeader` 按规范写入 512 字节头部：
+**tar.gz 实现亮点**：`Packager` **不依赖第三方 tar 库**，自行实现 [POSIX ustar 格式](../../src/Wails.Net.Cli/Build/Packager.cs)。`CreateTarHeader` 按规范写入 512 字节头部：
 
 - `name`(0-99)、`mode`(100-107, 八进制 0644=420)、`uid/gid`、`size`(124-135)、`mtime`(136-147, Unix 时间戳)
 - `magic`(257-262) = `"ustar\0"`、`version`(263-264) = `"00"`
@@ -409,7 +409,7 @@ wails.net pack --format appimage --runtime linux-x64 --self-contained
 
 ## 9. publish 命令 — 发布
 
-[PublishCommand](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Commands/PublishCommand.cs) 调用 `dotnet publish` 生成可分发产物，**不进行打包**（与 `pack` 区分）。
+[PublishCommand](../../src/Wails.Net.Cli/Commands/PublishCommand.cs) 调用 `dotnet publish` 生成可分发产物，**不进行打包**（与 `pack` 区分）。
 
 **选项**：`--project`、`--configuration`(默认 `Release`)、`--runtime`、`--self-contained`、`--output`(默认 `bin/Release/publish`)。
 
@@ -421,7 +421,7 @@ wails.net publish --runtime linux-x64 --self-contained -o ./dist
 
 ## 10. doctor 命令 — 环境诊断
 
-[DoctorCommand](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Commands/DoctorCommand.cs) 对应 Go 版 `internal/doctor/doctor.go`，提供跨平台环境自检。
+[DoctorCommand](../../src/Wails.Net.Cli/Commands/DoctorCommand.cs) 对应 Go 版 `internal/doctor/doctor.go`，提供跨平台环境自检。
 
 **无参数**，逐项检查并以 `[OK]`/`[WARN]`/`[FAIL]` 标记输出，退出码 `0`=全通过、`1`=有缺失。
 
@@ -448,7 +448,7 @@ wails.net publish --runtime linux-x64 --self-contained -o ./dist
 
 ## 11. 版本管理 — version 命令
 
-[VersionCommand](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Commands/VersionCommand.cs) 输出 CLI 版本及运行环境信息，对应 Tauri `tauri version`。
+[VersionCommand](../../src/Wails.Net.Cli/Commands/VersionCommand.cs) 输出 CLI 版本及运行环境信息
 
 ```bash
 wails.net version
@@ -506,5 +506,5 @@ internal static string GetCliVersion()
 2. **进程隔离**：`dotnet build`/`publish`/`watch`、`makensis`、`appimagetool`、`reg`、`pkg-config`、`ldconfig` 均通过 `ProcessStartInfo.ArgumentList`（非字符串拼接）启动，杜绝命令注入。
 3. **零外部打包依赖**：tar.gz 手写 ustar 头、PNG 图标内嵌字节数组、NSIS 脚本模板字符串生成，避免引入 `SharpZipLib`/`Tarlib` 等第三方库。
 4. **跨平台分支**：`Packager`/`DoctorCommand` 通过 `OperatingSystem.IsWindows()`/`IsLinux()` 分支，平台不匹配时抛 `PlatformNotSupportedException`。
-5. **测试友好**：CLI 项目通过 `InternalsVisibleTo` 暴露内部类型，关键静态方法（如 `GenerateNsisScript`、`FindMainExecutable`、`IsVersionAtLeast`）标记为 `internal static`，便于 [Wails.Net.Cli.Tests](file:///f:/Code/Dotnet/Wails.Net/tests/Wails.Net.Cli.Tests) 直接验证。
+5. **测试友好**：CLI 项目通过 `InternalsVisibleTo` 暴露内部类型，关键静态方法（如 `GenerateNsisScript`、`FindMainExecutable`、`IsVersionAtLeast`）标记为 `internal static`，便于 [Wails.Net.Cli.Tests](../../tests/Wails.Net.Cli.Tests) 直接验证。
 6. **分层清晰**：CLI 仅作为薄壳编排，业务逻辑下沉到 `ProjectScaffolder`/`ProjectBuilder`/`Packager`/`BindingGenerationPipeline`，符合 AGENTS.md 的"管理器模式"架构原则。

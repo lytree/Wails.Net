@@ -9,7 +9,7 @@
 
 ## 0. TL;DR
 
-1.0.0-alpha.x 起，Wails.Net 库默认采用 **Strict 最小权限姿态**，对齐 Tauri v2 默认行为。
+1.0.0-alpha.x 起，Wails.Net 库默认采用 **Strict 最小权限姿态**，默认采用最小权限姿态。
 未授权命令一律拒绝，需要通过 `capabilities/` 目录下的 JSON 文件显式声明。
 
 如果你的应用在 0.1.x 下默认能跑通且未声明 capability 文件，升级到 1.0.0-alpha.x 后会立即触发"未授权命令拒绝"错误——这是预期行为，请按本文档配套 capability 文件或临时回退到 Compatibility 模式。
@@ -36,7 +36,7 @@ PermissionOptions.EnforceStrictByDefault = true;
 PermissionOptions.CompatibilityByDefault = true;
 ```
 
-新名字直接表达语义：默认是 Strict（对齐 Tauri v2），此标志仅在需要回退时使用。
+新名字直接表达语义：默认是 Strict（最小权限），此标志仅在需要回退时使用。
 
 ### 2.2 重命名：`EnableStrictByDefault()` → `EnableCompatibilityByDefault()`
 
@@ -122,16 +122,16 @@ app.Run();
 | 1.0.0 | GA 正式版（视 RC 测试周期） | 待启动 |
 | 1.x.x 之后 | 1.x 系列持续迭代（插件市场、IDE 插件） | 规划 |
 
-## 5. 与 Tauri v2 默认行为对齐
+## 5. 默认权限姿态说明
 
-| 维度 | Wails.Net 1.0.0-alpha.x | Tauri v2 GA |
-|---|---|---|
-| 默认权限姿态 | Strict | Strict（最小权限） |
-| capability JSON 目录 | `capabilities/` | `capabilities/`（同） |
-| capability 校验时机 | 启动期 + 编译期（`wails-net check`） | 编译期（`tauri-build`） |
-| 默认 deny 未声明权限 | ✓ | ✓ |
-| 窗口级 capability 隔离 | ✓ | ✓ |
-| 远程 URL 模式限制 | ✓ | ✓ |
+| 维度 | Wails.Net 1.0.0-alpha.x |
+|---|---|
+| 默认权限姿态 | Strict（最小权限） |
+| capability JSON 目录 | `capabilities/` |
+| capability 校验时机 | 启动期 + 编译期（`wails-net check`） |
+| 默认 deny 未声明权限 | ✓ |
+| 窗口级 capability 隔离 | ✓ |
+| 远程 URL 模式限制 | ✓ |
 
 ## 6. 后续阶段
 
@@ -156,7 +156,7 @@ Wails.Net 权限系统支持两种模式（`Wails:Permissions:Mode`）：
 | 模式 | 语义 | 适用场景 |
 |---|---|---|
 | `Compatibility`（默认，兼容） | 未授权命令默认放行 | 旧应用迁移期 / 快速原型 |
-| `Strict`（推荐生产） | 未授权命令一律拒绝（最小权限） | 生产应用，对应 Tauri v2 默认姿态 |
+| `Strict`（推荐生产） | 未授权命令一律拒绝（最小权限） | 生产应用，最小权限姿态 |
 
 模板与示例项目自 2026-08-15 起默认生成 `Strict` 配置。已有项目如需升级到
 Strict 模式，请按本文档操作。
@@ -300,7 +300,7 @@ default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src
 
 ## 6. R3-A：命令安全声明强制（2026-08-19 落地）
 
-R3-A 是 R3（Tauri 风格 ACL）的第一阶段基础设施落地，在不破坏现有应用的前提下引入
+R3-A 是 R3（自研 ACL 能力模型）的第一阶段基础设施落地，在不破坏现有应用的前提下引入
 **编译期**与**启动期**两道关卡，为后续默认 Strict 翻转做准备。
 
 ### 6.1 新增的诊断 WNET003
@@ -400,8 +400,8 @@ wails-net check --project MyApp.csproj
 - **R3-D.B/C (2026-08-19)**：wails-net capability 子命令与默认 capability 生成器。
 ## 8. R3-D.B/C：`wails-net capability` 子命令（2026-08-19 落地）
 
-R3-D.B/C 在 R3-D.A 的基础上提供 capability 文件的 CLI 生命周期管理，对标 Tauri v2
-`cargo tauri capability` 体验。
+R3-D.B/C 在 R3-D.A 的基础上提供 capability 文件的 CLI 生命周期管理，提供
+统一的 capability CLI 体验。
 
 ### 8.1 子命令概览
 

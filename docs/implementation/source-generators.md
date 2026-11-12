@@ -30,7 +30,7 @@ Wails.Net 采用**两套互补**的代码生成系统以消除运行时反射、
 
 源生成器项目以 `netstandard2.1` 为目标框架（Roslyn 增量生成器的标准要求），并启用 `IsRoslynComponent` 与 `EnforceExtendedAnalyzerRules`：
 
-参考 [Wails.Net.SourceGenerators.csproj](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.SourceGenerators/Wails.Net.SourceGenerators.csproj)：
+参考 [Wails.Net.SourceGenerators.csproj](../../src/Wails.Net.SourceGenerators/Wails.Net.SourceGenerators.csproj)：
 
 ```xml
 <PropertyGroup>
@@ -55,7 +55,7 @@ namespace System.Runtime.CompilerServices
 
 ### 2.2 IIncrementalGenerator 增量生成器模式
 
-[BindingSourceGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.SourceGenerators/BindingSourceGenerator.cs) 实现 `IIncrementalGenerator`，相比传统的 `ISourceGenerator` 具备增量编译能力——仅当受影响的方法变化时才重新生成代码：
+[BindingSourceGenerator.cs](../../src/Wails.Net.SourceGenerators/BindingSourceGenerator.cs) 实现 `IIncrementalGenerator`，相比传统的 `ISourceGenerator` 具备增量编译能力——仅当受影响的方法变化时才重新生成代码：
 
 ```csharp
 [Generator(LanguageNames.CSharp)]
@@ -96,7 +96,7 @@ public sealed class BindingSourceGenerator : IIncrementalGenerator
 
 #### [Binding] 特性
 
-参考 [BindingAttribute.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Bindings/BindingAttribute.cs)：
+参考 [BindingAttribute.cs](../../src/Wails.Net.Application/Bindings/BindingAttribute.cs)：
 
 ```csharp
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
@@ -112,7 +112,7 @@ public sealed class BindingAttribute : Attribute
 
 #### [Command] 特性
 
-参考 [CommandAttribute.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Commands/CommandAttribute.cs)：
+参考 [CommandAttribute.cs](../../src/Wails.Net.Application/Commands/CommandAttribute.cs)：
 
 ```csharp
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = true)]
@@ -140,7 +140,7 @@ var customName = ExtractConstructorArgument(ctx.Attributes.FirstOrDefault(), 0);
 
 ### 2.4 生成调用器委托（GeneratedInvoker）
 
-源生成器为每个标记方法生成一个静态调用器方法，签名遵循 [GeneratedBindingRegistry.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Bindings/GeneratedBindingRegistry.cs) 中的 `GeneratedInvoker` 委托：
+源生成器为每个标记方法生成一个静态调用器方法，签名遵循 [GeneratedBindingRegistry.cs](../../src/Wails.Net.Application/Bindings/GeneratedBindingRegistry.cs) 中的 `GeneratedInvoker` 委托：
 
 ```csharp
 public delegate object? GeneratedInvoker(
@@ -209,7 +209,7 @@ public static class GeneratedBindingsRegistration
 }
 ```
 
-注册时同时维护三张表（见 [GeneratedBindingRegistry.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Bindings/GeneratedBindingRegistry.cs)）：
+注册时同时维护三张表（见 [GeneratedBindingRegistry.cs](../../src/Wails.Net.Application/Bindings/GeneratedBindingRegistry.cs)）：
 
 - `_invokers`：方法全名 → 调用器委托
 - `_methodToTypeName`：方法全名 → 所属类型全名
@@ -217,7 +217,7 @@ public static class GeneratedBindingsRegistration
 
 ### 2.6 编译期元数据（GeneratedBindingsMetadata）
 
-参考 [GeneratedBindingsMetadata.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Bindings/GeneratedBindingsMetadata.cs)：
+参考 [GeneratedBindingsMetadata.cs](../../src/Wails.Net.Application/Bindings/GeneratedBindingsMetadata.cs)：
 
 ```csharp
 public sealed record BoundMethodInfo(
@@ -298,7 +298,7 @@ sb.AppendLine($"            return {callExpr};");
 
 ### 3.1 设计目标
 
-[CommandInvokerCompiler.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Commands/CommandInvokerCompiler.cs) 处理未由源生成器覆盖的场景（如运行时动态注册的命令、第三方程序集方法）。借鉴 ASP.NET Core MVC 的表达式树编译模式：
+[CommandInvokerCompiler.cs](../../src/Wails.Net.Application/Commands/CommandInvokerCompiler.cs) 处理未由源生成器覆盖的场景（如运行时动态注册的命令、第三方程序集方法）。借鉴 ASP.NET Core MVC 的表达式树编译模式：
 
 ```csharp
 public delegate object? CompiledCommandInvoker(
@@ -392,7 +392,7 @@ public static CompiledCommandInvoker? Compile(MethodInfo method)
 
 ### 4.1 BindingAnalyzer — 绑定方法分析器
 
-[BindingAnalyzer.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Generator/BindingAnalyzer.cs) 从 `GeneratedBindingsMetadata` 读取编译期填充的元数据，不再使用 `System.Reflection`：
+[BindingAnalyzer.cs](../../src/Wails.Net.Generator/BindingAnalyzer.cs) 从 `GeneratedBindingsMetadata` 读取编译期填充的元数据，不再使用 `System.Reflection`：
 
 ```csharp
 public List<BoundMethodModel> AnalyzeAssembly(Assembly assembly)
@@ -417,7 +417,7 @@ public List<BoundMethodModel> AnalyzeType(Type type)
 
 ### 4.2 BindingIdGenerator — FNV-1a 哈希 ID 生成
 
-[BindingIdGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Generator/BindingIdGenerator.cs) 提供与 Go 版本 `fnv.New32a()` 完全一致的哈希计算：
+[BindingIdGenerator.cs](../../src/Wails.Net.Generator/BindingIdGenerator.cs) 提供与 Go 版本 `fnv.New32a()` 完全一致的哈希计算：
 
 ```csharp
 public static class BindingIdGenerator
@@ -445,7 +445,7 @@ public static class BindingIdGenerator
 
 ### 4.3 TypeScriptGenerator — TypeScript 代码生成
 
-[TypeScriptGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Generator/TypeScriptGenerator.cs) 生成三类文件：
+[TypeScriptGenerator.cs](../../src/Wails.Net.Generator/TypeScriptGenerator.cs) 生成三类文件：
 
 #### 1. 类型定义文件（`.d.ts`）
 
@@ -490,7 +490,7 @@ export const bindingIds = {
 
 ### 4.4 TypeScriptTypeMapper — C# 类型映射
 
-[TypeScriptTypeMapper.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Generator/TypeScriptTypeMapper.cs) 定义运行时类型映射，源生成器中也有等价实现以在编译期完成映射：
+[TypeScriptTypeMapper.cs](../../src/Wails.Net.Generator/TypeScriptTypeMapper.cs) 定义运行时类型映射，源生成器中也有等价实现以在编译期完成映射：
 
 | C# 类型 | TypeScript 类型 |
 |---------|----------------|
@@ -513,7 +513,7 @@ export const bindingIds = {
 
 ### 4.5 EventGenerator — 事件常量生成
 
-[EventGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Generator/EventGenerator.cs) 从 C# 事件枚举生成 TypeScript 枚举与已知事件常量：
+[EventGenerator.cs](../../src/Wails.Net.Generator/EventGenerator.cs) 从 C# 事件枚举生成 TypeScript 枚举与已知事件常量：
 
 ```typescript
 // 从枚举生成
@@ -538,7 +538,7 @@ export const KnownEvents = {
 
 ### 5.1 Generate(options) 主入口
 
-[@wails-net/runtime.cs](file:///f:/Code/Dotnet/Wails.Net/packages/wails-net-runtime/src/core/runtime.ts) 在应用启动时生成注入 Webview 的 JavaScript 运行时：
+[@wails-net/runtime.cs](../../packages/wails-net-runtime/src/core/runtime.ts) 在应用启动时生成注入 Webview 的 JavaScript 运行时：
 
 ```csharp
 public static string Generate(`Application.GenerateRuntimeJs` options)
@@ -574,18 +574,18 @@ window._wails = {
 |---------|------|---------|
 | `wails.call` / `wails.bindings.call` | 绑定方法调用 | Wails v3 |
 | `wails.events` | 事件订阅/发布 | Wails v3 |
-| `wails.window` | 窗口管理（40+ 方法） | Wails v3 + Tauri v2 |
-| `wails.tray` | 系统托盘 | Tauri v2 |
-| `wails.windows` | 多窗口管理 | Tauri v2 |
+| `wails.window` | 窗口管理（40+ 方法） | Wails v3 |
+| `wails.tray` | 系统托盘 | —|
+| `wails.windows` | 多窗口管理 | —|
 | `wails.screen` / `wails.clipboard` / `wails.dialog` / `wails.menu` | 系统功能 | Wails v3 |
 | `wails.application` | 应用级控制 | Wails v3 |
-| `wails.stronghold` | 加密存储 | Tauri v2 plugin-stronghold |
-| `wails.scope` | 持久化作用域 | Tauri v2 plugin-persisted-scope |
-| `wails.localhost` | 嵌入式 HTTP 服务器 | Tauri v2 plugin-localhost |
-| `wails.fswatch` | 文件系统监听 | Tauri v2 plugin-fs-watch |
-| `wails.system` / `wails.power` / `wails.process` | 系统信息 | Tauri v2 plugin-os |
-| `wails.fs` / `wails.shell` | 文件系统/Shell | Tauri v2 |
-| `wails.notification` / `wails.store` / `wails.log` | 通知/存储/日志 | Tauri v2 |
+| `wails.stronghold` | 加密存储 | — |
+| `wails.scope` | 持久化作用域 | — |
+| `wails.localhost` | 嵌入式 HTTP 服务器 | — |
+| `wails.fswatch` | 文件系统监听 | — |
+| `wails.system` / `wails.power` / `wails.process` | 系统信息 | — |
+| `wails.fs` / `wails.shell` | 文件系统/Shell | —|
+| `wails.notification` / `wails.store` / `wails.log` | 通知/存储/日志 | —|
 
 所有调用通过 `window._wailsInvoke(type, payload)` 转发到后端 `MessageProcessor`。
 
@@ -714,35 +714,35 @@ return methodInfo.Invoke(instance, BindingFlags.Default, null, args, null);
 
 | 文件 | 职责 |
 |------|------|
-| [BindingSourceGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.SourceGenerators/BindingSourceGenerator.cs) | 增量生成器主入口，扫描特性并生成调用器 |
-| [IsExternalInitPolyfill.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.SourceGenerators/IsExternalInitPolyfill.cs) | record 类型 polyfill |
-| [Wails.Net.SourceGenerators.csproj](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.SourceGenerators/Wails.Net.SourceGenerators.csproj) | 项目配置（Roslyn 组件） |
-| [GeneratedBindingRegistry.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Bindings/GeneratedBindingRegistry.cs) | 调用器委托与注册表 |
-| [GeneratedBindingsMetadata.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Bindings/GeneratedBindingsMetadata.cs) | 编译期元数据容器 |
-| [BindingAttribute.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Bindings/BindingAttribute.cs) | `[Binding]` 特性定义 |
-| [CommandAttribute.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Commands/CommandAttribute.cs) | `[Command]` 特性定义 |
+| [BindingSourceGenerator.cs](../../src/Wails.Net.SourceGenerators/BindingSourceGenerator.cs) | 增量生成器主入口，扫描特性并生成调用器 |
+| [IsExternalInitPolyfill.cs](../../src/Wails.Net.SourceGenerators/IsExternalInitPolyfill.cs) | record 类型 polyfill |
+| [Wails.Net.SourceGenerators.csproj](../../src/Wails.Net.SourceGenerators/Wails.Net.SourceGenerators.csproj) | 项目配置（Roslyn 组件） |
+| [GeneratedBindingRegistry.cs](../../src/Wails.Net.Application/Bindings/GeneratedBindingRegistry.cs) | 调用器委托与注册表 |
+| [GeneratedBindingsMetadata.cs](../../src/Wails.Net.Application/Bindings/GeneratedBindingsMetadata.cs) | 编译期元数据容器 |
+| [BindingAttribute.cs](../../src/Wails.Net.Application/Bindings/BindingAttribute.cs) | `[Binding]` 特性定义 |
+| [CommandAttribute.cs](../../src/Wails.Net.Application/Commands/CommandAttribute.cs) | `[Command]` 特性定义 |
 
 ### 表达式树编译器
 
 | 文件 | 职责 |
 |------|------|
-| [CommandInvokerCompiler.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Commands/CommandInvokerCompiler.cs) | `MethodInfo` → `CompiledCommandInvoker` 编译 |
+| [CommandInvokerCompiler.cs](../../src/Wails.Net.Application/Commands/CommandInvokerCompiler.cs) | `MethodInfo` → `CompiledCommandInvoker` 编译 |
 
 ### 运行时代码生成器
 
 | 文件 | 职责 |
 |------|------|
-| [BindingAnalyzer.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Generator/BindingAnalyzer.cs) | 从编译期元数据读取绑定方法 |
-| [BindingIdGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Generator/BindingIdGenerator.cs) | FNV-1a 哈希 ID 生成 |
-| [TypeScriptGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Generator/TypeScriptGenerator.cs) | TypeScript 定义/调用封装生成 |
-| [TypeScriptTypeMapper.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Generator/TypeScriptTypeMapper.cs) | C# → TypeScript 类型映射 |
-| [EventGenerator.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Generator/EventGenerator.cs) | 事件枚举/常量生成 |
+| [BindingAnalyzer.cs](../../src/Wails.Net.Generator/BindingAnalyzer.cs) | 从编译期元数据读取绑定方法 |
+| [BindingIdGenerator.cs](../../src/Wails.Net.Generator/BindingIdGenerator.cs) | FNV-1a 哈希 ID 生成 |
+| [TypeScriptGenerator.cs](../../src/Wails.Net.Generator/TypeScriptGenerator.cs) | TypeScript 定义/调用封装生成 |
+| [TypeScriptTypeMapper.cs](../../src/Wails.Net.Generator/TypeScriptTypeMapper.cs) | C# → TypeScript 类型映射 |
+| [EventGenerator.cs](../../src/Wails.Net.Generator/EventGenerator.cs) | 事件枚举/常量生成 |
 
 ### 运行时 JS 生成器
 
 | 文件 | 职责 |
 |------|------|
-| [@wails-net/runtime.cs](file:///f:/Code/Dotnet/Wails.Net/packages/wails-net-runtime/src/core/runtime.ts) | `window.wails` API 与模板生成 |
+| [@wails-net/runtime.cs](../../packages/wails-net-runtime/src/core/runtime.ts) | `window.wails` API 与模板生成 |
 
 ---
 
@@ -756,4 +756,4 @@ Wails.Net 的代码生成系统通过**编译期与运行时分层**、**多级�
 4. **类型映射一致性**：`TypeScriptTypeMapper.MapType`（运行时）与 `BindingSourceGenerator.MapTypeToTypeScript`（编译期）保持映射规则同步
 5. **AOT 友好设计**：消除运行时反射，为 Native AOT 裁剪扫清障碍
 
-这一架构既保留了 Wails v3 的对象模型与 IPC 设计，又融入了 ASP.NET Core 的表达式树编译模式与 Tauri v2 的插件能力，是 .NET 10 桌面应用框架的有益探索。
+这一架构既保留了 Wails v3 的对象模型与 IPC 设计，又融入了 ASP.NET Core 的表达式树编译模式与自研的插件能力模型，是 .NET 10 桌面应用框架的有益探索。

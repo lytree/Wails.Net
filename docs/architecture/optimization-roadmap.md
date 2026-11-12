@@ -5,9 +5,9 @@
 > - 分析日期：2026-08-10（首轮）；2026-08-15（第二轮：落地进度基线 + 新增 OPT-EVENT/OPT-SEC-004~006/OPT-RUNTIME-003/OPT-CLEANUP-001）；2026-08-15（第三轮：OPT-SEC-003/004/006、OPT-EVENT-001/002、OPT-RUNTIME-002 核心、OPT-IPC-003 核心、OPT-CLEANUP-001 大部分已落地）
 > - 适用范围：`src/`、`tests/`、`docs/`、`examples/` 中与 Wails.Net 运行时、宿主、插件、安全、IPC 和测试治理相关的代码与文档
 > - 融合策略：
->   - **Host/DI/Config/Logging** → 学 ASP.NET Core（Microsoft.Extensions.* 全栈）
->   - **Runtime/Window/IPC** → 学 Wails v3（对象模型、IPC、多窗口、事件总线）
->   - **Plugin/Security/Capability** → 学 Tauri v2（插件能力、权限模型、安全设计）
+>   - **Host/DI/Config/Logging** → 参考 ASP.NET Core（Microsoft.Extensions.* 全栈）
+>   - **Runtime/Window/IPC** → 参考 Wails v3（对象模型、IPC、多窗口、事件总线）
+>   - **Plugin/Security/Capability** → 自研能力模型（插件契约与 Wails v3 对齐）
 
 ---
 
@@ -19,7 +19,7 @@ Wails.Net 当前已经具备完整的 .NET Host 宿主、平台抽象、窗口�
 
 1. **让 Host 层更 ASP.NET Core 化**：配置入口更清晰、Options 校验更完整、生命周期语义更可靠、日志与诊断更标准。
 2. **让 Runtime/Window/IPC 更 Wails v3 化**：保留 `Application` facade 的易用性，但将运行时职责进一步模块化，统一多传输层策略和窗口生命周期事件。
-3. **让 Plugin/Security/Capability 更 Tauri v2 化**：默认安全姿态向最小权限迁移，补齐平台过滤、前端资产承载、权限清单生成和 Scope 治理。
+3. **让 Plugin/Security/Capability 更贴近最小权限模型**：默认安全姿态向最小权限迁移，补齐平台过滤、前端资产承载、权限清单生成和 Scope 治理。
 4. **让文档、测试、模板和实现保持同步**：避免架构主文档落后于代码，避免模板生成的应用默认走不安全或过时配置。
 
 ### 1.2 非目标
@@ -87,7 +87,7 @@ Wails.Net 当前已经具备完整的 .NET Host 宿主、平台抽象、窗口�
 
 当前主要优化空间：
 
-- `PermissionOptions.Enabled` 默认关闭，安全模型尚未达到 Tauri v2 默认最小权限姿态。
+- `PermissionOptions.Enabled` 默认关闭，安全模型尚未达到最小权限默认姿态。
 - `Capability.platforms` 尚未落地。
 - 插件前端资产、脚本、类型声明和后端命令尚未形成完整可安装插件闭环。
 - 插件命令、权限和前端 API 之间缺少统一生成的清单。
@@ -102,7 +102,7 @@ Wails.Net 当前已经具备完整的 .NET Host 宿主、平台抽象、窗口�
 | P0 | 收敛配置模型 | 降低用户误配风险 | `Hosting`、模板、示例 |
 | P0 | 增加 Options 校验 | 配置错误前置到启动期 | `Hosting`、`Security`、测试 |
 | P0 | 收紧 IPC fallback 安全默认值 | 降低本地端口和 Origin 风险 | `Transport`、前端 runtime |
-| P0 | 权限 strict 模式迁移 | 向 Tauri v2 最小权限靠拢 | `Security`、模板、插件 |
+| P0 | 权限 strict 模式迁移 | 向最小权限靠拢 | `Security`、模板、插件 |
 | P1 | 实现 `Capability.platforms` | 支持平台级权限隔离 | `Security`、平台抽象 |
 | P1 | 统一 IPC 策略服务 | 降低传输层维护成本 | `Transport`、平台窗口 |
 | P1 | 明确 Host/UI ready 语义 | 提升生命周期可靠性 | `Hosting`、`Application` |
@@ -112,7 +112,7 @@ Wails.Net 当前已经具备完整的 .NET Host 宿主、平台抽象、窗口�
 | P2 | 补齐架构级测试 | 保障禁反射和 IPC 全链路 | `tests/`、前端 runtime |
 | P1 | 事件通配符与跨窗口定向事件 | 对齐 Wails v3 事件模型 | `Events`、前端 runtime |
 | P1 | capability 构建期校验 | 权限配置错误前置到构建期 | `Wails.Net.Cli`、`Security` |
-| P2 | asset protocol scope | 前端受控访问本地文件（对齐 Tauri v2） | `AssetServer`、平台抽象、前端 runtime |
+| P2 | asset protocol scope | 前端受控访问本地文件 | `AssetServer`、平台抽象、前端 runtime |
 | P2 | Channels 对称加密 | 对齐 Wails v3 channel 加密 | `Channels`、前端 runtime |
 | P2 | 代码卫生清理 | 消除死选项与空壳包 | `Windows`、`Transport`、npm 包 |
 
@@ -138,7 +138,7 @@ P0 批次已随提交 `6ad3d2d`（2026-08-10）落地，状态如下：
 **第二轮分析新增发现（详见 §5.5、§5.6、§6.4~§6.6）：**
 
 - 事件总线无通配符订阅、无跨窗口定向事件（对标 Wails v3 缺口）。
-- 无 asset protocol scope / `convertFileSrc`（对标 Tauri v2 缺口）。
+- 无 asset protocol scope / `convertFileSrc`（能力缺口）。
 - CSP 三层机制完整但纯 opt-in，模板不配置则不生效。
 - capability 文件无构建期 CLI 校验。
 - `HttpTransport` 生产路径无人装配（仅测试实例化）；`EnableDragAndDrop` 疑似死选项；`wails-net-plugin-log` TS 包为空壳。
@@ -172,7 +172,7 @@ P0 批次已随提交 `6ad3d2d`（2026-08-10）落地，状态如下：
 
 #### 现状
 
-`docs/fusion-strategy-comparison.md` 是三方融合策略的重要文档，但它的基线和日期容易落后于快速演进的代码。当前仓库已经包含更多插件、Android 相关实现、插件双包拆分和更新后的 Wails v3 beta 差异文档，因此需要统一文档事实源。
+`docs/fusion-strategy-comparison.md` 是架构策略的重要文档，但它的基线和日期容易落后于快速演进的代码。当前仓库已经包含更多插件、Android 相关实现、插件双包拆分和更新后的 Wails v3 beta 差异文档，因此需要统一文档事实源。
 
 #### 修改建议
 
@@ -348,7 +348,7 @@ public sealed class IpcOptions
 
 #### 现状
 
-`PermissionOptions.Enabled` 默认关闭，保证了向后兼容，但与 Tauri v2 默认最小权限姿态存在差距。建议以兼容迁移方式推进，而不是一次性破坏现有应用。
+`PermissionOptions.Enabled` 默认关闭，保证了向后兼容，但最小权限默认姿态尚未落地。建议以兼容迁移方式推进，而不是一次性破坏现有应用。
 
 #### 修改建议
 
@@ -410,7 +410,7 @@ Strict 模式、`Capability.platforms`、`IpcOptions` 等**机制**已随 P0 批
 1. 模板 `src/Wails.Net.Templates/content/App/appsettings.json` 全文仅 9 行，只有 `Logging` 与 `Wails:ApplicationName`，无 `Permissions` 节点——新项目默认落到 `PermissionOptions.cs:27` 的 `PermissionMode.Compatibility`（宽松放行）。
 2. 模板与 `examples/Wails.Net.Demo` 均无 `capabilities` 目录与示例文件（`CapabilitiesDirectory` 默认值 `"capabilities"` 存在，但用户看不到样例）。
 3. CLI 脚手架 `ProjectScaffolder.cs:86-155` 生成 slnx/csproj/Program.cs/Bindings.cs/wails.json 等，**不生成 appsettings.json**。
-4. CSP 三层机制（全局/per-window/nonce，`DesktopApplicationBuilder.cs:240-246`、`AssetServer.cs:104-260`）完整但纯 opt-in：模板不配置 `Wails:App:Security:Csp` 则不发送 CSP 头，与 Tauri v2 模板默认携带 CSP 的姿态有差距。
+4. CSP 三层机制（全局/per-window/nonce，`DesktopApplicationBuilder.cs:240-246`、`AssetServer.cs:104-260`）完整但纯 opt-in：模板不配置 `Wails:App:Security:Csp` 则不发送 CSP 头，模板默认未携带 CSP，存在安全加固空间。
 
 #### 修改清单
 
@@ -648,7 +648,7 @@ AssetServer 路由建议：
 
 #### 现状
 
-capability 文件仅启动期加载（`CapabilityFileLoader.cs:36-69` 目录扫描，`DesktopApplicationBuilder.cs:357-358` 一次性加载），无热重载；CLI（`src/Wails.Net.Cli`）对 capabilities **零感知**：平台名错误只给运行时 warning（`CapabilityFileLoader.cs:194-211`），权限标识符拼写错误要到运行时静默不生效。Tauri v2 在构建期即校验 ACL/capability 并报错。
+capability 文件仅启动期加载（`CapabilityFileLoader.cs:36-69` 目录扫描，`DesktopApplicationBuilder.cs:357-358` 一次性加载），无热重载；CLI（`src/Wails.Net.Cli`）对 capabilities **零感知**：平台名错误只给运行时 warning（`CapabilityFileLoader.cs:194-211`），权限标识符拼写错误要到运行时静默不生效。目标是在构建期即校验 ACL/capability 并报错。
 
 #### 修改建议
 
@@ -764,7 +764,7 @@ capability 文件仅启动期加载（`CapabilityFileLoader.cs:36-69` 目录扫�
 
 #### 现状
 
-对标 Tauri v2，前端访问本地文件目前只能通过 `FileSystem` 插件命令（后端 `FileSystemScope` 路径前缀校验），**没有受控的自定义资源协议**：全库无 `asset://` 协议、无 `convertFileSrc` 等价 API（仅 `docs/development/testing-strategy.md` mock 清单提及）。`docs/fusion-strategy-comparison.md:660` 亦自认此差距：Tauri 有 asset protocol scope，Wails.Net 仅有 `FileSystemScope`/`UrlScope`。
+前端访问本地文件目前只能通过 `FileSystem` 插件命令（后端 `FileSystemScope` 路径前缀校验），**没有受控的自定义资源协议**：全库无 `asset://` 协议、无 `convertFileSrc` 等价 API（仅 `docs/development/testing-strategy.md` mock 清单提及）。Wails.Net 目前仅有 `FileSystemScope` / `UrlScope`，缺少 asset protocol scope。
 
 #### 修改建议
 
@@ -844,7 +844,7 @@ capability 文件仅启动期加载（`CapabilityFileLoader.cs:36-69` 目录扫�
 4. 权限模式引入 `Compatibility` / `Strict`。（✅）
 5. 模板默认 strict。（❌ §4.6）
 
-### 7.3 第三批：Tauri Capability 对齐
+### 7.3 第三批：Capability 能力对齐
 
 1. 实现 `Capability.platforms`。（✅）
 2. Capability 文件 loader 支持平台过滤。（✅）
@@ -974,10 +974,10 @@ capability 文件仅启动期加载（`CapabilityFileLoader.cs:36-69` 目录扫�
 
 ## 11. 总结
 
-Wails.Net 当前架构方向已经清晰：以 ASP.NET Core 的 Host/DI/Config/Logging 为基础设施，以 Wails v3 的运行时对象模型、多窗口和 IPC 体验为核心，以 Tauri v2 的插件、安全和能力模型作为安全边界。后续优化的重点不是重构掉现有设计，而是让这三条主线更加一致：
+Wails.Net 当前架构方向已经清晰：以 ASP.NET Core 的 Host/DI/Config/Logging 为基础设施，以 Wails v3 的运行时对象模型、多窗口和 IPC 体验为核心，以自研的插件、安全和能力模型作为安全边界。后续优化的重点不是重构掉现有设计，而是让这三条主线更加一致：
 
 - Host 层：更标准、更可验证、更可诊断。
 - Runtime 层：更模块化、更可测试、更清晰地表达 ready 和 IPC 策略。
 - Security/Plugin 层：更默认安全、更可安装、更少手写漂移。
 
-按本文档路线推进后，项目可以在保持 Wails 风格易用性的同时，获得 ASP.NET Core 生态级别的工程治理能力，以及 Tauri 风格的默认安全边界。
+按本文档路线推进后，项目可以在保持 Wails 风格易用性的同时，获得 ASP.NET Core 生态级别的工程治理能力，以及默认安全边界（最小权限姿态）。

@@ -2,12 +2,12 @@
 
 > **审计日期**：2026-08-16
 > **审计性质**：深度审计 + 可破坏性重构方案（本文档只输出分析与方案，不含代码修改）
-> **对标基线**：Wails v3 `3.0.0-beta.4`（审计时版本）、Tauri v2 GA `2.11.5`（审计时版本）、ASP.NET Core（Microsoft.Extensions.* 全栈）；**当前基线已升级为 Wails v3 `v3.0.0`（GA，2026-10-26）/ Tauri `2.12.5`（2026-10-21），GA 后差异见 `docs/development/wails-v3-beta-comparison.md` §11**
+> **对标基线**：Wails v3 `3.0.0-beta.4`（审计时版本）、ASP.NET Core（Microsoft.Extensions.* 全栈）；**当前基线已升级为 Wails v3 `v3.1.0`（2026-11-01 weekly），差异见 `docs/development/wails-v3-beta-comparison.md` §12**
 > **前置文档**：`fusion-architecture-audit.md`（2026-08-15 三主线审计）、`optimization-roadmap.md`（OPT-* 任务基线）、`fusion-strategy-comparison.md`
 >
 > 与前置文档的关系：前置文档聚焦"三主线融合的差距与 backlog"；本文档聚焦两个新维度——
-> 1. **逐项 API/功能核对**：Wails v3 对象模型/IPC/插件/多窗口/事件总线、Tauri v2 功能项全量矩阵；
-> 2. **统一 SDK 方案**：调试时按当前环境自动选平台、打包时多平台编译（对标 Tauri 单 crate + tauri-cli 体验），允许破坏性重构。
+> 1. **逐项 API/功能核对**：Wails v3 对象模型/IPC/插件/多窗口/事件总线；
+> 2. **统一 SDK 方案**：调试时按当前环境自动选平台、打包时多平台编译（单包 + 单命令多目标体验），允许破坏性重构。
 
 ---
 
@@ -15,8 +15,8 @@
 
 1. **Wails v3 主线对齐度已很高**：Application/窗口/菜单/托盘/事件总线/多窗口/IPC 协议均已落地，事件通配符与 `EmitTo` 定向事件甚至超出 v3；主要残余缺口是窗口级 `RegisterKeyBinding`、Dialog 按钮定制、内置 live reload 等少量项。
 2. **ASP.NET Core 主线骨架已成、细节未透**：Builder/DI/Options/Validator/中间件已闭环；但 `Application` 聚合根仍 1718 行/39 字段，DI 无 per-call scope，无 ActivitySource/Meter 可观测性，`MapCommandExtensions` 存在未入白名单的 `MethodInfo` 反射。
-3. **Tauri v2 主线"后端命令面已接近全齐、三层缺口明显"**：40 个后端插件覆盖 Tauri 官方插件全集（含超集）；但 **28/40 前端 npm 包是空壳**（后端命令齐、无 JS 封装）；架构性缺失 multiwebview、JS 侧窗口创建、isolation、sidecar/externalBin、label 寻址；产物缺 msi/dmg/aab。
-4. **统一 SDK 是当前最大结构性缺口**：平台选择依赖 **TFM 字符串**（非 RID），模板仍引用 `Wails.Net.Bundle.Windows` 单平台包且 `Program.cs` 显式 `UsePlatform<WindowsPlatformApp>()`，`--all-platforms` 只切 `WailsNetPlatform` 属性不切引用——距离 Tauri"单包 + 单命令多目标"体验差距显著，**必须破坏性重构模板与 SDK 包布局**。
+3. **插件/能力主线"后端命令面已接近全齐、三层缺口明显"**：40 个后端插件已覆盖系统原生能力全集（含超集）；但 **28/40 前端 npm 包是空壳**（后端命令齐、无 JS 封装）；架构性缺失 multiwebview、JS 侧窗口创建、isolation、sidecar/externalBin、label 寻址；产物缺 msi/dmg/aab。
+4. **统一 SDK 是当前最大结构性缺口**：平台选择依赖 **TFM 字符串**（非 RID），模板仍引用 `Wails.Net.Bundle.Windows` 单平台包且 `Program.cs` 显式 `UsePlatform<WindowsPlatformApp>()`，`--all-platforms` 只切 `WailsNetPlatform` 属性不切引用——距离"单包 + 单命令多目标"体验差距显著，**必须破坏性重构模板与 SDK 包布局**。
 
 ---
 
@@ -53,11 +53,11 @@
 
 ### 2.4 运行时 JS
 
-v3 runtime 模块（calls/events/contextmenu/Window/Screens/System/Clipboard/Dialogs/Browser/Environment/Flags）在 Wails.Net 中**有意改为插件包分发**（对齐 Tauri 风格）——方向正确，但插件包空壳化使该优势未兑现（见 §4.2）。`flags` 经 `ApplicationOptions.Flags` 暴露，无独立 flags 模块。
+v3 runtime 模块（calls/events/contextmenu/Window/Screens/System/Clipboard/Dialogs/Browser/Environment/Flags）在 Wails.Net 中**有意改为插件包分发**（单包分发模型）——方向正确，但插件包空壳化使该优势未兑现（见 §4.2）。`flags` 经 `ApplicationOptions.Flags` 暴露，无独立 flags 模块。
 
 ### 2.5 Channels 与其他
 
-- **Channels**：v3 beta.4 **不存在 channel API**，Wails.Net `ChannelManager` 为对标 Tauri Channel 的自加能力（超集）；对称加密未实现（OPT-RUNTIME-003，opt-in 评估中）。
+- **Channels**：v3 beta.4 **不存在 channel API**，Wails.Net `ChannelManager` 为自研的 Channel 能力（超集）；对称加密未实现（OPT-RUNTIME-003，opt-in 评估中）。
 - SingleInstance/SecondInstance ✅（对齐 `single_instance.go`）；FileAssociation ✅（插件，超集）；URLScheme ✅（`RegisterScheme` + Deeplink 插件，超集）；Notifications 🔀（v3 桌面无，Wails.Net 超集）；AssetServer 中间件 ✅；devtools ✅；**live reload ⚠️**（靠 FsWatch 插件组合，无 v3 式内置 websocket reload 广播）。
 
 ### 2.6 对 v3 的残余缺口清单（重构任务 W3-*）
@@ -113,7 +113,7 @@ v3 runtime 模块（calls/events/contextmenu/Window/Screens/System/Clipboard/Dia
 
 ### 3.5 可观测性零埋点（任务 DX-5，P2）
 
-全 src 无 `ActivitySource`/`Meter`/`EventSource`/`BeginScope`；命令分发无 trace/span，WindowId/Method 未进 logging scope。对标 Tauri tracing 与 ASP.NET Core 诊断生态差距明显。
+全 src 无 `ActivitySource`/`Meter`/`EventSource`/`BeginScope`；命令分发无 trace/span，WindowId/Method 未进 logging scope。与 ASP.NET Core 诊断生态相比差距明显。
 
 方案：新增 `Wails.Net` ActivitySource + Meter；`DispatchAsync` 开 span + `BeginScope(new{Method, WindowId})`；提供 `builder.Services.AddWailsDiagnostics()` 一键接 OpenTelemetry。
 
@@ -129,11 +129,11 @@ v3 runtime 模块（calls/events/contextmenu/Window/Screens/System/Clipboard/Dia
 
 ---
 
-## 4. 对标 Tauri v2：功能项全量矩阵
+## 4. 功能覆盖矩阵
 
-### 4.1 插件功能矩阵（40 后端插件 vs Tauri 官方插件全集）
+### 4.1 插件功能矩阵（40 个后端插件）
 
-| Tauri v2 功能项 | Wails.Net 对应 | 状态 | 备注 |
+| 能力域 | Wails.Net 实现 | 状态 | 备注 |
 |---|---|---|---|
 | app | Plugins.Appinfo / Application | ⚠️ | 前端包空壳 |
 | clipboard-manager | Plugins.Clipboard | ⚠️ | 前端空壳 |
@@ -157,47 +157,47 @@ v3 runtime 模块（calls/events/contextmenu/Window/Screens/System/Clipboard/Dia
 | CSP 内置 | CspOptions 全局/窗口级 + NonceInjector | ✅ | |
 | **isolation pattern** | IsolationInjector.cs 存在 | ⚠️ | 已实现但需手动配置，非声明式 |
 | **sidecar / externalBin / resources** | 无 | ❌ | 全库 0 匹配 |
-| capabilities/permissions/scope | CommandSecurity + 诊断分析器 | ✅ | 对齐 Tauri ACL |
+| capabilities/permissions/scope | CommandSecurity + 诊断分析器 | ✅ | 自研三层 ACL |
 | dangerousDisableAssetCspModification / headers | 无 | ❌ | |
 
-**超集项**（Tauri 无官方对等）：Cookie、Dpiscale、Fileassociation、FsWatch、Keychain、Localization、Powermanagement、Screen、Windows、Cli 插件等。
+**Wails.Net 独有能力**（无外部对等）：Cookie、Dpiscale、Fileassociation、FsWatch、Keychain、Localization、Powermanagement、Screen、Windows、Cli 插件等。
 
-### 4.2 核心发现：28/40 前端包空壳（任务 TAURI-1，P0，性价比最高）
+### 4.2 核心发现：28/40 前端包空壳（任务 GAP-1，P0，性价比最高）
 
 前端空壳清单：store、menu、tray、updater、sql、window-state、windows、positioner、persisted-scope、stronghold、keychain、autostart、clipboard、dialog、file-system、global-shortcut、os-info、path、process、screen、app-info、application、cli、dpi-scale、file-association、fs-watch、localization、power-management（`src/index.ts` 仅 import 无 export，store 连 dist 都未构建）。
 
 方案：以 `defineCommand` 薄壳模式批量生成封装（与 http/log/shell 已完成包同构）；长期接入 P2-1「Runtime API wrapper 从 manifest 全量生成」消除漂移。**此单项完成后，§4.1 矩阵中 ~20 个 ⚠️ 直接升级为 ✅。**
 
-### 4.3 事件寻址模型（任务 TAURI-2，P1，**破坏性**）
+### 4.3 事件寻址模型（任务 GAP-2，P1，**破坏性**）
 
-当前 `emitTo` 以 **windowId(number)** 寻址；Tauri 以 **label 字符串**寻址且支持 webview 级目标。方案：统一为 Name/label 寻址（number id 保留为内部索引），前端 API 改为 `emitTo(label, event, data)`；旧 number 签名删除或保留一个版本周期。
+当前 `emitTo` 以 **windowId(number)** 寻址；目标方案以 **label 字符串**寻址并支持 webview 级目标。方案：统一为 Name/label 寻址（number id 保留为内部索引），前端 API 改为 `emitTo(label, event, data)`；旧 number 签名删除或保留一个版本周期。
 
-### 4.4 插件开发模型（任务 TAURI-3，P2）
+### 4.4 插件开发模型（任务 GAP-3，P2）
 
-双包模型（NuGet + npm）已完成 M1-M4 ✅。差距：无 Tauri 式移动端插件分离工程——移动端能力全部硬编码在 `Plugins.Mobile` + `Application.Android`，第三方无法编写移动端插件。方案：定义移动端插件 SPI（Android 侧 Kotlin/Java 互操作边界），后置。
+双包模型（NuGet + npm）已完成 M1-M4 ✅。差距：无移动端插件分离工程——移动端能力全部硬编码在 `Plugins.Mobile` + `Application.Android`，第三方无法编写移动端插件。方案：定义移动端插件 SPI（Android 侧 Kotlin/Java 互操作边界），后置。
 
-### 4.5 CLI 与打包（任务 TAURI-4 ~ TAURI-7）
+### 4.5 CLI 与打包（任务 GAP-4 ~ GAP-7）
 
-CLI 现有 18 命令（new/dev/build/publish/pack/plugin×6/doctor/setup/info/version/clean/update/generate/check/icon/signer/platform/deploy）。对照 Tauri CLI：
+CLI 现有 18 命令（new/dev/build/publish/pack/plugin×6/doctor/setup/info/version/clean/update/generate/check/icon/signer/platform/deploy）。缺口清单：
 
 | 缺口 | 编号 | 优先级 | 说明 |
 |---|---|---|---|
-| `init`（注入现有项目） | TAURI-4 | P2 | |
-| `completions`（shell 补全） | TAURI-4 | P2 | |
-| `inspect`（capability/ACL 检查） | TAURI-4 | P1 | doctor 部分覆盖，需显式能力 |
-| icon 缺 `.icns` / Android 自适应图标 | TAURI-5 | P2 | |
-| 打包产物缺 **msi / dmg / aab** | TAURI-6 | P1 | wixConfig 字段悬空；Bundle.MacOS 无打包逻辑；aab/签名/keystore 流程无 |
-| publish 参数组装过薄 | TAURI-7 | P1 | 仅 `-c/-r/--self-contained/-o`，不组 PublishSingleFile/Trim/AOT |
-| deb/rpm 依赖硬编码 | TAURI-6 | P1 | Packager.cs L799/831 硬编码 `libgtk-4-1, libwebkitgtk-6.0-4`，未消费 `bundle.linux.debDependencies/rpmDependencies` 字段 |
+| `init`（注入现有项目） | GAP-4 | P2 | |
+| `completions`（shell 补全） | GAP-4 | P2 | |
+| `inspect`（capability/ACL 检查） | GAP-4 | P1 | doctor 部分覆盖，需显式能力 |
+| icon 缺 `.icns` / Android 自适应图标 | GAP-5 | P2 | |
+| 打包产物缺 **msi / dmg / aab** | GAP-6 | P1 | wixConfig 字段悬空；Bundle.MacOS 无打包逻辑；aab/签名/keystore 流程无 |
+| publish 参数组装过薄 | GAP-7 | P1 | 仅 `-c/-r/--self-contained/-o`，不组 PublishSingleFile/Trim/AOT |
+| deb/rpm 依赖硬编码 | GAP-6 | P1 | Packager.cs L799/831 硬编码 `libgtk-4-1, libwebkitgtk-6.0-4`，未消费 `bundle.linux.debDependencies/rpmDependencies` 字段 |
 
-### 4.6 资源管理（任务 TAURI-8，P1）
+### 4.6 资源管理（任务 GAP-8，P1）
 
 - ✅ 已有：FileAssetServer/BundledAssetServer、SPA fallback、**Range/206**、ETag/Cache-Control、中间件链、CSP nonce。
 - ❌ 缺失：**externalBin/sidecar**（0 匹配）、**asset protocol scope / convertFileSrc**（OPT-SEC-005 未动）、gzip/brotli 响应压缩、CLI 自动资源嵌入/清单生成（嵌入资源需用户手写委托）。
 
-### 4.7 wails.json vs tauri.conf.json
+### 4.7 wails.json 配置覆盖度
 
-| Tauri 配置 | Wails.Net | 状态 |
+| 配置项 | Wails.Net | 状态 |
 |---|---|---|
 | productName/version/identifier | name/version/bundle.identifier | ✅（命名不同） |
 | build 4 钩子 / frontendDist / devUrl | 同名 / assetDir / frontend.devServerUrl | ✅ |
@@ -221,7 +221,7 @@ CLI 现有 18 命令（new/dev/build/publish/pack/plugin×6/doctor/setup/info/ve
 4. **`--all-platforms` 缺陷**：单 TFM 项目只循环 `-p:WailsNetPlatform=` 属性，不切 TFM/引用；无 macOS；`wails pack` 无 `--all-platforms`。
 5. **SDK 包布局非传递**：`build/` 而非 `buildTransitive/`，多项目引用下 props/targets 不穿透。
 
-### 5.2 目标体验（对标 Tauri）
+### 5.2 目标体验
 
 ```text
 # 用户项目只引用一个包
@@ -278,11 +278,11 @@ wails build --all-targets
 #### SDK-5：dev 体验收敛（P1）
 
 - `wails dev` 移除/弱化 `--platform` 的误导性（编译期引用不随其切换）；若传入与构建机不一致的平台，直接报错并提示"交叉调试不支持，请在目标平台构建"。
-- 中期补齐 Tauri 风格 dev-server 代理（模板 Program.cs 注释自述的后续项），打通 vite HMR 与 AssetServer。
+- 中期补齐 dev-server 代理（模板 Program.cs 注释自述的后续项），打通 vite HMR 与 AssetServer。
 
 #### SDK-6：CI 多平台矩阵示例（P1）
 
-当前 ci.yml 是 3 个固定 job 产 SDK 包，无面向用户应用的多平台分发矩阵。方案：提供 `docs/development/` 级 CI 模板（windows-latest → nsis/zip、ubuntu-latest → deb/rpm/appimage、macos-latest → dmg(待 TAURI-6)、windows-latest 交叉 → apk），模板项目可选生成。
+当前 ci.yml 是 3 个固定 job 产 SDK 包，无面向用户应用的多平台分发矩阵。方案：提供 `docs/development/` 级 CI 模板（windows-latest → nsis/zip、ubuntu-latest → deb/rpm/appimage、macos-latest → dmg(待 GAP-6)、windows-latest 交叉 → apk），模板项目可选生成。
 
 ---
 
@@ -291,7 +291,7 @@ wails build --all-targets
 | 编号 | 任务 | 主线 | 破坏性 | 优先级 |
 |---|---|---|---|---|
 | DX-6 | 消除 MapCommand 反射 | ASP.NET Core | 小 | **P0 ✅** |
-| TAURI-1 | 28 个前端空壳包批量生成封装 | Tauri | 无（纯增量） | **P0 ✅** |
+| GAP-1 | 28 个前端空壳包批量生成封装 | 能力对齐 | 无（纯增量） | **P0 ✅** |
 | SDK-1 | RID→平台映射 | 统一 SDK | 中 | **P0 ✅** |
 | SDK-2 | buildTransitive + 条件依赖 | 统一 SDK | 中 | **P0 ✅** |
 | SDK-3 | 模板单包化 + UseWailsPlatform 统一入口 | 统一 SDK | **高（模板/示例全量改）** | **P0 ✅** |
@@ -299,23 +299,23 @@ wails build --all-targets
 | DX-2 | Builder 补 Environment/Configure*/MapCommand 链式元数据 | ASP.NET Core | 中 | P1 |
 | DX-3 | 命令 per-call scope | ASP.NET Core | 中（行为修复） | P1 |
 | DX-4 | 可取消 Closing 协议 + Shutdown 异步化/超时治理 | ASP.NET Core | 中 | P1 |
-| TAURI-2 | 事件 label 寻址统一 | Tauri | 中 | P1 |
-| TAURI-4 | CLI inspect 等命令补齐 | Tauri | 无 | P1 |
-| TAURI-6 | msi/dmg/aab + 消费 bundle.linux 依赖字段 | Tauri | 无 | P1 |
-| TAURI-7 | publish 组装 SingleFile/Trim/AOT | Tauri | 无 | P1 |
-| TAURI-8 | sidecar/externalBin + asset scope + 压缩 | Tauri | 中 | P1 |
+| GAP-2 | 事件 label 寻址统一 | 能力对齐 | 中 | P1 |
+| GAP-4 | CLI inspect 等命令补齐 | 能力对齐 | 无 | P1 |
+| GAP-6 | msi/dmg/aab + 消费 bundle.linux 依赖字段 | 能力对齐 | 无 | P1 |
+| GAP-7 | publish 组装 SingleFile/Trim/AOT | 能力对齐 | 无 | P1 |
+| GAP-8 | sidecar/externalBin + asset scope + 压缩 | 能力对齐 | 中 | P1 |
 | SDK-4 | --target/--all-targets 多 RID 构建 | 统一 SDK | 中 | P1 |
 | SDK-5 | dev 平台参数语义收敛 + dev-server 代理 | 统一 SDK | 小 | P1 |
 | SDK-6 | 用户侧 CI 多平台矩阵模板 | 统一 SDK | 无 | P1 |
-| OPT-SEC-005 | asset protocol scope / convertFileSrc（沿用既有编号） | Tauri | 中 | P1 |
+| OPT-SEC-005 | asset protocol scope / convertFileSrc（沿用既有编号） | 能力对齐 | 中 | P1 |
 | W3-1~4 | v3 残余缺口（窗口级快捷键/Dialog 按钮/SnapAssist/live reload） | Wails v3 | 小 | P2 |
 | DX-5 | ActivitySource/Meter + AddWailsDiagnostics | ASP.NET Core | 无 | P2 |
 | DX-7 | 配置热重载语义声明或订阅化 | ASP.NET Core | 视方案 | P2 |
-| TAURI-3 | 移动端插件 SPI | Tauri | 高 | P2 |
-| TAURI-5 | icon icns/自适应图标 | Tauri | 无 | P2 |
+| GAP-3 | 移动端插件 SPI | 能力对齐 | 高 | P2 |
+| GAP-5 | icon icns/自适应图标 | 能力对齐 | 无 | P2 |
 | OPT-RUNTIME-003 | Channels 对称加密（opt-in） | Wails v3 超集 | 无 | P2 |
 
-> 与 `optimization-roadmap.md` 既有编号（OPT-*）关系：OPT-SEC-005、OPT-RUNTIME-003、OPT-PLUGIN-001~003、OPT-TEST-001~003 仍然有效，本文档不重复展开；TAURI-1 完成后可为 OPT-PLUGIN-003（清单生成）提供数据基础。
+> 与 `optimization-roadmap.md` 既有编号（OPT-*）关系：OPT-SEC-005、OPT-RUNTIME-003、OPT-PLUGIN-001~003、OPT-TEST-001~003 仍然有效，本文档不重复展开；GAP-1 完成后可为 OPT-PLUGIN-003（清单生成）提供数据基础。
 
 ---
 
@@ -326,7 +326,7 @@ wails build --all-targets
 | 模板破坏（SDK-3） | 存量用户项目引用 Bundle.* + 显式 UsePlatform | Bundle 包保留可用一个主版本；迁移指南 + `wails doctor` 检测旧形态并给修复指令；release note 明确 breaking |
 | RID 映射不全（SDK-1） | 新 RID（如 linux-musl）未映射 | 未识别 RID 回退 OS 推断 + warning；映射表集中一处常量 |
 | per-call scope（DX-3） | 插件若在根容器捕获 scoped 依赖，行为变化 | 先在 Strict 模式默认启用，Compatibility 模式可选关闭；测试矩阵覆盖 |
-| 事件寻址统一（TAURI-2） | 前端 emitTo(number) 签名变化 | 旧签名保留一个版本周期 + 弃用警告 |
+| 事件寻址统一（GAP-2） | 前端 emitTo(number) 签名变化 | 旧签名保留一个版本周期 + 弃用警告 |
 | 交叉编译假象 | Windows 可编译 Linux/Android，但 NSIS/AppImage 等打包层有宿主限制 | 文档明确"编译可交叉、打包分宿主"；CI 矩阵模板按宿主拆分 |
 
 ## 8. 验收清单
@@ -335,9 +335,9 @@ wails build --all-targets
 - [x] `dotnet build -r linux-x64` 在 Windows 上产出 Linux 平台程序集引用（SDK-1/2）
 - [x] `wails build --all-targets` 产出 win/linux/android 三平台产物分目录（SDK-4）
 - [ ] `wails dev` 在 Windows/Linux/macOS 上零参数自动选中本机平台（SDK-5）
-- [x] 40 个前端包全部有实质封装且与后端命令一致（TAURI-1）
+- [x] 40 个前端包全部有实质封装且与后端命令一致（GAP-1）
 - [x] `src/` 生产代码 `using System.Reflection;` 仅剩白名单两处（DX-6）
 - [ ] Application.cs <400 行，5 个 coordinator 独立可测（DX-1）
 - [ ] 命令路径支持 scoped 服务（DX-3）
 - [ ] 三平台关闭行为统一走 ShouldQuit 协议（DX-4）
-- [ ] msi/dmg/aab 至少 msi + dmg 落地（TAURI-6）
+- [ ] msi/dmg/aab 至少 msi + dmg 落地（GAP-6）

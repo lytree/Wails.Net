@@ -4,7 +4,7 @@
 
 ## 插件概念
 
-插件是 Wails.Net 的扩展机制，借鉴 Tauri v2 的设计。每个插件可以：
+插件是 Wails.Net 的扩展机制，采用「核心即插件」的设计。每个插件可以：
 - 注册 DI 服务
 - 注册前端可调用的命令
 - 订阅应用事件
@@ -220,7 +220,7 @@ Wails.Net 内置 47 个插件（39 桌面 + 7 移动端 + 1 Android 专属），
 | `StorePlugin` | `store.*` | 键值存储（持久化） |
 | `SqlPlugin` | `sql.*` | SQLite 数据库 |
 | `StrongholdPlugin` | `stronghold.*` | 加密存储（AES-GCM） |
-| `PersistedScopePlugin` | `scope.*` | 持久化文件范围（Tauri v2 对齐） |
+| `PersistedScopePlugin` | `scope.*` | 持久化文件范围管理 |
 
 ### 应用类插件
 
@@ -348,7 +348,7 @@ app.Options.ShouldQuit   = () => true;  // 返回 false 可阻止退出
 
 ### 1. MenuRole 角色菜单项（P2-1）
 
-参考 Wails v3 `MenuRole` 常量与 Tauri v2 `PredefinedMenuItem` 工厂模式，新增 [MenuRole](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Menus/MenuRole.cs) 枚举（21 个值）和 [MenuRoleHelper](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Menus/MenuRoleHelper.cs) 跨平台共享逻辑：
+参考 Wails v3 `MenuRole` 常量与自研工厂方法，新增 [MenuRole](../src/Wails.Net.Application/Menus/MenuRole.cs) 枚举（21 个值）和 [MenuRoleHelper](../src/Wails.Net.Application/Menus/MenuRoleHelper.cs) 跨平台共享逻辑：
 
 - **跨平台角色**：`Copy` / `Cut` / `Paste` / `SelectAll` / `Undo` / `Redo` / `Minimize` / `Maximize` / `Fullscreen` / `CloseWindow` / `Quit` / `About` / `Separator`
 - **macOS 专属角色**（其他平台静默 no-op）：`Hide` / `HideOthers` / `ShowAll` / `Services` / `BringAllToFront` / `Zoom` / `ToggleFullScreen`
@@ -366,15 +366,15 @@ await wails.menu.addStandardHelpMenu(parentId, { Name: "MyApp", Version: "1.0" }
 ```
 
 平台实现：
-- **Windows** [Win32Menu.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Windows/Win32Menu.cs)：编辑命令通过 `WebView2.ExecuteScriptAsync("document.execCommand('copy')")` 作用于焦点元素；窗口命令委托 `IWebviewWindowImpl`；About 弹出 `DialogManager.ShowMessageDialog`；快捷键注册到 `KeyBindingManager`。
-- **Linux** [LinuxMenu.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Linux/LinuxMenu.cs)：编辑命令通过 WebKitGTK `EvaluateJavascriptAsync`；快捷键通过 `LinuxKeyBindingManager` 的 `ShortcutController`。
+- **Windows** [Win32Menu.cs](../src/Wails.Net.Application.Windows/Win32Menu.cs)：编辑命令通过 `WebView2.ExecuteScriptAsync("document.execCommand('copy')")` 作用于焦点元素；窗口命令委托 `IWebviewWindowImpl`；About 弹出 `DialogManager.ShowMessageDialog`；快捷键注册到 `KeyBindingManager`。
+- **Linux** [LinuxMenu.cs](../src/Wails.Net.Application.Linux/LinuxMenu.cs)：编辑命令通过 WebKitGTK `EvaluateJavascriptAsync`；快捷键通过 `LinuxKeyBindingManager` 的 `ShortcutController`。
 - **Android**：无 `IMenuImpl` 实现，MenuRole 在 Android 上不可用。
 
 > 平台实现项目通过 `InternalsVisibleTo("Wails.Net.Application.Windows")` / `("Wails.Net.Application.Linux")` 访问 `MenuRoleHelper`（internal static class）。
 
 ### 2. Android 平台事件系统（P2-2）
 
-[AndroidPlatformEvents](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/AndroidPlatformEvents.cs) 定义 12 个 Android 平台事件 ID（1267–1273, 1281–1285），并将其中 7 个映射到公共 `ApplicationEventType`：
+[AndroidPlatformEvents](../src/Wails.Net.Application.Android/AndroidPlatformEvents.cs) 定义 12 个 Android 平台事件 ID（1267–1273, 1281–1285），并将其中 7 个映射到公共 `ApplicationEventType`：
 
 | Android 事件 | 值 | 公共事件 |
 |------|----|----|
@@ -390,7 +390,7 @@ await wails.menu.addStandardHelpMenu(parentId, { Name: "MyApp", Version: "1.0" }
 
 ### 3. Android 移动端插件平台实现（P2-3）
 
-7 个移动端插件（及 Android 专属 `AndroidRuntimePlugin`）的 Android 平台后端位于 [Wails.Net.Application.Android/Mobile](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/Mobile)：
+7 个移动端插件（及 Android 专属 `AndroidRuntimePlugin`）的 Android 平台后端位于 [Wails.Net.Application.Android/Mobile](../src/Wails.Net.Application.Android/Mobile)：
 
 | 平台类 | 对应插件 | 底层 Android API |
 |------|------|------|

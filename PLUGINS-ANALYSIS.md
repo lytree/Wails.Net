@@ -103,7 +103,7 @@
 | 插件 | 前缀 | 命令数 | 功能 | 主要命令 |
 |------|------|-------|------|---------|
 | `UpdaterPlugin` | `updater` | 4 | 自动更新（P1-8 多 Provider：Http / GitHub / GitLab / 自定义 `IUpdateProvider`；minisign 签名校验） | `check` `download` `install` `checkAndDownload` |
-| `PersistedScopePlugin` | `persisted-scope` | 7 | 持久化文件范围管理（对齐 Tauri v2 权限模型） | `addPath` `removePath` `listPaths` `clear` `isAllowed` `save` `load` |
+| `PersistedScopePlugin` | `persisted-scope` | 7 | 持久化文件范围管理（自研权限模型） | `addPath` `removePath` `listPaths` `clear` `isAllowed` `save` `load` |
 
 ---
 

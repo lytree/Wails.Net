@@ -5,7 +5,6 @@
 > - **更新日期**：2026-08-07
 > - **适用版本**：Wails.Net `0.1.0-alpha.1` 及以上
 > - **参考实现**：
->   - Tauri v2 插件模型（`tauri-plugin-*` crate + `@tauri-apps/plugin-*` npm 包）
 >   - Wails v3 `v3.0.0` 可安装插件（服务打包前端资源 + 脚本；写作时参考 `v3.0.0-beta.4`，GA 后机制未变）
 >   - 差异确认见 [wails-v3-beta-comparison.md](wails-v3-beta-comparison.md)（P0-1 可安装插件）
 
@@ -107,7 +106,7 @@ import { checkForUpdate } from "@wails-net/plugin-updater";  // 类型全自动
 
 - `IPlugin` 生命周期：`ConfigureServices` / `Configure` / `StartupAsync` / `ShutdownAsync`
 - 命令注册：`context.Commands.MapCommand("updater.checkForUpdate", ...)`
-- 权限声明：`context.Permissions`（对齐 Tauri v2 插件 permissions）
+- 权限声明：`context.Permissions`（插件 permissions 声明）
 - **禁反射**（AGENTS.md §3.4）：命令方法必须经源生成器/`MapCommand` 注册，不得 `MethodInfo.Invoke`
 - **CancellationToken 约定**（AGENTS.md §3.4.6）：从 `ICommandContext.CancellationToken` 获取，不得作为前端 JSON 参数
 
@@ -323,7 +322,7 @@ dotnet pack src/Wails.Net.Plugins.Updater -o artifacts/packages
 | **M3 批量拆分** | 其余插件按批迁移，runtime 变薄（仅核心命名空间 + 公共基座） | 全部 demo 构建通过，0 回归 |
 | **M4 发布闭环** | CI 双包发布 + 版本一致性校验 + 文档配套 | 发版后从 registry 安装验证 |
 
-**与差异确认文档的关系**：M1-M4 即 [wails-v3-beta-comparison.md](wails-v3-beta-comparison.md) §6 P0-1「可安装插件机制」的落地路径；本模型同时对齐 Tauri v2 插件生态（crate + npm 双包）。
+**与差异确认文档的关系**：M1-M4 即 [wails-v3-beta-comparison.md](wails-v3-beta-comparison.md) §6 P0-1「可安装插件机制」的落地路径；本模型采用 crate + npm 双包模型。
 
 ---
 
@@ -331,7 +330,7 @@ dotnet pack src/Wails.Net.Plugins.Updater -o artifacts/packages
 
 | 文档 | 关联点 |
 |------|--------|
-| [AGENTS.md](../../AGENTS.md) | §3.4 禁反射协议、§3.4.6 CancellationToken 约定、§1.1.1 架构融合策略 |
+| [AGENTS.md](../../AGENTS.md) | §3.4 禁反射协议、§3.4.6 CancellationToken 约定、§1.1.1 架构策略 |
 | [wails-v3-beta-comparison.md](wails-v3-beta-comparison.md) | P0-1 可安装插件差异确认与收益分析 |
 | [release-guide.md](release-guide.md) | 版本号管理与 NuGet 发布流程 |
 | [project-structure-and-modes.md](project-structure-and-modes.md) | 前后端项目分布与 Debug/Release 模式 |

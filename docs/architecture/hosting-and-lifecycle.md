@@ -2,14 +2,14 @@
 
 ## 概述
 
-Wails.Net 的宿主层（Hosting）基于 [Microsoft.Extensions.Hosting](https://learn.microsoft.com/dotnet/core/extensions/generic-host) 的 **Generic Host** 模式构建，将桌面应用的启动、依赖注入（DI）、配置、日志和生命周期管理统一纳入 .NET 通用主机的标准范式。该设计借鉴了 ASP.NET Core 的成熟模式，同时将 [Application.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Application.cs)（对应 Wails v3 Go 版本的 `Application` 结构）适配为 `IHostedService`，使原有窗口/IPC/绑定对象模型无需重写即可在 Generic Host 中运行。
+Wails.Net 的宿主层（Hosting）基于 [Microsoft.Extensions.Hosting](https://learn.microsoft.com/dotnet/core/extensions/generic-host) 的 **Generic Host** 模式构建，将桌面应用的启动、依赖注入（DI）、配置、日志和生命周期管理统一纳入 .NET 通用主机的标准范式。该设计借鉴了 ASP.NET Core 的成熟模式，同时将 [Application.cs](../../src/Wails.Net.Application/Application.cs)（对应 Wails v3 Go 版本的 `Application` 结构）适配为 `IHostedService`，使原有窗口/IPC/绑定对象模型无需重写即可在 Generic Host 中运行。
 
 宿主层位于命名空间 `Wails.Net.Application.Hosting`，核心类型包括：
 
-- [DesktopApplicationBuilder](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Hosting/DesktopApplicationBuilder.cs) — Fluent API 构建器，封装 `HostApplicationBuilder`
-- [DesktopApplication](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Hosting/DesktopApplication.cs) — 应用实例，封装 `IHost`，对外暴露 `RunAsync`/`Stop`
-- [DesktopHostedService](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Hosting/DesktopHostedService.cs) — `IHostedService` 适配器，将 `Application` 桥接到 Host 生命周期
-- [DesktopHostOptions](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Hosting/DesktopHostOptions.cs) — 强类型配置选项，绑定 `appsettings.json` 的 `Wails` 根节
+- [DesktopApplicationBuilder](../../src/Wails.Net.Application/Hosting/DesktopApplicationBuilder.cs) — Fluent API 构建器，封装 `HostApplicationBuilder`
+- [DesktopApplication](../../src/Wails.Net.Application/Hosting/DesktopApplication.cs) — 应用实例，封装 `IHost`，对外暴露 `RunAsync`/`Stop`
+- [DesktopHostedService](../../src/Wails.Net.Application/Hosting/DesktopHostedService.cs) — `IHostedService` 适配器，将 `Application` 桥接到 Host 生命周期
+- [DesktopHostOptions](../../src/Wails.Net.Application/Hosting/DesktopHostOptions.cs) — 强类型配置选项，绑定 `appsettings.json` 的 `Wails` 根节
 
 ## 架构图
 
@@ -57,7 +57,7 @@ Wails.Net 的宿主层（Hosting）基于 [Microsoft.Extensions.Hosting](https:/
 
 ## DesktopApplicationBuilder
 
-[DesktopApplicationBuilder.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Hosting/DesktopApplicationBuilder.cs) 是 Fluent API 构建器，内部封装 `HostApplicationBuilder`，对外暴露 `Services`、`Configuration`、`Logging` 三大入口，使 Wails.Net 应用与 ASP.NET Core 应用拥有相同的配置体验。
+[DesktopApplicationBuilder.cs](../../src/Wails.Net.Application/Hosting/DesktopApplicationBuilder.cs) 是 Fluent API 构建器，内部封装 `HostApplicationBuilder`，对外暴露 `Services`、`Configuration`、`Logging` 三大入口，使 Wails.Net 应用与 ASP.NET Core 应用拥有相同的配置体验。
 
 ### 创建方式
 
@@ -74,7 +74,7 @@ var builder = DesktopApplicationBuilder.CreateBuilder(args);
 构造函数立即调用 `ConfigureServices()`，完成以下注册：
 
 1. **`DesktopHostOptions` 绑定** — 通过 `Services.AddOptions<DesktopHostOptions>().Bind(Configuration.GetSection("Wails"))` 绑定到配置根节（统一为 `Wails`）
-2. **核心管理器与服务** — 调用 `Services.AddWailsCore()`（详见 [ServiceCollectionExtensions.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Hosting/ServiceCollectionExtensions.cs)），注册 `EventProcessor`、`BindingManager`、`WindowManager`、`DialogManager`、`ScreenManager` 以及内置服务（`FileServerService`、`KvStoreService`、`LogService`、`NotificationService`、`SqliteService`、`UpdaterService`）
+2. **核心管理器与服务** — 调用 `Services.AddWailsCore()`（详见 [ServiceCollectionExtensions.cs](../../src/Wails.Net.Application/Hosting/ServiceCollectionExtensions.cs)），注册 `EventProcessor`、`BindingManager`、`WindowManager`、`DialogManager`、`ScreenManager` 以及内置服务（`FileServerService`、`KvStoreService`、`LogService`、`NotificationService`、`SqliteService`、`UpdaterService`）
 3. **`ApplicationOptions` 工厂单例** — 从 `DesktopHostOptions` 映射 `Name`、`SingleInstance`、`Frameless` 字段
 4. **`Application` 工厂单例** — 复用已注册的 `ApplicationOptions` 创建实例
 5. **`DesktopHostedService`** — 通过 `AddHostedService<DesktopHostedService>()` 注册，将 `Application` 适配为 `IHostedService`
@@ -104,7 +104,7 @@ var builder = DesktopApplicationBuilder.CreateBuilder(args);
 
 ## DesktopApplication
 
-[DesktopApplication.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Hosting/DesktopApplication.cs) 实现 [IDesktopApplication](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Hosting/IDesktopApplication.cs) 接口，是用户最终调用 `RunAsync` 启动应用的入口。它持有：
+[DesktopApplication.cs](../../src/Wails.Net.Application/Hosting/DesktopApplication.cs) 实现 [IDesktopApplication](../../src/Wails.Net.Application/Hosting/IDesktopApplication.cs) 接口，是用户最终调用 `RunAsync` 启动应用的入口。它持有：
 
 - `_host` — 已构建的 `IHost` 实例
 - `_application` — 兼容层 `Application` 实例
@@ -147,7 +147,7 @@ public async Task<int> RunAsync(CancellationToken cancellationToken = default)
 
 ## DesktopHostedService
 
-[DesktopHostedService.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Hosting/DesktopHostedService.cs) 是连接 Generic Host 与 `Application` 生命周期的关键适配器，实现了 `IHostedService` 和 `IDisposable`。DI 通过构造函数注入 `ILogger<DesktopHostedService>`、`Application` 和 `IHostApplicationLifetime`。
+[DesktopHostedService.cs](../../src/Wails.Net.Application/Hosting/DesktopHostedService.cs) 是连接 Generic Host 与 `Application` 生命周期的关键适配器，实现了 `IHostedService` 和 `IDisposable`。DI 通过构造函数注入 `ILogger<DesktopHostedService>`、`Application` 和 `IHostApplicationLifetime`。
 
 ### StartAsync
 
@@ -214,7 +214,7 @@ public async Task StopAsync(CancellationToken cancellationToken)
 
 ## 服务生命周期
 
-[ServiceRegistry.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Services/ServiceRegistry.cs) 是一个简单的 `List<object>` 容器，提供 `Register`/`Unregister`/`GetService<T>`/`GetServices<T>`/`Clear`/`CopyTo` 方法。`CopyTo` 以单例方式将已注册实例迁移到 `IServiceCollection`（使用运行时类型作为服务类型）。
+[ServiceRegistry.cs](../../src/Wails.Net.Application/Services/ServiceRegistry.cs) 是一个简单的 `List<object>` 容器，提供 `Register`/`Unregister`/`GetService<T>`/`GetServices<T>`/`Clear`/`CopyTo` 方法。`CopyTo` 以单例方式将已注册实例迁移到 `IServiceCollection`（使用运行时类型作为服务类型）。
 
 ### IServiceStartup — 顺序启动
 
@@ -225,7 +225,7 @@ public interface IServiceStartup
 }
 ```
 
-在 [Application.Run](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Application.cs) 中按注册顺序同步等待（`GetAwaiter().GetResult()`）依次调用：
+在 [Application.Run](../../src/Wails.Net.Application/Application.cs) 中按注册顺序同步等待（`GetAwaiter().GetResult()`）依次调用：
 
 ```csharp
 foreach (var service in _serviceRegistry.Services)
@@ -287,7 +287,7 @@ for (var i = services.Count - 1; i >= 0; i--)
 
 ## 配置选项
 
-[DesktopHostOptions.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Hosting/DesktopHostOptions.cs) 对应 `appsettings.json` 的 `Wails` 根节（**配置根节统一为 `Wails`，`Desktop` 节为旧文档残留，请勿使用**），使用标准 `IOptions<T>` 模式绑定：
+[DesktopHostOptions.cs](../../src/Wails.Net.Application/Hosting/DesktopHostOptions.cs) 对应 `appsettings.json` 的 `Wails` 根节（**配置根节统一为 `Wails`，`Desktop` 节为旧文档残留，请勿使用**），使用标准 `IOptions<T>` 模式绑定：
 
 ```json
 {
@@ -321,7 +321,7 @@ for (var i = services.Count - 1; i >= 0; i--)
 | `AssetsDirectory` | `string` | `"dist"` | 资源目录（传统字段） |
 | `DevServerUrl` | `string?` | `null` | 开发服务器 URL |
 | `SingleInstance` | `bool` | `false` | 单实例模式 |
-| `Permissions` | `List<string>` | 空 | 权限列表（Tauri v2 风格） |
+| `Permissions` | `List<string>` | 空 | 权限列表 |
 | `Assets` | `AssetsOptions` | 见下 | 静态资源配置 |
 
 `AssetsOptions` 子选项：
@@ -407,7 +407,7 @@ UI 线程内 `Application.Run()` 抛出的异常也会被 `catch` 块捕获，�
 
 ## 运行时协调器（P1-1 审计项）
 
-为防止 `Application` 聚合根继续膨胀为"上帝对象"，运行时段职责逐步收敛到独立的协调器（`IRuntimeCoordinator`，见 [`Coordinators`](../src/Wails.Net.Application/Coordinators)）：
+为防止 `Application` 聚合根继续膨胀为"上帝对象"，运行时段职责逐步收敛到独立的协调器（`IRuntimeCoordinator`，见 [`Coordinators`](../../src/Wails.Net.Application/Coordinators)）：
 
 | 协调器 | 职责 | 状态 |
 |--------|------|------|

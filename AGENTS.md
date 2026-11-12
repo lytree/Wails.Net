@@ -9,7 +9,7 @@
 
 - **项目**：Wails.Net — Wails v3 (Go) 的 .NET 10 移植实现
 - **参考版本**：`wails v3.1.0`（2026-11-01 weekly；2026-10-26 的 `v3.0.0` GA 之后首个 minor 版本，`v3.2.0-nightly.*` 为预发布不作基线；**2026-11-12 复核仍为最新正式版，无 `v3.1.x` hotfix / 无新 nightly**；差异与待实现项见 `docs/development/wails-v3-beta-comparison.md` §11–§13）
-- **对比基线**：Tauri v2 GA `2.12.5`（2026-10-21；Tauri 2.0 于 2024-10-02 正式发布，**无 beta 阶段**；Tauri 3 已发布核心 alpha `3.0.0-alpha.6`（2026-11-06），仍属预览，不作为参考）
+- **参考范围**：**仅以 Wails v3 作为唯一上游参考实现**，不引入其他桌面框架作为对比基线或设计来源
 - **目标平台**：Windows、Linux、Android（macOS 已实现 `Wails.Net.Application.MacOS`：`#if MACOS` 分支为完整 AppKit + WKWebView 实现，`#else` 分支降级到 ServerMode；iOS 暂不实现）
 - **实施计划**：详见 `.trae/documents/wails-net-dotnet10-implementation-plan.md`
 
@@ -33,17 +33,18 @@
 | 测试框架 | TUnit 1.83.8 | **禁止使用 MSTest/xUnit/NUnit** |
 | 脚本语言 | F# (.fsx) | **严禁使用 Python (.py)** |
 
-### 1.1.1 架构融合策略(必须遵守)
+### 1.1.1 架构策略(必须遵守)
 
-- **Host/DI/Config/Logging** → 学 ASP.NET Core（Microsoft.Extensions.* 全栈）
-- **Runtime/Window/IPC** → 学 Wails v3（对象模型、IPC、多窗口、事件总线）
-- **Plugin/Security/Capability** → 学 Tauri v2（插件能力、权限模型、安全设计）
+架构由三条主线构成，**Host/DI 与 Runtime 两条主线有明确外部参考，Plugin/Security 为自研设计**：
+
+- **Host/DI/Config/Logging** → 参考 ASP.NET Core（Microsoft.Extensions.* 全栈）
+- **Runtime/Window/IPC** → 参考 Wails v3（对象模型、IPC、多窗口、事件总线）
+- **Plugin/Security/Capability** → **Wails.Net 自研能力模型**（插件契约与 Wails v3 对齐，权限模型、Capability 声明、Scope 校验由本项目自主设计，不依赖外部框架）
 
 > **参考基线（2026-11-12 复核）**：
 > - Wails v3 = `v3.1.0`（2026-11-01 weekly；`v3.0.0` → `v3.1.0` 差异见对比文档 §12；2026-11-12 复核无新正式版，基线不变，遗留 P2 补齐见 §13）
-> - Tauri = v2 GA `2.12.5`（2026-10-21；Tauri 2 已于 2024-10-02 正式发布，不再有 beta 版本；Tauri 3 `3.0.0-alpha.6`（2026-11-06）仍为 alpha，不作基线）
 > - Wails v3 已进入 **周更发布节奏**：每周 bump minor（`v3.1.0`、`v3.2.0` …）、每日 `v3.x.0-nightly.YYYYMMDD` 预发布、hotfix 走 patch；`@wailsio/runtime` npm 版本与 Wails 发布版本号一致（当前 `3.1.0`）。基线维护时以 **最新 weekly/hotfix（不含 nightly）** 为准
-> - 三方差异确认详见 `docs/development/wails-v3-beta-comparison.md`（Wails v3 维度，§1–§10 为 beta 时代历史结论，§11 为 GA 基线，§12 为 v3.1.0 基线，§13 为 2026-11-12 复核与 P2 补齐）与 `docs/fusion-strategy-comparison.md`（三方功能对比）
+> - 上游差异确认详见 `docs/development/wails-v3-beta-comparison.md`（§1–§10 为 beta 时代历史结论，§11 为 GA 基线，§12 为 v3.1.0 基线，§13 为 2026-11-12 复核与 P2 补齐）与 `docs/comparison-with-wails-v3.md`（Wails.Net vs Wails v3 两方能力矩阵）
 
 ### 1.2 互操作策略
 
@@ -372,7 +373,7 @@ $env:WAILS_RUN_GUI_TESTS='1'; dotnet run --project tests/Wails.Net.Application.W
 - **Linux 测试**：必须在 Linux 或 WSL 中运行（依赖 GirCore/GTK4 原生库）
   ```bash
   # 在 WSL 中运行
-  wsl -d kali-linux -- bash -c "cd /mnt/f/Code/Dotnet/Wails.Net && dotnet run --project tests/Wails.Net.Application.Linux.Tests/Wails.Net.Application.Linux.Tests.csproj"
+  wsl -d kali-linux -- bash -c "cd /mnt/f/Code/github/Wails.Net && dotnet run --project tests/Wails.Net.Application.Linux.Tests/Wails.Net.Application.Linux.Tests.csproj"
   ```
 - **Android 测试**：必须在已安装 `android` 工作负载的 Windows 上运行单元测试；插桩测试需 Android 模拟器或真机
   ```bash
@@ -503,7 +504,7 @@ const uint prime = 16777619u;
 
 ### 6.4 统一 SDK 模型（SDK-1/2/3）
 
-对标 Tauri 单包 + 单命令多目标体验，用户项目只引用一个 `Wails.Net.Sdk` 包，
+采用单包 + 单命令多目标模型，用户项目只引用一个 `Wails.Net.Sdk` 包，
 `Program.cs` 仅一行平台入口 `builder.UseWailsPlatform()`（`UseAutoPlatform()` 的别名），
 编译期无需引用具体平台类型，无需条件编译块。
 
@@ -592,14 +593,14 @@ dotnet fsi script.fsx
 | 资源 | 链接 |
 |------|------|
 | Wails v3 源码 | https://github.com/wailsapp/wails/tree/v3.1.0 |
-| Tauri v2 源码 | https://github.com/tauri-apps/tauri |
 | GirCore | https://github.com/gircore/gir.core |
 | .NET Android | https://learn.microsoft.com/dotnet/android/ |
 | TUnit | https://github.com/thomhurst/TUnit |
 | CsWin32 | https://github.com/microsoft/CsWin32 |
 | System.CommandLine | https://github.com/dotnet/command-line-api |
 | 实施计划 | `.trae/documents/wails-net-dotnet10-implementation-plan.md` |
-| 三方差异确认 | `docs/development/wails-v3-beta-comparison.md` |
+| 上游差异确认 | `docs/development/wails-v3-beta-comparison.md` |
+| 能力矩阵 | `docs/comparison-with-wails-v3.md` |
 
 ---
 
@@ -610,4 +611,4 @@ dotnet fsi script.fsx
 
 ---
 
-**最后更新**：2026-11-12（基线复核：Wails v3 仍为 `v3.1.0`（2026-11-01 weekly，无 `v3.1.x` hotfix、无新 nightly），Tauri v2 仍为 `2.12.5`，Tauri 3 `3.0.0-alpha.6`（2026-11-06）仍属预览；§1 参考版本/对比基线、§1.1.1 参考基线、§8 资源链接同步；上一轮遗留的 2 项 P2（Windows 图标句柄生命周期、`DisableIcon` 选项）已补齐，见 `docs/development/wails-v3-beta-comparison.md` §13）
+**最后更新**：2026-11-12（基线复核：Wails v3 仍为 `v3.1.0`（2026-11-01 weekly，无 `v3.1.x` hotfix、无新 nightly）；§1 参考范围收敛为 Wails v3 单一上游、§1.1.1 架构三主线（Plugin/Security 改为自研表述）、§8 资源链接同步；上一轮遗留的 2 项 P2（Windows 图标句柄生命周期、`DisableIcon` 选项）已补齐，见 `docs/development/wails-v3-beta-comparison.md` §13）

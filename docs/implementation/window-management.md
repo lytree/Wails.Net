@@ -25,11 +25,11 @@ Wails.Net 的窗口管理采用三层架构，遵循"接口驱动的平台抽象
 └─────────────────────┘  └─────────────────────┘
 ```
 
-- **公共层**：[WebviewWindow.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Windows/WebviewWindow.cs) 暴露给应用开发者，承载所有窗口操作方法。
-- **抽象层**：[IWebviewWindowImpl.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Windows/IWebviewWindowImpl.cs) 定义平台契约，并对可选项提供默认空实现。
-- **实现层**：[Win32WebviewWindow.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Windows/Win32WebviewWindow.cs) 与 [LinuxWebviewWindow.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Linux/LinuxWebviewWindow.cs)。
+- **公共层**：[WebviewWindow.cs](../../src/Wails.Net.Application/Windows/WebviewWindow.cs) 暴露给应用开发者，承载所有窗口操作方法。
+- **抽象层**：[IWebviewWindowImpl.cs](../../src/Wails.Net.Application/Windows/IWebviewWindowImpl.cs) 定义平台契约，并对可选项提供默认空实现。
+- **实现层**：[Win32WebviewWindow.cs](../../src/Wails.Net.Application.Windows/Win32WebviewWindow.cs) 与 [LinuxWebviewWindow.cs](../../src/Wails.Net.Application.Linux/LinuxWebviewWindow.cs)。
 
-窗口创建通过 [WindowManager.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Managers/WindowManager.cs) 集中管理，前端通过 [WindowPlugin.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/WindowPlugin.cs) 与 [WindowsPlugin.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/WindowsPlugin.cs) 暴露的命令访问窗口能力。
+窗口创建通过 [WindowManager.cs](../../src/Wails.Net.Application/Managers/WindowManager.cs) 集中管理，前端通过 [WindowPlugin.cs](../../src/Wails.Net.Plugins.Window/WindowPlugin.cs) 与 [WindowsPlugin.cs](../../src/Wails.Net.Plugins.Windows/WindowsPlugin.cs) 暴露的命令访问窗口能力。
 
 ## 2. WebviewWindow 公共类
 
@@ -154,7 +154,7 @@ public event Action? RuntimeReady;
 
 ## 3. WebviewWindowOptions
 
-[WebviewWindowOptions.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Options/WebviewWindowOptions.cs) 是窗口创建时的配置载体，主要字段如下：
+[WebviewWindowOptions.cs](../../src/Wails.Net.Application/Options/WebviewWindowOptions.cs) 是窗口创建时的配置载体，主要字段如下：
 
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
@@ -184,7 +184,7 @@ public event Action? RuntimeReady;
 | `DisableContextMenu` | bool | false | 是否禁用右键菜单 |
 | `EnableDragAndDrop` | bool | false | 是否启用拖放 |
 
-`TitleBarStyle` 枚举定义于 [IWebviewWindowImpl.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Windows/IWebviewWindowImpl.cs)：
+`TitleBarStyle` 枚举定义于 [IWebviewWindowImpl.cs](../../src/Wails.Net.Application/Windows/IWebviewWindowImpl.cs)：
 
 ```csharp
 public enum TitleBarStyle
@@ -200,7 +200,7 @@ public enum TitleBarStyle
 
 ## 4. WindowManager
 
-[WindowManager.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Managers/WindowManager.cs) 实现窗口注册表、ID 生成与查找：
+[WindowManager.cs](../../src/Wails.Net.Application/Managers/WindowManager.cs) 实现窗口注册表、ID 生成与查找：
 
 ```csharp
 public class WindowManager : IWindowManager
@@ -250,7 +250,7 @@ public class WindowManager : IWindowManager
 
 ## 5. Win32WebviewWindow 实现详解
 
-[Win32WebviewWindow.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Windows/Win32WebviewWindow.cs) 是 Windows 平台的具体实现，约 3000 行，使用 CsWin32 源生成器调用 Win32 API。
+[Win32WebviewWindow.cs](../../src/Wails.Net.Application.Windows/Win32WebviewWindow.cs) 是 Windows 平台的具体实现，约 3000 行，使用 CsWin32 源生成器调用 Win32 API。
 
 ### 5.1 WebView2 初始化
 
@@ -424,7 +424,7 @@ private unsafe string[] ParseDropFiles(nint hDropPtr)
 
 ### 5.7 无边框窗口拖拽（DragRegionHelper）
 
-[DragRegionHelper.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Windows/DragRegionHelper.cs) 提供 `-webkit-app-region: drag` CSS 属性支持，对应 Tauri v2 / Electron 的无边框窗口拖拽方案。
+[DragRegionHelper.cs](../../src/Wails.Net.Application/Windows/DragRegionHelper.cs) 提供 `-webkit-app-region: drag` CSS 属性支持，实现无边框窗口拖拽。
 
 它由三部分组成：
 
@@ -465,7 +465,7 @@ public void StartDrag()
 
 ## 6. LinuxWebviewWindow 实现要点
 
-[LinuxWebviewWindow.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Linux/LinuxWebviewWindow.cs) 使用 GirCore 0.8.0 调用 GTK4 与 WebKitGTK。
+[LinuxWebviewWindow.cs](../../src/Wails.Net.Application.Linux/LinuxWebviewWindow.cs) 使用 GirCore 0.8.0 调用 GTK4 与 WebKitGTK。
 
 ### 6.1 GTK4 Window + WebKit.WebView
 
@@ -535,7 +535,7 @@ private void SetupFileDropTarget()
 
 ## 7. WindowPlugin 命令实现
 
-[WindowPlugin.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/WindowPlugin.cs) 借鉴 Tauri v2 "核心即插件" 哲学，将 `WebviewWindow` 的原生操作以插件命令形式暴露给前端，对应前端 `wails.window.*` API。
+[WindowPlugin.cs](../../src/Wails.Net.Plugins.Window/WindowPlugin.cs) 采用「核心即插件」的插件化设计，将 `WebviewWindow` 的原生操作以插件命令形式暴露给前端，对应前端 `wails.window.*` API。
 
 ### 7.1 命令分类
 
@@ -615,7 +615,7 @@ commands.MapCommand("window.getSize",
 
 ## 8. WindowsPlugin 命令
 
-[WindowsPlugin.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Plugins/BuiltIn/WindowsPlugin.cs) 暴露窗口管理器级别的查询命令，对应前端 `wails.windows.*` API。与 `WindowPlugin` 区别：
+[WindowsPlugin.cs](../../src/Wails.Net.Plugins.Windows/WindowsPlugin.cs) 暴露窗口管理器级别的查询命令，对应前端 `wails.windows.*` API。与 `WindowPlugin` 区别：
 
 - `WindowPlugin` 操作单个窗口，通过 `ICommandContext.WindowId` 定位；
 - `WindowsPlugin` 查询窗口列表，不依赖 `WindowId`。
@@ -672,4 +672,4 @@ commands.MapCommand("windows.emit",
 4. **事件传播**：窗口级 `Emit` 同步传播到应用级 `EventProcessor`，使全局订阅者能收到窗口事件。
 5. **平台特性差异**：Windows 通过 `DwmSetWindowAttribute` 实现 Mica/Acrylic 与边框颜色，通过 `ITaskbarList3` COM 实现任务栏进度与叠加图标；Linux 通过 GTK CSS 实现透明背景。
 6. **IPC 双通道**：Win32 使用 `WebResourceRequested` 拦截 HTTP 请求，同时使用 `WebMessageReceived` 处理 `postMessage`，后者专用于拖拽等需绕过 IPC 队列的实时操作。
-7. **插件化窗口命令**：窗口管理是核心能力，但通过插件命令路径暴露给前端，符合 Tauri v2 的"核心即插件"哲学，使前端 API 与插件 API 保持一致。
+7. **插件化窗口命令**：窗口管理是核心能力，但通过插件命令路径暴露给前端，符合「核心即插件」的插件化设计，使前端 API 与插件 API 保持一致。

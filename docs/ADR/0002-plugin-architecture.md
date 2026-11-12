@@ -17,7 +17,7 @@ Wails v3 (Go) 的原生能力散布于各包中，缺乏统一的扩展点。移
 - 必须支持运行时注册（从 DI 容器收集）和编译时发现（从程序集扫描）两种模式。
 - 必须与绑定系统（`BindingManager`）和命令系统（`CommandDispatcher`）协同工作，统一前后端调用路径。
 - 必须可单元测试：插件逻辑应可在不启动 GUI 的情况下被验证。
-- 参考架构方向：Tauri v2 的"核心即插件"哲学（参考 [AGENTS.md](../../AGENTS.md) "1.1.1 架构融合策略"）。
+- 参考架构方向：「核心即插件」的插件化设计（参考 [AGENTS.md](../../AGENTS.md) §1.1.1 架构策略）。
 
 ## 决策
 
@@ -91,7 +91,7 @@ public interface IPlugin
 2. **MEF（Managed Extensibility Framework）**：放弃。MEF 自带 DI 容器，与 `Microsoft.Extensions.DependencyInjection` 并存会引入两套生命周期管理，心智负担重；且 MEF 在 AOT 下支持不佳。
 3. **纯命令模式（仅 CommandDispatcher）**：放弃。命令模式无法表达"绑定整个服务实例的所有公共方法"这种批量场景，对业务逻辑绑定不友好。
 4. **插件基类继承而非接口**：放弃。基类强制实现者继承特定类型，限制灵活性；C# 单继承模型下，若插件需要复用其他基类将无法实现。接口模式允许插件同时实现多个接口。
-5. **Tauri v2 的 Permission Manifest 直接照搬**：部分采纳。`Wails.Net.Application/Security/PermissionManager.cs` 已实现权限模型，但与插件解耦——权限是命令调用时的横切关注点，由 `ICommandMiddleware` 处理，而非插件契约的一部分。
+5. **权限清单集中声明**：部分采纳。`Wails.Net.Application/Security/PermissionManager.cs` 已实现权限模型，但与插件解耦——权限是命令调用时的横切关注点，由 `ICommandMiddleware` 处理，而非插件契约的一部分。
 6. **运行时插件加载（Assembly.LoadFrom 动态加载 .dll）**：放弃。引入动态加载会破坏 AOT 与裁剪，且带来安全风险（未签名的第三方程序集）。当前设计要求插件在编译时被引用。
 
 ## 相关文件

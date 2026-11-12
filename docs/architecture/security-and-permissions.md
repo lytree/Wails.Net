@@ -2,7 +2,7 @@
 
 ## 1. 概述
 
-Wails.Net 的安全体系借鉴 **Tauri v2 的多层防护策略**，将安全职责分散到六个相互独立又彼此配合的层面，从外部资源加载到内部命令执行形成完整防护链：
+Wails.Net 的安全体系采用 **多层防护策略**，将安全职责分散到六个相互独立又彼此配合的层面，从外部资源加载到内部命令执行形成完整防护链：
 
 | 防护层 | 职责 | 核心类型 |
 |--------|------|----------|
@@ -19,7 +19,7 @@ Wails.Net 的安全体系借鉴 **Tauri v2 的多层防护策略**，将安全�
 设计原则：
 
 1. **默认安全**：CSP 默认启用且使用 `'self'` 严格策略；文件系统沙箱可选但推荐启用。
-2. **默认最小权限**（R3-E 起）：库默认 `PermissionMode = Strict`、`PermissionManager.Enabled = true`，对齐 Tauri v2 默认行为；未授权命令一律拒绝。0.1.x → 1.0.0-alpha.x 升级用户需配套 `capabilities/` JSON 文件或临时调用 `EnableCompatibilityByDefault()`。
+2. **默认最小权限**（R3-E 起）：库默认 `PermissionMode = Strict`、`PermissionManager.Enabled = true`，默认取最小权限；未授权命令一律拒绝。0.1.x → 1.0.0-alpha.x 升级用户需配套 `capabilities/` JSON 文件或临时调用 `EnableCompatibilityByDefault()`。
 3. **零信任文件路径**：所有文件命令统一过 `GetSafePath` 算法，路径穿越攻击在沙箱模式下被阻断。
 4. **加密静态数据**：敏感数据通过 AES-GCM 认证加密落盘，密码从不以明文形式持久化。
 
@@ -27,7 +27,7 @@ Wails.Net 的安全体系借鉴 **Tauri v2 的多层防护策略**，将安全�
 
 ### 2.1 CspOptions — CSP 头部配置
 
-[CspOptions.cs](../src/Wails.Net.Application/Security/CspOptions.cs) 定义 CSP 头部各指令的来源策略，对应 Tauri v2 的 CSP 安全配置。默认值遵循"最小权限"原则：
+[CspOptions.cs](../../src/Wails.Net.Application/Security/CspOptions.cs) 定义 CSP 头部各指令的来源策略。默认值遵循"最小权限"原则：
 
 | 指令 | 默认值 | 说明 |
 |------|--------|------|
@@ -44,7 +44,7 @@ Wails.Net 的安全体系借鉴 **Tauri v2 的多层防护策略**，将安全�
 
 ### 2.2 AssetServer.SetCspHeader — 响应头注入
 
-[AssetServer.cs](../src/Wails.Net.AssetServer/AssetServer.cs) 在处理 HTTP 请求时统一注入 CSP 头。Application 层在配置阶段调用 `SetCspHeader` 注入由 `CspOptions.BuildHeader()` 构建的头部值：
+[AssetServer.cs](../../src/Wails.Net.AssetServer/AssetServer.cs) 在处理 HTTP 请求时统一注入 CSP 头。Application 层在配置阶段调用 `SetCspHeader` 注入由 `CspOptions.BuildHeader()` 构建的头部值：
 
 ```csharp
 // AssetServer.ServeHttpAsync 中的注入逻辑
@@ -78,7 +78,7 @@ var options = new ApplicationOptions
 
 ### 3.1 UrlWhitelist — 允许的外部链接
 
-[UrlWhitelist.cs](../src/Wails.Net.Application/Security/UrlWhitelist.cs) 维护一组允许的 URL 模式集合，支持 `*` 通配符匹配（如 `https://*.example.com`）。匹配算法将通配符转为正则 `.*` 并对其余字符转义，使用 `RegexOptions.IgnoreCase` 进行大小写不敏感匹配。
+[UrlWhitelist.cs](../../src/Wails.Net.Application/Security/UrlWhitelist.cs) 维护一组允许的 URL 模式集合，支持 `*` 通配符匹配（如 `https://*.example.com`）。匹配算法将通配符转为正则 `.*` 并对其余字符转义，使用 `RegexOptions.IgnoreCase` 进行大小写不敏感匹配。
 
 ```csharp
 var whitelist = new UrlWhitelist();
@@ -91,7 +91,7 @@ bool no = whitelist.IsAllowed("https://evil.com");                 // false
 
 ### 3.2 外部链接打开前的校验
 
-[OpenerPlugin.cs](../src/Wails.Net.Application/Plugins/BuiltIn/OpenerPlugin.cs)（对应 Tauri v2 的 `@tauri-apps/plugin-opener`）复用 `UrlWhitelist` 进行通配符模式匹配，并通过协议白名单默认拦截 `file://`、`javascript:`、`vbscript:` 等危险协议：
+[OpenerPlugin.cs](../../src/Wails.Net.Plugins.Opener/OpenerPlugin.cs)复用 `UrlWhitelist` 进行通配符模式匹配，并通过协议白名单默认拦截 `file://`、`javascript:`、`vbscript:` 等危险协议：
 
 ```csharp
 public class OpenerPlugin : IPlugin
@@ -122,7 +122,7 @@ public class OpenerPlugin : IPlugin
 
 ### 4.1 IpcOriginValidator — IPC 请求来源校验
 
-[IpcOriginValidator.cs](../src/Wails.Net.Application/Security/IpcOriginValidator.cs) 验证 WebView 发出的 IPC 消息来源是否可信，对应 Tauri v2 的 IPC 安全校验。校验逻辑分两级：
+[IpcOriginValidator.cs](../../src/Wails.Net.Application/Security/IpcOriginValidator.cs) 验证 WebView 发出的 IPC 消息来源是否可信，用于 IPC 来源校验。校验逻辑分两级：
 
 1. **本地源直通**：`wails://`、`https://wails.localhost`、`http://localhost`、`http://127.0.0.1` 视为可信来源，直接放行。
 2. **外部源查表**：非本地源必须命中 `UrlWhitelist`，否则拒绝。
@@ -154,7 +154,7 @@ public sealed class IpcOriginValidator
 
 ### 5.1 运行时能力模型 — Security.Capability
 
-[Capability.cs](../src/Wails.Net.Application/Security/Capability.cs) 是运行时能力声明模型，描述命令所需的能力标识，借鉴 Tauri v2 的 Capability 设计：
+[Capability.cs](../../src/Wails.Net.Application/Security/Capability.cs) 是运行时能力声明模型，描述命令所需的能力标识，采用 Capability 能力声明设计：
 
 ```csharp
 public sealed class Capability
@@ -167,7 +167,7 @@ public sealed class Capability
 
 ### 5.2 配置层能力模型 — Options.Capability
 
-[Options/Capability.cs](../src/Wails.Net.Application/Options/Capability.cs) 是配置层模型，对应 Tauri v2 的 Capabilities 配置，用于从 `appsettings.json` 或代码中声明应用所需的能力及作用窗口范围：
+[Options/Capability.cs](../../src/Wails.Net.Application/Security/Capability.cs) 是配置层模型，用于从 `appsettings.json` 或代码中声明应用所需的能力及作用窗口范围：
 
 ```csharp
 public sealed class Capability
@@ -183,7 +183,7 @@ public sealed class Capability
 
 ### 5.3 平台级能力隔离 — Capability.Platforms（OPT-SEC-002）
 
-[Security.Capability](../src/Wails.Net.Application/Security/Capability.cs) 与 capabilities/*.json 文件支持 `platforms` 数组，实现平台级权限隔离：
+[Security.Capability](../../src/Wails.Net.Application/Security/Capability.cs) 与 capabilities/*.json 文件支持 `platforms` 数组，实现平台级权限隔离：
 
 ```json
 {
@@ -200,7 +200,7 @@ public sealed class Capability
 
 ### 5.3 命令级权限标注 — RequireCapabilityAttribute
 
-[CapabilityAttribute.cs](../src/Wails.Net.Application/Security/CapabilityAttribute.cs) 实际定义的是 `RequireCapabilityAttribute`，用于在命令方法上标注所需能力，支持 `AllowMultiple = true` 与 `Inherited = true`：
+[CapabilityAttribute.cs](../../src/Wails.Net.Application/Security/CapabilityAttribute.cs) 实际定义的是 `RequireCapabilityAttribute`，用于在命令方法上标注所需能力，支持 `AllowMultiple = true` 与 `Inherited = true`：
 
 ```csharp
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = true)]
@@ -226,7 +226,7 @@ public class MyService
 
 ### 6.1 PermissionManager — 运行时权限校验
 
-[PermissionManager.cs](../src/Wails.Net.Application/Security/PermissionManager.cs) 是权限校验的运行时入口，维护两个集合：
+[PermissionManager.cs](../../src/Wails.Net.Application/Security/PermissionManager.cs) 是权限校验的运行时入口，维护两个集合：
 
 - `_grantedCapabilities`：已授权的能力标识集合（`HashSet<string>`，大小写不敏感）。
 - `_declaredCapabilities`：已声明的能力元数据字典（`Dictionary<string, Capability>`）。
@@ -258,7 +258,7 @@ public bool ValidateCommand(MethodInfo method)
 
 ### 6.2 CommandDispatcher.DispatchAsync 中的权限校验流程
 
-[CommandDispatcher.cs](../src/Wails.Net.Application/Commands/CommandDispatcher.cs) 在 `DispatchAsync` 中将权限校验置于**命令查找之后、中间件管道之前**：
+[CommandDispatcher.cs](../../src/Wails.Net.Application/Commands/CommandDispatcher.cs) 在 `DispatchAsync` 中将权限校验置于**命令查找之后、中间件管道之前**：
 
 ```csharp
 public async Task<InvokeResponse> DispatchAsync(InvokeRequest request, ICommandContext? context = null)
@@ -288,7 +288,7 @@ public async Task<InvokeResponse> DispatchAsync(InvokeRequest request, ICommandC
 
 ### 6.3 PermissionOptions 配置
 
-[PermissionOptions.cs](../src/Wails.Net.Application/Security/PermissionOptions.cs) 从 `appsettings.json` 的 `Wails:Permissions` 节绑定：
+[PermissionOptions.cs](../../src/Wails.Net.Application/Security/PermissionOptions.cs) 从 `appsettings.json` 的 `Wails:Permissions` 节绑定：
 
 ```json
 {
@@ -309,7 +309,7 @@ public async Task<InvokeResponse> DispatchAsync(InvokeRequest request, ICommandC
 
 | 属性 | 默认值 | 说明 |
 |------|--------|------|
-| `Mode` | `Strict` | 权限模式（OPT-SEC-001，**R3-E 默认**）：`Compatibility`（未授权放行，0.1.x 旧应用迁移期）vs `Strict`（最小权限姿态，未授权拒绝；即便漏配 `Enabled=true` 也强制启用检查，对齐 Tauri v2 默认行为） |
+| `Mode` | `Strict` | 权限模式（OPT-SEC-001，**R3-E 默认**）：`Compatibility`（未授权放行，0.1.x 旧应用迁移期）vs `Strict`（最小权限姿态，未授权拒绝；即便漏配 `Enabled=true` 也强制启用检查，默认最小权限姿态） |
 | `Enabled` | `true`（受 `Mode` 隐式控制） | 是否启用权限检查（`Strict` 模式下 `Enabled` 始终为 `true`；`Compatibility` 模式下由 `Enabled` 标志决定） |
 | `DenyByDefault` | `true` | 未声明能力是否拒绝 |
 | `Permissions` | `[]` | 已授权能力标识列表 |
@@ -325,7 +325,7 @@ public async Task<InvokeResponse> DispatchAsync(InvokeRequest request, ICommandC
 
 ### 6.4 PermissionServiceExtensions DI 注册
 
-[PermissionServiceExtensions.cs](../src/Wails.Net.Application/Security/PermissionServiceExtensions.cs) 提供两个 DI 扩展方法：
+[PermissionServiceExtensions.cs](../../src/Wails.Net.Application/Security/PermissionServiceExtensions.cs) 提供两个 DI 扩展方法：
 
 ```csharp
 // 注册权限服务（绑定配置 + 注册 PermissionManager 单例）
@@ -345,7 +345,7 @@ builder.Services.EnablePermissions();
 
 ### 7.1 FileSystemPlugin 沙箱根（SandboxRoot）
 
-[FileSystemPlugin.cs](../src/Wails.Net.Application/Plugins/BuiltIn/FileSystemPlugin.cs) 提供文件读写命令，对应 Tauri v2 的 `@tauri-apps/api/fs`。沙箱根通过构造函数注入：
+[FileSystemPlugin.cs](../../src/Wails.Net.Plugins.FileSystem/FileSystemPlugin.cs) 提供文件读写命令。沙箱根通过构造函数注入：
 
 ```csharp
 // 无沙箱（受信任应用，前端可访问任意路径）
@@ -404,9 +404,9 @@ private string GetSafePath(string path)
 
 ### 7.3 PersistedScopePlugin — 文件系统范围持久化（P2-2 深度整合）
 
-[PersistedScopePlugin.cs](../src/Wails.Net.Plugins.PersistedScope/PersistedScopePlugin.cs) 对应 Tauri v2 的 `@tauri-apps/plugin-persisted-scope`，允许运行时动态添加/移除允许访问的路径，并将范围变更持久化到 JSON 文件，应用重启后恢复之前的 scope 配置。
+[PersistedScopePlugin.cs](../../src/Wails.Net.Plugins.PersistedScope/PersistedScopePlugin.cs) 允许运行时动态添加/移除允许访问的路径，并将范围变更持久化到 JSON 文件，应用重启后恢复之前的 scope 配置。
 
-**与权限模型的深度整合（P2-2 审计项）**：插件通过 `IPermissionRegistrar.BindScope` 将 [`PersistedScopeManager`](../src/Wails.Net.Plugins.PersistedScope/PersistedScopeManager.cs)（实现 `IScope`）绑定到受管权限（默认 `fs:allow-read` / `fs:allow-write`，可通过构造函数自定义）。绑定后，`scope.addPath` 运行时授权的路径**立即参与 `PermissionManager.ValidateScopes` 的参数级 Scope 校验**——fs 插件的 `[ScopeParameter("fs:allow-read")]` 路径参数会同时受静态配置（appsettings.json `Scopes`）与运行时持久化授权的约束，接近 Tauri v2 的 fs scope 体验。`PersistedScopeManager` 同时注册为 DI 单例（`IPersistedScope`），供其他服务注入。
+**与权限模型的深度整合（P2-2 审计项）**：插件通过 `IPermissionRegistrar.BindScope` 将 [`PersistedScopeManager`](../../src/Wails.Net.Plugins.PersistedScope/PersistedScopeManager.cs)（实现 `IScope`）绑定到受管权限（默认 `fs:allow-read` / `fs:allow-write`，可通过构造函数自定义）。绑定后，`scope.addPath` 运行时授权的路径**立即参与 `PermissionManager.ValidateScopes` 的参数级 Scope 校验**——fs 插件的 `[ScopeParameter("fs:allow-read")]` 路径参数会同时受静态配置（appsettings.json `Scopes`）与运行时持久化授权的约束，提供完整的 fs scope 体验。`PersistedScopeManager` 同时注册为 DI 单例（`IPersistedScope`），供其他服务注入。
 
 `PersistedScopeManager` 维护多个命名作用域（默认作用域持久化到 `persisted-scope.json`），`IScope.Allows` 合并所有命名作用域校验。支持通配符匹配：
 
@@ -430,7 +430,7 @@ await wails.call("scope.isAllowed", ["/data/user2/docs/file.txt", null]); // fal
 
 ### 8.1 StrongholdPlugin — 加密安全存储
 
-[StrongholdPlugin.cs](../src/Wails.Net.Application/Plugins/BuiltIn/StrongholdPlugin.cs) 对应 Tauri v2 的 `@tauri-apps/plugin-stronghold`，提供密码、密钥等敏感数据的安全存储。采用 **AES-GCM 认证加密 + PBKDF2 密钥派生**，加密数据持久化到 JSON 文件。
+[StrongholdPlugin.cs](../../src/Wails.Net.Plugins.Stronghold/StrongholdPlugin.cs) 提供提供密码、密钥等敏感数据的安全存储。采用 **AES-GCM 认证加密 + PBKDF2 密钥派生**，加密数据持久化到 JSON 文件。
 
 金库文件格式：
 
@@ -539,7 +539,7 @@ builder.UsePlugin(new FileSystemPlugin(appDataPath));
 2. **沙箱根绝对路径**：`FileSystemPlugin` 构造函数接收的 `sandboxRoot` 会被 `Path.GetFullPath` 规范化，建议传入绝对路径避免依赖工作目录。
 3. **敏感数据用 Stronghold**：API Key、OAuth Token 等绝不要写入 `appsettings.json` 或普通文件，统一通过 `StrongholdPlugin` 加密存储。
 4. **CSP 与开发环境**：开发时若使用 Vite/Webpack Dev Server，需在 `ConnectSrc` 中加入 `ws://localhost:*` 和 `http://localhost:*`，否则 HMR 失效。
-5. **权限粒度**：`RequireCapability` 的能力标识建议采用 `<plugin>.<action>` 命名（如 `filesystem.read`、`stronghold.unlock`），与 Tauri v2 习惯一致，便于跨项目复用。
+5. **权限粒度**：`RequireCapability` 的能力标识建议采用 `<plugin>.<action>` 命名（如 `filesystem.read`、`stronghold.unlock`），命名统一，便于跨项目复用。
 6. **IPC Origin 兜底**：`IpcOriginValidator.Validate` 对空 Origin 返回 `true`（视为本地），若 WebView 配置允许跨域请求，需额外在 IPC 入口处校验 `Origin` 头非空。
 7. **审计日志**：`PermissionManager.Grant` 与 `ValidateCommand` 拒绝路径都会记录日志，生产环境应将日志接入 SIEM 监控异常授权或频繁拒绝事件。
 8. **金库文件备份**：`stronghold.vault.json` 丢失即丢失所有秘密，建议纳入备份策略；密码遗忘则数据不可恢复（PBKDF2 单向派生）。
