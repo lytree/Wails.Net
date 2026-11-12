@@ -1,46 +1,54 @@
+#!/usr/bin/env dotnet
+#:sdk Cake.Sdk@6.2.0
+#:property TreatWarningsAsErrors=false
+#:property IsPackable=false
+
 // ============================================================================
-// Wails.Net 构建脚本（Cake.Sdk 项目式 DSL）
+// Wails.Net 构建脚本（Cake SDK 文件式 DSL，cake.cs）
 // ----------------------------------------------------------------------------
-// 本脚本由原 Cake.Frosting（Program.cs + BuildTasks.cs）迁移而来，
-// 保留相同的命令行参数接口与任务行为，仅将实现改为 Cake.Sdk DSL。
+// 由 `dotnet new cakefile --name cake --IncludeExampleProject true` 生成骨架后，
+// 将原 build/Wails.Net.Build（项目式 Cake.Sdk）的全部任务迁移至此。
+// 命令行参数接口与任务行为保持不变，仅运行入口由 `dotnet run --project build/...`
+// 改为 `dotnet run cake.cs -- ...`。
 //
-// 运行方式（RunWorkingDirectory 已切到仓库根）：
-//   dotnet build build/Wails.Net.Build.csproj                  # 编译验证脚本
-//   dotnet run --project build/Wails.Net.Build                 # 默认目标 Test
-//   dotnet run --project build/Wails.Net.Build -- --target=Dist --platform=windows --rid=all
-//   dotnet run --project build/Wails.Net.Build -- --target=Pack --configuration Release
-//   dotnet run --project build/Wails.Net.Build -- --target=DistAll --dry-run --skip-frontend
+// 运行方式（工作目录为仓库根）：
+//   dotnet run cake.cs                                     # 默认目标 Test
+//   dotnet run cake.cs -- --target=Build                   # 构建解决方案
+//   dotnet run cake.cs -- --target=Test --configuration=Release
+//   dotnet run cake.cs -- --target=Pack --configuration=Release
+//   dotnet run cake.cs -- --target=Dist --platform=windows --rid=all
+//   dotnet run cake.cs -- --target=DistAll --dry-run --skip-frontend
+//   dotnet run cake.cs -- --target=Dist-Linux --platform=linux --rid=linux-x64 --linux-formats=deb
+//   dotnet run cake.cs -- --target=Build --solution=src/Wails.Net.Application/Wails.Net.Application.csproj
+//                                       # 局部构建（未安装 Android 工作负载时的本机验证方式）
 //
 // 参考：https://cakebuild.net/docs/running-builds/runners/cake-sdk
 // ============================================================================
 
 using System.IO.Compression;
 using System.Xml.Linq;
-using Cake.Common;
-using Cake.Common.Tools.DotNet;
 using Cake.Common.Tools.DotNet.Build;
 using Cake.Common.Tools.DotNet.MSBuild;
 using Cake.Common.Tools.DotNet.Pack;
 using Cake.Common.Tools.DotNet.Publish;
 using Cake.Common.Tools.DotNet.Restore;
 using Cake.Common.Tools.DotNet.Run;
-using Cake.Core;
-using Cake.Core.IO;
 
 // === 命令行参数 ===
 var target = Argument("target", "Default");
 var configuration = Argument("configuration", "Release");
 var platform = Argument("platform", "all");
 var ridArgument = Argument("rid", "");
-var customVersion = Argument("version", "");
+var customVersion = Argument("build-version", "");
 var outputRoot = Argument("output", "artifacts/dist");
 var skipFrontend = Argument("skip-frontend", false);
 var dryRun = Argument("dry-run", false);
 var rebuild = Argument("rebuild", false);
 var linuxFormats = Argument("linux-formats", "targz");
+// 可选的构建目标（默认为解决方案）：本地缺少 Android 工作负载时，可传单个工程做局部验证
+var buildTarget = Argument("solution", "Wails.Net.slnx");
 
 // === 常量 ===
-const string SolutionFile = "Wails.Net.slnx";
 const string DemoProject = "examples/Wails.Net.Demo/Wails.Net.Demo.csproj";
 const string DemoAndroidProject = "examples/Wails.Net.Demo.Android/Wails.Net.Demo.Android.csproj";
 
@@ -68,7 +76,10 @@ Task("Restore")
     .Does(() =>
     {
         Information("========== 还原 NuGet 包 ==========");
-        DotNetRestore(SolutionFile);
+        DotNetRestore(buildTarget, new DotNetRestoreSettings
+        {
+            MSBuildSettings = CreateMSBuildSettings(),
+        });
     });
 
 // ============================================================================
@@ -158,10 +169,10 @@ Task("Build")
         {
             Configuration = configuration,
             NoRestore = true,
-            MSBuildSettings = new DotNetMSBuildSettings(),
+            MSBuildSettings = CreateMSBuildSettings(),
         };
         settings.MSBuildSettings.Properties["SkipFrontendBuild"] = new[] { "true" };
-        DotNetBuild(SolutionFile, settings);
+        DotNetBuild(buildTarget, settings);
     });
 
 // ============================================================================
@@ -172,7 +183,11 @@ Task("Test")
     .IsDependentOn("Build")
     .Does(ctx =>
     {
-        var runSettings = new DotNetRunSettings { Configuration = configuration, NoBuild = true };
+        var runSettings = new DotNetRunSettings
+        {
+            Configuration = configuration,
+            NoBuild = true,
+        };
 
         Information("========== 运行 Application 测试 ==========");
         DotNetRun("tests/Wails.Net.Application.Tests/Wails.Net.Application.Tests.csproj", runSettings);
@@ -230,16 +245,17 @@ Task("Pack")
             Configuration = configuration,
             NoBuild = true,
             OutputDirectory = packageOutput,
-            MSBuildSettings = new DotNetMSBuildSettings(),
+            MSBuildSettings = CreateMSBuildSettings(),
         };
         packSettings.MSBuildSettings.Properties["SkipFrontendBuild"] = new[] { "true" };
-        DotNetPack(SolutionFile, packSettings);
+        DotNetPack(buildTarget, packSettings);
 
         // 单独打包 Templates 项目（不在 slnx 中）
         DotNetPack("src/Wails.Net.Templates/Wails.Net.Templates.csproj", new DotNetPackSettings
         {
             Configuration = configuration,
             OutputDirectory = packageOutput,
+            MSBuildSettings = CreateMSBuildSettings(),
         });
     });
 
@@ -290,7 +306,7 @@ Task("Dist-Windows")
                 SelfContained = true,
                 OutputDirectory = outputDir,
                 NoRestore = true,
-                MSBuildSettings = new DotNetMSBuildSettings(),
+                MSBuildSettings = CreateMSBuildSettings(),
             };
             publishSettings.MSBuildSettings.Properties["PublishSingleFile"] = new[] { "true" };
             publishSettings.MSBuildSettings.Properties["PublishTrimmed"] = new[] { "false" };
@@ -358,7 +374,7 @@ Task("Dist-Linux")
                 SelfContained = true,
                 OutputDirectory = outputDir,
                 NoRestore = true,
-                MSBuildSettings = new DotNetMSBuildSettings(),
+                MSBuildSettings = CreateMSBuildSettings(),
             };
             publishSettings.MSBuildSettings.Properties["PublishSingleFile"] = new[] { "true" };
             publishSettings.MSBuildSettings.Properties["PublishTrimmed"] = new[] { "false" };
@@ -437,7 +453,7 @@ Task("Dist-Android")
                 Runtime = rid,
                 SelfContained = true,
                 NoRestore = true,
-                MSBuildSettings = new DotNetMSBuildSettings(),
+                MSBuildSettings = CreateMSBuildSettings(),
             };
             publishSettings.MSBuildSettings.Properties["AndroidPackageFormat"] = new[] { "apk" };
 
@@ -489,7 +505,7 @@ Task("Dist-Android")
     });
 
 // ============================================================================
-// TASK: Dist（聚合三平台，对应 build.cake 的 Dist 入口）
+// TASK: Dist（聚合三平台）
 // ============================================================================
 
 Task("Dist")
@@ -510,7 +526,7 @@ Task("Dist")
     });
 
 // ============================================================================
-// TASK: DistAll（一键全平台全 RID，对应 build.cake 的 DistAll 入口）
+// TASK: DistAll（一键全平台全 RID）
 // ============================================================================
 
 Task("DistAll")
@@ -551,8 +567,22 @@ Task("Default")
 RunTarget(target);
 
 // ============================================================================
-// 辅助函数（对应原 Frosting BuildContext 的辅助方法）
+// 辅助函数
 // ============================================================================
+
+/// <summary>
+/// 构造通用 MSBuild 设置：当通过 --build-version 显式指定版本时注入 WailsNetVersion，
+/// 使 CI 无需依赖 -p:WailsNetVersion=...（文件式脚本不便透传 MSBuild 属性）。
+/// </summary>
+DotNetMSBuildSettings CreateMSBuildSettings()
+{
+    var settings = new DotNetMSBuildSettings();
+    if (!string.IsNullOrEmpty(customVersion))
+    {
+        settings.Properties["WailsNetVersion"] = new[] { customVersion! };
+    }
+    return settings;
+}
 
 /// <summary>支持的三平台 RID 列表。</summary>
 string[] GetPlatformRIDs(string plat) => plat switch
@@ -590,7 +620,7 @@ List<string> ResolveRIDsCore(ICakeContext ctx, string plat, string ridArgument, 
 
     // DistAll 目标：未显式指定 RID 时默认构建全 RID
     if (string.IsNullOrEmpty(ridArgument) && currentTarget == "DistAll") return new List<string>(supported);
-    if (string.IsNullOrEmpty(ridArgument)) return new List<string> { defaultRid };
+    if (string.IsNullOrEmpty(ridArgument)) return new List<string> { defaultRid! };
     if (ridArgument == "all") return new List<string>(supported);
 
     var ridList = new List<string>();
@@ -606,7 +636,7 @@ List<string> ResolveRIDsCore(ICakeContext ctx, string plat, string ridArgument, 
             Warning($"平台 {plat} 不支持 RID: {rid}（支持的: {string.Join(", ", supported)}）");
         }
     }
-    return ridList.Count == 0 ? new List<string> { defaultRid } : ridList;
+    return ridList.Count == 0 ? new List<string> { defaultRid! } : ridList;
 }
 
 /// <summary>检查指定平台是否应构建（基于 --platform 参数；target 为 DistAll 时强制放行）。</summary>
@@ -639,7 +669,7 @@ List<string> ResolveLinuxFormats()
     return result.Count == 0 ? new List<string> { "targz" } : result;
 }
 
-/// <summary>读取 Directory.Build.props 中的 WailsNetVersion（--version 优先）。</summary>
+/// <summary>读取 Directory.Build.props 中的 WailsNetVersion（--build-version 优先）。</summary>
 string GetVersion()
 {
     if (!string.IsNullOrEmpty(customVersion)) return customVersion!;

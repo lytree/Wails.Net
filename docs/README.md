@@ -109,16 +109,16 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 | 领域 | 选型 |
 |------|------|
 | 运行时 | .NET 10 (net10.0) |
-| 宿主 | Microsoft.Extensions.Hosting 10.0.0 |
-| DI | Microsoft.Extensions.DependencyInjection 10.0.0 |
-| 配置 | Microsoft.Extensions.Configuration 10.0.0 |
-| 日志 | Microsoft.Extensions.Logging 10.0.0 |
-| Windows WebView | Microsoft.Web.WebView2 1.0.3240.44 |
-| Win32 互操作 | Microsoft.Windows.CsWin32 0.3.298 |
-| Linux GTK | GirCore 0.8.0 |
+| 宿主 | Microsoft.Extensions.Hosting 10.0.15 |
+| DI | Microsoft.Extensions.DependencyInjection 10.0.15 |
+| 配置 | Microsoft.Extensions.Configuration 10.0.15 |
+| 日志 | Microsoft.Extensions.Logging 10.0.15 |
+| Windows WebView | Microsoft.Web.WebView2 1.0.4314.35 |
+| Win32 互操作 | Microsoft.Windows.CsWin32 0.3.371 |
+| Linux GTK | GirCore 0.8.1 |
 | Android 工作负载 | `android` 36.1.43（`net10.0-android36.0`，最低 API Level 24） |
-| CLI 解析 | System.CommandLine 2.0.9 |
-| 测试框架 | TUnit 1.58.0 |
+| CLI 解析 | System.CommandLine 2.0.15 |
+| 测试框架 | TUnit 1.83.8 |
 | 脚本语言 | F# (.fsx) |
 
 ## 参考资源

@@ -2,7 +2,7 @@
 
 ## 1. 概述
 
-`Wails.Net.Cli` 是 Wails.Net 项目（阶段 7）的命令行工具链，对应 Wails v3 Go 版本的 `cmd/wails3` 入口。它基于 [`System.CommandLine` 2.0.9](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Wails.Net.Cli.csproj)（项目约束中**禁止**使用 `McMaster.Extensions.CommandLineUtils`），为开发者提供从项目脚手架、绑定生成、构建发布到打包分发的一站式能力。
+`Wails.Net.Cli` 是 Wails.Net 项目（阶段 7）的命令行工具链，对应 Wails v3 Go 版本的 `cmd/wails3` 入口。它基于 [`System.CommandLine` 2.0.15](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Wails.Net.Cli.csproj)（项目约束中**禁止**使用 `McMaster.Extensions.CommandLineUtils`），为开发者提供从项目脚手架、绑定生成、构建发布到打包分发的一站式能力。
 
 CLI 通过 [`PackAsTool=true`](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Wails.Net.Cli.csproj) 打包为 .NET 全局工具，工具命令名为 `wails.net`。安装后即可在任意目录调用：
 

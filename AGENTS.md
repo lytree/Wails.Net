@@ -18,19 +18,19 @@
 | 领域 | 选型 | 说明 |
 |------|------|------|
 | 运行时 | .NET 10 (net10.0) | 不支持早期版本 |
-| **宿主** | Microsoft.Extensions.Hosting 10.0.0 | Generic Host 管理生命周期 |
-| **DI** | Microsoft.Extensions.DependencyInjection 10.0.0 | 依赖注入容器 |
-| **配置** | Microsoft.Extensions.Configuration 10.0.0 | appsettings.json 配置 |
-| **选项** | Microsoft.Extensions.Options 10.0.0 | IOptions\<T\> 强类型配置 |
-| **日志** | Microsoft.Extensions.Logging 10.0.0 | ILogger\<T\> 日志抽象 |
-| Windows Webview | Microsoft.Web.WebView2 1.0.3240.44 | WebView2 Runtime |
-| Win32 互操作 | Microsoft.Windows.CsWin32 0.3.298 | 源生成器，**禁止使用 PInvoke.\*** |
-| Linux GTK | GirCore 0.8.0 | **禁止使用 Xamarin.Forms、GtkSharp** |
+| **宿主** | Microsoft.Extensions.Hosting 10.0.15 | Generic Host 管理生命周期 |
+| **DI** | Microsoft.Extensions.DependencyInjection 10.0.15 | 依赖注入容器 |
+| **配置** | Microsoft.Extensions.Configuration 10.0.15 | appsettings.json 配置 |
+| **选项** | Microsoft.Extensions.Options 10.0.15 | IOptions\<T\> 强类型配置 |
+| **日志** | Microsoft.Extensions.Logging 10.0.15 | ILogger\<T\> 日志抽象 |
+| Windows Webview | Microsoft.Web.WebView2 1.0.4314.35 | WebView2 Runtime |
+| Win32 互操作 | Microsoft.Windows.CsWin32 0.3.371 | 源生成器，**禁止使用 PInvoke.\*** |
+| Linux GTK | GirCore 0.8.1 | **禁止使用 Xamarin.Forms、GtkSharp** |
 | Android 工作负载 | `android` 36.1.43 | .NET Android SDK，**禁止引入 MAUI Controls** |
 | Android Webview | Android.Webkit.WebView | 通过 .NET Android 互操作直接调用 |
 | Android TFM | `net10.0-android36.0`（`SupportedOSPlatformVersion=24`） | 最低 API Level 24（Android 7.0），使用已安装的 .NET Android SDK 平台版本 |
-| CLI 解析 | System.CommandLine 2.0.9 | **禁止使用 McMaster.Extensions.CommandLineUtils** |
-| 测试框架 | TUnit 1.58.0 | **禁止使用 MSTest/xUnit/NUnit** |
+| CLI 解析 | System.CommandLine 2.0.15 | **禁止使用 McMaster.Extensions.CommandLineUtils** |
+| 测试框架 | TUnit 1.83.8 | **禁止使用 MSTest/xUnit/NUnit** |
 | 脚本语言 | F# (.fsx) | **严禁使用 Python (.py)** |
 
 ### 1.1.1 架构融合策略(必须遵守)
@@ -67,7 +67,7 @@
 3. **阶段 3** ✅ 传输层与消息处理器
 4. **阶段 4** ✅ 窗口管理器与对话框
 5. **阶段 5** ✅ Windows 平台实现
-6. **阶段 6** ✅ Linux 平台实现（GirCore 0.8.0）
+6. **阶段 6** ✅ Linux 平台实现（GirCore 0.8.1）
 7. **阶段 7** ✅ CLI 工具与代码生成器
 8. **阶段 8** ✅ Android 平台实现与三平台自包含构建（.NET Android + WebView）
 
@@ -289,7 +289,7 @@ commands.MapCommand("camera.capture",
 
 ### 4.1 测试框架
 
-- **唯一允许**：TUnit 1.58.0
+- **唯一允许**：TUnit 1.83.8
 - 断言库：TUnit.Assertions
 - **断言必须 await**
 

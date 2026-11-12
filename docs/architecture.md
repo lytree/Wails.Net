@@ -299,7 +299,7 @@ Wails.Net.Application.SystemTray    # 系统托盘
 Wails.Net.Application.Transport     # 传输层（原生 IPC / EventIPCTransport / HTTP / WebSocket）
 Wails.Net.Application.WebView       # WebView 抽象
 Wails.Net.Application.Windows       # Windows 平台实现（WebView2 + CsWin32）
-Wails.Net.Application.Linux         # Linux 平台实现（GTK4 + WebKitGTK via GirCore 0.8.0）
+Wails.Net.Application.Linux         # Linux 平台实现（GTK4 + WebKitGTK via GirCore 0.8.1）
 Wails.Net.Application.Android       # Android 平台实现（.NET Android + WebKit.WebView + WebMessageListener）
 Wails.Net.AssetServer              # 资源服务器（静态文件 + IHttpServiceHandler 路由挂载）
 @wails-net/runtime               # JS 运行时（@wails-net/runtime + transport.template.js）

@@ -447,7 +447,7 @@ gpg --verify Wails.Net.App-linux-x64.tar.gz.asc Wails.Net.App-linux-x64.tar.gz
 
 **工具**：`apksigner`（Android SDK build-tools）
 
-**构建时签名**：Cake Frosting `build/` 项目的 `Dist-Android` task 通过 MSBuild 属性配置签名：
+**构建时签名**：Cake 构建脚本 `cake.cs` 的 `Dist-Android` task 通过 MSBuild 属性配置签名：
 
 | MSBuild 属性 | 说明 |
 |--------------|------|
@@ -496,14 +496,14 @@ EOF
 
 ## Linux 原生包打包（.deb / .rpm）
 
-Cake Frosting `build/` 项目的 `Dist-Linux` task 默认生成 `tar.gz`，通过 `--linux-formats` 参数可同时生成 `.deb` 和 `.rpm`：
+Cake 构建脚本 `cake.cs` 的 `Dist-Linux` task 默认生成 `tar.gz`，通过 `--linux-formats` 参数可同时生成 `.deb` 和 `.rpm`（支持值：`targz` / `deb` / `rpm`）：
 
 ```bash
 # 生成全部 Linux 格式
-dotnet run --project build/Wails.Net.Build -- --target=Dist-Linux --platform=linux --rid=all --linux-formats=tar.gz,deb,rpm
+dotnet run cake.cs -- --target=Dist-Linux --platform=linux --rid=all --linux-formats=targz,deb,rpm
 
 # 仅生成 .deb
-dotnet run --project build/Wails.Net.Build -- --target=Dist-Linux --platform=linux --rid=linux-x64 --linux-formats=deb
+dotnet run cake.cs -- --target=Dist-Linux --platform=linux --rid=linux-x64 --linux-formats=deb
 ```
 
 **依赖**：构建机需安装 `dpkg-deb`（dpkg-dev 包）与 `rpmbuild`（rpm 包）。在 CI 的 ubuntu-latest 上通过 `sudo apt-get install -y dpkg-dev rpm` 自动安装。

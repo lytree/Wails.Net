@@ -414,23 +414,27 @@ dotnet publish -c Release -r win-x64 -p:PublishAot=true
 
 ---
 
-## 附：Cake.Sdk 构建入口（可选）
+## 附：Cake 构建入口（cake.cs）
 
-仓库同时提供 **Cake.Sdk** 项目式构建入口 `build.sdk/`（基于 `.cs` 的 DSL 脚本），与 `build/` 下的 Cake.Frosting（C# 类任务）并存：
+仓库的构建入口是仓库根目录的 **`cake.cs`**（Cake.Sdk 文件式脚本，`.NET 10` 文件式应用，`#:sdk Cake.Sdk@6.2.0`）。原 `build/`（Cake.Frosting）与 `build.sdk/`（Cake.Sdk 项目式）两个入口已合并到该脚本。
 
 ```bash
-# 编译验证脚本
-dotnet build build.sdk/cake.csproj
-
-# 运行默认目标 Test
-dotnet run --project build.sdk/cake.csproj
+# 默认目标 Test（Build → 各平台测试）
+dotnet run cake.cs
 
 # 指定目标/配置
-dotnet run --project build.sdk/cake.csproj -- --target Pack --configuration Release
+dotnet run cake.cs -- --target=Build --configuration=Release
+dotnet run cake.cs -- --target=Pack --configuration=Release
+
+# 三平台自包含构建
+dotnet run cake.cs -- --target=DistAll --rid=all
+
+# 局部构建（未安装 Android 工作负载时的本机验证方式）
+dotnet run cake.cs -- --target=Build --solution=src/Wails.Net.Application/Wails.Net.Application.csproj
 ```
 
-说明：`<Project Sdk="Cake.Sdk/6.1.0">` 通过项目 SDK 形态管理依赖；`build.sdk/Program.cs` 提供 `Clean` / `Build` / `Test` / `Pack` 任务；`RunWorkingDirectory` 已切到仓库根，相对路径按仓库根解析。参考：<https://cakebuild.net/docs/running-builds/runners/cake-sdk>
+说明：脚本顶部通过 `#:sdk` 声明 Cake 依赖，任务定义在 `cake.cs` 内；运行时工作目录需为仓库根（脚本内的相对路径 `Wails.Net.slnx`、`Directory.Build.props` 均按仓库根解析）。参考：<https://cakebuild.net/docs/running-builds/runners/cake-sdk>
 
 ---
 
-**文档更新**：2026-07-18
+**文档更新**：2026-11-12

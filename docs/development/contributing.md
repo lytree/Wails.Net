@@ -10,8 +10,8 @@
 | 组件 | 版本 | 用途 |
 |------|------|------|
 | .NET SDK | 10.0 (net10.0) | **必需**，不支持早期版本 |
-| WebView2 Runtime | 1.0.3240.44 | Windows Webview |
-| GTK4 / WebKitGTK 6 | 通过 GirCore 0.8.0 | Linux 平台 |
+| WebView2 Runtime | 1.0.4314.35 | Windows Webview |
+| GTK4 / WebKitGTK 6 | 通过 GirCore 0.8.1 | Linux 平台 |
 | Git | 任意现代版本 | 版本控制 |
 
 ### 平台特定依赖
@@ -68,7 +68,7 @@ Wails.Net.Events                # 事件类型定义
 3. ✅ 传输层与消息处理器
 4. ✅ 窗口管理器与对话框
 5. ✅ Windows 平台实现
-6. ✅ Linux 平台实现（GirCore 0.8.0）
+6. ✅ Linux 平台实现（GirCore 0.8.1）
 7. ✅ CLI 工具与代码生成器
 
 ### 3.2 每阶段交付标准

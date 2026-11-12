@@ -7,11 +7,11 @@
 
 ## 1. 测试框架
 
-Wails.Net 使用 **TUnit 1.58.0** 作为唯一测试框架，**禁止使用 MSTest、xUnit、NUnit**。
+Wails.Net 使用 **TUnit 1.83.8** 作为唯一测试框架，**禁止使用 MSTest、xUnit、NUnit**。
 
 - 测试运行器：`TUnit.Engine`
 - 断言库：`TUnit.Assertions`
-- Mock 库：`NSubstitute` 5.3.0
+- Mock 库：`NSubstitute` 6.2.0
 
 版本通过 [Directory.Packages.props](../../Directory.Packages.props) 集中管理（CPM），不得在单个项目文件中指定版本。
 

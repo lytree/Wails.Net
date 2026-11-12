@@ -456,9 +456,9 @@
 
 | 维度 | Wails.Net | Tauri 2 | Wails 3 |
 |------|-----------|---------|---------|
-| **构建工具** | Cake Frosting（C#） | `tauri build` (Rust) | `wails3 task build` (Taskfile) |
+| **构建工具** | Cake SDK 文件式脚本（`cake.cs`） | `tauri build` (Rust) | `wails3 task build` (Taskfile) |
 | **脚本语言** | F# (.fsx)（AGENTS.md §7.5 禁止 Python） | Shell / PowerShell | Shell / PowerShell |
-| **构建任务数** | 11 个 Cake Frosting 任务 | N/A | N/A |
+| **构建任务数** | 12 个 Cake 任务（`cake.cs`） | N/A | N/A |
 | **Windows 安装包** | ✅ NSIS / MSI | ✅ NSIS / MSI | ✅ NSIS |
 | **Linux 安装包** | ✅ .deb / .rpm / .tar.gz（dpkg-deb / rpmbuild 内联） | ✅ .deb / .rpm / AppImage | ✅ .deb / .rpm |
 | **macOS 安装包** | ❌（暂不支持 macOS） | ✅ .dmg / .app | ✅ .dmg / .app |
@@ -475,7 +475,7 @@
 
 ### 关键差异
 
-- **Wails.Net** 使用 **Cake Frosting**（C# 编写构建脚本）+ **F# .fsx** 脚本，符合 AGENTS.md §7.5 禁止 Python 的约束。
+- **Wails.Net** 使用 **Cake SDK 文件式脚本**（`cake.cs`，C# DSL 编写构建脚本）+ **F# .fsx** 脚本，符合 AGENTS.md §7.5 禁止 Python 的约束。
 - **Wails.Net** 是三者中**唯一**支持 Windows Authenticode **自动签名**的方案（通过 `signtool` / `azuresigntool`，环境变量门控，签名失败非阻塞）。
 - **Wails.Net** CI 已将 `dist-linux` 任务迁移到 Linux runner，提升构建效率；Linux 包构建内联实现 `dpkg-deb --build` 和 `rpmbuild -bb`。
 
@@ -486,7 +486,7 @@
 | 维度 | Wails.Net | Tauri 2 | Wails 3 |
 |------|-----------|---------|---------|
 | **CLI 入口** | `Wails.Net.Cli` (System.CommandLine) | `tauri` (Cargo) | `wails3` (Go) |
-| **CLI 解析库** | `System.CommandLine` 2.0.9 | `clap` | `commander` |
+| **CLI 解析库** | `System.CommandLine` 2.0.15 | `clap` | `commander` |
 | **子命令数** | 16 个 | 15+ 个 | 10+ 个 |
 | **子命令清单** | Generate / Doctor / New / Build / Dev / Publish / Pack / Plugin / Version / Clean / Info / Icon / Signer / Platform / SelfUpdate / Deploy | init / dev / build / bundle / icon / signer / plugin / migrate / info / etc. | init / dev / build / package / plugin / doctor / etc. |
 | **代码生成器** | ✅ `Wails.Net.Generator` + `Wails.Net.SourceGenerators` | ✅ `tauri-codegen` | ✅ `generator` |
@@ -500,7 +500,7 @@
 ### 关键差异
 
 - **Wails.Net** 的 [Program.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Cli/Program.cs) 提供 16 个子命令，覆盖生成、诊断、构建、发布、打包、插件、版本、清理、信息、图标、签名、平台、自更新、部署，是三者中**唯一**内置 `Deploy` 子命令的方案。
-- **AGENTS.md §1.1 约束**：禁止使用 `McMaster.Extensions.CommandLineUtils`，必须使用 `System.CommandLine` 2.0.9。
+- **AGENTS.md §1.1 约束**：禁止使用 `McMaster.Extensions.CommandLineUtils`，必须使用 `System.CommandLine` 2.0.15。
 
 ---
 
@@ -536,7 +536,7 @@
 
 | 维度 | Wails.Net | Tauri 2 | Wails 3 |
 |------|-----------|---------|---------|
-| **测试框架** | **TUnit** 1.58.0 | `cargo test` (Rust) | `testify` (Go) |
+| **测试框架** | **TUnit** 1.83.8 | `cargo test` (Rust) | `testify` (Go) |
 | **断言库** | `TUnit.Assertions`（必须 `await`） | `assert_eq!` | `testify/assert` |
 | **运行命令** | `dotnet run --project tests/...`（非 `dotnet test`） | `cargo test` | `go test` |
 | **禁止项** | MSTest / xUnit / NUnit | N/A | N/A |
@@ -548,7 +548,7 @@
 
 ### 关键差异
 
-- **Wails.Net** 是三者中**唯一**禁止使用主流测试框架（MSTest/xUnit/NUnit）的项目，强制使用 TUnit 1.58.0（AGENTS.md §1.1）。
+- **Wails.Net** 是三者中**唯一**禁止使用主流测试框架（MSTest/xUnit/NUnit）的项目，强制使用 TUnit 1.83.8（AGENTS.md §1.1）。
 - **Wails.Net** .NET 10 SDK 不再支持 `dotnet test`（VSTest 模式），必须使用 `dotnet run --project`（MTP 模式）。
 - **Wails.Net** 测试覆盖要求最严格：公共 API 100% 方法覆盖、所有 `catch` 分支必须测试、边界条件、并发场景。
 - **Wails.Net** 拥有 6 个独立测试项目：Application.Tests（70+ 测试文件）/ Windows.Tests / Linux.Tests / Android.Tests / AssetServer.Tests / Cli.Tests。

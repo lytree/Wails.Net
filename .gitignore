@@ -66,8 +66,6 @@ artifacts/*
 artifacts/nupkg/*
 !artifacts/nupkg/.gitkeep
 
-.fake
-
 # 临时诊断/调试文件
 .tmp/
 *.binlog

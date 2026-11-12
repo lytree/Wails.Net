@@ -509,7 +509,7 @@ jobs:
       # 调用 Cake 构建 Windows 全部 RID（win-x64, win-x86, win-arm64）
       - name: 构建 Windows 自包含（全部 RID）
         shell: pwsh
-        run: dotnet run --project build/Wails.Net.Build -p:WailsNetVersion=${{ env.WAILS_NET_VERSION }} -- --target=Dist --platform=windows --rid=all --configuration=Release --output=${{ env.DIST_OUTPUT }} --skip-frontend
+        run: dotnet run cake.cs -- --build-version=${{ env.WAILS_NET_VERSION }} --target=Dist --platform=windows --rid=all --configuration=Release --output=${{ env.DIST_OUTPUT }} --skip-frontend
 
       - name: 列出构建产物
         shell: pwsh
@@ -563,7 +563,7 @@ jobs:
       # 调用 Cake 构建 Linux 全部 RID（linux-x64, linux-arm64）
       - name: 构建 Linux 自包含（全部 RID）
         shell: bash
-        run: dotnet run --project build/Wails.Net.Build -p:WailsNetVersion=${{ env.WAILS_NET_VERSION }} -- --target=Dist --platform=linux --rid=all --configuration=Release --output=${{ env.DIST_OUTPUT }} --skip-frontend
+        run: dotnet run cake.cs -- --build-version=${{ env.WAILS_NET_VERSION }} --target=Dist --platform=linux --rid=all --configuration=Release --output=${{ env.DIST_OUTPUT }} --skip-frontend
 
       - name: 列出构建产物
         shell: bash
@@ -612,7 +612,7 @@ jobs:
       # 调用 Cake 构建 Android 全部 RID（android-arm64, android-x64, android-arm）
       - name: 构建 Android APK（全部 RID）
         shell: pwsh
-        run: dotnet run --project build/Wails.Net.Build -p:WailsNetVersion=${{ env.WAILS_NET_VERSION }} -- --target=Dist --platform=android --rid=all --configuration=Release --output=${{ env.DIST_OUTPUT }} --skip-frontend
+        run: dotnet run cake.cs -- --build-version=${{ env.WAILS_NET_VERSION }} --target=Dist --platform=android --rid=all --configuration=Release --output=${{ env.DIST_OUTPUT }} --skip-frontend
 
       - name: 列出构建产物
         shell: pwsh

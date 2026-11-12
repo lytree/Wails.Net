@@ -22,63 +22,65 @@
   </ItemGroup>
   <!-- 核心包（平台无关） -->
   <ItemGroup>
-    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.FileProviders.Embedded" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebView" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.Extensions.FileProviders.Embedded" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebView" Version="10.0.15" />
   </ItemGroup>
   <!-- Windows 平台 -->
   <ItemGroup>
-    <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.3240.44" />
+    <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
     <!-- CsWin32 源生成器：从 Windows SDK 元数据生成 P/Invoke 代码，替代旧版 PInvoke.* 包 -->
-    <PackageVersion Include="Microsoft.Windows.CsWin32" Version="0.3.298" />
+    <PackageVersion Include="Microsoft.Windows.CsWin32" Version="0.3.371" />
   </ItemGroup>
   <!-- Linux 平台（GirCore 0.8.0，支持 .NET 10） -->
   <ItemGroup>
-    <PackageVersion Include="GirCore.Gtk-4.0" Version="0.8.0" />
-    <PackageVersion Include="GirCore.WebKit-6.0" Version="0.8.0" />
-    <PackageVersion Include="GirCore.JavaScriptCore-6.0" Version="0.8.0" />
-    <PackageVersion Include="GirCore.Gio-2.0" Version="0.8.0" />
-    <PackageVersion Include="GirCore.Adw-1" Version="0.8.0" />
-    <PackageVersion Include="GirCore.GdkPixbuf-2.0" Version="0.8.0" />
-    <PackageVersion Include="GirCore.Cairo-1.0" Version="0.8.0" />
-    <PackageVersion Include="GirCore.Pango-1.0" Version="0.8.0" />
+    <PackageVersion Include="GirCore.Gtk-4.0" Version="0.8.1" />
+    <PackageVersion Include="GirCore.WebKit-6.0" Version="0.8.1" />
+    <PackageVersion Include="GirCore.JavaScriptCore-6.0" Version="0.8.1" />
+    <PackageVersion Include="GirCore.Gio-2.0" Version="0.8.1" />
+    <PackageVersion Include="GirCore.Adw-1" Version="0.8.1" />
+    <PackageVersion Include="GirCore.GdkPixbuf-2.0" Version="0.8.1" />
+    <PackageVersion Include="GirCore.Cairo-1.0" Version="0.8.1" />
+    <PackageVersion Include="GirCore.Pango-1.0" Version="0.8.1" />
   </ItemGroup>
   <!-- 服务/工具 -->
   <ItemGroup>
-    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.15" />
     <!-- 修复 CVE-2025-6965（GHSA-2m69-gcr7-jv3q）：2.1.11 打包的 SQLite < 3.50.2 存在高危内存损坏漏洞，2.1.12 起已修复 -->
-    <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
-    <PackageVersion Include="System.CommandLine" Version="2.0.9" />
+    <!-- 停留 2.1.x：Microsoft.Data.Sqlite 10.0.x 依赖 SQLitePCLRaw 2.1.x，3.0.x 会引入 provider 版本冲突 -->
+    <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.14" />
+    <!-- 5.9.0 与 .NET 10.0.403 SDK 内置的 Roslyn 5.900 对齐；源生成器按编译器 API 5.x 编译 -->
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
+    <!-- 停留 2.0.x：3.0.0 为破坏性 API 重构（Parser/InvocationPipeline 签名变更），需单独迁移 -->
+    <PackageVersion Include="System.CommandLine" Version="2.0.15" />
     <!-- minisign 签名依赖（对应 Tauri v2 的 updater 签名方案） -->
     <PackageVersion Include="SauceControl.Blake2Fast" Version="2.0.0" />
     <PackageVersion Include="NSec.Cryptography" Version="26.4.0" />
     <!-- 图像处理（CLI icon 命令缩放与 PNG 编码；SkiaSharp 通过 NuGet 原生资产跨平台支持 Windows/Linux/Android） -->
-    <PackageVersion Include="SkiaSharp" Version="4.151.0" />
+    <PackageVersion Include="SkiaSharp" Version="4.156.0" />
   </ItemGroup>
   <!-- 源码映射（SourceLink） -->
   <ItemGroup>
-    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.404" />
   </ItemGroup>
   <!-- 测试 -->
   <ItemGroup>
-    <PackageVersion Include="NSubstitute" Version="5.3.0" />
-    <PackageVersion Include="TUnit" Version="1.58.0" />
-    <PackageVersion Include="TUnit.Assertions" Version="1.58.0" />
-    <PackageVersion Include="TUnit.Engine" Version="1.58.0" />
+    <PackageVersion Include="NSubstitute" Version="6.2.0" />
+    <PackageVersion Include="TUnit" Version="1.83.8" />
+    <PackageVersion Include="TUnit.Assertions" Version="1.83.8" />
+    <PackageVersion Include="TUnit.Engine" Version="1.83.8" />
   </ItemGroup>
-  <!-- 构建工具（Cake Frosting） -->
-  <ItemGroup>
-    <PackageVersion Include="Cake.Frosting" Version="6.1.0" />
-    <PackageVersion Include="Cake.Common" Version="6.1.0" />
-  </ItemGroup>
+  <!--
+    构建工具：Cake.Sdk 通过 cake.cs 顶部的 #:sdk 声明版本（Cake.Sdk@6.2.0），
+    不走中央包管理，故此处无需登记 Cake 相关包。
+  -->
 </Project>

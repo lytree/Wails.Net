@@ -26,16 +26,16 @@ Wails v3（Go 实现，参考版本 `v3.0.0-alpha.102`）需要在 .NET 平台�
 | 领域 | 选型 | 版本 | 关键理由 |
 |------|------|------|---------|
 | 运行时 | .NET 10 (`net10.0`) | — | LTS 之前的最现代版本，支持最新 C# 与 AOT |
-| 宿主 | `Microsoft.Extensions.Hosting` | 10.0.0 | Generic Host 统一生命周期，借鉴 ASP.NET Core |
-| DI | `Microsoft.Extensions.DependencyInjection` | 10.0.0 | 官方 DI 容器，与 Host 原生集成 |
-| 配置 | `Microsoft.Extensions.Configuration` | 10.0.0 | `appsettings.json` 与环境变量统一抽象 |
-| 选项 | `Microsoft.Extensions.Options` | 10.0.0 | `IOptions<T>` 强类型配置 |
-| 日志 | `Microsoft.Extensions.Logging` | 10.0.0 | `ILogger<T>` 抽象，可对接多 sink |
-| Windows Webview | `Microsoft.Web.WebView2` | 1.0.3240.44 | Edge Chromium 内核，官方长期支持 |
-| Win32 互操作 | `Microsoft.Windows.CsWin32` | 0.3.298 | 源生成器生成 Win32 P/Invoke，**禁用 `PInvoke.*`** |
-| Linux GTK | `GirCore` | 0.8.0 | 通过 GObject 内省调用 GTK4/WebKitGTK，**禁用 GtkSharp/Xamarin.Forms** |
-| CLI 解析 | `System.CommandLine` | 2.0.9 | 官方维护，**禁用 `McMaster.Extensions.CommandLineUtils`** |
-| 测试框架 | `TUnit` | 1.58.0 | 原生支持 MTP，**禁用 MSTest/xUnit/NUnit** |
+| 宿主 | `Microsoft.Extensions.Hosting` | 10.0.15 | Generic Host 统一生命周期，借鉴 ASP.NET Core |
+| DI | `Microsoft.Extensions.DependencyInjection` | 10.0.15 | 官方 DI 容器，与 Host 原生集成 |
+| 配置 | `Microsoft.Extensions.Configuration` | 10.0.15 | `appsettings.json` 与环境变量统一抽象 |
+| 选项 | `Microsoft.Extensions.Options` | 10.0.15 | `IOptions<T>` 强类型配置 |
+| 日志 | `Microsoft.Extensions.Logging` | 10.0.15 | `ILogger<T>` 抽象，可对接多 sink |
+| Windows Webview | `Microsoft.Web.WebView2` | 1.0.4314.35 | Edge Chromium 内核，官方长期支持 |
+| Win32 互操作 | `Microsoft.Windows.CsWin32` | 0.3.371 | 源生成器生成 Win32 P/Invoke，**禁用 `PInvoke.*`** |
+| Linux GTK | `GirCore` | 0.8.1 | 通过 GObject 内省调用 GTK4/WebKitGTK，**禁用 GtkSharp/Xamarin.Forms** |
+| CLI 解析 | `System.CommandLine` | 2.0.15 | 官方维护，**禁用 `McMaster.Extensions.CommandLineUtils`** |
+| 测试框架 | `TUnit` | 1.83.8 | 原生支持 MTP，**禁用 MSTest/xUnit/NUnit** |
 | 脚本语言 | F# (`.fsx`) | — | 通过 `dotnet fsi script.fsx` 运行，**严禁 Python** |
 
 **架构融合策略**（必须遵守）：
@@ -59,7 +59,7 @@ Wails v3（Go 实现，参考版本 `v3.0.0-alpha.102`）需要在 .NET 平台�
 **负面影响**：
 
 - .NET 10 要求开发与 CI 环境安装最新 SDK；不支持早期 .NET 版本，对部分老用户不友好。
-- GirCore 0.8.0 仍处于活跃演进阶段，部分 GTK4 API 绑定可能滞后，需要在 Linux 实现层手动补齐。
+- GirCore 0.8.1 仍处于活跃演进阶段，部分 GTK4 API 绑定可能滞后，需要在 Linux 实现层手动补齐。
 - CsWin32 对部分复杂 Win32 API（如带复杂结构体回调的 API）支持不完整，需要 `NativeMethods.txt` 显式声明。
 - TUnit 社区生态较 MSTest/xUnit 小，第三方集成（如 IDE 测试适配器）需要单独配置。
 - 全栈 `TreatWarningsAsErrors=true` 提升了代码质量门槛，但首次集成第三方库时可能需要补 `NoWarn`。

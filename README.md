@@ -37,7 +37,7 @@ Wails.Net 是一个使用 .NET 10 和 Web 前端技术构建跨平台桌面应�
 
 ### 核心特性
 
-- **跨平台**：Windows（WebView2）、Linux（WebKitGTK-6.0 via GirCore 0.8.0）、Android（.NET Android + WebView）
+- **跨平台**：Windows（WebView2）、Linux（WebKitGTK-6.0 via GirCore 0.8.1）、Android（.NET Android + WebView）
 - **现代 .NET**：基于 .NET 10，支持 AOT、 trimming
 - **托管封装策略**：使用原生互操作，避免重量级依赖
 - **源生成器绑定**：编译期注册绑定（`IIncrementalGenerator`），AOT 友好，禁止反射（AGENTS.md §3.4）
@@ -59,7 +59,7 @@ Wails.Net 是一个使用 .NET 10 和 Web 前端技术构建跨平台桌面应�
 - **CSP 安全**：`NonceInjector` 注入 CSP nonce、`IsolationInjector` 隔离模式
 - **DPI 缩放**：`DpiScalePlugin` 提供屏幕缩放因子查询与控制
 - **平台检测**：`PlatformFactory` 6 级回退检测链，保证任何环境可降级运行
-- **Cake Frosting 构建**：`build/` 项目（Cake Frosting）统一构建，支持三平台自包含打包 + Linux .deb/.rpm + Windows Authenticode 自动签名
+- **cake.cs 构建**：仓库根 `cake.cs`（Cake SDK 文件式脚本）统一构建，支持三平台自包含打包 + Linux .deb/.rpm + Windows Authenticode 自动签名
 - **MenuRole 角色菜单项**：21 个角色枚举 + 13 个工厂方法 + 3 个标准菜单组合（Edit/Window/Help），对齐 Wails v3 Role 常量与 Tauri v2 PredefinedMenuItem，macOS 专属角色在其他平台静默 no-op
 - **Android 平台事件系统**：12 个 Android 平台事件 ID（1267–1285）映射到 7 个公共 `ApplicationEventType`（LowMemory/ScreenLocked/ScreenUnlocked 等），前端可使用统一事件名跨平台订阅
 
@@ -228,7 +228,7 @@ Wails.Net/
 ├── src/
 │   ├── Wails.Net.Application/          # 核心框架（平台无关）
 │   ├── Wails.Net.Application.Windows/  # Windows 平台实现（WebView2 + CsWin32）
-│   ├── Wails.Net.Application.Linux/    # Linux 平台实现（GirCore 0.8.0）
+│   ├── Wails.Net.Application.Linux/    # Linux 平台实现（GirCore 0.8.1）
 │   ├── Wails.Net.Application.Android/  # Android 平台实现（.NET Android + WebView）
 │   ├── Wails.Net.Application.MacOS/    # macOS 平台骨架（G7，降级到 ServerPlatformApp）
 │   ├── Wails.Net.AssetServer/          # 资源服务器（含 Security/Nonce/Isolation）
@@ -243,7 +243,7 @@ Wails.Net/
 │   ├── Wails.Net.Sdk/                  # 统一 SDK（multi-target 自动选择平台 Bundle）
 │   ├── Wails.Net.Cli/                  # CLI 工具（dotnet tool）
 │   └── Wails.Net.Templates/            # dotnet new 项目模板包
-├── build/                              # Cake Frosting 构建项目（三平台自包含打包）
+├── cake.cs                             # Cake SDK 文件式构建脚本（三平台自包含打包）
 ├── tests/                              # 测试（6 个可执行测试项目 + 1 个共享契约库 + 1 个 Android E2E 脚本）
 ├── examples/                           # 示例项目
 └── docs/                               # 文档
@@ -257,23 +257,23 @@ Wails.Net/
 |---|---|
 | .NET 10 | 运行时与基类库 |
 | System.Text.Json | JSON 序列化 |
-| System.CommandLine | CLI 参数解析 |
-| TUnit | 单元测试框架 |
+| System.CommandLine 2.0.15 | CLI 参数解析 |
+| TUnit 1.83.8 | 单元测试框架 |
 
 ### Windows 平台
 
 | 库 | 用途 |
 |---|---|
-| Microsoft.Web.WebView2 | WebView2 托管 |
-| Microsoft.Windows.CsWin32 | Win32 P/Invoke 源生成器（替代 PInvoke.*） |
+| Microsoft.Web.WebView2 1.0.4314.35 | WebView2 托管 |
+| Microsoft.Windows.CsWin32 0.3.371 | Win32 P/Invoke 源生成器（替代 PInvoke.*） |
 
 ### Linux 平台
 
 | 库 | 用途 |
 |---|---|
-| GirCore.Gtk-4.0 (0.8.0) | GTK4 UI 工具包 |
-| GirCore.WebKit-6.0 (0.8.0) | WebKitGTK 浏览器引擎 |
-| GirCore.Gio-2.0 (0.8.0) | GIO（D-Bus、GSettings） |
+| GirCore.Gtk-4.0 (0.8.1) | GTK4 UI 工具包 |
+| GirCore.WebKit-6.0 (0.8.1) | WebKitGTK 浏览器引擎 |
+| GirCore.Gio-2.0 (0.8.1) | GIO（D-Bus、GSettings） |
 
 ## 开发指南
 
@@ -318,17 +318,24 @@ bash scripts/pack-and-test.sh --skip-pack
 
 脚本会在仓库外临时目录创建测试项目，用 `PackageReference` 引用 `Wails.Net.Sdk` 验证可构建，并 `dotnet tool install Wails.Net.Cli` 验证 `wails-net` 可执行。详见 [发布指南](docs/development/release-guide.md#一键打包与冒烟测试推荐)。
 
-### 三平台自包含打包（Cake Frosting）
+### 三平台自包含打包（cake.cs）
+
+仓库使用仓库根目录的 **`cake.cs`**（Cake SDK 文件式脚本，`#:sdk Cake.Sdk`）作为唯一构建入口：
 
 ```bash
-# 使用 Cake Frosting 构建三平台自包含包
-dotnet run --project build/Wails.Net.Build -- --target=Dist --platform=windows --rid=all
-dotnet run --project build/Wails.Net.Build -- --target=Dist --platform=linux --rid=all
-dotnet run --project build/Wails.Net.Build -- --target=Dist --platform=android --rid=all
+# 使用 cake.cs 构建三平台自包含包
+dotnet run cake.cs -- --target=Dist --platform=windows --rid=all
+dotnet run cake.cs -- --target=Dist --platform=linux --rid=all
+dotnet run cake.cs -- --target=Dist --platform=android --rid=all
 
 # Dry-run 预览（不实际构建）
-dotnet run --project build/Wails.Net.Build -- --target=Dist --dry-run --skip-frontend
+dotnet run cake.cs -- --target=Dist --dry-run --skip-frontend
+
+# 局部构建（本机未安装 Android 工作负载时，可指定单个工程）
+dotnet run cake.cs -- --target=Build --solution=src/Wails.Net.Application/Wails.Net.Application.csproj
 ```
+
+可用参数：`--target`（默认 `Default` = `Test`）、`--configuration`、`--platform`、`--rid`、`--build-version`、`--output`、`--linux-formats`、`--skip-frontend`、`--dry-run`、`--rebuild`、`--solution`。
 
 ### 编码规范
 
@@ -347,9 +354,9 @@ dotnet run --project build/Wails.Net.Build -- --target=Dist --dry-run --skip-fro
 3. ✅ **传输层与消息处理器** — HTTP 传输、WebSocket 广播、消息协议
 4. ✅ **窗口管理器与对话框** — 窗口生命周期、对话框系统
 5. ✅ **Windows 平台实现** — WebView2 骨架、注册表主题检测、剪贴板、自启动、环境信息
-6. ✅ **Linux 平台实现** — GirCore 0.8.0/GTK4 骨架、环境变量主题检测、剪贴板存根、XDG 自启动、环境信息
+6. ✅ **Linux 平台实现** — GirCore 0.8.1/GTK4 骨架、环境变量主题检测、剪贴板存根、XDG 自启动、环境信息
 7. ✅ **CLI 工具与生成器** — 脚手架、TS 绑定生成、环境诊断、项目构建
-8. ✅ **Android 平台实现与三平台自包含构建** — `android` 工作负载、`net10.0-android36.0` TFM（最低运行 API Level 24）、Single-Activity + Fragment、WebMessageListener IPC、Cake Frosting 构建
+8. ✅ **Android 平台实现与三平台自包含构建** — `android` 工作负载、`net10.0-android36.0` TFM（最低运行 API Level 24）、Single-Activity + Fragment、WebMessageListener IPC、`cake.cs` 构建
 
 ### 功能对齐阶段（P0/P1/P2）
 
