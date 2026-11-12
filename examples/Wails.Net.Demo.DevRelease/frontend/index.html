@@ -65,13 +65,14 @@
         </section>
 
         <section class="card">
-            <h2>窗口操作（来自 wails.window 命名空间）</h2>
+            <h2>窗口操作（通过 <code>window.*</code> 命令调用）</h2>
             <div class="row">
                 <button id="minBtn">最小化</button>
                 <button id="maxBtn">最大化/还原</button>
                 <button id="closeBtn">关闭</button>
                 <button id="devtoolsBtn">打开 DevTools</button>
             </div>
+            <p id="windowResult" class="result result-muted">命令失败时会在此显示原因</p>
         </section>
 
         <footer class="footer">

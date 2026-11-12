@@ -39,6 +39,7 @@
   -->
   <ItemGroup>
     <ProjectReference Include="..\..\src\Wails.Net.Sdk\Wails.Net.Sdk.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Window\Wails.Net.Plugins.Window.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- UI / 系统信息插件（前端系统面板演示使用） -->

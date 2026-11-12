@@ -13,10 +13,10 @@ namespace Wails.Net.Plugins.Window;
 /// <para>
 /// 命令通过 <see cref="ICommandContext.WindowId"/> 定位目标 <see cref="WebviewWindow"/> 实例，
 /// 再委托到 <see cref="WebviewWindow"/> 的公共方法。
-/// 支持两种前端调用形式：
+/// 支持两种前端调用形式（M3 起运行时不再挂载 <c>wails.window</c> 命名空间对象）：
 /// <list type="bullet">
-/// <item><c>wails.window.setTitle('标题')</c> — 走 MessageProcessor.ProcessWindow → CommandDispatcher</item>
-/// <item><c>wails.call('window.setTitle', [{ title: '标题' }])</c> — 走 ProcessCallAsync → CommandDispatcher 回退</item>
+/// <item><c>wails.call('window.setTitle', [{ title: '标题' }])</c> — 走 ProcessCallAsync → CommandDispatcher（推荐）</item>
+/// <item>消息类型为 <c>window.&lt;action&gt;</c> 的窗口消息 — 走 ProcessWindowAsync → CommandDispatcher（旧协议兼容）</item>
 /// </list>
 /// </para>
 /// </summary>
@@ -36,7 +36,8 @@ public class WindowPlugin : IPlugin
 
     /// <summary>
     /// 配置插件，注册所有窗口操作命令。
-    /// 命令名采用 <c>window.&lt;action&gt;</c> 格式，与前端 <c>wails.window.&lt;action&gt;</c> API 一致。
+    /// 命令名采用 <c>window.&lt;action&gt;</c> 格式，前端通过 <c>wails.call('window.&lt;action&gt;', [options])</c> 或
+    /// <c>@wails-net/plugin-window</c> 的类型化封装调用。
     /// </summary>
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)

@@ -3,22 +3,10 @@ interface WailsAPI {
   bindings: {
     call(bindingId: number, args?: any[]): Promise<any>
   }
-  window: {
-    setTitle(title: string): Promise<void>
-    minimize(): Promise<void>
-    maximize(): Promise<void>
-    unmaximize(): Promise<void>
-    close(): Promise<void>
-    centre(): Promise<void>
-    show(): Promise<void>
-    hide(): Promise<void>
-    setSize(width: number, height: number): Promise<void>
-    setAlwaysOnTop(onTop: boolean): Promise<void>
-    setMinSize(width: number, height: number): Promise<void>
-    setMaxSize(width: number, height: number): Promise<void>
-    setPosition(x: number, y: number): Promise<void>
-    focus(): Promise<void>
-  }
+  // 注意：运行时自 M3 起不再挂载 window / clipboard / dialog 等命名空间，
+  // 这些能力统一通过 call('<命名空间>.<动作>', [选项对象]) 调用，例如：
+  //   await window.wails.call('window.setTitle', [{ title: '新标题' }])
+  // 也可改用类型化封装：import { window } from '@wails-net/plugin-window'
   events: {
     on(eventName: string, callback: (data: any) => void): () => void
     off(eventName: string): void

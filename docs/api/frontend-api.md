@@ -1,7 +1,25 @@
 # 前端 JavaScript API 参考
 
+> **⚠️ M3 变更提示**：`@wails-net/runtime` 自 M3 起「变薄」，只保留核心 API（`wails.call` / `wails.bindings` / `wails.events` / `wails.query` / `wails.invoke` / `wails.cancel`，以及 `Stream` / `JSONStream`）。
+> 窗口、剪贴板、对话框、托盘等命名空间已拆分到独立的 `@wails-net/plugin-*` 包，**不再挂载到 `wails` 对象上**。
+> 下文若出现 `wails.window.setTitle(...)`、`wails.clipboard.setText(...)` 这类写法，均属 M2 单包时代的旧 API，请改用下列两种等价方式：
+
+```ts
+// 方式一：核心 call —— 命令名 = <命名空间>.<动作>，参数为「选项对象数组」
+import { call } from "@wails-net/runtime";
+await call("window.setTitle", [{ title: "新标题" }]);
+await call("window.minimize", []);
+await call("clipboard.setText", ["要复制的文本"]);
+
+// 方式二：类型化插件包（按需安装，内部同样是 call）
+import { window } from "@wails-net/plugin-window";
+await window.setTitle("新标题");
+```
+
+> 注意：命令必须由后端对应插件注册后才存在（如 `builder.UsePlugin<WindowPlugin>()`），否则调用会返回「命令未找到」。
+
 > 本文档全面描述 Wails.Net 项目的前端 JavaScript 运行时 API。
-> 全部 API 由 npm 包 [`@wails-net/runtime`](../../packages/wails-net-runtime/) 提供（TypeScript 实现，自包含 IPC 传输 + 全部核心命名空间 + 46 个插件命令的强类型封装）。
+> 核心 API 由 npm 包 [`@wails-net/runtime`](../../packages/wails-net-runtime/) 提供（TypeScript 实现，自包含 IPC 传输）；各命名空间的强类型封装位于 [`packages/wails-net-plugin-*`](../../packages/)。
 > 前端需执行 `import { wails } from "@wails-net/runtime";` 加载；后端通过 `Application.GenerateRuntimeJs()` 注入轻量 `window._wails` 标志对象（platform / isDebug / isServerMode / webSocketUrl / assetServerUrl），由 SDK 内部 `readRuntimeFlags()` 读取。
 
 ## 概述
@@ -14,6 +32,10 @@ Wails.Net 在 Webview 启动时由后端注入一段轻量 `window._wails` 标�
 所有 API 调用最终通过 SDK 内部 `transport.invoke(type, payload)` 发送，HTTP 通道走 `POST /wails/message`、原生通道走 WebView2 / WebKitGTK / Android `WailsBridge` 同步桥接。事件订阅通过 `wails.events.on(name, callback)` 注册本地回调；后端桌面模式走 `ExecuteScriptAsync` 调用全局 `window._wailsEmitEvent`，Server 模式走 WebSocket 推送 `{ type: "event", name, data }` 消息。
 
 ### 命名空间总览
+
+> **读法（M3）**：下表 `wails.xxx` 一行代表一类**命令前缀**（`xxx.*`），在代码里通过
+> `wails.call("xxx.<action>", [options])` 调用，或安装对应 `@wails-net/plugin-xxx` 包使用类型化封装。
+> 只有 `wails` / `wails.bindings` / `wails.events` / `wails.query` / `wails.invoke` / `wails.cancel` 是运行时对象上的真实属性。
 
 | 命名空间 | 说明 | 对应参考 |
 |---------|------|---------|
@@ -194,9 +216,24 @@ wails.events.emit(eventName: string, data?: any): Promise<void>
 await wails.events.emit("buttonClicked", { buttonId: 42 });
 ```
 
-## 窗口 API (wails.window)
+## 窗口 API (window.*)
 
-操作当前窗口。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `window` 命名空间，所有方法均返回 `Promise`。
+操作当前窗口，命令前缀 `window.*`。M3 起该命名空间不在 `wails` 对象上，两种等价调用方式：
+
+```ts
+// 1) 核心 call（后端需注册 WindowPlugin）
+await call("window.setTitle", [{ title: "我的应用 - 首页" }]);
+await call("window.centre", []);
+
+// 2) 类型化封装
+import { window } from "@wails-net/plugin-window";
+await window.setTitle("我的应用 - 首页");
+```
+
+> 阅读约定：本节各小节的旧签名 `wails.window.X(a, b)` 对应命令 `window.X`，参数按签名转换为**选项对象数组**，
+> 例如 `setSize(width, height)` → `call("window.setSize", [{ width, height }])`、
+> `setAlwaysOnTop(onTop)` → `call("window.setAlwaysOnTop", [{ onTop }])`、
+> 无参方法 → `call("window.X", [])`。所有方法均返回 `Promise`。
 
 ### 窗口大小与位置
 

@@ -19,6 +19,7 @@ using Wails.Net.Demo.VueSfc.Services;
 
 using Wails.Net.Plugins.AppInfo;
 using Wails.Net.Plugins.Clipboard;
+using Wails.Net.Plugins.Window;
 using Wails.Net.Plugins.Dialog;
 using Wails.Net.Plugins.Log;
 using Wails.Net.Plugins.Notification;
@@ -48,6 +49,7 @@ builder.Services.AddSingleton<GreetingService>();
 builder.Services.AddSingleton<TodoService>();
 
 // 使用内置插件（前端「系统信息」面板调用其命令）
+builder.UsePlugin<WindowPlugin>();   // 窗口命令 window.setTitle / minimize / maximize / centre
 builder.UsePlugin<LogPlugin>();
 builder.UsePlugin<ClipboardPlugin>();
 builder.UsePlugin<DialogPlugin>();

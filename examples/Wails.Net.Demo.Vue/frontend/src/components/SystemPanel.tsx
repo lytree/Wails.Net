@@ -66,7 +66,7 @@ export default defineComponent({
 
     const onSetTitle = async () => {
       try {
-        await window.wails.window.setTitle('新标题 - 来自 Vue JSX Vapor')
+        await window.wails.call('window.setTitle', [{ title: '新标题 - 来自 Vue JSX Vapor' }])
         windowMessage.value = '窗口标题已更新'
       } catch (e) {
         console.error('设置窗口标题失败:', e)
@@ -76,7 +76,7 @@ export default defineComponent({
 
     const onMinimize = async () => {
       try {
-        await window.wails.window.minimize()
+        await window.wails.call('window.minimize', [])
         windowMessage.value = '窗口已最小化'
       } catch (e) {
         console.error('最小化窗口失败:', e)
@@ -86,7 +86,7 @@ export default defineComponent({
 
     const onMaximize = async () => {
       try {
-        await window.wails.window.maximize()
+        await window.wails.call('window.maximize', [])
         windowMessage.value = '窗口已最大化'
       } catch (e) {
         console.error('最大化窗口失败:', e)
@@ -96,7 +96,7 @@ export default defineComponent({
 
     const onCentre = async () => {
       try {
-        await window.wails.window.centre()
+        await window.wails.call('window.centre', [])
         windowMessage.value = '窗口已居中'
       } catch (e) {
         console.error('居中窗口失败:', e)

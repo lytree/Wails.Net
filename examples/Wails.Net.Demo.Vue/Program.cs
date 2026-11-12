@@ -1,6 +1,7 @@
 using Wails.Net.Plugins.Notification;
 using Wails.Net.Plugins.Dialog;
 using Wails.Net.Plugins.Clipboard;
+using Wails.Net.Plugins.Window;
 using Wails.Net.Plugins.Log;
 using Wails.Net.Plugins.Path;
 using Wails.Net.Plugins.AppInfo;
@@ -40,6 +41,9 @@ builder.Services.AddSingleton<GreetingService>();
 builder.Services.AddSingleton<TodoService>();
 
 // 使用内置插件
+// WindowPlugin 提供 window.minimize / window.maximize / window.centre 等窗口命令，
+// 前端通过 wails.call('window.setTitle', [{ title }]) 调用
+builder.UsePlugin<WindowPlugin>();
 builder.UsePlugin<LogPlugin>();
 builder.UsePlugin<ClipboardPlugin>();
 builder.UsePlugin<DialogPlugin>();

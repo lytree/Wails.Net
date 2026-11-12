@@ -87,7 +87,8 @@ builder.Logging.AddFilter("Microsoft.Hosting.Lifetime", LogLevel.Information);
 builder.Services.AddSingleton<GreetingService>();
 
 // ---------- 内置插件 ----------
-// 每个插件提供一组前端可调用的命令（wails.window.* / wails.app.* 等）
+// 每个插件提供一组前端可调用的命令（window.* / application.* 等，
+// 前端通过 wails.call('window.minimize', []) 调用）
 builder.UsePlugin<WindowPlugin>();        // 窗口操作（min/max/close + openDevTools）
 builder.UsePlugin<ApplicationPlugin>();   // 应用级操作（quit / getInfo）
 builder.UsePlugin<LogPlugin>();           // 日志记录

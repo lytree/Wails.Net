@@ -65,7 +65,7 @@ export default function SystemPanel() {
 
   const onSetTitle = async () => {
     try {
-      await window.wails.window.setTitle('Wails.Net React Demo - 新标题')
+      await window.wails.call('window.setTitle', [{ title: 'Wails.Net React Demo - 新标题' }])
       setWindowResult('窗口标题已更新')
       setError('')
     } catch (e) {
@@ -76,7 +76,7 @@ export default function SystemPanel() {
 
   const onMinimize = async () => {
     try {
-      await window.wails.window.minimize()
+      await window.wails.call('window.minimize', [])
       setWindowResult('窗口已最小化')
       setError('')
     } catch (e) {
@@ -87,7 +87,7 @@ export default function SystemPanel() {
 
   const onMaximize = async () => {
     try {
-      await window.wails.window.maximize()
+      await window.wails.call('window.maximize', [])
       setWindowResult('窗口已最大化')
       setError('')
     } catch (e) {
@@ -98,7 +98,7 @@ export default function SystemPanel() {
 
   const onCentre = async () => {
     try {
-      await window.wails.window.centre()
+      await window.wails.call('window.centre', [])
       setWindowResult('窗口已居中')
       setError('')
     } catch (e) {
@@ -109,7 +109,7 @@ export default function SystemPanel() {
 
   const onAlwaysOnTop = async () => {
     try {
-      await window.wails.window.setAlwaysOnTop(true)
+      await window.wails.call('window.setAlwaysOnTop', [{ onTop: true }])
       setWindowResult('窗口已置顶')
       setError('')
     } catch (e) {
@@ -120,7 +120,7 @@ export default function SystemPanel() {
 
   const onOpenDevTools = async () => {
     try {
-      await window.wails.window.openDevTools()
+      await window.wails.call('window.openDevTools', [])
       setWindowResult('开发者工具已打开')
       setError('')
     } catch (e) {

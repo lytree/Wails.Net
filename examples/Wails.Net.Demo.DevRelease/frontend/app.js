@@ -4,7 +4,7 @@ import { wails } from "./wails-runtime/index.js";
 // -------------------------------------------------------------------------
 // wails 对象由 @wails-net/runtime 提供（从本地 wails-runtime 目录导入）。
 // 绑定方法通过 wails.call('Service.Method', args) 调用；
-// 命令（wails.window.* 等）由 wails-net/runtime 命名空间提供。
+// 命令（window.* 等）同样走 wails.call('window.minimize', [])，由后端 WindowPlugin 提供。
 // -------------------------------------------------------------------------
 
 const $ = (id) => document.getElementById(id);
@@ -93,10 +93,29 @@ $("throwBtn").addEventListener("click", async () => {
 });
 
 // ---- 5. 窗口操作（通过命令而不是绑定） ----
-$("minBtn").addEventListener("click", () => wails.window.minimize());
-$("maxBtn").addEventListener("click", () => wails.window.toggleMaximise());
-$("closeBtn").addEventListener("click", () => wails.window.close());
-$("devtoolsBtn").addEventListener("click", () => wails.window.openDevTools());
+const windowResult = $("windowResult");
+
+const runCommand = async (name, args = []) => {
+    try {
+        await wails.call(name, args);
+        windowResult.textContent = `已执行 ${name}`;
+        windowResult.className = "result result-muted";
+    } catch (e) {
+        windowResult.textContent = `命令 ${name} 调用失败：${e.message || e}`;
+        windowResult.className = "result result-error";
+    }
+};
+
+$("minBtn").addEventListener("click", () => runCommand('window.minimize'));
+
+$("maxBtn").addEventListener("click", async () => {
+    // 无 toggleMaximise 命令：先查询状态再切换
+    const maximised = await wails.call('window.isMaximised', []).catch(() => false);
+    await runCommand(maximised ? 'window.unmaximize' : 'window.maximize');
+});
+
+$("closeBtn").addEventListener("click", () => runCommand('window.close'));
+$("devtoolsBtn").addEventListener("click", () => runCommand('window.openDevTools'));
 
 // ---- 6. 初始化 ----
 refreshModeInfo();
