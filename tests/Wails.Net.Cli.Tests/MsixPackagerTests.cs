@@ -461,10 +461,17 @@ public sealed class MsixPackagerTests
 
     /// <summary>
     /// 缺少可执行文件时 PackageAsync 应返回失败（校验先于工具调用）。
+    /// 平台守卫先于参数校验触发，非 Windows 上只能观测到平台错误，故本用例仅 Windows 运行。
     /// </summary>
     [Test]
     public async Task PackageAsync_MissingExecutable_ReturnsValidationFailure()
     {
+        if (!OperatingSystem.IsWindows())
+        {
+            Skip.Test("MSIX 打包仅支持 Windows");
+            return;
+        }
+
         var tempDir = CreateTempDirectory();
         try
         {
