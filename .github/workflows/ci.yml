@@ -348,13 +348,16 @@ jobs:
         id: devices
         shell: pwsh
         run: |
+          # GitHub 的 PowerShell 运行器默认 ErrorActionPreference=Stop 且启用
+          # $PSNativeCommandUseErrorActionPreference：dotnet 以非零码退出时会直接终止
+          # 脚本（"跳过"逻辑根本执行不到，job 照样变红）。这里显式放宽，退出码自行判断。
+          $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
+
           $output = dotnet build tests/Wails.Net.Application.Android.Tests/Wails.Net.Application.Android.Tests.csproj -c Release -t:ComputeAvailableDevices 2>&1 | Out-String
           $exitCode = $LASTEXITCODE
           Write-Host $output
 
-          # 无设备时该目标本身也会以非零退出码结束，而 GitHub 的 pwsh 包装器会把
-          # $LASTEXITCODE 透传成步骤退出码，所以两个分支都要显式 exit 0，
-          # 否则"跳过"照样把 job 打红（此前就是这样失败的）。
           if ($output -match "No devices are available") {
             Write-Host "::notice title=Android 平台测试::未检测到设备或模拟器，跳过设备端测试（编译验证已由上一步覆盖；设备端行为见 E2E 作业）"
             "has_device=false" >> $env:GITHUB_OUTPUT
@@ -540,22 +543,32 @@ jobs:
           Write-Host "Templates 包内容验证通过，content/ 下 $($contentFiles.Count) 个文件"
           Remove-Item -Recurse -Force $tempDir
 
-      # 验证统一 SDK 包（Wails.Net.Sdk）已生成且包含 build/ 目录
+      # 验证统一 SDK 包（Wails.Net.Sdk）已生成且包含 buildTransitive/ 下的 props/targets
+      # 注意路径是 buildTransitive 而不是 build：该包通过
+      #   <None Include="buildTransitive\**" PackagePath="buildTransitive\" />
+      # 交付 MSBuild 逻辑（buildTransitive 可穿透多项目传递引用）。此前校验写的是
+      # build/，属过期断言——只是 pack 一直失败所以从没跑到这一步。
       - name: 验证 Wails.Net.Sdk 包
         shell: pwsh
         run: |
           $sdkPkg = Get-ChildItem ${{ env.PACKAGE_OUTPUT }} -Filter "Wails.Net.Sdk.*.nupkg" -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $sdkPkg) { Write-Host "错误：Wails.Net.Sdk 包未生成"; exit 1 }
           Write-Host "Wails.Net.Sdk 包已生成: $($sdkPkg.Name)"
-          # 解压 nupkg（zip 格式）验证 build/ 目录存在
+          # 解压 nupkg（zip 格式）验证 buildTransitive/ 目录存在
           $sdkTempDir = Join-Path $env:TEMP "sdk-verify-$(Get-Random)"
           New-Item -ItemType Directory -Force -Path $sdkTempDir | Out-Null
           Copy-Item $sdkPkg.FullName -Destination (Join-Path $sdkTempDir "sdk.zip")
           Expand-Archive -Path (Join-Path $sdkTempDir "sdk.zip") -DestinationPath $sdkTempDir -Force
-          $sdkBuildDir = Join-Path $sdkTempDir "build"
-          if (-not (Test-Path $sdkBuildDir)) { Write-Host "错误：Wails.Net.Sdk 包未包含 build/ 目录"; exit 1 }
-          $buildFiles = Get-ChildItem $sdkBuildDir -Recurse
-          Write-Host "Wails.Net.Sdk build/ 目录验证通过，包含 $($buildFiles.Count) 个文件:"
+          $sdkBuildDir = Join-Path $sdkTempDir "buildTransitive"
+          if (-not (Test-Path $sdkBuildDir)) { Write-Host "错误：Wails.Net.Sdk 包未包含 buildTransitive/ 目录"; exit 1 }
+          $buildFiles = Get-ChildItem $sdkBuildDir -Recurse -File
+          $hasProps = $null -ne (Get-ChildItem $sdkBuildDir -Filter "*.props" -File -ErrorAction SilentlyContinue)
+          $hasTargets = $null -ne (Get-ChildItem $sdkBuildDir -Filter "*.targets" -File -ErrorAction SilentlyContinue)
+          if (-not ($hasProps -and $hasTargets)) {
+            Write-Host "错误：buildTransitive/ 下缺少 .props 或 .targets"
+            exit 1
+          }
+          Write-Host "Wails.Net.Sdk buildTransitive/ 验证通过，包含 $($buildFiles.Count) 个文件:"
           $buildFiles | Format-Table Name, FullName
           Remove-Item -Recurse -Force $sdkTempDir
 
