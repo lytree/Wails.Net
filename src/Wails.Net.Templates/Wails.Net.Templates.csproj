@@ -24,6 +24,14 @@
       NU5017 错误源于空依赖组与无 lib 程序集的组合。
     -->
     <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <!--
+      关闭符号包：Directory.Build.props 全局开了 IncludeSymbols=true（snupkg），
+      但模板包 IncludeBuildOutput=false、不含任何程序集与 PDB，符号包没有任何内容，
+      NuGet 会以 NU5017（既无依赖项也无内容）**报错**并让整个 pack 失败——
+      主包本身是正常的（已核验包内 21 个模板文件齐全），失败的是紧随其后的符号包。
+      模板包没有可调试的程序集，本就不需要符号包。
+    -->
+    <IncludeSymbols>false</IncludeSymbols>
   </PropertyGroup>
 
   <ItemGroup>

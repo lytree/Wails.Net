@@ -519,23 +519,17 @@ jobs:
         run: dotnet pack ${{ env.SOLUTION }} -c Release --no-build --no-restore -o ${{ env.PACKAGE_OUTPUT }} -p:SkipFrontendBuild=true -p:WailsNetVersion=${{ env.WAILS_NET_VERSION }}
 
       # 单独打包 Templates 项目
-      # Templates 不在 slnx 中，且 dotnet pack 会报 NU5017「既无依赖项也无内容」。
-      # 已核实这是误报：模板内容以 Content 项打进 content/ 下，nupkg 实际完整（29KB，
-      # 含 content/App/.template.config/template.json 等），下方的验证步骤会解包复核。
-      #
-      # 两个必须注意的点：
-      #   1. 必须显式 exit 0：GitHub 的 pwsh 包装器会把 $LASTEXITCODE 透传为步骤退出码，
-      #      仅“容忍”而不复位退出码，整个 job 仍会被判失败（此前就是这样红的）。
-      #   2. 必须传 WailsNetVersion：否则该包沿用 Directory.Build.props 里的开发默认值
-      #      1.0.0-alpha.1，与同一次发布的其他包版本号不一致。
+      # Templates 不在 slnx 中，需单独打包。
+      # 曾经此步骤会报 NU5017「既无依赖项也无内容」而必须容忍退出码；根因已定位并修复：
+      # 主包本身是完整的，报错来自紧随其后的**符号包**——Directory.Build.props 全局开了
+      # IncludeSymbols=true，而模板包 IncludeBuildOutput=false、没有程序集与 PDB，
+      # 符号包内容为空即报 NU5017。现已在 Wails.Net.Templates.csproj 关掉 IncludeSymbols，
+      # 因此这里不再容忍失败（吞掉退出码会掩盖真实回归）。
+      # 仍需显式传 WailsNetVersion：否则该包沿用开发默认值 1.0.0-alpha.1，
+      # 与同一次发布的其他包版本号不一致。
       - name: 打包 Templates 项目
         shell: pwsh
-        run: |
-          dotnet pack src/Wails.Net.Templates/Wails.Net.Templates.csproj -c Release -o ${{ env.PACKAGE_OUTPUT }} -p:WailsNetVersion=${{ env.WAILS_NET_VERSION }}
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "Templates 打包返回非零退出码 $LASTEXITCODE（NU5017 已知误报，内容由验证步骤复核）"
-          }
-          exit 0
+        run: dotnet pack src/Wails.Net.Templates/Wails.Net.Templates.csproj -c Release -o ${{ env.PACKAGE_OUTPUT }} -p:WailsNetVersion=${{ env.WAILS_NET_VERSION }}
 
       # 验证 Templates nupkg 实际生成且包含模板内容
       - name: 验证 Templates 包
