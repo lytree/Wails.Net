@@ -59,11 +59,37 @@ public sealed class DefaultSignalHandler : IDisposable
             return;
         }
 
+        // Android / iOS / tvOS / MacCatalyst / Browser 上 .NET 不提供 POSIX 信号注册，
+        // PosixSignalRegistration.Create 会直接抛 PlatformNotSupportedException。
+        // 这些平台的"应用即将退出"由系统生命周期传达（Android 走 Activity 生命周期），
+        // 不需要进程信号；若不跳过，异常会从 Application.Run 冒出并让应用启动即崩溃。
+        if (!IsPosixSignalSupported)
+        {
+            _logger?.LogDebug("当前平台不支持 POSIX 信号，跳过信号处理器安装。");
+            return;
+        }
+
         // PosixSignalRegistration 同时支持 Windows 与 Unix（.NET 6+）；
         // 注册后信号默认处置被抑制（与 Go signal.Notify 语义一致），由本处理器接管。
         _registrations.Add(PosixSignalRegistration.Create(PosixSignal.SIGINT, ctx => OnSignal("SIGINT", v => ctx.Cancel = v)));
         _registrations.Add(PosixSignalRegistration.Create(PosixSignal.SIGTERM, ctx => OnSignal("SIGTERM", v => ctx.Cancel = v)));
     }
+
+    /// <summary>
+    /// 当前平台是否支持 POSIX 信号注册。
+    /// <para>
+    /// .NET 仅在 Windows / Linux / macOS 上实现 <see cref="PosixSignalRegistration"/>；
+    /// 移动端（Android/iOS/tvOS/MacCatalyst）、浏览器与 WASI 上调用会抛
+    /// <see cref="PlatformNotSupportedException"/>。
+    /// </para>
+    /// </summary>
+    private static bool IsPosixSignalSupported
+        => !OperatingSystem.IsAndroid()
+            && !OperatingSystem.IsIOS()
+            && !OperatingSystem.IsTvOS()
+            && !OperatingSystem.IsMacCatalyst()
+            && !OperatingSystem.IsBrowser()
+            && !OperatingSystem.IsWasi();
 
     /// <summary>
     /// 停止监听并恢复信号默认处置。可安全重复调用。
