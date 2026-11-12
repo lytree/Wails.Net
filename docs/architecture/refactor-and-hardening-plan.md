@@ -376,7 +376,7 @@ AGENTS.md 与 docs 多处称 macOS 为"骨架/ServerMode 降级"，实际 `#if M
 | 项 | 现状 | 目标 |
 |---|---|---|
 | 源生成器测试 | `SourceGenerators.Tests` 仅 2 文件（Binding + 分析器） | snapshot 测试覆盖全部生成器输出（OPT-TEST-001） |
-| 前端 runtime 测试 | 仅 2 个 vitest 文件 | invoke/cancel/events/channels/fallback 全覆盖（OPT-TEST-002），含 3.5 新协议 |
+| 前端 runtime 测试 | 3 个 vitest 文件（`commands` / `transport` / `stream`），由 CI `test-frontend` 作业执行 | invoke/cancel/events/channels/fallback 全覆盖（OPT-TEST-002），含 3.5 新协议 |
 | IPC 全链路无头测试 | WailsTestHost 具备底座 | 增加"真实 EventIPCTransport + Mock 窗口"组合，守住 3.1 类断链（OPT-TEST-003） |
 | 插件测试 | 17 个插件零测试（Tray/Menu/Window/Notification 等） | SEC-H-003 迁移时按插件补命令级测试（含权限拒绝路径） |
 | NativeAOT CI | 仅 `Wails.Net.Cli` | 扩展到模板 App 产物（真实验证禁反射收益），Linux RID 提升为必过 |

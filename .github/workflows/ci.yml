@@ -2,10 +2,11 @@
 # Wails.Net GitHub Actions CI/CD 配置
 # ----------------------------------------------------------------------------
 # 流水线 Jobs：build → test → pack → dist → publish
+#   其中 test 分两路：test-frontend（pnpm 工作区，ubuntu）与各 .NET 测试作业（test-application / test-windows / test-linux / test-android）
 #
 # 运行环境：
 #   - windows-latest：构建全部项目、Windows 测试、打包、三平台自包含构建
-#   - ubuntu-latest：Linux 平台测试（需 GTK4 原生库，允许失败）
+#   - ubuntu-latest：前端 pnpm 工作区构建与单元测试；Linux 平台测试（需 GTK4 原生库，允许失败）
 #
 # 触发条件：
 #   - push 到任意分支：运行 build → test → pack（仅 main 分支）→ dist
@@ -147,6 +148,47 @@ jobs:
             src/**/bin/Release/
             tests/**/bin/Release/
           retention-days: 1
+
+  # ============================================================================
+  # Job 1.5：前端（pnpm 工作区：构建 + 类型检查 + 单元测试）
+  # ============================================================================
+  # .NET 侧构建统一带 -p:SkipFrontendBuild=true，前端产物不在 build job 里生成，
+  # 因此 pnpm 工作区需要独立守门：@wails-net/* 公共包的 tsc 构建与 vitest 单元测试、
+  # 以及三个示例（React / Vue JSX / Vue SFC）的 Vite 构建。
+  # 缺这一段时前端测试会长期静默失败（历史上确有 2 条断言写错的用例未被发现）。
+  test-frontend:
+    name: 前端 (构建 + 单元测试)
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: 启用 pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.0 --activate
+
+      - name: 安装依赖（严格按 lockfile）
+        run: pnpm install --frozen-lockfile
+
+      # 示例通过 "@wails-net/runtime": "workspace:*" 链接本地包，
+      # 必须先构建 packages/*/dist，否则示例的 tsc 报 Cannot find module。
+      - name: 构建公共包
+        run: pnpm build
+
+      - name: 类型检查
+        run: pnpm typecheck
+
+      - name: 单元测试
+        run: pnpm test
+
+      - name: 构建示例前端
+        run: pnpm build:examples
 
   # ============================================================================
   # Job 2：测试
