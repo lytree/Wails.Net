@@ -117,9 +117,11 @@ v3 runtime 模块（calls/events/contextmenu/Window/Screens/System/Clipboard/Dia
 
 方案：新增 `Wails.Net` ActivitySource + Meter；`DispatchAsync` 开 span + `BeginScope(new{Method, WindowId})`；提供 `builder.Services.AddWailsDiagnostics()` 一键接 OpenTelemetry。
 
-### 3.6 残余反射点（任务 DX-6，P0，小破坏）
+### 3.6 残余反射点（任务 DX-6，P0，小破坏）✅ 已完成
 
-`MapCommandExtensions.cs` L886 `ExtractBusinessParameterTypes(MethodInfo)` 通过 `delegate.Method` 反射读取参数元数据（约 20 处调用），**不在 AGENTS.md §3.4.3 白名单内**，仅靠注释自我豁免。方案：泛型重载内以 `typeof(T1)…` 显式数组替代（L1061 已有先例），统一后删除 `using System.Reflection;`。
+> **状态（已落地）**：`ExtractBusinessParameterTypes(MethodInfo)` 已从 `MapCommandExtensions` 移除，泛型重载改为 `typeof(T1)…` 显式参数类型数组，`src/` 生产代码的 `using System.Reflection;` 仅剩白名单两处（见文末验收清单 DX-6）。以下保留原始分析供追溯。
+
+原问题：`MapCommandExtensions.cs` L886 `ExtractBusinessParameterTypes(MethodInfo)` 通过 `delegate.Method` 反射读取参数元数据（约 20 处调用），**不在 AGENTS.md §3.4.3 白名单内**，仅靠注释自我豁免。方案：泛型重载内以 `typeof(T1)…` 显式数组替代（L1061 已有先例），统一后删除 `using System.Reflection;`。
 
 其余反射点（`PlatformFactory` 程序集加载、`BindingManager` 类型名字符串）均在白名单内，合规。
 

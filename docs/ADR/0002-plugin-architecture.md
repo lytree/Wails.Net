@@ -44,7 +44,7 @@ public interface IPlugin
 
 参见 [PluginManager.cs](../../src/Wails.Net.Application/Plugins/PluginManager.cs)：
 
-- 维护 `_plugins` 列表，提供 `Register`、`Register<T>`、`RegisterFromServices`、`DiscoverFromAssembly` 四种注册入口。
+- 维护 `_plugins` 列表，提供 `Register`、`Register<T>`、`RegisterFromServices` 三种注册入口（原第四种 `DiscoverFromAssembly` 程序集扫描已在「去反射改源生成器」中移除）。
 - `InitializeAll` 按注册顺序调用每个插件的 `ConfigureServices` 与 `Configure`，单个插件初始化失败会抛出异常并中断流程（避免半启动状态）。
 - 支持从 DI 容器收集所有 `IPlugin` 实例（`RegisterFromServices`），与 `Microsoft.Extensions.DependencyInjection` 原生集成。
 
@@ -82,7 +82,7 @@ public interface IPlugin
 
 - **复杂度**：双轨调用（BindingManager + CommandDispatcher）需要前端开发者理解两套命名约定；虽然入口统一，但元数据维护成本翻倍。
 - **插件初始化顺序敏感**：`InitializeAll` 按注册顺序执行，若插件 A 依赖插件 B 注册的服务，必须保证 B 先注册；目前依赖开发者显式管理。
-- **`DiscoverFromAssembly` 使用反射**：扫描程序集时使用 `Assembly.GetTypes()`，与 AOT 兼容性目标存在张力，未来需要替换为源生成器发现机制。
+- ~~**`DiscoverFromAssembly` 使用反射**~~（已在「去反射改源生成器」中消除）：原扫描程序集时使用 `Assembly.GetTypes()`，与 AOT 兼容性目标存在张力。现改为 `UsePlugin<TPlugin>()` 显式注册；`UsePluginsFromAssembly` 保留签名仅为向后兼容，方法体直接抛 `NotSupportedException`，不再存在任何程序集扫描路径。
 - **`IPluginContext` 是具体类而非接口**：`PluginContext` 未抽离接口，单元测试时需要构造具体实例，灵活性略低。
 
 ## 考虑过的替代方案

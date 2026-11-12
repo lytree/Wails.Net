@@ -375,14 +375,14 @@
 | 实现项 | Wails.Net | Wails v3 |
 |--------|-----------|---------|
 | **绑定入口** | `[Binding]` 特性 + `BindingManager.Add(instance)` | `Application.Bind(instance)` |
-| **调用路径** | 源生成器优先 + 反射回退（双路径） | 反射 |
+| **调用路径** | 源生成器调用器 / `MapCommand` 闭包（单一路径，无反射回退） | 反射 |
 | **方法 ID 哈希** | FNV-1a 32 位 | FNV-1a 32 位 |
 | **哈希常量** | `offsetBasis=2166136261` / `prime=16777619` | `fnv.New32a()` 默认 |
 | **哈希一致性** | ✅ 与 Go 版本字节级一致 | ✅ 基准实现 |
-| **注册键** | 全限定名 + 短名称双键 | 全限定名 + 短名称 |
-| **方法过滤** | 排除 `ServiceName`/`ServiceStartup`/`ServiceShutdown`/`IsSpecialName`/`Object` 继承方法 | 排除 `Service` 接口方法 |
+| **注册键** | 全限定名 + 短名称双键（歧义键 fail-closed） | 全限定名 + 短名称 |
+| **方法过滤** | 暴露边界由 `[Binding]`/`[Command]` 特性决定，无运行时方法枚举 | 排除 `Service` 接口方法 |
 | **错误类型** | `CallError` + `CallErrorKind`（Reference/Type/Runtime） | `CallError` + `ErrorKind` |
-| **反射异常解包** | ✅ `TargetInvocationException` 解包 | ✅ |
+| **反射异常解包** | 不需要（直接方法调用，捕获具体异常类型） | ✅ `TargetInvocationException` 解包 |
 | **取消支持** | ✅ `OperationCanceledException` 重抛 | ✅ `CancelCall` |
 | **源生成器** | ✅ `BindingSourceGenerator`（`IIncrementalGenerator`） | N/A |
 | **ModuleInitializer** | ✅ `[ModuleInitializer]` 自动注册 | N/A |
@@ -390,8 +390,7 @@
 
 **Wails.Net 关键实现**：
 - [BindingManager](../src/Wails.Net.Application/Bindings/Bindings.cs)：
-  - **源生成器优先**：`GeneratedBindingRegistry.TryGetInvoker` 优先使用编译时生成的强类型调用器。
-  - **反射兜底**：源生成器未覆盖的场景回退到反射调用。
+  - **单一调用路径**：`GeneratedBindingRegistry.TryGetInvoker` 取编译期生成的强类型调用器；未命中即报告未找到，**不回退反射**（AGENTS.md §3.4）。
   - **FNV-1a 32 位哈希**：与 Go 版本 `fnv.New32a()` 完全一致（AGENTS.md §6.3 强制要求）。
 - [BindingSourceGenerator](../src/Wails.Net.SourceGenerators/BindingSourceGenerator.cs)：通过 `IIncrementalGenerator` 生成 `WailsGeneratedBindings.g.cs`，使用 `[ModuleInitializer]` 自动注册。
 
@@ -404,9 +403,9 @@
 - `ServiceOptions.MarshalError` 每个 Service 可自定义错误序列化逻辑。
 
 **差异分析**：
-- Wails.Net 是**两者中唯一**采用源生成器 + 反射双路径的方案，兼顾性能（编译期生成）与开发体验（反射兜底）。
+- Wails.Net 是**两者中唯一**采用源生成器零反射方案的一方，兼顾 AOT 与性能。
 - Wails v3 与 Wails.Net 共享 FNV-1a 哈希算法，前端绑定 ID 可互通。
-- Wails.Net 严格遵循 AGENTS.md §3.4 "禁止使用反射获取对应方法"约束，源生成器是主路径。
+- Wails.Net 严格遵循 AGENTS.md §3.4 "禁止使用反射获取对应方法"约束，源生成器与 `MapCommand` 闭包是**仅有的**两条调用器来源。
 
 ---
 
@@ -577,9 +576,9 @@
 | **权限声明** | `context.Permissions.DeclarePermission` | N/A |
 | **IHostedService 适配** | ✅ `PluginHostedServiceAdapter`（双重触发防护） | N/A |
 | **逆序关闭** | ✅ 后注册先关闭 | ✅ |
-| **程序集扫描** | ✅ `DiscoverFromAssembly` 自动扫描 `IPlugin` 实现 | N/A |
+| **程序集扫描** | ❌ 已移除（`UsePluginsFromAssembly` 弃用并直接抛错） | N/A |
 | **Fluent API** | ✅ `UsePlugin<TPlugin>` | ✅ `Options.Services` |
-| **内置插件数** | **37 桌面 + 4 移动端 + 1 Android 运行时 = 42 个** | 有限 |
+| **内置插件数** | **39 桌面 + 7 移动端 + 1 Android 运行时 = 47 个**（40 个插件项目） | 有限 |
 
 **Wails.Net 关键实现**：
 - [IPlugin](../src/Wails.Net.Application/Plugins/IPlugin.cs) 4 阶段生命周期：
@@ -591,7 +590,7 @@
   - `Interlocked.CompareExchange` 保护 `_started`/`_stopped` 字段，确保幂等启动/关闭。
   - 关闭按注册**逆序**执行，确保依赖关系正确（后注册的插件先关闭）。
   - 单个插件启动/关闭失败不影响其他插件，仅记录错误日志。
-  - `DiscoverFromAssembly` 自动扫描程序集中实现 `IPlugin` 接口、有无参构造的类型。
+  - `Register` / `Register<TPlugin>` / `RegisterFromServices` 三个显式入口；原 `DiscoverFromAssembly` 程序集扫描已移除（`UsePluginsFromAssembly` 保留签名但直接抛 `NotSupportedException`）。
 - [PluginHostedServiceAdapter](../src/Wails.Net.Application/Plugins/PluginHostedServiceAdapter.cs)：让插件生命周期与 Host 生命周期对齐。
 
 
@@ -619,7 +618,7 @@
 | **Deny 优先** | ✅ `_deniedPermissions` 优先于 `_grantedPermissions` | N/A |
 | **远程 URL 限制** | ✅ `_remoteUrlScopes` + `IsGranted(perm, window, origin)` | N/A |
 | **窗口级隔离** | ✅ `PermissionKey (Permission, Window)` 复合键 | N/A |
-| **命令校验** | ✅ `ValidateCommand` + `RequireCapabilityAttribute` | ❌ |
+| **命令校验** | ✅ `ValidateCapabilities` + `RequireCapabilityAttribute`（编译期收集） | ❌ |
 | **运行时开关** | ✅ `PermissionManager.Enabled`（默认 false；OPT-SEC-001 引入 `PermissionMode`：Strict 模式强制启用） | N/A |
 | **本地源判定** | `wails://` / `localhost` / `127.0.0.1` / null | N/A |
 | **URL 白名单** | `UrlWhitelist` 通配符匹配 | N/A |
@@ -635,7 +634,7 @@
   - `_permissionSets: ConcurrentDictionary<string, PermissionSet>`
   - `_permissionScopes: ConcurrentDictionary<string, IScope>`
   - `_remoteUrlScopes: ConcurrentDictionary<PermissionKey, UrlWhitelist>`
-- 核心 API：`Grant`/`Deny`/`Revoke`/`Undeny`/`IsGranted`/`IsDenied`/`ValidateCommand`/`ValidateCapabilities`/`ValidateScopes`/`IsCapabilityApplicableToWindow`/`IsCapabilityApplicableToPlatform`。
+- 核心 API：`Grant`/`Deny`/`Revoke`/`Undeny`/`IsGranted`/`IsDenied`/`ValidateCapabilities`（三个重载）/`ValidateScopes`/`IsCapabilityApplicableToWindow`/`IsCapabilityApplicableToPlatform`。
 - **Deny 优先于 Grant**：`IsGranted` 先检查 `IsDenied`，即便已授权也返回 false。
 - **PermissionKey 复合键** `(Permission, Window)`：`Window=null` 表示全局，`Window="windowName"` 表示窗口级。
 - **PermissionSet 自动展开**：`Grant`/`Deny` 检测权限集标识并展开为集内所有细粒度权限。
@@ -953,8 +952,8 @@
 1. **维度 1 完整度最高**：完整采用 `Microsoft.Extensions.Hosting`/`DependencyInjection`/`Configuration`/`Options`/`Logging` 全栈，对 .NET 开发者最友好。`IOptionsMonitor<T>` 支持热重载是 Wails v3 不具备的。
 2. **维度 2 创新设计**：在完整对齐 Wails v3 对象模型基础上，新增多传输层并行广播、NativeIpcTransport 混合策略、senderWindowId 全链路传播、Server 模式降级、CancellablePromise 等独有能力。
 3. **维度 3 完整 ACL 模型**：自研 Capability + Permission + Scope 三层 ACL 模型（Wails v3 完全缺失），且支持参数级 Scope 校验。
-4. **架构创新**：Logger 双向桥接（前端 console ↔ 后端 ILogger）、4 阶段插件生命周期、CommandDispatcher 中间件管道、表达式树编译零反射调用、AssetServer 双中间件管道 + IHttpServiceHandler 业务路由挂载等独创设计。
-5. **内置插件最多**：42 个内置插件（37 桌面 + 4 移动端 + 1 Android 运行时），开箱即用。
+4. **架构创新**：Logger 双向桥接（前端 console ↔ 后端 ILogger）、4 阶段插件生命周期、CommandDispatcher 中间件管道、源生成器与 `MapCommand` 闭包共同实现的零反射调用、AssetServer 双中间件管道 + IHttpServiceHandler 业务路由挂载等独创设计。
+5. **内置插件最多**：47 个内置插件（39 个桌面插件项目 + 7 个移动端插件 + 1 个 Android 运行时），开箱即用。
 6. **MenuRole 系统最完整**：21 个角色枚举 + 13 个工厂方法 + 3 个标准菜单组合 + AboutMetadata + 跨平台辅助工具，结合 Wails v3 Role 模型与自研工厂方法。
 7. **Android 平台能力补齐**：4 个移动端插件 Android 平台实现 + AndroidRuntimePlugin + AndroidPlatformEvents + 3 个新公共事件。
 

@@ -2,14 +2,14 @@
 
 ## 概述
 
-Wails.Net 通过**接口驱动的平台抽象**策略支持 Windows、Linux 与 Server（无 GUI）三种运行环境。核心程序集 `Wails.Net.Application` 仅包含平台无关的接口与默认实现（如 [ServerPlatformApp.cs](../../src/Wails.Net.Application/Platform/ServerMode/ServerPlatformApp.cs)），而具体的原生调用代码则分别位于 `Wails.Net.Application.Windows` 与 `Wails.Net.Application.Linux` 两个独立项目中。核心项目通过反射在运行时按需加载平台程序集，避免了对平台包的硬依赖，从而保证同一份核心代码可以在三平台之间复用。
+Wails.Net 通过**接口驱动的平台抽象**策略支持 Windows、Linux 与 Server（无 GUI）三种运行环境。核心程序集 `Wails.Net.Application` 仅包含平台无关的接口与默认实现（如 [ServerPlatformApp.cs](../../src/Wails.Net.Application/Platform/ServerMode/ServerPlatformApp.cs)），而具体的原生调用代码则分别位于 `Wails.Net.Application.Windows` 与 `Wails.Net.Application.Linux` 两个独立项目中。平台包通过 `[ModuleInitializer]` 在模块加载时向核心工厂登记创建委托，核心项目因此既不需要硬引用平台包，也不需要反射实例化平台类型。
 
 平台抽象层的设计要点：
 
 - **接口位于核心项目**：`IPlatformApp`、`IWebviewWindowImpl`、`IClipboardImpl`、`IMenuImpl`、`ISystemTrayImpl` 等接口都定义在 `Wails.Net.Application` 中。
 - **实现位于平台项目**：Windows 平台使用 CsWin32 + WebView2；Linux 平台使用 GirCore 0.8.0 + GTK4 + WebKitGTK；Server 模式提供 no-op 桩实现。
 - **托管封装（Managed Wrappers）策略**：不使用 C++/CLI 混合模式，所有原生调用均通过源生成器（CsWin32）或托管绑定（GirCore）完成。
-- **工厂模式加载**：[PlatformFactory](../../src/Wails.Net.Application/Platform/PlatformFactory.cs) 通过反射 `Assembly.Load` 加载平台程序集，确保核心项目不直接引用平台包。
+- **工厂模式加载**：[PlatformFactory](../../src/Wails.Net.Application/Platform/PlatformFactory.cs) 维护「平台名 → 创建委托」字典，平台包用 `[ModuleInitializer]` 自动登记，核心项目不直接引用平台包。
 
 ## 核心接口
 
@@ -106,48 +106,73 @@ public interface IWebviewWindowImpl
 
 [IManagers.cs](../../src/Wails.Net.Application/Managers/IManagers.cs) 还包含一组与平台无关的管理器接口（`IWindowManager`、`IDialogManager`、`IEventManager`、`IScreenManager`、`ISystemTrayManager`、`IBrowserManager`、`IAutostartManager`、`IEnvironmentManager` 等），它们位于核心层，委托到上述平台子接口完成实际工作。
 
-## PlatformFactory — 工厂模式与反射加载
+## PlatformFactory — 委托注册与多级平台探测
 
-[PlatformFactory.cs](../../src/Wails.Net.Application/Platform/PlatformFactory.cs) 是平台抽象层的入口。它的核心思路是**通过反射加载平台程序集，让核心项目对平台包保持零引用**：
+[PlatformFactory.cs](../../src/Wails.Net.Application/Platform/PlatformFactory.cs) 是平台抽象层的入口。它让核心项目对平台包保持**零引用、零反射**：各平台包在自己的 `[ModuleInitializer]` 中把创建委托登记进工厂的字典，工厂只按平台名查表调用，不存在「加载程序集 → 找类型 → 反射实例化」这条链。
 
 ```csharp
 public static class PlatformFactory
 {
-    private const string ServerModeEnvVar = "WAILS_SERVER_MODE";
+    private static readonly Dictionary<string, Func<ApplicationOptions, IPlatformApp>> _platformAppFactories
+        = new(StringComparer.Ordinal);
+    private static readonly Dictionary<string, Func<IClipboardImpl>> _clipboardFactories
+        = new(StringComparer.Ordinal);
+
+    /// <summary>由平台包在 [ModuleInitializer] 中调用，登记创建委托。</summary>
+    public static void RegisterPlatformApp(string platformName, Func<ApplicationOptions, IPlatformApp> factory)
+        => _platformAppFactories[platformName] = factory;
 
     public static IPlatformApp CreatePlatformApp(ApplicationOptions options)
     {
-        if (IsServerMode())
+        if (IsServerMode())                                 // Level 1
             return new ServerPlatformApp(options);
 
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            var assembly = Assembly.Load("Wails.Net.Application.Windows");
-            var type = assembly.GetType("Wails.Net.Application.Platform.WindowsPlatformApp")
-                ?? throw new PlatformNotSupportedException("无法找到 WindowsPlatformApp 类型");
-            return (IPlatformApp)Activator.CreateInstance(type, options)!;
-        }
+        var platform = DetectPlatformOrNull();              // Level 2~5
+        if (platform is null)                               // Level 6
+            return new ServerPlatformApp(options);
 
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-        {
-            var assembly = Assembly.Load("Wails.Net.Application.Linux");
-            var type = assembly.GetType("Wails.Net.Application.Platform.LinuxPlatformApp")
-                ?? throw new PlatformNotSupportedException("无法找到 LinuxPlatformApp 类型");
-            return (IPlatformApp)Activator.CreateInstance(type, options)!;
-        }
+        if (_platformAppFactories.TryGetValue(platform, out var factory))
+            return factory(options);                        // 委托调用，零反射
 
-        throw new PlatformNotSupportedException($"不支持的平台: {RuntimeInformation.OSDescription}");
+        // 兜底：Assembly.Load 仅用于触发平台包的 [ModuleInitializer]（AGENTS.md §3.4.3 白名单例外）。
+        // 模块初始化器是 lazy 的，必须显式 RuntimeHelpers.RunModuleConstructor 强制运行；
+        // 加载后重新查表，全程不使用 GetType / Activator.CreateInstance
+        TryLoadPlatformAssembly(platform);
+        if (_platformAppFactories.TryGetValue(platform, out factory))
+            return factory(options);
+
+        throw new InvalidOperationException(
+            $"平台 '{platform}' 未注册创建委托。请通过 PlatformFactory.RegisterPlatformApp(\"{platform}\", ...) 注册，" +
+            $"通常在 {GetProviderPackageName(platform)} 项目中通过 [ModuleInitializer] 自动调用。");
     }
-    // ...
 }
 ```
+
+平台包侧的注册代码就是一个模块初始化器，构造逻辑用静态 Lambda 固定下来，编译期即确定类型：
+
+```csharp
+// src/Wails.Net.Application.Windows/WindowsPlatformRegistrar.cs
+internal static class WindowsPlatformRegistrar
+{
+    [ModuleInitializer]
+    public static void Register()
+    {
+        PlatformFactory.RegisterPlatformApp("windows", static options => new WindowsPlatformApp(options));
+        PlatformFactory.RegisterClipboard("windows", static () => new WindowsClipboard());
+    }
+}
+```
+
+只要用户应用引用了 `Wails.Net.Application.Windows` 程序集，运行时加载该模块就会自动完成注册，无需任何手工调用。**因此「核心项目不引用平台包」与「不用反射实例化平台类型」可以同时成立**——这是与早期 `Assembly.Load` + `Activator.CreateInstance` 实现的核心差别。
+
+`TryLoadPlatformAssembly` 中唯一的 `Assembly.Load` 属于白名单例外（仅触发模块初始化，不反射调用方法）。由于 .NET 的 `[ModuleInitializer]` 是 lazy 的，只 `Assembly.Load` 不保证立即执行，因此加载后要遍历模块并显式调用 `RuntimeHelpers.RunModuleConstructor(module.ModuleHandle)`；若初始化器已运行过该调用为 no-op。这条兜底路径让 `UseAutoPlatform()` 无需用户手写 `UseWindows()` / `UseLinux()` 条件块也能工作。
 
 三个工厂方法的关键差异：
 
 | 方法 | 行为 |
 |------|------|
-| `CreatePlatformApp` | Server 模式 → `ServerPlatformApp`；Windows/Linux → 反射加载平台程序集中的 `WindowsPlatformApp` / `LinuxPlatformApp` |
-| `CreateClipboard` | 同上模式，加载 `WindowsClipboard` / `LinuxClipboard` / `ServerClipboard` |
+| `CreatePlatformApp` | Server 模式或探测失败 → `ServerPlatformApp`；否则查 `_platformAppFactories` 委托表创建平台应用 |
+| `CreateClipboard` | 同一套探测流程，查 `_clipboardFactories` 委托表；失败降级 `ServerClipboard` |
 | `CreateWebviewWindowImpl` | **仅 Server 模式可用**，返回 `ServerWebviewWindow`；桌面平台调用时抛 `PlatformNotSupportedException`，提示通过 `Application.Get().NewWebviewWindow` 创建窗口 |
 
 最后一个方法的设计值得注意：桌面平台的窗口创建由 `IPlatformApp.CreateWebviewWindow` 直接处理，因为窗口对象需要由平台应用统一持有（用于菜单/图标应用、Hide/Show 遍历等）。`PlatformFactory.CreateWebviewWindowImpl` 只保留 Server 模式入口，是为了让 Server 模式也能构造窗口占位实例。
@@ -163,6 +188,21 @@ public static bool IsServerMode()
 ```
 
 只要环境变量 `WAILS_SERVER_MODE=true`（不区分大小写），即进入 Server 模式。
+
+### 平台探测的六级策略
+
+`DetectPlatformOrNull` 按优先级逐级尝试，前一级命中即返回：
+
+| 级别 | 依据 | 说明 |
+|------|------|------|
+| Level 1 | `WAILS_SERVER_MODE` 环境变量 | 为 `true` 时直接走 `ServerPlatformApp`，不进入探测 |
+| Level 2 | `WAILS_PLATFORM` 环境变量 | 强制指定 `windows`/`linux`/`android`/`macos`/`mock`，非法值继续下一级 |
+| Level 3 | `RuntimeInformation.IsOSPlatform` / `OperatingSystem.IsAndroid` | 运行时自动识别 Windows / Linux / Android / macOS |
+| Level 4 | `AppDomain.CurrentDomain.FriendlyName` 关键字 | 测试宿主等场景下进程名不可靠时的补充判据 |
+| Level 5 | 进程名关键字映射 | 最后一道启发式探测 |
+| Level 6 | 均未命中 | 返回 `null`，由调用方降级到 `ServerPlatformApp` |
+
+`GetDetectionReport()` 会按这六级逐条打印实际取值，用于排查「为什么平台识别错了」。
 
 ## Windows 平台实现
 
@@ -473,10 +513,10 @@ AGENTS.md §7.4 明确禁止 `PInvoke.*` 包。CsWin32 是其官方继任者，�
 
 ## 小结
 
-Wails.Net 平台抽象层通过**接口分层 + 反射工厂 + 托管封装**三层设计，实现了核心代码与平台代码的彻底解耦：
+Wails.Net 平台抽象层通过**接口分层 + 委托工厂 + 托管封装**三层设计，实现了核心代码与平台代码的彻底解耦：
 
 - **接口层**（`IPlatformApp`、`IWebviewWindowImpl`、子接口）位于核心项目，定义平台无关契约。
-- **工厂层**（`PlatformFactory`）通过 `Assembly.Load` 反射加载平台程序集，避免核心项目对平台包的硬依赖。
+- **工厂层**（`PlatformFactory`）按平台名查委托表创建实例，委托由平台包的 `[ModuleInitializer]` 登记，避免核心项目对平台包的硬依赖。
 - **实现层**：Windows（CsWin32 + WebView2）、Linux（GirCore + GTK4 + WebKitGTK）、Server（no-op 桩）三套实现各自独立，互不引用。
 
 Server 模式作为降级路径，保证应用在无 GUI 环境下仍能运行核心能力，是 CI/CD 与容器化部署的关键支撑。`IWebView` 接口进一步抽象 WebView 本身，为未来扩展场景（如嵌入式 WebView、无窗口 WebView）预留了空间。

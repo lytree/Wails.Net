@@ -75,7 +75,7 @@ Wails v3 原版（Go 实现）已支持 Android，使用 GoMobile + Android WebV
 
 - 程序集名：`Wails.Net.Application.Android`
 - 顶层类型：`Wails.Net.Application.Platform.AndroidPlatformApp`
-- 与 Win/Linux 完全一致，PlatformFactory 反射加载模式无需变更
+- 与 Win/Linux 完全一致，PlatformFactory 的委托注册模式无需变更（`AndroidPlatformRegistrar` 用 `[ModuleInitializer]` 登记创建委托）
 
 ### 9. 阶段编号
 

@@ -26,8 +26,8 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 | [架构策略审计（2026-08-18 时点快照）](architecture/architecture-audit-2026-08-18.md) | 以只读静态分析方式对当时代码做的全量审计结论，保留为历史时点对照 |
 | [架构优化修改路线图](architecture/optimization-roadmap.md) | 按 Host/DI、Runtime/IPC、Plugin/Security 三大主线梳理优化目标、任务拆解、风险与验收标准 |
 | [架构对标分析与统一 SDK 优化方案](architecture/benchmark-audit-and-unified-sdk-plan.md) | Wails v3 / ASP.NET Core 逐项 API 与功能对标矩阵；统一 SDK 方案（调试自动选平台、打包多平台编译）；可破坏性重构任务总表 |
-| [绑定系统与命令调度](architecture/binding-and-command-system.md) | `BindingManager`、`CommandDispatcher`、表达式树编译、FNV-1a 哈希、双轨调用路径 |
-| [插件框架](architecture/plugin-system.md) | `IPlugin` 契约、`IPluginContext`、命令注册、生命周期、42 个内置插件（37 桌面 + 5 移动端） |
+| [绑定系统与命令调度](architecture/binding-and-command-system.md) | `BindingManager`、`CommandDispatcher`、源生成器调用器、FNV-1a 哈希、绑定/命令双轨路由 |
+| [插件框架](architecture/plugin-system.md) | `IPlugin` 契约、`IPluginContext`、命令注册、生命周期、47 个内置插件（39 桌面 + 7 移动端 + 1 Android 运行时 / 40 个项目） |
 | [平台抽象层](architecture/platform-abstraction.md) | `IPlatformApp`、`IWebviewWindowImpl`、Server 模式降级、Windows/Linux/Android 实现 |
 | [传输层与 IPC 通信](architecture/transport-and-ipc.md) | `ITransport`、AssetServerTransport、原生 IPC、WebSocket 广播、`EventIPCTransport` 回退、消息格式 |
 | [安全与权限模型](architecture/security-and-permissions.md) | CSP、URL 白名单、IPC 来源验证、`Capability` 自动加载、`PermissionManager`、Scope 校验 |
@@ -42,7 +42,7 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 | 文档 | 内容 |
 |------|------|
 | [窗口管理实现](implementation/window-management.md) | `WindowManager`、`Win32WebviewWindow`、多窗口、消息循环、`WindowPlugin` |
-| [源代码生成器与代码生成](implementation/source-generators.md) | `BindingSourceGenerator`、`GeneratedBindingRegistry`、表达式树编译、TypeScript 生成 |
+| [源代码生成器与代码生成](implementation/source-generators.md) | `BindingSourceGenerator`、`GeneratedBindingRegistry`、编译期强类型调用器、TypeScript 生成 |
 | [资源服务器实现](implementation/asset-server.md) | `AssetServer` 基类、`FileAssetServer`/`BundledAssetServer`、双中间件管道、NonceInjector/IsolationInjector、SPA 路由回退、运行时 JS 注入 |
 | [CLI 工具实现](implementation/cli-tool.md) | `Wails.Net.Cli`、`System.CommandLine`、脚手架、代码生成器 |
 | [事件系统实现](implementation/event-system.md) | `EventProcessor`、事件订阅/发布、跨窗口广播、JS 回调、`senderWindowId` 传播 |

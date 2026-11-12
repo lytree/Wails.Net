@@ -536,7 +536,7 @@ public async Task ContractTestCount_MustMatchAcrossPlatforms()
 1. **`Directory.Packages.props:74-78` 残留违规声明**：`Microsoft.NET.Test.Sdk 17.12.0`、`MSTest.TestAdapter/TestFramework 3.7.0`、`FluentAssertions 7.0.0` 均未被引用，但与 AGENTS.md「禁止 MSTest」冲突 → **建议直接删除**
 2. **`Wails.Net.AssetServer` 缺 `InternalsVisibleTo`**（其余 4 个 src 工程都有）
 3. **Linux 测试工程 TFM 是 `net10.0`** 而非 linux TFM，靠 csproj 注入 `SupportedOSPlatformAttribute` 消 CA1416，属于绕行
-4. **`testing-guide.md` §5.1 已过期**：仍写「绑定调用异常需解包 `TargetInvocationException`」，但 AGENTS.md §3.3 明确源生成器路径下直接捕获具体异常类型，无需解包 → **需修订**
+4. ~~**`testing-guide.md` §5.1 已过期**：仍写「绑定调用异常需解包 `TargetInvocationException`」~~ → **已修订**：§5.1 改为「直接捕获具体异常类型」并附 `CallError.ToJson()` 的 `message`/`cause`/`kind` 断言；§3.3 的 `BoundMethods` 断言示例也一并改为 `GetRegisteredMethodNames()`
 5. **`testing-guide.md` §2 项目表不全**：缺 Android、GuiContract、AssetServer 三个测试工程
 
 ---

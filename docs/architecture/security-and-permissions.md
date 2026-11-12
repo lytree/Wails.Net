@@ -211,7 +211,9 @@ public sealed class RequireCapabilityAttribute : Attribute
 }
 ```
 
-在命令方法上叠加多个 `[RequireCapability]` 即声明该命令同时需要多项能力——`PermissionManager.ValidateCommand` 要求**所有标注的能力都已授权**才放行（AND 语义）。
+在命令方法上叠加多个 `[RequireCapability]` 即声明该命令同时需要多项能力——`PermissionManager.ValidateCapabilities` 要求**所有标注的能力都已授权**才放行（AND 语义）。
+
+**能力列表在编译期生成**：源生成器扫描 `[RequireCapability]` 后把能力标识写入 `GeneratedBindingRegistry`，运行时由 `CommandDispatcher.CollectRequiredCapabilities` 合并三处来源（命令注册时显式声明的 `CommandEntry.RequiredCapabilities`、`CommandEntry.Security`、编译期生成列表），不再在调用时用反射读特性。
 
 ```csharp
 public class MyService
@@ -231,20 +233,19 @@ public class MyService
 - `_grantedCapabilities`：已授权的能力标识集合（`HashSet<string>`，大小写不敏感）。
 - `_declaredCapabilities`：已声明的能力元数据字典（`Dictionary<string, Capability>`）。
 
-核心方法 `ValidateCommand(MethodInfo)` 通过反射读取命令方法上的 `RequireCapabilityAttribute`，逐项校验是否已授权：
+核心方法是一组 `ValidateCapabilities` 重载，入参是**已收集好的能力标识列表**，逐个校验是否已授权；它不接收 `MethodInfo`，因此不需要任何反射：
 
 ```csharp
-public bool ValidateCommand(MethodInfo method)
+public bool ValidateCapabilities(IEnumerable<string> requiredCapabilities, string? windowName, string? origin)
 {
-    if (!_options.Enabled) return true;   // 未启用权限检查时全部放行
+    if (!Enabled) return true;            // 未启用权限检查时全部放行
 
-    var attrs = method.GetCustomAttributes<RequireCapabilityAttribute>();
-    foreach (var attr in attrs)
+    foreach (var capability in requiredCapabilities)
     {
-        if (!IsGranted(attr.Capability))
+        if (!IsGranted(capability, windowName, origin))
         {
-            _logger?.LogWarning("权限拒绝: 命令 {Method} 需要能力 {Capability}",
-                method.Name, attr.Capability);
+            _logger?.LogWarning("权限拒绝: 命令需要能力 {Capability}（窗口={Window}，来源={Origin}）",
+                capability, windowName ?? "未知", string.IsNullOrEmpty(origin) ? "本地" : origin);
             return false;
         }
     }
@@ -252,39 +253,62 @@ public bool ValidateCommand(MethodInfo method)
 }
 ```
 
+三个重载逐级收窄校验上下文：
+
+| 重载 | 校验维度 |
+|------|---------|
+| `ValidateCapabilities(caps)` | 仅全局授权状态 |
+| `ValidateCapabilities(caps, windowName)` | 追加窗口级隔离（对应 Capability 的 `windows` 字段） |
+| `ValidateCapabilities(caps, windowName, origin)` | 再追加来源 URL 限制（对应 Capability 的 `remote` 字段），调度器使用此重载 |
+
+配套的 `ValidateScopes(IEnumerable<(string PermissionId, string Value)>)` 负责参数级 Scope 校验：对每个 `(权限标识, 值)` 对，若该权限绑定了 `IScope` 则调用 `Allows(value)` 判断值是否在允许范围内。Scope 值同样由源生成器生成的 `ScopeExtractor` 委托从参数中提取，运行时不再反射枚举参数。
+
 `IsGranted` 在 `Enabled = false` 时**全部放行**，保证向后兼容；启用后采用**白名单语义**——只有显式授权的能力可用，未声明的能力默认拒绝（由 `DenyByDefault` 控制）。
 
 运行时可通过 `Grant` / `Revoke` 动态调整权限，例如用户登录后授权 `user.sensitive`、注销时撤销。`Grant` 会记录日志便于审计。
 
 ### 6.2 CommandDispatcher.DispatchAsync 中的权限校验流程
 
-[CommandDispatcher.cs](../../src/Wails.Net.Application/Commands/CommandDispatcher.cs) 在 `DispatchAsync` 中将权限校验置于**命令查找之后、中间件管道之前**：
+[CommandDispatcher.cs](../../src/Wails.Net.Application/Commands/CommandDispatcher.cs) 在 `DispatchAsync` 中将权限校验置于**命令查找之后、中间件管道之前**，分为三道闸门：
 
 ```csharp
-public async Task<InvokeResponse> DispatchAsync(InvokeRequest request, ICommandContext? context = null)
+var entry = _registry.Find(request.Method);
+if (entry == null)
+    return new InvokeResponse(request.Id, false, null, $"Command not found: {request.Method}");
+
+// 闸门 1：Strict 模式下无安全声明的命令直接拒绝（最小权限姿态）
+if (_permissionManager is not null && _permissionManager.IsStrict)
 {
-    // ...超时令牌构建...
-
-    var entry = _registry.Find(request.Method);
-    if (entry == null)
-        return new InvokeResponse(request.Id, false, null, $"Command not found: {request.Method}");
-
-    // 权限校验（早于中间件管道，避免无权请求消耗中间件资源）
-    if (_permissionManager is not null && !_permissionManager.ValidateCommand(entry.Method))
-    {
-        _logger?.LogWarning("权限拒绝: 命令 {Method}", request.Method);
-        return new InvokeResponse(request.Id, false, null, $"Permission denied: {request.Method}");
-    }
-
-    // 构建中间件管道并执行...
+    var hasSecurityDeclaration = entry.Security is not null || entry.RequiredCapabilities.Count > 0;
+    if (!hasSecurityDeclaration)
+        return new InvokeResponse(request.Id, false, null,
+            $"Permission denied (strict): {request.Method} requires explicit security declaration");
 }
+
+if (_permissionManager is not null)
+{
+    // 闸门 2：能力校验。合并三处来源后统一走 ValidateCapabilities
+    var requiredCapabilities = CollectRequiredCapabilities(
+        request.Method, entry.RequiredCapabilities, entry.Security);
+    if (requiredCapabilities.Count > 0
+        && !_permissionManager.ValidateCapabilities(requiredCapabilities, ctx.WindowName, ctx.Origin))
+        return new InvokeResponse(request.Id, false, null, $"Permission denied: {request.Method}");
+
+    // 闸门 3：参数级 Scope 校验
+    var scopeValues = ExtractScopeValues(entry, request.Parameters);
+    if (scopeValues.Count > 0 && !_permissionManager.ValidateScopes(scopeValues))
+        return new InvokeResponse(request.Id, false, null, $"Scope denied: {request.Method}");
+}
+
+// 构建中间件管道并执行...
 ```
 
-校验流程的三个关键点：
+校验流程的四个关键点：
 
-1. **可选注入**：`PermissionManager` 作为可选构造参数（`PermissionManager?`），未注入时跳过校验，便于测试和向后兼容。
-2. **早返回**：权限不足时立即返回 `InvokeResponse(success: false)`，不进入中间件管道，节省资源。
-3. **错误信息脱敏**：返回 `"Permission denied: {Method}"` 仅暴露命令名，不泄漏所需能力标识，避免攻击者探测能力清单。
+1. **可选注入**：`PermissionManager` 作为可选构造参数（`PermissionManager?`），未注入时跳过全部校验，便于测试和向后兼容。
+2. **Strict 与 Compatibility 分档**：Strict 模式要求每个命令都有显式安全声明，否则直接拒绝；Compatibility 保留旧行为（无声明即无能力要求），仅靠 `Mode` 切换，不改变代码路径。
+3. **早返回**：任一闸门不通过立即返回 `InvokeResponse(success: false)`，不进入中间件管道，节省资源。
+4. **错误信息脱敏**：返回 `"Permission denied: {Method}"` 仅暴露命令名，不泄漏所需能力标识，避免攻击者探测能力清单；能力明细只写进服务端日志。
 
 ### 6.3 PermissionOptions 配置
 
@@ -541,5 +565,5 @@ builder.UsePlugin(new FileSystemPlugin(appDataPath));
 4. **CSP 与开发环境**：开发时若使用 Vite/Webpack Dev Server，需在 `ConnectSrc` 中加入 `ws://localhost:*` 和 `http://localhost:*`，否则 HMR 失效。
 5. **权限粒度**：`RequireCapability` 的能力标识建议采用 `<plugin>.<action>` 命名（如 `filesystem.read`、`stronghold.unlock`），命名统一，便于跨项目复用。
 6. **IPC Origin 兜底**：`IpcOriginValidator.Validate` 对空 Origin 返回 `true`（视为本地），若 WebView 配置允许跨域请求，需额外在 IPC 入口处校验 `Origin` 头非空。
-7. **审计日志**：`PermissionManager.Grant` 与 `ValidateCommand` 拒绝路径都会记录日志，生产环境应将日志接入 SIEM 监控异常授权或频繁拒绝事件。
+7. **审计日志**：`PermissionManager.Grant` 与 `ValidateCapabilities` / `ValidateScopes` 的拒绝路径都会记录日志，生产环境应将日志接入 SIEM 监控异常授权或频繁拒绝事件。
 8. **金库文件备份**：`stronghold.vault.json` 丢失即丢失所有秘密，建议纳入备份策略；密码遗忘则数据不可恢复（PBKDF2 单向派生）。

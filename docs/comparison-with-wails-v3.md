@@ -248,7 +248,7 @@
 | **Deny 优先** | ✅ `_deniedPermissions` 优先于 `_grantedPermissions` | N/A |
 | **Remote URL 限制** | ✅ `_remoteUrlScopes` + `IsGranted(perm, window, origin)` | N/A |
 | **窗口级隔离** | ✅ `PermissionKey (Permission, Window)` 复合键 | N/A |
-| **命令校验** | ✅ `ValidateCommand` + `RequireCapabilityAttribute` | ❌ |
+| **命令校验** | ✅ `ValidateCapabilities` + `RequireCapabilityAttribute`（编译期收集） | ❌ |
 | **运行时开关** | ✅ `PermissionManager.Enabled`（默认 false 保持向后兼容） | N/A |
 | **本地源判定** | `wails://` / `localhost` / `127.0.0.1` / null | N/A |
 | **URL 白名单** | `UrlWhitelist` 通配符匹配 | N/A |

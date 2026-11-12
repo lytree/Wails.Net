@@ -69,7 +69,8 @@ namespace Wails.Net.Application.Tests;
 
 /// <summary>
 /// 绑定系统的单元测试（TUnit）。
-/// 测试绑定注册、调用、FNV-1a 哈希、异常处理等。
+/// 反射路径已删除（遵循 AGENTS.md §3.4），方法调用路径由
+/// GeneratedBindingsTests 验证源生成器生成的强类型调用器。
 /// </summary>
 [NotInParallel]
 public sealed class BindingsTests
@@ -85,7 +86,7 @@ public sealed class BindingsTests
 | ✅ 正确示例 | 说明 |
 |-----------|------|
 | `FNV1aHash_ReturnsConsistentValue` | 相同输入返回一致哈希 |
-| `Add_ExcludesServiceInternalMethods` | Add 排除 Service 内部方法 |
+| `RegisterInstance_RegistersByTypeFullName` | 实例注册仅按类型全名登记，不做方法枚举 |
 | `Call_UnknownID_ReturnsReferenceError` | 未知 ID 返回 ReferenceError |
 | `ProcessPlugin_Configure_RegistersCommands` | Configure 注册命令 |
 
@@ -95,22 +96,21 @@ public sealed class BindingsTests
 
 ```csharp
 [Test]
-public async Task Add_RegistersPublicMethods()
+public async Task RegisterInstance_RegistersByTypeFullName()
 {
     // Arrange
     var bindings = new BindingManager();
-    var service = new TestService();
 
     // Act
-    bindings.Add(service);
+    bindings.RegisterInstance(new TestService());
 
-    // Assert
-    await Assert.That(bindings.BoundMethods.Count).IsGreaterThan(0);
-    await Assert.That(
-        bindings.BoundMethods.ContainsKey("Wails.Net.Application.Tests.TestService.GetName")
-    ).IsTrue();
+    // Assert —— 方法清单来自源生成器在编译期填充的元数据，不是反射扫描实例得来的
+    await Assert.That(bindings.GetRegisteredMethodNames())
+        .Contains("Wails.Net.Application.Tests.TestService.GetName");
 }
 ```
+
+> `BindingManager.BoundMethods` 仅作为兼容旧测试 API 的只读外观保留：键为方法全名，值为占位 `object`（不是 `MethodInfo`）。新测试请用 `GetRegisteredMethodNames()` 或 `GeneratedBindingRegistry.TryGetInvoker()`。
 
 中文注释亦可使用 `// 安排` / `// 操作` / `// 断言`，与现有测试文件保持一致。
 
@@ -209,19 +209,27 @@ wsl -d kali-linux -- bash -c "cd /mnt/f/Code/github/Wails.Net && \
 
 ### 5.1 错误路径
 
-绑定调用异常需解包 `TargetInvocationException`，并区分 `CallErrorKind`：
+绑定调用抛出的是业务异常本身——调用器是直接方法调用，不会被 `TargetInvocationException` 包裹，因此直接捕获具体异常类型并映射 `CallErrorKind`：
 
 ```csharp
 [Test]
 public async Task Call_ThrowException_ReturnsRuntimeError()
 {
     var bindings = new BindingManager();
-    bindings.Add(new TestService());
-    var result = bindings.Call("...ThrowException");
-    await Assert.That(result.IsSuccess).IsFalse();
-    await Assert.That(result.Error!.Kind).IsEqualTo(CallErrorKind.RuntimeError);
+    bindings.RegisterInstance(new TestService());
+
+    var result = await bindings.Call(
+        "Wails.Net.Application.Tests.TestService.ThrowException",
+        Array.Empty<JsonElement>());
+
+    await Assert.That(result["error"]).IsNotNull();
+    var error = result["error"] as Dictionary<string, object?>;
+    await Assert.That(error).IsNotNull();
+    await Assert.That(error!["kind"]?.ToString()).IsEqualTo("RuntimeError");
 }
 ```
+
+`CallError.ToJson()` 产出 `message` / `cause` / `kind` 三个键，`kind` 是 `CallErrorKind` 的字符串形式。异常类型映射：`ArgumentException` / `JsonException` → `TypeError`，其余 → `RuntimeError`。
 
 ### 5.2 边界条件与并发
 

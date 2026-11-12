@@ -159,16 +159,28 @@ public int Next() => Interlocked.Increment(ref _nextId);
 
 ### 4.5 错误处理
 
-使用 `Wails.Net.Errors.CallError` 报告绑定调用错误，区分 `CallErrorKind`：`ReferenceError`、`TypeError`、`RuntimeError`。反射调用需解包 `TargetInvocationException`：
+使用 `Wails.Net.Errors.CallError` 报告绑定调用错误，区分 `CallErrorKind`：`ReferenceError`、`TypeError`、`RuntimeError`。源生成器调用器是直接方法调用，不会抛 `TargetInvocationException`，按具体异常类型映射即可：
 
 ```csharp
-catch (TargetInvocationException ex) when (ex.InnerException is not null)
+catch (OperationCanceledException)
 {
-    var inner = ex.InnerException;
-    return ErrorResult(inner.Message,
-        inner is ArgumentException ? CallErrorKind.TypeError : CallErrorKind.RuntimeError);
+    throw;                                  // 取消语义交由调用方统一处理，不包装为错误结果
+}
+catch (ArgumentException ex)
+{
+    return ErrorResult(ex.Message, CallErrorKind.TypeError);
+}
+catch (JsonException ex)
+{
+    return ErrorResult($"参数反序列化失败: {ex.Message}", CallErrorKind.TypeError);
+}
+catch (Exception ex)
+{
+    return ErrorResult(ex.Message, CallErrorKind.RuntimeError);
 }
 ```
+
+> 禁止用 `catch (TargetInvocationException)` 解包——生产代码（`src/`）不得出现 `MethodInfo.Invoke`，见 AGENTS.md §3.4。
 
 ### 4.6 前后端交互
 
@@ -244,7 +256,7 @@ catch (TargetInvocationException ex) when (ex.InnerException is not null)
 ```
 feat: 实现绑定系统与事件系统（阶段 2）
 
-绑定系统：BindingManager 反射绑定注册与调用...
+绑定系统：BindingManager 实例注册 + 源生成器强类型调用器...
 事件系统：EventProcessor 事件订阅/发布/取消...
 测试：39 个 TUnit 单元测试覆盖绑定和事件系统，全部通过。
 ```

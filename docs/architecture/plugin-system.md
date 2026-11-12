@@ -74,7 +74,7 @@ public interface IPluginContext
 
 ### 3.1 PluginManager — 注册与生命周期
 
-[PluginManager.cs](../../src/Wails.Net.Application/Plugins/PluginManager.cs) 是插件生命周期的核心协调器，提供四种注册入口：
+[PluginManager.cs](../../src/Wails.Net.Application/Plugins/PluginManager.cs) 是插件生命周期的核心协调器，提供三种注册入口（应用侧通常经 `UsePlugin<TPlugin>()` 落到第 2 种）：
 
 ```csharp
 // 1. 直接注册实例
@@ -86,8 +86,7 @@ manager.Register<MyPlugin>();
 // 3. 从 DI 容器收集所有 IPlugin 单例
 manager.RegisterFromServices();
 
-// 4. 从程序集自动发现（扫描 IPlugin 实现）
-manager.DiscoverFromAssembly(Assembly.GetExecutingAssembly());
+// ⚠️ 已移除：原 DiscoverFromAssembly 程序集扫描（反射路径，违反 AGENTS.md §3.4）
 ```
 
 `InitializeAll` 方法按注册顺序依次调用每个插件的 `ConfigureServices` 与 `Configure`，整个过程在 try-catch 中执行，单个插件初始化失败会记录错误日志并向上抛出，阻止应用启动以避免部分能力缺失导致的隐性故障。
@@ -320,12 +319,12 @@ if (_sandboxRoot is not null)
 | 权限模型 | Capability 配置文件 + `PermissionManager` 三层 ACL |
 | DI 容器 | `Microsoft.Extensions.DependencyInjection` 全栈集成 |
 | 服务生命周期 | `ConfigureServices`（注册）→ `Configure`（命令注册）→ `StartupAsync` / `ShutdownAsync`（运行时） |
-| 类型系统 | C# 编译期 + 表达式树编译的强类型调用器，运行时零反射 |
-| 命令发现 | `DiscoverFromAssembly` 程序集扫描自动发现 |
+| 类型系统 | C# 编译期：源生成器调用器 + `MapCommand` 泛型闭包，运行时零反射 |
+| 命令发现 | `[Command]` 特性由源生成器生成注册代码；插件类型经 `UsePlugin<TPlugin>()` 显式注册（程序集扫描入口已弃用并直接抛错） |
 | 双名兼容 | 同一命令可注册多别名，向后兼容旧前端 API |
 | 沙箱安全 | `FileSystemPlugin` 构造参数注入沙箱根，运行时校验 |
 
-Wails.Net 的插件框架借助 .NET 的 DI 与表达式树编译，在保持「核心即插件」设计的同时实现了编译期类型安全与运行时零反射。
+Wails.Net 的插件框架借助 .NET 的 DI 与编译期源生成器，在保持「核心即插件」设计的同时实现了编译期类型安全与运行时零反射。
 
 ## 7. 自定义插件开发指南
 

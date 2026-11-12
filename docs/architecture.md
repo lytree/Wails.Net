@@ -116,7 +116,7 @@ DesktopApplicationBuilder
         ├── 按全限定名或 ID 查找方法
         ├── JSON 反序列化参数
         ├── 注入 CancellationToken / ICommandContext
-        └── 表达式树调用（无反射开销）
+        └── 直接调用强类型委托（无反射开销）
 ```
 
 **FNV-1a 哈希一致性**：绑定方法 ID 使用 FNV-1a 32 位哈希，与 Go 版本 `fnv.New32a()` 一致：
