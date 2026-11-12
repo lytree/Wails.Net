@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Wails.Net.Cli.Serialization;
 
 namespace Wails.Net.Cli.Commands;
 
@@ -110,7 +111,7 @@ internal sealed class DoctorCommand : CliCommandBase
                     break;
             }
 
-            items.Add(new JsonObject
+            items.AddNode(new JsonObject
             {
                 ["name"] = check.Name,
                 ["status"] = status,

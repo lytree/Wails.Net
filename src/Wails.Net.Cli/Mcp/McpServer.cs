@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Wails.Net.Cli.Serialization;
 
 namespace Wails.Net.Cli.Mcp;
 
@@ -181,7 +182,7 @@ internal sealed class McpServer : IDisposable
         var tools = new JsonArray();
         foreach (var tool in McpToolCatalog.All)
         {
-            tools.Add(tool.ToJson());
+            tools.AddNode(tool.ToJson());
         }
 
         return McpProtocol.Success(id, new JsonObject { ["tools"] = tools });
@@ -336,7 +337,7 @@ internal sealed class McpServer : IDisposable
         var fileArray = new JsonArray();
         foreach (var file in files)
         {
-            fileArray.Add(file);
+            fileArray.AddNode(JsonValue.Create(file));
         }
 
         result["files"] = fileArray;
@@ -514,32 +515,38 @@ internal sealed class McpServer : IDisposable
         };
     }
 
-    private static JsonObject ToolText(string text, bool isError) => new()
+    private static JsonObject ToolText(string text, bool isError)
     {
-        ["content"] = new JsonArray
+        var content = new JsonArray();
+        content.AddNode(new JsonObject
         {
-            new JsonObject
-            {
-                ["type"] = "text",
-                ["text"] = text,
-            },
-        },
-        ["isError"] = isError,
-    };
+            ["type"] = "text",
+            ["text"] = text,
+        });
 
-    private static JsonObject ToolJson(JsonNode payload) => new()
-    {
-        ["content"] = new JsonArray
+        return new JsonObject
         {
-            new JsonObject
-            {
-                ["type"] = "text",
-                ["text"] = payload.ToJsonString(McpProtocol.SerializerOptions),
-            },
-        },
-        ["structuredContent"] = payload.DeepClone(),
-        ["isError"] = false,
-    };
+            ["content"] = content,
+            ["isError"] = isError,
+        };
+    }
+
+    private static JsonObject ToolJson(JsonNode payload)
+    {
+        var content = new JsonArray();
+        content.AddNode(new JsonObject
+        {
+            ["type"] = "text",
+            ["text"] = payload.ToJsonString(McpProtocol.SerializerOptions),
+        });
+
+        return new JsonObject
+        {
+            ["content"] = content,
+            ["structuredContent"] = payload.DeepClone(),
+            ["isError"] = false,
+        };
+    }
 
     private static string? GetString(JsonObject? source, string name) =>
         source?[name] is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
