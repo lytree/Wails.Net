@@ -56,18 +56,18 @@
     SDK 自身构建 / 仓库内 ProjectReference 消费路径的 WailsNetPlatform 兜底。
     打包后的 NuGet 消费者通过 buildTransitive/Wails.Net.Sdk.props 自动计算 WailsNetPlatform；
     但 SDK 自身构建与仓库内 ProjectReference（examples/）不会导入该 props，需在此兜底。
-    优先级：显式 WailsNetPlatform > RID 前缀 > TFM 后缀 > linux 默认。
-    注意：RID 与 TFM 必须拆成两个 PropertyGroup（且都受 '$(WailsNetPlatform)' == '' 守卫），
-    否则同一 PropertyGroup 内顺序求值会让 TFM 条件覆盖 RID 映射。
-  -->
-  <PropertyGroup Condition="'$(WailsNetPlatform)' == ''">
-    <WailsNetPlatformFromRid Condition="$(RuntimeIdentifier.StartsWith('win-'))">windows</WailsNetPlatformFromRid>
-    <WailsNetPlatformFromRid Condition="$(RuntimeIdentifier.StartsWith('linux-'))">linux</WailsNetPlatformFromRid>
-    <WailsNetPlatformFromRid Condition="$(RuntimeIdentifier.StartsWith('android-'))">android</WailsNetPlatformFromRid>
-    <WailsNetPlatformFromRid Condition="$(RuntimeIdentifier.StartsWith('osx-'))">macos</WailsNetPlatformFromRid>
-    <WailsNetPlatform Condition="'$(WailsNetPlatformFromRid)' != ''">$(WailsNetPlatformFromRid)</WailsNetPlatform>
-  </PropertyGroup>
 
+    判定顺序：显式 WailsNetPlatform > TFM 后缀 > linux 默认。
+
+    曾经这里有一步"按 RID 前缀推断平台"（win-x64→windows、android-arm64→android 等），
+    已移除：RuntimeIdentifier 是**全局属性**，会作用到还原图的每个项目的每个 TFM 上，
+    于是 `dotnet publish -r android-arm64` 会让本工程的中性 net10.0 TFM 也去引
+    net10.0-android36.0 的 Bundle.Android，还原直接报 NU1201（跨 TFM 不兼容）；
+    win-x64 同理。而平台其实总能由 TFM 明确判定——应用项目的 TFM 一定带平台后缀，
+    只写 net10.0 的就是 Linux 目标。dist 目标也已显式指定框架（dotnet publish 的
+    framework 选项），不存在"中性 TFM 需要靠 RID 决定平台"的合法场景
+    （net10.0 无法引用 net10.0-windows，那种组合必然 NU1201）。
+  -->
   <PropertyGroup Condition="'$(WailsNetPlatform)' == ''">
     <WailsNetPlatform Condition="$(TargetFramework.Contains('windows'))">windows</WailsNetPlatform>
     <WailsNetPlatform Condition="$(TargetFramework.Contains('android'))">android</WailsNetPlatform>

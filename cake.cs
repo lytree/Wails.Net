@@ -310,6 +310,11 @@ Task("Dist-Windows")
                 // 会报 NETSDK1047（assets file doesn't have a target for 'net10.0/win-x64'）。
                 // 这里让 publish 自己按 RID 还原，多花几秒换取可重复的自包含构建。
                 NoRestore = false,
+                // 必须显式指定框架：Demo 是多目标项目（net10.0-windows10.0.19041.0;net10.0），
+                // 不带 -f 时 dotnet publish 会把**所有** TFM 都发布一遍，其中 net10.0 那一趟
+                // 带着 -r win-x64 → Sdk 的 WailsNetPlatform 被 RID 映射成 windows →
+                // 用 net10.0 去引 net10.0-windows10.0.19041 的 Bundle.Windows，报 NU1201。
+                Framework = "net10.0-windows10.0.19041.0",
                 MSBuildSettings = CreateMSBuildSettings(),
             };
             publishSettings.MSBuildSettings.Properties["PublishSingleFile"] = new[] { "true" };
@@ -382,6 +387,9 @@ Task("Dist-Linux")
                 // 会报 NETSDK1047（assets file doesn't have a target for 'net10.0/win-x64'）。
                 // 这里让 publish 自己按 RID 还原，多花几秒换取可重复的自包含构建。
                 NoRestore = false,
+                // 与 Windows 同理：多目标项目需显式指定框架，否则会把 windows TFM 也
+                // 用 linux RID 发布一遍（TFM 与 RID 错配）。
+                Framework = "net10.0",
                 MSBuildSettings = CreateMSBuildSettings(),
             };
             publishSettings.MSBuildSettings.Properties["PublishSingleFile"] = new[] { "true" };
