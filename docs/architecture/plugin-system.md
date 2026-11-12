@@ -185,7 +185,7 @@ context.Commands.MapCommand("fs.readTextFile", (Func<string, string>)(path => ..
 
 ## 5. 内置插件清单
 
-Wails.Net 的内置插件已按插件拆分为独立项目：桌面插件位于 `src/Wails.Net.Plugins.*`（**39 个**），移动端插件集中在 [`src/Wails.Net.Plugins.Mobile`](../../src/Wails.Net.Plugins.Mobile)（**7 个**），合计 **40 个插件项目**，共注册 **271 个命令**。按功能分类如下：
+Wails.Net 的内置插件已按插件拆分为独立项目：桌面插件位于 `src/Wails.Net.Plugins.*`（**39 个项目**，一个项目一个插件），移动端 **7 个插件**集中在 [`src/Wails.Net.Plugins.Mobile`](../../src/Wails.Net.Plugins.Mobile) **一个项目**内，另有 1 个 Android 专属运行时插件位于 `src/Wails.Net.Application.Android`——合计 **47 个插件**、**40 个独立项目**，共注册 **271 个命令**。按功能分类如下：
 
 ### 5.1 系统 / 应用类
 
