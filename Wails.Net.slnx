@@ -25,6 +25,7 @@
     <Project Path="examples/Wails.Net.Demo.SystemTray/Wails.Net.Demo.SystemTray.csproj" />
     <Project Path="examples/Wails.Net.Demo.Updater/Wails.Net.Demo.Updater.csproj" />
     <Project Path="examples/Wails.Net.Demo.Vue/Wails.Net.Demo.Vue.csproj" />
+    <Project Path="examples/Wails.Net.Demo.VueSfc/Wails.Net.Demo.VueSfc.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Wails.Net.Application/Wails.Net.Application.csproj" />

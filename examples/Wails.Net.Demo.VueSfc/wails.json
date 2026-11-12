@@ -1,0 +1,56 @@
+{
+  "$schema": "https://wails.net/schema/wails.json",
+  "name": "Wails.Net.Demo.VueSfc",
+  "version": "1.0.0",
+  "author": {
+    "name": "Wails.Net",
+    "email": "demo@example.com"
+  },
+  "description": "Wails.Net 框架示例：Vue 3 单文件组件（SFC + <script setup> + Vite）前端框架集成。",
+
+  "outputFilename": "Wails.Net.Demo.VueSfc",
+  "assetDir": "frontend/dist",
+
+  "frontend": {
+    "dir": "frontend",
+    "devServerUrl": "http://localhost:5174",
+    "installCommand": "pnpm install",
+    "buildCommand": "pnpm build",
+    "outputDir": "dist"
+  },
+
+  "bindings": {
+    "outputDir": "frontend/src/wails"
+  },
+
+  "wailsJsDir": "frontend",
+
+  "bundle": {
+    "identifier": "io.wailsnet.demo.vuesfc",
+    "iconPath": "build/icons",
+    "category": "Developer Tools",
+    "shortDescription": "Wails.Net Vue SFC Demo",
+    "longDescription": "演示 Wails.Net 与 Vue 3 单文件组件（SFC + <script setup> + 组合式 API + Vite）的集成，包含绑定服务、自定义插件命令、内置插件命令与双向事件。",
+    "copyright": "Copyright © 2026 Wails.Net",
+    "windows": {
+      "publisher": "Wails.Net",
+      "webviewInstallMode": true
+    },
+    "linux": {
+      "maintainer": "Wails.Net <demo@example.com>",
+      "debDependencies": [
+        "libwebkit2gtk-4.1-0",
+        "libgtk-3-0"
+      ],
+      "rpmDependencies": [
+        "webkit2gtk3",
+        "gtk3"
+      ]
+    }
+  },
+
+  "beforeBuildCommand": "echo \"[hook] 开始构建 Wails.Net.Demo.VueSfc\"",
+  "afterBuildCommand": "echo \"[hook] Wails.Net.Demo.VueSfc 构建完成\"",
+  "beforeDevCommand": "echo \"[hook] 启动开发模式\"",
+  "afterDevCommand": "echo \"[hook] 开发模式已退出\""
+}

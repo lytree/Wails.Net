@@ -127,7 +127,10 @@ Wails.Net/                               # 仓库根（monorepo）
 │   │   │   └── ...
 │   │   ├── Program.cs
 │   │   └── Wails.Net.Demo.React.csproj
-│   ├── Wails.Net.Demo.Vue/              # ←── 另一个 Demo，独立的 .NET 项目
+│   ├── Wails.Net.Demo.Vue/              # ←── 另一个 Demo，独立的 .NET 项目（vue-jsx-vapor / TSX）
+│   │   ├── frontend/
+│   │   └── ...
+│   ├── Wails.Net.Demo.VueSfc/           # ←── 标准 Vue 3 SFC Demo（.vue + <script setup> + 组合式函数）
 │   │   ├── frontend/
 │   │   └── ...
 │   └── Wails.Net.Demo.ModeShowcase/     # ←── Debug/Release 模式演示（本文档配套）

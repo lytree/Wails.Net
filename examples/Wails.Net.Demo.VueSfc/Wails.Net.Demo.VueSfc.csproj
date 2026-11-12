@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFrameworks>net10.0-windows10.0.19041.0;net10.0</TargetFrameworks>
+    <UseWPF>false</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RootNamespace>Wails.Net.Demo.VueSfc</RootNamespace>
+    <AssemblyName>Wails.Net.Demo.VueSfc</AssemblyName>
+    <!-- 版本号从 Directory.Build.props 继承，便于统一管理 -->
+    <NoDefaultExcludes>true</NoDefaultExcludes>
+  </PropertyGroup>
+  <!-- Windows TFM：启用 WinForms + 应用清单（WSL2 调试器仅支持 Exe，故 net10.0 改 OutputType） -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-windows10.0.19041.0'">
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <!-- Linux TFM：WSL 调试器仅支持 Exe -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- 前端构建产物：由 Wails.Net.Sdk 的 WailsNetBuildFrontend Target 自动生成并随 dotnet build 复制 -->
+    <None Update="frontend\dist\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+  <!--
+    前端（vite + pnpm）自动构建由 Wails.Net.Sdk 的共享 Target 提供，无需在此重复声明。
+    用法：
+      dotnet build                                — 增量构建（dist 存在则跳过）
+      dotnet build -p:WailsNetRebuildFrontend=true — 强制重建前端
+      dotnet build -p:WailsNetSkipFrontendBuild=true — 跳过前端构建
+      dotnet msbuild -t:WailsNetWatchFrontend     — 前端 watch 模式
+      dotnet clean                                — 清理 .NET 产物 + 前端 dist
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Wails.Net.Sdk\Wails.Net.Sdk.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- UI / 系统信息插件（前端系统面板演示使用） -->
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Clipboard\Wails.Net.Plugins.Clipboard.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Dialog\Wails.Net.Plugins.Dialog.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Notification\Wails.Net.Plugins.Notification.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Osinfo\Wails.Net.Plugins.Osinfo.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Appinfo\Wails.Net.Plugins.Appinfo.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Log\Wails.Net.Plugins.Log.csproj" />
+  </ItemGroup>
+</Project>
