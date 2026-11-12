@@ -291,8 +291,7 @@ public class OpenerPlugin : IPlugin
             // "does not exist" 并以非零码退出。不预先判定的话，同一输入在 Linux 上
             // 返回 true、在 Windows 上返回 false。
             // 带 scheme 的 URL（http/https/mailto 等）不适用该判定。
-            var isUrl = Uri.TryCreate(path, UriKind.Absolute, out _);
-            if (!isUrl && !File.Exists(path) && !Directory.Exists(path))
+            if (!HasUrlScheme(path) && !File.Exists(path) && !Directory.Exists(path))
             {
                 return false;
             }
@@ -309,5 +308,50 @@ public class OpenerPlugin : IPlugin
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// 判断字符串是否以 URL scheme 开头（如 <c>http:</c>、<c>mailto:</c>）。
+    /// <para>
+    /// 不能用 <c>Uri.TryCreate(path, UriKind.Absolute)</c> 来做这个判断：在 Unix 上
+    /// <c>/path/to/file</c> 会被解析成合法的绝对 file URI，于是文件系统路径被误判成
+    /// URL，跳过存在性判定——Linux CI 上该行为使 OpenPath 对不存在的路径返回 true。
+    /// </para>
+    /// <para>
+    /// 同时要排除 Windows 盘符写法（<c>C:\</c> / <c>C:/</c>）：它也含冒号，但不是 scheme。
+    /// </para>
+    /// </summary>
+    /// <param name="value">待判断的字符串。</param>
+    /// <returns>带 URL scheme 返回 true。</returns>
+    private static bool HasUrlScheme(string value)
+    {
+        var colon = value.IndexOf(':');
+        if (colon <= 0)
+        {
+            return false;
+        }
+
+        // Windows 盘符：单字母 + 冒号 + 分隔符
+        if (colon == 1
+            && char.IsAsciiLetter(value[0])
+            && value.Length > 2
+            && (value[2] == '\\' || value[2] == '/'))
+        {
+            return false;
+        }
+
+        // scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
+        for (var i = 0; i < colon; i++)
+        {
+            var c = value[i];
+            var valid = char.IsAsciiLetter(c)
+                || (i > 0 && (char.IsAsciiDigit(c) || c is '+' or '-' or '.'));
+            if (!valid)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
