@@ -306,7 +306,21 @@ public class HttpTransport : ITransport, IWailsEventListener, ITransportHttpHand
             }
             catch (HttpListenerException)
             {
-                break; // 监听器已停止
+                break; // 监听器已停止（Windows 上的上报形式）
+            }
+            catch (ObjectDisposedException)
+            {
+                // Linux 上 Stop()/Close() 会让挂起的 GetContextAsync 以
+                // ObjectDisposedException 结束（Windows 则抛 HttpListenerException）。
+                // 这属于正常关闭路径，不能向上冒泡：StopAsync 会 await 本任务，
+                // 异常冒泡会让「停止」本身抛异常，调用方误判为停止失败。
+                // 本类的监听器只会在 StopAsync / Dispose 中 Stop/Close，
+                // 故此处收到已释放即为关闭，无需再判定其他条件。
+                break;
+            }
+            catch (InvalidOperationException) when (cancellationToken.IsCancellationRequested)
+            {
+                break; // 部分平台上监听器停止后抛 "Listener was stopped"
             }
 
             // 并发处理请求

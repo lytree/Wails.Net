@@ -285,6 +285,18 @@ public class OpenerPlugin : IPlugin
 
         try
         {
+            // 文件系统路径要先自己判定存在性：Windows 的 ShellExecute 对不存在的
+            // 目标会直接失败（抛 Win32Exception），而 Linux/macOS 走 xdg-open/open，
+            // Process.Start 只负责把命令拉起来就立即返回，xdg-open 随后才报
+            // "does not exist" 并以非零码退出。不预先判定的话，同一输入在 Linux 上
+            // 返回 true、在 Windows 上返回 false。
+            // 带 scheme 的 URL（http/https/mailto 等）不适用该判定。
+            var isUrl = Uri.TryCreate(path, UriKind.Absolute, out _);
+            if (!isUrl && !File.Exists(path) && !Directory.Exists(path))
+            {
+                return false;
+            }
+
             var psi = new ProcessStartInfo
             {
                 FileName = path,
