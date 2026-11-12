@@ -465,6 +465,17 @@ jobs:
         with:
           name: build-output
 
+      # PackAsTool 项目（src/Wails.Net.Cli）在 dotnet pack 时会隐式执行 Publish：
+      # Microsoft.NET.PackTool.targets 里 _PackToolPublishDependency 在非
+      # GeneratePackageOnBuild 场景下就等于 Publish，用于把工具实现打包进 tool 包。
+      # 而 --no-build 下的 Publish 直接从 obj/Release/<tfm>/ 复制中间产物，build 作业
+      # 上传的产物只含 bin/（不含 obj/），于是报
+      #   MSB3030: Could not copy the file "obj\Release\net10.0\Wails.Net.Cli.dll"
+      # 这里先把 CLI 构建一次补齐 obj。将来新增任何 PackAsTool 项目也需要同样处理。
+      - name: 构建 CLI（补齐 PackAsTool 打包所需的 obj 中间产物）
+        shell: pwsh
+        run: dotnet build src/Wails.Net.Cli/Wails.Net.Cli.csproj -c Release -p:SkipFrontendBuild=true -p:WailsNetVersion=${{ env.WAILS_NET_VERSION }}
+
       - name: 创建打包输出目录
         shell: pwsh
         run: New-Item -ItemType Directory -Force -Path ${{ env.PACKAGE_OUTPUT }}
