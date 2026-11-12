@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Android.Webkit;
+using Java.Interop;
 using Wails.Net.Application.Bindings;
 using WailsApplication = Wails.Net.Application.Application;
 using Wails.Net.Application.Webview;
@@ -41,12 +42,23 @@ public sealed class WailsWebMessageListener : Java.Lang.Object
 
     /// <summary>
     /// JS 同步调用入口，前端通过 <c>window.WailsBridge.invoke(json)</c> 调用并接收返回值。
-    /// 使用 <see cref="JavascriptInterfaceAttribute"/> 标记为可被 JS 调用的方法。
+    /// 必须同时标注 <see cref="ExportAttribute"/> 与 <see cref="JavascriptInterfaceAttribute"/>：
+    /// <list type="bullet">
+    ///   <item><see cref="ExportAttribute"/> 才会为该方法生成 JNI thunk，使 Java 侧存在同名的
+    ///         <c>invoke</c> 方法——只有 <c>[JavascriptInterface]</c> 时，JS 拿到的
+    ///         <c>window.WailsBridge</c> 是一个没有任何方法的空对象，
+    ///         前端探测 <c>typeof window.WailsBridge.invoke === 'function'</c> 会失败，
+    ///         表现为「IPC 桥未注入」（E2E 实测过这个现象）。</item>
+    ///   <item><see cref="JavascriptInterfaceAttribute"/> 是 API 17+ 的暴露许可标记，
+    ///         缺少它反射调用会被系统拒绝。</item>
+    /// </list>
+    /// 导出名必须是 <c>invoke</c>（全小写），与前端 <c>WailsBridge.invoke(...)</c> 一致。
     /// 内部转发到 <see cref="WailsApplication.HandleMessageFromFrontend"/> 进行 IPC 消息处理。
     /// </summary>
     /// <param name="message">前端发送的 JSON 消息字符串。</param>
     /// <returns>响应的 JSON 字符串；无响应时返回空字符串。前端可用 <c>JSON.parse</c> 解析。</returns>
     [JavascriptInterface]
+    [Export("invoke")]
     public string Invoke(string? message)
     {
         if (string.IsNullOrEmpty(message))
