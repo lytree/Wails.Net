@@ -1,3 +1,4 @@
+using Microsoft.Win32;
 using TUnit.Core;
 using Wails.Net.Application.Managers;
 
@@ -11,6 +12,11 @@ namespace Wails.Net.Application.Windows.Tests;
 [NotInParallel]
 public sealed class WindowsAutostartManagerTests
 {
+    /// <summary>
+    /// 自启动注册表键路径，与 <see cref="WindowsAutostartManager"/> 内部使用的一致。
+    /// </summary>
+    private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+
     [Test]
     public async Task IsEnabled_ReturnsFalse_WhenNotConfigured()
     {
@@ -37,6 +43,14 @@ public sealed class WindowsAutostartManagerTests
         var name = "Wails.Net.Test.Autostart." + Guid.NewGuid();
         var manager = new WindowsAutostartManager(name);
 
+        // Enable() 按设计静默吞掉注册表写入异常（无权限时不影响应用启动），
+        // 因此在"注册表只读"的环境中本用例既无法证明也无法证伪写入语义。
+        // 先用同一条注册表路径（CreateSubKey，与实现一致）探测可写性，不可写则跳过，
+        // 避免把环境限制报成实现缺陷。
+        Skip.Unless(
+            CanWriteRunKey(name),
+            @"当前环境禁止写 HKCU\Software\Microsoft\Windows\CurrentVersion\Run，无法验证自启动写入语义");
+
         try
         {
             // 操作：启用自启动
@@ -49,6 +63,36 @@ public sealed class WindowsAutostartManagerTests
         {
             // 清理注册表
             manager.Disable();
+        }
+    }
+
+    /// <summary>
+    /// 探测当前环境能否向自启动注册表键写入并读回一个临时值（探测后立即清理）。
+    /// 用 <see cref="RegistryKey.CreateSubKey(string)"/> 探测，与实现路径保持一致的语义
+    /// （键不存在时可创建，而不是直接放弃写入）。
+    /// </summary>
+    /// <param name="probeName">探测用的值名称。</param>
+    /// <returns>可写入并读回时为 true。</returns>
+    private static bool CanWriteRunKey(string probeName)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.CreateSubKey(RunKeyPath);
+            if (key is null)
+            {
+                return false;
+            }
+
+            key.SetValue(probeName, Environment.ProcessPath ?? string.Empty);
+            var written = key.GetValue(probeName) is not null;
+            key.DeleteValue(probeName, throwOnMissingValue: false);
+            return written;
+        }
+        catch (Exception ex) when (ex is System.Security.SecurityException
+            or UnauthorizedAccessException
+            or IOException)
+        {
+            return false;
         }
     }
 

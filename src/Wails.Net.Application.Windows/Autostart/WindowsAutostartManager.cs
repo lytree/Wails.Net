@@ -55,7 +55,11 @@ public sealed class WindowsAutostartManager : IAutostartManager
     {
         try
         {
-            using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: true);
+            // 必须用 CreateSubKey 而非 OpenSubKey：全新用户配置文件（CI runner、首次登录的
+            // Windows 用户）上 HKCU\...\Run 可能尚不存在，OpenSubKey(writable: true) 此时
+            // 返回 null，SetValue 会被静默跳过，导致"启用自启动"实际不生效。
+            // CreateSubKey 在键缺失时创建，存在时直接打开，两种情况都返回可写句柄。
+            using var key = Registry.CurrentUser.CreateSubKey(RunKeyPath);
             key?.SetValue(_appName, Environment.ProcessPath ?? string.Empty);
         }
         catch (System.Security.SecurityException)
