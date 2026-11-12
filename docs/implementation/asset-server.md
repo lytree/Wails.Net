@@ -12,13 +12,13 @@
 - 前端路由（Vue/React/Angular）在 `file://` 下无法回退到 `index.html`
 - CSP、CORS、Range、ETag 等高级 HTTP 特性在 `file://` 下不可用
 
-资源服务器位于 [Wails.Net.AssetServer](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.AssetServer) 程序集，被 [Wails.Net.Application](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application) 引用，最终由各平台 Webview 窗口通过虚拟主机协议拦截调用。
+资源服务器位于 [Wails.Net.AssetServer](../../src/Wails.Net.AssetServer) 程序集，被 [Wails.Net.Application](../../src/Wails.Net.Application) 引用，最终由各平台 Webview 窗口通过虚拟主机协议拦截调用。
 
 ---
 
 ## 2. AssetServer 核心类
 
-`AssetServer` 是所有资源服务器的基类，定义在 [AssetServer.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.AssetServer/AssetServer.cs)。它提供两条独立的处理路径：基于路径的简单读取与完整的 HTTP 处理。
+`AssetServer` 是所有资源服务器的基类，定义在 [AssetServer.cs](../../src/Wails.Net.AssetServer/AssetServer.cs)。它提供两条独立的处理路径：基于路径的简单读取与完整的 HTTP 处理。
 
 ### 2.1 ServeAsync —— 简单路径处理
 
@@ -105,7 +105,7 @@ private static string ComputeETag(byte[] content)
 
 ## 3. 中间件管道
 
-中间件机制对应 Wails v3 Go 版本 assetserver 的中间件编排逻辑，由 [IMiddleware.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.AssetServer/Middleware/IMiddleware.cs) 和 [MiddlewareChain.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.AssetServer/Middleware/MiddlewareChain.cs) 实现，提供两套互补的接口。
+中间件机制对应 Wails v3 Go 版本 assetserver 的中间件编排逻辑，由 [IMiddleware.cs](../../src/Wails.Net.AssetServer/Middleware/IMiddleware.cs) 和 [MiddlewareChain.cs](../../src/Wails.Net.AssetServer/Middleware/MiddlewareChain.cs) 实现，提供两套互补的接口。
 
 ### 3.1 IMiddleware —— 基于路径的中间件
 
@@ -154,7 +154,7 @@ return pipeline(path);
 
 ## 4. FileAssetServer
 
-`FileAssetServer` 从文件系统读取资源，对应 Go 版本 `internal/assetserver/fileassets`，定义在 [FileAssetServer.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.AssetServer/FileAssetServer.cs)。开发模式下前端构建产物（如 Vite 的 `dist/`）直接由文件系统提供，支持热重载与调试源映射。
+`FileAssetServer` 从文件系统读取资源，对应 Go 版本 `internal/assetserver/fileassets`，定义在 [FileAssetServer.cs](../../src/Wails.Net.AssetServer/FileAssetServer.cs)。开发模式下前端构建产物（如 Vite 的 `dist/`）直接由文件系统提供，支持热重载与调试源映射。
 
 ### 4.1 文件系统读取
 
@@ -212,13 +212,13 @@ public override async Task ServeHttpAsync(HttpListenerContext context, Cancellat
 
 ### 4.4 SPA 路由回退与 DefaultDocument
 
-**重要**：SPA 路由回退（`EnableSpaFallback` → `index.html`）和 `DefaultDocument` 配置项定义在 [DesktopHostOptions.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Hosting/DesktopHostOptions.cs) 的 `AssetsOptions` 中，但**实际回退逻辑由各平台 Webview 窗口实现**（见第 7、8 节），而非 `FileAssetServer` 本身。`FileAssetServer` 仅负责按路径读取文件，回退策略由上层根据 `EnableSpaFallback` 配置决定。
+**重要**：SPA 路由回退（`EnableSpaFallback` → `index.html`）和 `DefaultDocument` 配置项定义在 [DesktopHostOptions.cs](../../src/Wails.Net.Application/Hosting/DesktopHostOptions.cs) 的 `AssetsOptions` 中，但**实际回退逻辑由各平台 Webview 窗口实现**（见第 7、8 节），而非 `FileAssetServer` 本身。`FileAssetServer` 仅负责按路径读取文件，回退策略由上层根据 `EnableSpaFallback` 配置决定。
 
 ---
 
 ## 5. BundledAssetServer
 
-`BundledAssetServer` 从程序集嵌入资源中读取文件，对应 Go 版本 `internal/assetserver/bundledassets`，定义在 [BundledAssetServer.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.AssetServer/BundledAssetServer.cs)。生产模式下前端构建产物通过 `<EmbeddedResource>` 嵌入主程序集，实现单文件部署。
+`BundledAssetServer` 从程序集嵌入资源中读取文件，对应 Go 版本 `internal/assetserver/bundledassets`，定义在 [BundledAssetServer.cs](../../src/Wails.Net.AssetServer/BundledAssetServer.cs)。生产模式下前端构建产物通过 `<EmbeddedResource>` 嵌入主程序集，实现单文件部署。
 
 ### 5.1 多程序集合并查找
 
@@ -283,7 +283,7 @@ private string? FindByPattern(Assembly assembly, string pattern)
 
 ## 6. AssetOptions 配置
 
-[AssetOptions.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.AssetServer/AssetOptions.cs) 描述资源服务器自身的选项，对应 Go 版本 `internal/assetserver/options.go`：
+[AssetOptions.cs](../../src/Wails.Net.AssetServer/AssetOptions.cs) 描述资源服务器自身的选项，对应 Go 版本 `internal/assetserver/options.go`：
 
 | 属性 | 类型 | 说明 |
 |------|------|------|
@@ -299,7 +299,7 @@ private string? FindByPattern(Assembly assembly, string pattern)
 
 ## 7. Windows 平台集成
 
-Windows 平台通过 WebView2 的 `AddWebResourceRequestedFilter` 拦截虚拟主机请求，实现位于 [Win32WebviewWindow.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Windows/Win32WebviewWindow.cs)。
+Windows 平台通过 WebView2 的 `AddWebResourceRequestedFilter` 拦截虚拟主机请求，实现位于 [Win32WebviewWindow.cs](../../src/Wails.Net.Application.Windows/Win32WebviewWindow.cs)。
 
 ### 7.1 虚拟主机过滤注册
 
@@ -344,7 +344,7 @@ if (app?.AssetServer is not null)
 
 ### 7.4 AssetServerTransport 适配器
 
-[AssetServerTransport.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Transport/AssetServerTransport.cs) 是将 `AssetServer` 绑定到通用传输层（`HttpTransport` / `WebSocketTransport`）的适配器，实现 `IAssetServerTransport` 接口：
+[AssetServerTransport.cs](../../src/Wails.Net.Application/Transport/AssetServerTransport.cs) 是将 `AssetServer` 绑定到通用传输层（`HttpTransport` / `WebSocketTransport`）的适配器，实现 `IAssetServerTransport` 接口：
 
 ```csharp
 public async Task ServeAsync(HttpListenerContext context, CancellationToken ct = default)
@@ -360,7 +360,7 @@ public async Task ServeAsync(HttpListenerContext context, CancellationToken ct =
 
 ## 8. Linux 平台集成
 
-Linux 平台通过 WebKitGTK 的 `WebContext.RegisterUriScheme` 注册自定义 URI scheme，实现位于 [LinuxWebviewWindow.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Linux/LinuxWebviewWindow.cs)。
+Linux 平台通过 WebKitGTK 的 `WebContext.RegisterUriScheme` 注册自定义 URI scheme，实现位于 [LinuxWebviewWindow.cs](../../src/Wails.Net.Application.Linux/LinuxWebviewWindow.cs)。
 
 ### 8.1 wails:// 协议注册
 
@@ -419,7 +419,7 @@ private static void FinishResponse(URISchemeRequest request, byte[] content,
 
 ### 9.1 DesktopHostOptions.Assets 节
 
-[DesktopHostOptions.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Hosting/DesktopHostOptions.cs) 中的 `AssetsOptions` 描述静态资源配置：
+[DesktopHostOptions.cs](../../src/Wails.Net.Application/Hosting/DesktopHostOptions.cs) 中的 `AssetsOptions` 描述静态资源配置：
 
 ```csharp
 public class AssetsOptions
@@ -452,7 +452,7 @@ public class AssetsOptions
 
 ### 9.2 DesktopApplicationBuilder 自动创建
 
-[DesktopApplicationBuilder.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Hosting/DesktopApplicationBuilder.cs) 在 `Build()` 阶段自动装配 `FileAssetServer`：
+[DesktopApplicationBuilder.cs](../../src/Wails.Net.Application/Hosting/DesktopApplicationBuilder.cs) 在 `Build()` 阶段自动装配 `FileAssetServer`：
 
 ```csharp
 if (!string.IsNullOrWhiteSpace(desktopOpts.Assets.RootPath))

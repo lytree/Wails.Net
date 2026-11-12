@@ -126,7 +126,7 @@ public async Task GetMinSize_Reflects_SetMinSize()
 dotnet run --project tests/Wails.Net.Application.Windows.Tests/Wails.Net.Application.Windows.Tests.csproj
 
 # Linux（需 DISPLAY 或 WAYLAND_DISPLAY；无则自动降级到仅 L1）
-wsl -d kali-linux -- bash -c "cd /mnt/f/Code/Dotnet/Wails.Net && dotnet run --project tests/Wails.Net.Application.Linux.Tests/Wails.Net.Application.Linux.Tests.csproj"
+wsl -d kali-linux -- bash -c "cd /mnt/f/Code/github/Wails.Net && dotnet run --project tests/Wails.Net.Application.Linux.Tests/Wails.Net.Application.Linux.Tests.csproj"
 
 # Android（仅 L1，无 Activity 时跳过 L2/L3）
 dotnet run --project tests/Wails.Net.Application.Android.Tests/Wails.Net.Application.Android.Tests.csproj

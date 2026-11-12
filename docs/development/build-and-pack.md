@@ -407,10 +407,10 @@ dotnet publish -c Release -r win-x64 -p:PublishAot=true
 
 ## 相关文档
 
-- [CLI 工具文档](./cli-tool.md)
+- [CLI 工具文档](../implementation/cli-tool.md)
 - [Demo 示例](../../examples/Wails.Net.Demo/)
 - [发布指南](./release-guide.md)
-- [功能对比](../comparison-with-tauri2-wails3.md)
+- [功能对比](../comparison-with-wails-v3.md)
 
 ---
 

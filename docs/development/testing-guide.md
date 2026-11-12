@@ -192,7 +192,7 @@ dotnet run --project tests/Wails.Net.Application.Windows.Tests/Wails.Net.Applica
 
 ```bash
 # 在 WSL 中运行
-wsl -d kali-linux -- bash -c "cd /mnt/f/Code/Dotnet/Wails.Net && \
+wsl -d kali-linux -- bash -c "cd /mnt/f/Code/github/Wails.Net && \
   dotnet run --project tests/Wails.Net.Application.Linux.Tests/Wails.Net.Application.Linux.Tests.csproj"
 ```
 

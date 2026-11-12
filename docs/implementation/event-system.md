@@ -32,10 +32,10 @@ Wails.Net 事件系统采用**事件总线（Event Bus）架构**，在前端 We
 ```
 
 - **后端 → 前端**：`EventProcessor.Emit` 通过 `IWailsEventListener.NotifyEvent` 调用 `ExecuteScriptAsync("window._wailsEmitEvent(name, data)")` 推送事件。
-- **前端 → 后端**：`wails.events.emit` 通过 HTTP `fetch("/wails/event.emit", …)` 发送 `EventPayload`，由 [MessageProcessor.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Transport/MessageProcessor.cs) 解析后调用 `EventProcessor.Emit`。
-- **跨窗口广播**：Server 模式下由 [WebSocketBroadcaster.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Transport/WebSocketBroadcaster.cs) 将事件同步到所有连接的 WebSocket 客户端。
+- **前端 → 后端**：`wails.events.emit` 通过 HTTP `fetch("/wails/event.emit", …)` 发送 `EventPayload`，由 [MessageProcessor.cs](../../src/Wails.Net.Application/Transport/MessageProcessor.cs) 解析后调用 `EventProcessor.Emit`。
+- **跨窗口广播**：Server 模式下由 [WebSocketBroadcaster.cs](../../src/Wails.Net.Application/Transport/WebSocketBroadcaster.cs) 将事件同步到所有连接的 WebSocket 客户端。
 
-事件处理器实例由 [Application.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Application.cs) 持有，通过 `Application.Events` 暴露给应用代码：
+事件处理器实例由 [Application.cs](../../src/Wails.Net.Application/Application.cs) 持有，通过 `Application.Events` 暴露给应用代码：
 
 ```csharp
 private readonly EventProcessor _events = new();
@@ -44,7 +44,7 @@ public EventProcessor Events => _events;
 
 ## 2. EventProcessor — 事件处理器
 
-[EventProcessor.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Events/EventProcessor.cs) 是事件系统的核心，对应 Wails v3 Go 版本 `events.go` 中的 `EventProcessor`。
+[EventProcessor.cs](../../src/Wails.Net.Application/Events/EventProcessor.cs) 是事件系统的核心，对应 Wails v3 Go 版本 `events.go` 中的 `EventProcessor`。
 
 ### 2.1 核心数据结构
 
@@ -170,7 +170,7 @@ public void Clear() => _listeners.Clear();
 public void RegisterHook(Func<CustomEvent, bool> hook) => _hooks.Add(hook);
 ```
 
-[TypedEvent.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Events/TypedEvent.cs) 同时提供 `EventHook` 辅助类，支持按事件名匹配的条件钩子：
+[TypedEvent.cs](../../src/Wails.Net.Application/Events/TypedEvent.cs) 同时提供 `EventHook` 辅助类，支持按事件名匹配的条件钩子：
 
 ```csharp
 // 仅拦截特定事件名
@@ -193,7 +193,7 @@ EventHook.ForEvent(processor, "wails:window:closed", evt =>
 
 ### 3.1 ApplicationEventType — 应用级事件
 
-[ApplicationEventType.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Events/ApplicationEventType.cs) 定义 30 个应用级事件（取值 `0..29`），覆盖应用生命周期、系统状态、URL 加载、移动端平台事件等：
+[ApplicationEventType.cs](../../src/Wails.Net.Events/ApplicationEventType.cs) 定义 30 个应用级事件（取值 `0..29`），覆盖应用生命周期、系统状态、URL 加载、移动端平台事件等：
 
 | 事件 | 值 | 名称（KnownEvents） |
 |------|----|----|
@@ -223,7 +223,7 @@ EventHook.ForEvent(processor, "wails:window:closed", evt =>
 
 ### 3.2 WindowEventType — 窗口事件
 
-[WindowEventType.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Events/WindowEventType.cs) 定义 28 个窗口事件（取值 `1000..1027`），用于窗口创建、移动、调整大小、拖放、全屏等场景。窗口事件取值从 1000 开始，与 `ApplicationEventType` 区分。
+[WindowEventType.cs](../../src/Wails.Net.Events/WindowEventType.cs) 定义 28 个窗口事件（取值 `1000..1027`），用于窗口创建、移动、调整大小、拖放、全屏等场景。窗口事件取值从 1000 开始，与 `ApplicationEventType` 区分。
 
 ```csharp
 public enum WindowEventType : uint
@@ -252,7 +252,7 @@ public enum WindowEventType : uint
 
 ### 3.3 KnownEvents — 已知事件名常量
 
-[KnownEvents.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Events/KnownEvents.cs) 集中管理所有系统保留事件名称常量（带 `wails:` 前缀），并提供三个 `GetEventName` 重载将枚举值映射为字符串：
+[KnownEvents.cs](../../src/Wails.Net.Events/KnownEvents.cs) 集中管理所有系统保留事件名称常量（带 `wails:` 前缀），并提供三个 `GetEventName` 重载将枚举值映射为字符串：
 
 ```csharp
 public static string GetEventName(WindowEventType type)   => type switch { … };
@@ -278,7 +278,7 @@ public static string GetEventName(uint eventType)
 
 ### 3.4 CommonEvents — 通用事件检查
 
-[CommonEvents.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Events/CommonEvents.cs) 通过 `KnownEventNames` 集合与 `IsKnownEvent` 方法，防止自定义事件名与系统保留事件名冲突：
+[CommonEvents.cs](../../src/Wails.Net.Events/CommonEvents.cs) 通过 `KnownEventNames` 集合与 `IsKnownEvent` 方法，防止自定义事件名与系统保留事件名冲突：
 
 ```csharp
 public static bool IsKnownEvent(string name) => KnownEventNames.Contains(name);
@@ -286,7 +286,7 @@ public static bool IsKnownEvent(string name) => KnownEventNames.Contains(name);
 
 ### 3.5 CustomEvent — 自定义事件
 
-[CustomEvent.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Events/CustomEvent.cs) 是事件在处理器内部的标准表示：
+[CustomEvent.cs](../../src/Wails.Net.Application/Events/CustomEvent.cs) 是事件在处理器内部的标准表示：
 
 ```csharp
 public class CustomEvent
@@ -316,7 +316,7 @@ public class CustomEvent
 
 ### 3.6 TypedEvent — 强类型事件
 
-[TypedEvent.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Events/TypedEvent.cs) 提供编译时类型安全的事件 API，避免运行时类型转换错误：
+[TypedEvent.cs](../../src/Wails.Net.Application/Events/TypedEvent.cs) 提供编译时类型安全的事件 API，避免运行时类型转换错误：
 
 ```csharp
 public class TypedEvent<TData>
@@ -350,7 +350,7 @@ loginEvent.Emit(new UserInfo { Name = "alice" }, senderWindowID: 1);
 
 ### 3.7 Android 平台事件映射
 
-[AndroidPlatformEvents.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/AndroidPlatformEvents.cs) 对应 Wails v3 Go 版本 `events_common_android.go` 中的 `commonApplicationEventMap`，将 Android 平台专属事件 ID 映射到上表的公共 `ApplicationEventType`，使应用层代码可以跨平台订阅统一事件名。
+[AndroidPlatformEvents.cs](../../src/Wails.Net.Application.Android/AndroidPlatformEvents.cs) 对应 Wails v3 Go 版本 `events_common_android.go` 中的 `commonApplicationEventMap`，将 Android 平台专属事件 ID 映射到上表的公共 `ApplicationEventType`，使应用层代码可以跨平台订阅统一事件名。
 
 **Android 平台事件 ID（12 个，对应 Wails v3 `events.Android.*` 常量）**：
 
@@ -416,7 +416,7 @@ AndroidPlatformApp.On(uint androidEventId)
 
 ## 4. 前端事件 API
 
-前端运行时由 [@wails-net/runtime.cs](file:///f:/Code/Dotnet/Wails.Net/packages/wails-net-runtime/src/core/runtime.ts) 生成并注入到 Webview，事件相关 API 暴露在 `window.wails.events` 命名空间。
+前端运行时由 [@wails-net/runtime.cs](../../packages/wails-net-runtime/src/core/runtime.ts) 生成并注入到 Webview，事件相关 API 暴露在 `window.wails.events` 命名空间。
 
 ### 4.1 wails.events.on — 订阅事件
 
@@ -437,7 +437,7 @@ events: {
 
 ### 4.2 _wailsOnEvent / _wailsEmitEvent 内部机制
 
-实际的回调注册表由 [transport.template.js](file:///f:/Code/Dotnet/Wails.Net/packages/wails-net-runtime/src/internal/transport.ts) 维护：
+实际的回调注册表由 [transport.template.js](../../packages/wails-net-runtime/src/internal/transport.ts) 维护：
 
 ```javascript
 var _eventCallbacks = {};
@@ -511,7 +511,7 @@ unsubscribe();
 
 ### 5.1 Application.Events — 标准订阅/发布
 
-应用代码通过 [Application.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Application.cs) 暴露的 `Events` 属性访问 `EventProcessor`：
+应用代码通过 [Application.cs](../../src/Wails.Net.Application/Application.cs) 暴露的 `Events` 属性访问 `EventProcessor`：
 
 ```csharp
 // 订阅事件
@@ -582,7 +582,7 @@ if (listener is not null)
 }
 ```
 
-`IWailsEventListener` 接口由 [HttpTransport](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Transport/HttpTransport.cs) 与 [WebSocketTransport](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Transport/WebSocketTransport.cs) 实现：
+`IWailsEventListener` 接口由 [HttpTransport](../../src/Wails.Net.Application/Transport/HttpTransport.cs) 与 [WebSocketTransport](../../src/Wails.Net.Application/Transport/WebSocketTransport.cs) 实现：
 
 ```csharp
 public interface IWailsEventListener
@@ -601,7 +601,7 @@ public void NotifyEvent(string eventName, object? data)
 
 ### 6.1 WebSocketBroadcaster — 多窗口同步
 
-[WebSocketBroadcaster.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Transport/WebSocketBroadcaster.cs) 维护所有已连接 WebSocket 客户端，并提供三种广播模式：
+[WebSocketBroadcaster.cs](../../src/Wails.Net.Application/Transport/WebSocketBroadcaster.cs) 维护所有已连接 WebSocket 客户端，并提供三种广播模式：
 
 ```csharp
 // 全量广播：所有连接的客户端
@@ -645,7 +645,7 @@ await _broadcaster.BroadcastEventExceptAsync(senderClientId, evt.Name, evt.Data)
 
 ## 7. 事件消息格式 — EventPayload
 
-前端 → 后端的事件消息通过 `EventPayload` 反序列化，定义于 [MessageProcessor.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Transport/MessageProcessor.cs)：
+前端 → 后端的事件消息通过 `EventPayload` 反序列化，定义于 [MessageProcessor.cs](../../src/Wails.Net.Application/Transport/MessageProcessor.cs)：
 
 ```csharp
 public class EventPayload
@@ -735,15 +735,15 @@ private ResponseMessage? ProcessEvent(Message message)
 
 | 关注点 | 实现方式 | 位置 |
 |--------|---------|------|
-| 事件总线 | `EventProcessor` + `ConcurrentDictionary` | [EventProcessor.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Events/EventProcessor.cs) |
-| 前后端双向通信 | `IWailsEventListener` + HTTP `fetch` + WebSocket 推送 | [ITransport.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Transport/ITransport.cs) |
-| 类型安全 | `TypedEvent<TData>` + JSON 中转转换 | [TypedEvent.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Events/TypedEvent.cs) |
-| 事件拦截 | `RegisterHook` + `CustomEvent.Cancel()` | [EventProcessor.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Events/EventProcessor.cs) |
-| 跨窗口同步 | `WebSocketBroadcaster.BroadcastEventExceptAsync` | [WebSocketBroadcaster.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Transport/WebSocketBroadcaster.cs) |
-| 来源识别 | `CustomEvent.SenderWindowID` + `EventPayload.senderWindowId` | [CustomEvent.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Events/CustomEvent.cs) |
-| 系统事件命名 | `KnownEvents` 常量 + `GetEventName` 映射 | [KnownEvents.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Events/KnownEvents.cs) |
-| 名称冲突防护 | `CommonEvents.IsKnownEvent` | [CommonEvents.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Events/CommonEvents.cs) |
-| 一次性订阅 | `OnMultiple(maxCalls:1)` + `IsExpired` 自动清理 | [EventProcessor.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application/Events/EventProcessor.cs) |
-| Android 平台事件转发 | `AndroidPlatformEvents.MapToCommonEvent` + 7 事件映射表 | [AndroidPlatformEvents.cs](file:///f:/Code/Dotnet/Wails.Net/src/Wails.Net.Application.Android/AndroidPlatformEvents.cs) |
+| 事件总线 | `EventProcessor` + `ConcurrentDictionary` | [EventProcessor.cs](../../src/Wails.Net.Application/Events/EventProcessor.cs) |
+| 前后端双向通信 | `IWailsEventListener` + HTTP `fetch` + WebSocket 推送 | [ITransport.cs](../../src/Wails.Net.Application/Transport/ITransport.cs) |
+| 类型安全 | `TypedEvent<TData>` + JSON 中转转换 | [TypedEvent.cs](../../src/Wails.Net.Application/Events/TypedEvent.cs) |
+| 事件拦截 | `RegisterHook` + `CustomEvent.Cancel()` | [EventProcessor.cs](../../src/Wails.Net.Application/Events/EventProcessor.cs) |
+| 跨窗口同步 | `WebSocketBroadcaster.BroadcastEventExceptAsync` | [WebSocketBroadcaster.cs](../../src/Wails.Net.Application/Transport/WebSocketBroadcaster.cs) |
+| 来源识别 | `CustomEvent.SenderWindowID` + `EventPayload.senderWindowId` | [CustomEvent.cs](../../src/Wails.Net.Application/Events/CustomEvent.cs) |
+| 系统事件命名 | `KnownEvents` 常量 + `GetEventName` 映射 | [KnownEvents.cs](../../src/Wails.Net.Events/KnownEvents.cs) |
+| 名称冲突防护 | `CommonEvents.IsKnownEvent` | [CommonEvents.cs](../../src/Wails.Net.Events/CommonEvents.cs) |
+| 一次性订阅 | `OnMultiple(maxCalls:1)` + `IsExpired` 自动清理 | [EventProcessor.cs](../../src/Wails.Net.Application/Events/EventProcessor.cs) |
+| Android 平台事件转发 | `AndroidPlatformEvents.MapToCommonEvent` + 7 事件映射表 | [AndroidPlatformEvents.cs](../../src/Wails.Net.Application.Android/AndroidPlatformEvents.cs) |
 
 事件系统通过"统一处理器 + 传输层监听器 + 跨窗口广播器"三层结构，实现了与 Wails v3 Go 版本对等的事件模型，同时借助 .NET 的 `ConcurrentDictionary`、`Interlocked` 与 `CancellationTokenSource` 提供了原生的并发安全与取消语义。

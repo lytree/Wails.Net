@@ -151,7 +151,7 @@ SEC-H-003 的原子操作：为单个插件完成安全声明迁移。
 |---|---|
 | `unit` | `dotnet build tests/Wails.Net.Application.Tests/Wails.Net.Application.Tests.csproj && dotnet run --project tests/Wails.Net.Application.Tests/Wails.Net.Application.Tests.csproj --no-build` |
 | `platform-win` | `dotnet run --project tests/Wails.Net.Application.Windows.Tests/Wails.Net.Application.Windows.Tests.csproj` |
-| `platform-linux` | `wsl -d kali-linux -- bash -c "cd /mnt/f/Code/Dotnet/Wails.Net && dotnet run --project tests/Wails.Net.Application.Linux.Tests/Wails.Net.Application.Linux.Tests.csproj"` |
+| `platform-linux` | `wsl -d kali-linux -- bash -c "cd /mnt/f/Code/github/Wails.Net && dotnet run --project tests/Wails.Net.Application.Linux.Tests/Wails.Net.Application.Linux.Tests.csproj"` |
 | `platform-android` | `dotnet run --project tests/Wails.Net.Application.Android.Tests/Wails.Net.Application.Android.Tests.csproj` |
 | `cli` | `dotnet run --project tests/Wails.Net.Cli.Tests/Wails.Net.Cli.Tests.csproj` |
 | `assetserver` | `dotnet run --project tests/Wails.Net.AssetServer.Tests/Wails.Net.AssetServer.Tests.csproj` |

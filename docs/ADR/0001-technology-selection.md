@@ -1,6 +1,6 @@
 # ADR-0001: 技术选型决策
 
-- 状态：已接受（2026-07-13 修订：扩展目标平台至 Android，详见 [ADR-0002](0002-android-platform.md)）
+- 状态：已接受（2026-07-13 修订：扩展目标平台至 Android，详见 [ADR-0004](0004-android-platform.md)）
 - 日期：2026-07-13
 - 决策者：Wails.Net 团队
 
@@ -38,11 +38,11 @@ Wails v3（Go 实现，参考版本 `v3.0.0-alpha.102`）需要在 .NET 平台�
 | 测试框架 | `TUnit` | 1.83.8 | 原生支持 MTP，**禁用 MSTest/xUnit/NUnit** |
 | 脚本语言 | F# (`.fsx`) | — | 通过 `dotnet fsi script.fsx` 运行，**严禁 Python** |
 
-**架构融合策略**（必须遵守）：
+**架构策略**（必须遵守）：
 
 - **Host / DI / Config / Logging** → 学习 ASP.NET Core（`Microsoft.Extensions.*` 全栈）
 - **Runtime / Window / IPC** → 学习 Wails v3（对象模型、IPC、多窗口、事件总线）
-- **Plugin / Security / Capability** → 学习 Tauri v2（插件能力、权限模型、安全设计）
+- **Plugin / Security / Capability** → 自研能力模型（插件契约与 Wails v3 对齐，权限/能力/Scope 自主设计）
 
 **互操作策略**：采用 Managed Wrappers（托管封装），Windows 通过 CsWin32 源生成器、Linux 通过 GirCore 调用原生库，不引入 C++/CLI。
 
@@ -73,7 +73,7 @@ Wails v3（Go 实现，参考版本 `v3.0.0-alpha.102`）需要在 .NET 平台�
 5. **`McMaster.Extensions.CommandLineUtils`**：放弃。该库虽然成熟，但非官方维护；选择 `System.CommandLine` 与 .NET 团队路线对齐。
 6. **MSTest / xUnit / NUnit**：放弃。三者均依赖 VSTest 适配器，而 .NET 10 SDK 不再支持 `dotnet test`（VSTest 模式）；TUnit 原生支持 MTP，通过 `dotnet run` 执行。
 7. **Python 脚本**：放弃。引入 Python 运行时增加 CI 复杂度，且与 .NET 互操作困难；F# 脚本与 .NET 原生集成，可使用 `FSharp.Data`、`System.Net.Http` 等库完成数据解析与 HTTP 任务。
-8. **Avalonia / MAUI Controls 作为跨平台 GUI**：放弃。Wails.Net 的 GUI 由 WebView 承载，仅需原生窗口壳与系统 API，引入完整 GUI 框架属于过度设计。**注**：此决策不排斥 .NET Android SDK 本身（见 [ADR-0002](0002-android-platform.md)），仅排斥 MAUI Controls 与 Avalonia 的 UI 抽象层。
+8. **Avalonia / MAUI Controls 作为跨平台 GUI**：放弃。Wails.Net 的 GUI 由 WebView 承载，仅需原生窗口壳与系统 API，引入完整 GUI 框架属于过度设计。**注**：此决策不排斥 .NET Android SDK 本身（见 [ADR-0004](0004-android-platform.md)），仅排斥 MAUI Controls 与 Avalonia 的 UI 抽象层。
 9. **C++/CLI 混合模式**：放弃。无法跨平台（仅 Windows），且与现代 .NET 的 AOT 路线冲突。
 
 ## 相关文件
