@@ -9,6 +9,17 @@
   -->
   <Import Project="$(MSBuildThisFileDirectory)..\Directory.Build.props" />
 
+  <PropertyGroup>
+    <!--
+      Demo 是可运行的示例应用，不是可发布产物：不参与 dotnet pack。
+      此前未声明，SDK 默认 IsPackable=true，CI 的 `dotnet pack Wails.Net.slnx`
+      会连带打包全部 26 个 Demo；而这些 Demo 的 bin/ 不在 build 作业上传的产物里
+      （只上传 src/、tests/），于是逐个报 NU5026 "runtimeconfig.json not found"，
+      整条发布链路因此中断。同时避免误把 Demo 包推到 NuGet.org。
+    -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
   <!--
     自动添加 Wails.Net.SourceGenerators 作为 Analyzer 引用。
     因为源生成器通过 ProjectReference 的 transitive 传递不可靠
