@@ -132,7 +132,11 @@ public sealed class HttpTransportRequestBodyLimitTests
         long declaredContentLength)
     {
         using var tcp = new TcpClient();
-        await tcp.ConnectAsync("127.0.0.1", port);
+        // 与传输层的监听前缀保持一致：HttpTransport 绑定的是 http://localhost:{port}/
+        // （见 BaseUrl），而 localhost 在部分 Linux 环境下可能只落到 ::1。此处写死
+        // 127.0.0.1 会在那种环境里被拒绝连接；用 localhost 让 TcpClient 依次尝试
+        // 解析结果（IPv6/IPv4），与走 BaseUrl 的 HttpClient 用例行为一致。
+        await tcp.ConnectAsync("localhost", port);
         using var stream = tcp.GetStream();
 
         var header = string.Concat(
