@@ -1,9 +1,9 @@
 # Wails.Net × Wails v3 最新开发分支对比：可参考项确认
 
-> 分析日期：2026-08-07（beta.4 基线）；2026-10-17 再确认：演进至 v3.0.0-beta.28（见 §9）；2026-10-22 再确认：beta.28 仍为最新（见 §9.14）；**2026-10-31 基线升级：Wails v3 `v3.0.0` 已于 2026-10-26 正式发布（GA），beta.29–beta.34 与 GA 差异、安全项及待对齐清单见 §11**；**2026-11-03 基线升级：最新 weekly 为 `v3.1.0`（2026-11-01，`v3.2.0-nightly.*` 为预发布不作基线），差异清单、实现与待办见 §12**
+> 分析日期：2026-08-07（beta.4 基线）；2026-10-17 再确认：演进至 v3.0.0-beta.28（见 §9）；2026-10-22 再确认：beta.28 仍为最新（见 §9.14）；**2026-10-31 基线升级：Wails v3 `v3.0.0` 已于 2026-10-26 正式发布（GA），beta.29–beta.34 与 GA 差异、安全项及待对齐清单见 §11**；**2026-11-03 基线升级：最新 weekly 为 `v3.1.0`（2026-11-01，`v3.2.0-nightly.*` 为预发布不作基线），差异清单、实现与待办见 §12**；**2026-11-12 复核：上游无新正式版（基线保持 `v3.1.0`），Tauri v2 仍为 `2.12.5`，上一轮遗留的 2 项 P2（图标句柄生命周期、`DisableIcon` 选项）已补齐，见 §13**
 > **2026-10-17 源码级复核**：§9.2/§9.1 各项已对照 Wails v3 `v3.0.0-beta.28` 官方 Go 源码（tag `v3.0.0-beta.28`，`v3/` 目录）逐项确认，结论与更正见 **§9.7**。
 > 对比对象：wailsapp/wails **v3 发布流**（`v3/` 目录；v3.0.0 GA 后按周更 minor + nightly 预发布）
-> 基线：AGENTS.md 参考版本 **`v3.1.0`**（2026-11-01 weekly；§1–§10 为 beta 时代结论、§11 为 v3.0.0 GA 基线，均保留原文与日期，**以 §12 为当前基线**）
+> 基线：AGENTS.md 参考版本 **`v3.1.0`**（2026-11-01 weekly；§1–§10 为 beta 时代结论、§11 为 v3.0.0 GA 基线，均保留原文与日期，**以 §12–§13 为当前基线**）
 
 ---
 
@@ -11,7 +11,7 @@
 
 | 维度 | Wails v3（master） | Wails.Net |
 |------|--------------------|-----------|
-| 当前版本 | **v3.1.0（2026-11-01 weekly）**；§1–§10 写作时为 v3.0.0-beta.4（2026-08-05），§11 为 v3.0.0 GA 基线，§12 为重估 | 参考 v3.1.0 基线（主体机制已对齐，剩余差异见 §12） |
+| 当前版本 | **v3.1.0（2026-11-01 weekly；2026-11-12 复核仍为最新正式版）**；§1–§10 写作时为 v3.0.0-beta.4（2026-08-05），§11 为 v3.0.0 GA 基线，§12 为重估，§13 为 2026-11-12 复核与 P2 补齐 | 参考 v3.1.0 基线（主体机制已对齐，剩余差异见 §12–§13） |
 | 里程碑 | 2026-08-02 alpha → beta；**2026-10-26 v3.0.0 GA（此后周更 minor + nightly）** | 8 阶段实现完成（含 Android） |
 | 核心架构 | Go Services + 静态分析生成 TS 绑定；可安装插件（打包前端资源）；多窗口一等公民 | [Binding] 源生成器强类型调用器；IPlugin 插件体系（45+ BuiltIn）；多窗口支持 |
 | 构建 | Taskfile + `wails3 build` + server 构建 | MSBuild/dotnet + `wails build` + Server 模式（WebSocketTransport） |
@@ -146,7 +146,7 @@
 
 ## 7. 附：Tauri 最新版本基线确认（v2 GA，非 beta）
 
-> 用户询问"与 Tauri 最新 beta 版的差异"时需先澄清版本状态：**Tauri 2 已于 2024-10-02 GA**，当前稳定版 **2.12.5**（2026-10-21；npm `@tauri-apps/api` 为 2.12.4），**不存在 beta 阶段**；Tauri 3 仅有 `@tauri-apps/cli-cef-v3.0.0-cef.0` alpha 预览（2026-05-04，CEF 后端实验，不作参考）。因此 Wails.Net 的对比基线是 **Tauri v2 GA 2.12.5**（AGENTS.md §1 已同步）。
+> 用户询问"与 Tauri 最新 beta 版的差异"时需先澄清版本状态：**Tauri 2 已于 2024-10-02 GA**，当前稳定版 **2.12.5**（2026-10-21；npm `@tauri-apps/api` 为 2.12.4，2026-11-12 复核无变化），**不存在 beta 阶段**；Tauri 3 已从早期 **CLI-CEF 实验**（`@tauri-apps/cli-cef-v3.0.0-cef.0`，2026-05-04）推进到**核心全量 alpha**：`tauri-v3.0.0-alpha.6` + `tauri-runtime-wry`/`tauri-bundler`/`@tauri-apps/cli` alpha.5–.7（2026-11-06），仍属预览阶段、**不作参考**。因此 Wails.Net 的对比基线是 **Tauri v2 GA 2.12.5**（AGENTS.md §1 已同步）。
 >
 > 2.11.5（2026-07-01）→ 2.12.5（2026-10-21）主要变化（2.12.0 起）：`limitNavigationsToAppBoundDomains`（限制导航域，安全）、`appDirectoriesOverride`（统一数据目录）、`@tauri-apps/api/app` 新增 `exit` 命令、`convertFileSrc` 的 Rust 等价 API、`setFullscreenOnMonitor`、wry 权限处理器 API（摄像头/麦克风/字体/剪贴板等运行时决策）、macOS Liquid Glass `Regular`/`Clear` + `interactive`、ACL 拒绝作用域修复（此前一个 capability 的拒绝会影响所有 origin）、`asset://` 多范围响应与异步加载修复，以及 NSIS 降级拦截修复。
 
@@ -1257,5 +1257,69 @@ Wails.Net `HelperProcess.cs` 对齐：
 - 当前基线：**`v3.1.0`**（weekly，不含 nightly）。
 - 2026-11-04 复核：GitHub releases/tags 中最新正式版仍为 `v3.1.0`（2026-11-01），其上方仅有 `v3.2.0-nightly.20261101`/`0211`/`0311` 预发布，无 `v3.1.x` hotfix → **基线不变**。
 - 建议节奏：每次 weekly 发布后复核 release notes，按本表结构追加小节；本轮 P1（托盘重建、dev 终端关闭清理、GTK DIP）、资源服务器 P2 批次（含 MIME 内容嗅探）、CLI 批次核对、macOS DIP 补全与代码审查修复均已完成，并完成一次非 Android 全量构建/测试；修复 7 项既有失败并重写 Mobile 测试后已重跑全量复测：**89 个项目全部编译通过（0 错误），32 个测试项目 3385 项，通过 3139 / 失败 0 / 跳过 246（全绿）**（见 §12.5）。2026-11-05 追加：`#6498` tar.gz 权限位代码侧已修复（主程序 0755、其余保留源权限，`PackagerTests` 39 通过 1 跳过），剩余仅 Linux 实机解包复核；Android GUI 契约执行器与设备端测试宿主缺口已明确能力边界并记录决策（见 §12.4 第 15 条），后续待办为 `#6498` Linux 实机复核、macOS `#if MACOS` 实机编译验证，以及真实桌面环境下的托盘重建/信号清理/多 DPI 验证。
+- 2026-11-12 复核：上游仍无新正式版（基线保持 `v3.1.0`），本轮遗留的 2 项 P2 已补齐，详见 **§13**。
+
+---
+
+## 13. 2026-11-12 基线复核与 v3.2.0-nightly P2 补齐
+
+> 复核日期：2026-11-12（Asia/Shanghai）。取证通道：GitHub Releases/Tags/Commits API（`wailsapp/wails`、`tauri-apps/tauri`）+ npm registry（`@wailsio/runtime`、`@tauri-apps/api`）+ 上游 PR #6502 patch + 本仓库 `src/`/`tests/` 代码与测试实跑。
+> 本轮性质：**基线复核（结论：不变）+ 上一轮报告遗留项的实现补齐**，不涉及新的上游变更同步。
+
+### 13.1 版本复核（2026-11-12）
+
+| 项目 | 值 | 时间（UTC） | 结论 |
+|------|----|-------------|------|
+| 仓库当前基线 | **`v3.1.0`** | 2026-11-01 11:57:27 | 保持 |
+| `v3.1.x` hotfix | **无** | — | `v3.1.0` 之上无 patch 正式版 |
+| Wails 最新 nightly | **`v3.2.0-nightly.20261103`** | 2026-11-03 15:21:58 | 预发布，不作基线；**2026-11-03 之后无新 nightly** |
+| 上游 master（2026-11-04 → 11-10） | 7 个提交 | — | 全部为 `chore`（sponsor/contributor 图片、star history），**无生产代码变更** |
+| npm `@wailsio/runtime` | `latest` = `3.1.0`；`nightly` = `3.2.0-nightly.20261103` | 2026-11-01 / 11-03 | 与正式版/nightly 一致 |
+| Tauri v2（对比基线） | **`tauri-v2.12.5`**；npm `@tauri-apps/api` = `2.12.4` | 2026-10-21 | 无变化，基线保持 |
+| Tauri v3（预览，不作基线） | **`tauri-v3.0.0-alpha.6`**（另有 `tauri-runtime-wry`/`tauri-bundler`/`@tauri-apps/cli` alpha.5–.7） | 2026-11-06 | 已从"仅 CLI-CEF 预览"进入**核心全量 alpha**，仍属预览阶段，不作参考 |
+
+**结论**：
+1. **Wails 基线不变**（`v3.1.0`），本轮**没有**新增需要同步的上游代码变更；2026-11-07 报告 §5 的"零代码改动批次"判断在 11-12 复核中依然成立。
+2. **Tauri 对比基线不变**（v2 GA `2.12.5`）；同时修正 AGENTS.md 与本文档 §3 中"Tauri 3 仅有 CLI-CEF alpha 预览"的旧表述——Tauri 3 已有 `3.0.0-alpha.6` 核心 alpha（2026-11-06），但仍不作基线。
+3. 因此"补充实现"落在 2026-11-07 报告 §5 遗留的 **2 项 P2**（图标句柄生命周期、`DisableIcon` 选项），本轮全部补齐。
+
+### 13.2 差异清单（本轮补齐项）
+
+状态说明：✅ 本轮已实现；⛔ 不适用。
+
+| # | 上游依据 | 内容 | 本轮前状态 | 现状 |
+|---|----------|------|------------|------|
+| 1 | `#6502` `application_windows.go` | 应用级图标 `HICON` 缓存：`setIcon` 创建一次、应用到全部窗口、替换时 `DestroyIcon(previousIcon)`；新窗口复用 `currentIcon`；`destroy()` 释放 | ⏳ P2：每次 `SetIcon` 与每个新窗口各 `LoadImage` 一次，全仓无 `DestroyIcon`（句柄只增不减） | ✅ 已实现（§13.3 第 1 条） |
+| 2 | `#6502` `applyIcon` + `webview_window_windows.go` `disableIcon()` | `Windows.DisableIcon`：窗口追加 `WS_EX_DLGMODALFRAME` 隐藏图标；应用图标时临时清 `WS_SYSMENU` 再恢复，避免 Windows 把图标加回标题栏 | ⛔ 本移植缺 `DisableIcon` 选项（既有功能差距，上一轮判定不硬凑） | ✅ 已实现（§13.3 第 2 条） |
+
+### 13.3 实现记录
+
+1. **应用图标句柄生命周期（`#6502`）**
+   - 新增 [Win32AppIconCache.cs](../../src/Wails.Net.Application.Windows/Win32AppIconCache.cs)（internal，`IDisposable`）：持有当前 `HICON`；`Set(byte[]?)` 经可注入加载器（默认 `WindowsPlatformApp.LoadIconFromBytes`）加载并**在替换时立即调用 `DestroyIcon` 释放旧句柄**；`Dispose()` 释放当前句柄且幂等；锁内完成加载/替换，任意线程调用安全。
+   - 失败语义对齐上游 `setIcon`：`null`/空字节/加载失败均**保留当前图标**，不清空已生效的图标（此前 `SetIcon(null)` 会把字节清空，导致后续新窗口失图标）。
+   - [WindowsPlatformApp.cs](../../src/Wails.Net.Application.Windows/WindowsPlatformApp.cs)：`_appIconBytes` 字段替换为 `_appIconCache`；`SetIcon` 只加载一次并 `ApplyIconToWindows(hicon)`；`CreateWebviewWindow` 直接复用 `_appIconCache.Current`（不再逐窗口 `LoadImage`，同时消除每窗口一次的临时 `.ico` 写盘）；`Destroy()` 追加 `_appIconCache.Dispose()`。
+   - 新增 `WindowsPlatformApp.DestroyIconHandle(HICON)` 作为默认释放器（CsWin32 `DestroyIcon`，未引 `PInvoke.*`）。
+
+2. **`DisableIcon` 选项（`#6502`）**
+   - [WindowsOptions.cs](../../src/Wails.Net.Application/Options/WindowsOptions.cs) 新增 `bool DisableIcon`（默认 `false`，保持现有行为）。上游该开关位于窗口级 `options.Windows.DisableIcon`，本移植的 `WebviewWindowOptions` 没有 Windows 子选项结构，故映射为**应用级**开关并作用于全部窗口（注释已标注该映射关系）。
+   - [Win32WebviewWindow.cs](../../src/Wails.Net.Application.Windows/Win32WebviewWindow.cs) 新增 `DisableWindowIcon()`：扩展样式追加 `WS_EX_DLGMODALFRAME` 后 `SWP_FRAMECHANGED` 刷新框架（对齐上游 `disableIcon()`），使标题栏、任务栏、Alt+Tab 均不显示图标。
+   - 新增 `SetIconHandleWithoutSystemMenu(HICON)`：临时清除 `WS_SYSMENU` → `WM_SETICON` → 恢复样式（对齐上游 `applyIcon` 的规避逻辑）；`WindowsPlatformApp.ApplyIcon` 在 `DisableIcon=true` 时改走该方法。
+   - `CreateWebviewWindow` 顺序对齐上游 `run()`：先 `DisableWindowIcon()`（若启用），再套用最近一次 `SetIcon` 的图标。
+
+### 13.4 验证结果
+
+- 构建（0 错误）：`Wails.Net.Application.Windows`（1 条既有 `MSB3277` WebView2/WindowsBase 版本冲突告警，非本轮引入）、`Wails.Net.Application.Windows.Tests`。
+- 定向单元测试（TUnit，Windows 主机）：
+  - `Win32AppIconCacheTests` **8/8 通过**（首次加载与缓存、替换即释放旧句柄、`null`/空字节保留旧图标、加载失败保留旧图标、无旧图标时返回 NULL、`Dispose` 幂等释放、释放后 `Set` 为 no-op、8 线程并发替换不泄漏且当前句柄不被误释放）。
+  - `PlatformOptionsTests` **9/9 通过**（含新增 `DisableIcon` 默认 `false` 与赋值断言）。
+  - `Wails.Net.Application.Windows.Tests` 全量 **207 项**：通过 **74**、失败 **0**、跳过 **133**（GUI 用例，未设置 `WAILS_RUN_GUI_TESTS`）。
+- **未验证**（需真实 GUI 会话）：`DisableIcon=true` 时标题栏/任务栏/Alt+Tab 的实际无图标效果、`SetIcon` 重复调用后的图标切换视觉效果。建议以 `WAILS_RUN_GUI_TESTS=1` 在桌面会话中人工确认。
+- **附带发现（与本次改动无关，已定性）**：`Wails.Net.Application.Tests` 全量并行运行时有 4 项 WebSocket 403 用例（`WebSocket_MissingToken_Returns403`、`WebSocket_WrongToken_Returns403`、`WebSocket_LocalhostOtherPortUpgrade_Returns403`、`WebSocket_CrossOriginUpgrade_Returns403`）各耗时约 4 秒后失败（1611 项中 4 失败 / 1607 通过）；在 `HEAD`（`ad78a89`，未含本次改动）独立工作树中复跑**结果完全一致**，且这 4 项单独运行时 12/12 通过 → 属既有并行负载敏感用例（探测升级请求超时），与图标/选项改动路径无关，未在本轮处理。
+
+### 13.5 基线维护结论
+
+- 当前基线：**`v3.1.0`**（weekly，不含 nightly）；对比基线：**Tauri v2 GA `2.12.5`**。
+- 2026-11-12 复核：上游最新正式版仍为 `v3.1.0`，无 `v3.1.x` hotfix、无新 nightly，master 自 2026-11-04 起仅维护性提交 → **基线不变**。
+- 下一轮触发条件：`v3.2.0` 正式版发布后，按 2026-11-07《`v3.2.0-nightly.20261103` 上游变更梳理报告》§3 表逐条复评，重点确认 `#6502` 的图标生命周期与 `#6314` 的托盘刷新是否在正式版中被进一步修改；本轮已把 `#6502` 的 P2 两项落地，届时只需比对差异。
 
 

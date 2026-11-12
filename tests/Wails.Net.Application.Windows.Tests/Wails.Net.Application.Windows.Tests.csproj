@@ -8,6 +8,8 @@
     <IsTestProject>true</IsTestProject>
     <UseWindowsForms>true</UseWindowsForms>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- 图标句柄（HICON）底层为指针字段，测试需在 unsafe 上下文中读写句柄数值 -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <OutputType>Exe</OutputType>
     <!-- 临时启用以检查 TUnit 源生成器输出 -->
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>

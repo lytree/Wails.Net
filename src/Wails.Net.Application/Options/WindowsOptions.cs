@@ -51,4 +51,16 @@ public class WindowsOptions
     /// 用于自定义窗口类（影响 Shell 自动化、UI Automation 等场景）。
     /// </summary>
     public string? WndClass { get; set; }
+
+    /// <summary>
+    /// 是否禁用窗口图标（标题栏、任务栏、Alt+Tab 均不显示）。
+    /// 对应 Wails v3 Go 版本 <c>WindowsOptions.DisableIcon</c>。
+    /// <para>
+    /// 为 true 时：窗口创建后追加扩展样式 <c>WS_EX_DLGMODALFRAME</c>（对齐上游 <c>disableIcon()</c>），
+    /// 且应用级 <c>SetIcon</c> 应用图标时临时清除 <c>WS_SYSMENU</c> 再恢复，
+    /// 避免 Windows 把图标重新加回标题栏（对齐上游 <c>applyIcon</c> 的规避逻辑）。
+    /// 适用于无边框/自定义标题栏应用。
+    /// </para>
+    /// </summary>
+    public bool DisableIcon { get; set; }
 }

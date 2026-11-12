@@ -27,6 +27,9 @@ public sealed class PlatformOptionsTests
         await Assert.That(opts.EnabledFeatures).IsNull();
         await Assert.That(opts.DisabledFeatures).IsNull();
         await Assert.That(opts.WndClass).IsNull();
+
+        // DisableIcon 为布尔开关，默认 false（显示图标）
+        await Assert.That(opts.DisableIcon).IsFalse();
     }
 
     /// <summary>
@@ -44,6 +47,7 @@ public sealed class PlatformOptionsTests
             EnabledFeatures = new List<string> { "ExperimentalFeature" },
             DisabledFeatures = new List<string> { "DeprecatedFeature" },
             WndClass = "CustomWailsWindow",
+            DisableIcon = true,
         };
 
         // 断言
@@ -57,6 +61,7 @@ public sealed class PlatformOptionsTests
         await Assert.That(opts.DisabledFeatures).Count().IsEqualTo(1);
         await Assert.That(opts.DisabledFeatures![0]).IsEqualTo("DeprecatedFeature");
         await Assert.That(opts.WndClass).IsEqualTo("CustomWailsWindow");
+        await Assert.That(opts.DisableIcon).IsTrue();
     }
 
     /// <summary>

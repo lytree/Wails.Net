@@ -2215,6 +2215,45 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         PInvoke.SendMessage(_hwnd, WmSetIcon, (WPARAM)(nuint)0, (LPARAM)(nint)icon.Value);
     }
 
+    /// <summary>
+    /// 设置窗口图标句柄，并规避 Windows 在禁用图标状态下把图标加回标题栏。
+    /// <para>
+    /// 对应上游 <c>windowsApp.applyIcon</c>：临时清除 <c>WS_SYSMENU</c> → 设置图标 → 恢复样式。
+    /// </para>
+    /// </summary>
+    /// <param name="icon">Win32 图标句柄。</param>
+    internal void SetIconHandleWithoutSystemMenu(HICON icon)
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        var style = GetWindowStyle();
+        SetWindowStyle(style & ~WINDOW_STYLE.WS_SYSMENU);
+        SetIconHandle(icon);
+        SetWindowStyle(style);
+    }
+
+    /// <summary>
+    /// 禁用窗口图标：为扩展样式加上 <c>WS_EX_DLGMODALFRAME</c> 并刷新框架，
+    /// 使标题栏、任务栏与 Alt+Tab 均不显示图标。
+    /// <para>
+    /// 对应上游 <c>windowsWebviewWindow.disableIcon</c>；由应用级
+    /// <c>WindowsOptions.DisableIcon</c> 触发。
+    /// </para>
+    /// </summary>
+    internal void DisableWindowIcon()
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        SetWindowExStyle(GetWindowExStyle() | WINDOW_EX_STYLE.WS_EX_DLGMODALFRAME);
+        ApplyFrameChange();
+    }
+
     /// <inheritdoc />
     public void SetTitle(string title)
     {

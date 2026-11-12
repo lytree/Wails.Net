@@ -142,9 +142,11 @@ public sealed class WindowsPlatformApp : IPlatformApp
     private Win32Menu? _applicationMenu;
 
     /// <summary>
-    /// 应用图标字节数据，可为 null。
+    /// 应用级图标句柄缓存：持有最近一次 <see cref="SetIcon"/> 的 HICON，
+    /// 替换时释放旧句柄，应用销毁时释放当前句柄（对应上游 #6502 的 <c>currentIcon</c>）。
+    /// 新窗口复用该句柄，避免逐窗口重复加载。
     /// </summary>
-    private byte[]? _appIconBytes;
+    private readonly Win32AppIconCache _appIconCache = new();
 
     /// <summary>
     /// 系统级事件监听器，监听电源模式变化和网络连通性变化。
@@ -328,6 +330,9 @@ public sealed class WindowsPlatformApp : IPlatformApp
         _applicationMenu?.Destroy();
         _applicationMenu = null;
 
+        // 释放应用级图标句柄（对齐上游 destroy() 中的 DestroyIcon(currentIcon)）。
+        _appIconCache.Dispose();
+
         // 投递 WM_QUIT 消息以退出消息循环。
         PInvoke.PostQuitMessage(0);
     }
@@ -404,14 +409,16 @@ public sealed class WindowsPlatformApp : IPlatformApp
     /// <inheritdoc />
     public void SetIcon(byte[]? icon)
     {
-        _appIconBytes = icon;
-        if (icon is null || icon.Length == 0)
+        // 加载并缓存 HICON；同时释放被替换的旧句柄（对齐上游 #6502 的 setIcon）。
+        // 加载失败或字节为空时保留当前图标，不改变已生效的窗口图标。
+        var hicon = _appIconCache.Set(icon);
+        if (hicon.IsNull)
         {
             return;
         }
 
         // 将图标应用到所有已创建窗口。
-        ApplyIconToWindows();
+        ApplyIconToWindows(hicon);
     }
 
     /// <inheritdoc />
@@ -509,14 +516,18 @@ public sealed class WindowsPlatformApp : IPlatformApp
             window.SetMenuHandle(_applicationMenu.Hmenu);
         }
 
-        // 应用图标（若已设置）。
-        if (_appIconBytes is not null && _appIconBytes.Length > 0)
+        // 禁用图标：先加 WS_EX_DLGMODALFRAME 让标题栏/任务栏/Alt+Tab 不显示图标
+        // （对齐上游 windowsWebviewWindow.run() 中的 disableIcon()）。
+        if (_windowsOptions?.DisableIcon == true)
         {
-            var hicon = LoadIconFromBytes(_appIconBytes);
-            if (!hicon.IsNull)
-            {
-                window.SetIconHandle(hicon);
-            }
+            window.DisableWindowIcon();
+        }
+
+        // 应用最近一次 SetIcon 的图标（复用缓存句柄，对齐上游 run() 中 currentIcon 的套用逻辑）。
+        var hicon = _appIconCache.Current;
+        if (!hicon.IsNull)
+        {
+            ApplyIcon(window, hicon);
         }
 
         // P0-C2：若原生 IPC 已启用，将窗口注册到 NativeIpcTransport。
@@ -975,14 +986,8 @@ public sealed class WindowsPlatformApp : IPlatformApp
     /// <summary>
     /// 将图标应用到所有已创建窗口。
     /// </summary>
-    private void ApplyIconToWindows()
+    private void ApplyIconToWindows(HICON hicon)
     {
-        if (_appIconBytes is null || _appIconBytes.Length == 0)
-        {
-            return;
-        }
-
-        var hicon = LoadIconFromBytes(_appIconBytes);
         if (hicon.IsNull)
         {
             return;
@@ -990,8 +995,43 @@ public sealed class WindowsPlatformApp : IPlatformApp
 
         foreach (var window in _windows.Values)
         {
-            window.SetIconHandle(hicon);
+            ApplyIcon(window, hicon);
         }
+    }
+
+    /// <summary>
+    /// 将图标句柄应用到单个窗口。
+    /// <para>
+    /// 对应上游 <c>windowsApp.applyIcon</c>：<see cref="WindowsOptions.DisableIcon"/> 为 true 时，
+    /// 临时清除 <c>WS_SYSMENU</c> 再设置图标，避免 Windows 把图标重新加回标题栏。
+    /// </para>
+    /// </summary>
+    /// <param name="window">目标窗口。</param>
+    /// <param name="hicon">图标句柄（由 <see cref="_appIconCache"/> 持有，窗口不得释放）。</param>
+    private void ApplyIcon(Win32WebviewWindow window, HICON hicon)
+    {
+        if (_windowsOptions?.DisableIcon == true)
+        {
+            window.SetIconHandleWithoutSystemMenu(hicon);
+            return;
+        }
+
+        window.SetIconHandle(hicon);
+    }
+
+    /// <summary>
+    /// 销毁图标句柄。作为 <see cref="Win32AppIconCache"/> 的默认释放器。
+    /// 对应上游 <c>w32.DestroyIcon</c>。
+    /// </summary>
+    /// <param name="icon">要销毁的图标句柄。</param>
+    internal static void DestroyIconHandle(HICON icon)
+    {
+        if (icon.IsNull)
+        {
+            return;
+        }
+
+        PInvoke.DestroyIcon(icon);
     }
 
     /// <summary>
