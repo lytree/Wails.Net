@@ -335,8 +335,26 @@ let startApp () =
             inForeground
 
 let uiAutomatorDump (name: string) =
+    // 先删旧文件：uiautomator 对已存在的目标文件行为不一致（部分版本报错不写入）
+    adb (sprintf "shell rm -f /sdcard/%s" name) |> ignore
     adb (sprintf "shell uiautomator dump /sdcard/%s" name) |> ignore
     adb (sprintf "shell cat /sdcard/%s" name)
+
+/// 轮询 uiautomator dump 直到命中判定条件。
+/// WebView 内部的 DOM 文本是**延迟可见**的：Chromium 的无障碍树在首次被查询后才
+/// 开始构建，第一次 dump 通常只给出一个空的 android.webkit.WebView 节点，
+/// 几秒后重试才能读到页面文字。一次定论会把"加载慢"误判为"渲染失败"。
+let uiAutomatorDumpUntil (name: string) (matched: string -> bool) (attempts: int) =
+    let mutable xml = ""
+    let mutable hit = false
+    let mutable i = 0
+    while not hit && i < attempts do
+        if i > 0 then Thread.Sleep 2000
+        xml <- uiAutomatorDump name
+        hit <- matched xml
+        i <- i + 1
+        if not hit then log (sprintf "第 %d 次 dump 未命中目标文本，%s" i (if i < attempts then "2s 后重试" else "放弃"))
+    xml, hit
 
 /// 从 uiautomator XML 中定位包含指定文字的节点，返回其中心坐标。
 let tryFindNodeCenter (xml: string) (text: string) =
@@ -355,16 +373,19 @@ let tryFindNodeCenter (xml: string) (text: string) =
 
 let verifyWebView () =
     info "步骤 4/4：验证 WebView 加载与 IPC 绑定"
-    // 1. 通过 uiautomator dump 验证 WebView 渲染
-    let uiXml = uiAutomatorDump "wails_ui.xml"
-
-    let pageVisible =
-        uiXml.Contains("问候服务")      // 卡片标题
-        || uiXml.Contains("打招呼")     // 按钮文字
-        || uiXml.Contains("Wails.Net Demo") // HTML <title>
+    // 1. 通过 uiautomator dump 验证 WebView 渲染（轮询等待无障碍树构建完成）
+    let pageSignatures = [ "问候服务"; "打招呼"; "Wails.Net Demo" ]
+    let uiXml, pageVisible =
+        uiAutomatorDumpUntil "wails_ui.xml" (fun xml -> pageSignatures |> List.exists xml.Contains) 6
 
     if not pageVisible then
         fail "WebView 渲染失败（uiautomator dump 未检测到 Wails.Net Demo 页面元素）"
+        // 区分两种失败：WebView 压根没挂上视图层级 vs 挂上了但无障碍树没暴露 DOM。
+        // 后者属于测试手段的限制，前者才是产品问题，日志里需要能分辨。
+        if uiXml.Contains("android.webkit.WebView") then
+            log "UI 树里存在 WebView 节点，但读不到 DOM 文本（无障碍树未暴露页面内容）"
+        else
+            log "UI 树里连 WebView 节点都没有，视图层级可能未附加"
         log (sprintf "UI dump 内容:\n%s" uiXml)
         false
     else
@@ -381,12 +402,11 @@ let verifyWebView () =
         | Some(x, y) ->
             log (sprintf "点击「打招呼」按钮 (%d, %d)" x y)
             adb (sprintf "shell input tap %d %d" x y) |> ignore
-            Thread.Sleep(2000)
 
-            let uiXml2 = uiAutomatorDump "wails_ui2.xml"
-            let invoked =
-                uiXml2.Contains("Hello")
-                || uiXml2.Contains("你好")
+            // IPC 往返 + 渲染需要时间，同样用轮询判定，避免把"慢"判成"失败"
+            let uiXml2, invoked =
+                uiAutomatorDumpUntil "wails_ui2.xml"
+                    (fun xml -> xml.Contains("Hello") || xml.Contains("你好")) 5
 
             if invoked then
                 pass "IPC 绑定调用正常（greetResult 已渲染 Greet 返回值）"
