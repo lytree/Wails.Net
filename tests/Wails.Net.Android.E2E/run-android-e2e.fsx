@@ -7,9 +7,9 @@
 //
 // 测试目标（端到端验证 Wails.Net Android 平台）：
 //   1. Demo APK 构建并安装到设备/模拟器
-//   2. MainActivity 启动并触发 Wails.Net 平台事件（Android.ActivityCreated）
-//   3. WebView 加载本地资源（uiautomator dump 验证 "Wails.Net Demo" 文字出现）
-//   4. IPC 绑定调用（点击"打招呼"按钮，验证 greetResult 出现 "Hello," 前缀）
+//   2. MainActivity 启动、进程存活并进入前台（mCurrentFocus/mFocusedApp 指向本应用）
+//   3. WebView 加载本地资源（uiautomator dump 验证页面文字出现）
+//   4. IPC 绑定调用（点击"打招呼"按钮，验证 greetResult 出现 Hello/你好 前缀）
 //
 // 运行前提：
 //   - adb 已加入 PATH（Android SDK platform-tools）
@@ -158,63 +158,127 @@ let installApk apkPath =
         fail (sprintf "APK 安装失败: %s" (result.Trim()))
         false
 
-let startApp () =
-    info "步骤 3/4：启动 MainActivity 并验证平台事件"
-    // 清空 logcat 缓冲
-    adb "logcat -c" |> ignore
-    // 启动 MainActivity
-    let _ = adb "shell am start -n wails.net.demo.android/wails.net.demo.android.MainActivity"
-    // 等待应用启动（WebView 加载需要时间）
-    Thread.Sleep(8000)
-    // 抓取 Wails.Net 相关日志
-    let logcat = adb "logcat -d Wails.Net.Application.Android:V Wails.Net.Application:V *:S"
-    log (sprintf "logcat 输出:\n%s" logcat)
+let appPackage = "wails.net.demo.android"
 
-    // 验证 1：Android.ActivityCreated 事件（OnCreate → 平台事件转发）
-    let test1 = logcat.Contains("ActivityCreated") || logcat.Contains("ActivityStarted") || logcat.Contains("ActivityResumed")
-    if test1 then
-        pass "平台事件转发正常（Android.ActivityCreated/Started/Resumed 至少一个已触发）"
+/// 用 LAUNCHER intent 启动应用。
+/// 不能用 `am start -n <pkg>/<pkg>.MainActivity`：.NET Android 生成的 Java 类名是
+/// crc64<hash>.MainActivity（C# 类名只存在于托管侧），组件名不匹配会让 am start
+/// 直接失败——旧脚本丢弃了该命令的输出，于是表现为"应用没起来、日志为空"。
+let launchApp () =
+    let out =
+        adb (sprintf "shell am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p %s" appPackage)
+    log (sprintf "am start 输出: %s" (out.Trim()))
+    let failed =
+        out.Contains("Error") || out.Contains("does not exist") || out.Contains("Exception")
+    if failed then
+        fail (sprintf "应用启动失败: %s" (out.Trim()))
+        false
     else
-        fail "未检测到平台事件（Android.ActivityCreated/Started/Resumed 均未触发）"
+        true
 
-    test1
+/// 抓取应用相关错误日志（崩溃堆栈、未捕获异常），供失败时排障。
+let dumpErrorLogs (title: string) =
+    let logs = adb "logcat -d -s AndroidRuntime:E DOTNET:E mono-rt:E monodroid:E libc:F *:S"
+    if not (String.IsNullOrWhiteSpace logs) then
+        log (sprintf "%s:\n%s" title (logs.Trim()))
+
+let startApp () =
+    info "步骤 3/4：启动应用并验证 Activity 进入前台"
+    adb "logcat -c" |> ignore
+
+    let launched = launchApp()
+
+    // 等待 WebView 初始化
+    Thread.Sleep(8000)
+
+    let pid = (adb (sprintf "shell pidof %s" appPackage)).Trim()
+    if String.IsNullOrWhiteSpace pid then
+        fail (sprintf "应用进程未存活（pidof %s 为空），应用可能在启动时崩溃" appPackage)
+        dumpErrorLogs "错误日志"
+        false
+    else
+        pass (sprintf "应用进程已启动（pid=%s）" pid)
+
+        // 平台事件的转发不产生任何 logcat 文本（事件 ID 走内部通道），因此不能用
+        // "日志里出现 ActivityCreated" 作为判据。改为验证窗口焦点落在本应用上。
+        let windows = adb "shell dumpsys window"
+        let focusLines =
+            windows.Split('\n')
+            |> Array.filter (fun l -> l.Contains("mCurrentFocus") || l.Contains("mFocusedApp"))
+            |> String.concat "\n"
+        log (sprintf "窗口焦点: %s" (focusLines.Trim()))
+
+        let inForeground =
+            focusLines.Contains(appPackage) || focusLines.Contains("Wails.Net Demo")
+        if inForeground then
+            pass "MainActivity 已进入前台（mCurrentFocus/mFocusedApp 指向本应用）"
+        else
+            fail (sprintf "MainActivity 未进入前台（当前焦点: %s）" (focusLines.Trim()))
+            dumpErrorLogs "错误日志"
+
+        launched && inForeground
+
+let uiAutomatorDump (name: string) =
+    adb (sprintf "shell uiautomator dump /sdcard/%s" name) |> ignore
+    adb (sprintf "shell cat /sdcard/%s" name)
+
+/// 从 uiautomator XML 中定位包含指定文字的节点，返回其中心坐标。
+let tryFindNodeCenter (xml: string) (text: string) =
+    let pattern =
+        "text=\"" + Text.RegularExpressions.Regex.Escape(text)
+        + "\"[^>]*bounds=\"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]\""
+    let m = Text.RegularExpressions.Regex.Match(xml, pattern)
+    if not m.Success then
+        None
+    else
+        let x1 = int m.Groups.[1].Value
+        let y1 = int m.Groups.[2].Value
+        let x2 = int m.Groups.[3].Value
+        let y2 = int m.Groups.[4].Value
+        Some((x1 + x2) / 2, (y1 + y2) / 2)
 
 let verifyWebView () =
     info "步骤 4/4：验证 WebView 加载与 IPC 绑定"
     // 1. 通过 uiautomator dump 验证 WebView 渲染
-    let _ = adb "shell uiautomator dump /sdcard/wails_ui.xml"
-    let uiXml = adb "shell cat /sdcard/wails_ui.xml"
+    let uiXml = uiAutomatorDump "wails_ui.xml"
 
-    let test1 =
-        uiXml.Contains("Wails.Net Demo")  // HTML <title>
-        || uiXml.Contains("问候服务")      // 卡片标题
-        || uiXml.Contains("打招呼")        // 按钮文字
-    if test1 then
-        pass "WebView 渲染正常（检测到 Wails.Net Demo 页面元素）"
-    else
+    let pageVisible =
+        uiXml.Contains("问候服务")      // 卡片标题
+        || uiXml.Contains("打招呼")     // 按钮文字
+        || uiXml.Contains("Wails.Net Demo") // HTML <title>
+
+    if not pageVisible then
         fail "WebView 渲染失败（uiautomator dump 未检测到 Wails.Net Demo 页面元素）"
-
-    // 2. 通过 input tap 模拟点击"打招呼"按钮，验证 IPC 绑定调用
-    //    按钮位置：第一张卡片内的按钮，估算位于屏幕中上部 (540, ~480)
-    //    注：实际坐标依赖屏幕分辨率，可通过 --verbose 查看原始 uiXml 调整
-    adb "shell input tap 540 480" |> ignore
-    Thread.Sleep(2000)
-
-    let _ = adb "shell uiautomator dump /sdcard/wails_ui2.xml"
-    let uiXml2 = adb "shell cat /sdcard/wails_ui2.xml"
-
-    // IPC 调用成功后，greetResult 应显示 "Hello, ..." 文字
-    let test2 =
-        uiXml2.Contains("Hello,")
-        || uiXml2.Contains("Hello World")
-        || uiXml2.Contains("你好")
-    if test2 then
-        pass "IPC 绑定调用正常（GreetingService.Greet 返回结果已渲染）"
+        log (sprintf "UI dump 内容:\n%s" uiXml)
+        false
     else
-        fail "IPC 绑定调用未返回预期结果（greetResult 未出现 Hello/你好 前缀）"
-        log (sprintf "UI dump 内容:\n%s" uiXml2)
+        pass "WebView 渲染正常（检测到 Wails.Net Demo 页面元素）"
 
-    test1 && test2
+        // 2. 点击"打招呼"按钮，验证 IPC 绑定调用。
+        //    坐标从 uiautomator 的 bounds 计算，不再硬编码（旧脚本固定 540,480，
+        //    而模拟器分辨率为 320x640，点击点根本不在按钮上）。
+        match tryFindNodeCenter uiXml "打招呼" with
+        | None ->
+            fail "未能在 UI 树中定位「打招呼」按钮，无法验证 IPC 绑定"
+            log (sprintf "UI dump 内容:\n%s" uiXml)
+            false
+        | Some(x, y) ->
+            log (sprintf "点击「打招呼」按钮 (%d, %d)" x y)
+            adb (sprintf "shell input tap %d %d" x y) |> ignore
+            Thread.Sleep(2000)
+
+            let uiXml2 = uiAutomatorDump "wails_ui2.xml"
+            let invoked =
+                uiXml2.Contains("Hello")
+                || uiXml2.Contains("你好")
+
+            if invoked then
+                pass "IPC 绑定调用正常（greetResult 已渲染 Greet 返回值）"
+            else
+                fail "IPC 绑定调用未返回预期结果（greetResult 未出现 Hello/你好 前缀）"
+                log (sprintf "UI dump 内容:\n%s" uiXml2)
+
+            invoked
 
 let cleanup () =
     info "清理：关闭 Demo 应用"
