@@ -316,7 +316,19 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
             }
             catch (HttpListenerException)
             {
-                break; // 监听器已停止
+                break; // 监听器已停止（Windows 上的上报形式）
+            }
+            catch (ObjectDisposedException)
+            {
+                // 与 HttpTransport 相同：Linux 上 Stop()/Close() 会让挂起的
+                // GetContextAsync 以 ObjectDisposedException 结束（Windows 抛
+                // HttpListenerException）。这是正常关闭路径，向上冒泡会让 StopAsync
+                // 抛异常，调用方误判为停止失败。本类的监听器只在停止/释放时关闭。
+                break;
+            }
+            catch (InvalidOperationException) when (cancellationToken.IsCancellationRequested)
+            {
+                break; // 部分平台上监听器停止后抛 "Listener was stopped"
             }
 
             // 并发处理请求
