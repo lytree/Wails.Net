@@ -160,21 +160,47 @@ let installApk apkPath =
 
 let appPackage = "wails.net.demo.android"
 
+/// am start 失败时输出组件解析与清单信息，用于判断是"包没装上""没有 LAUNCHER 活动"
+/// 还是"活动未导出"。
+let dumpLaunchDiagnostics () =
+    let packages = adb (sprintf "shell pm list packages %s" appPackage)
+    log (sprintf "pm list packages %s: %s" appPackage (packages.Trim()))
+
+    let resolved =
+        adb (sprintf "shell cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER %s" appPackage)
+    log (sprintf "resolve-activity: %s" (resolved.Trim()))
+
+    let dump = adb (sprintf "shell dumpsys package %s" appPackage)
+    let interesting =
+        dump.Split('\n')
+        |> Array.filter (fun l ->
+            l.Contains("Activity") || l.Contains("MAIN") || l.Contains("LAUNCHER") || l.Contains("android.intent"))
+        |> Array.truncate 40
+        |> String.concat "\n"
+    log (sprintf "dumpsys package（Activity 相关）:\n%s" interesting)
+
 /// 用 LAUNCHER intent 启动应用。
 /// 不能用 `am start -n <pkg>/<pkg>.MainActivity`：.NET Android 生成的 Java 类名是
 /// crc64<hash>.MainActivity（C# 类名只存在于托管侧），组件名不匹配会让 am start
 /// 直接失败——旧脚本丢弃了该命令的输出，于是表现为"应用没起来、日志为空"。
-let launchApp () =
+let tryLaunchWithIntent () =
     let out =
         adb (sprintf "shell am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p %s" appPackage)
     log (sprintf "am start 输出: %s" (out.Trim()))
-    let failed =
-        out.Contains("Error") || out.Contains("does not exist") || out.Contains("Exception")
-    if failed then
-        fail (sprintf "应用启动失败: %s" (out.Trim()))
-        false
-    else
-        true
+    not (out.Contains("Error") || out.Contains("does not exist") || out.Contains("Exception"))
+
+/// 兜底：部分设备/清单组合下 am start 解析不到组件，但 monkey 能正常拉起 LAUNCHER 活动。
+let tryLaunchWithMonkey () =
+    let out = adb (sprintf "shell monkey -p %s -c android.intent.category.LAUNCHER 1" appPackage)
+    log (sprintf "monkey 输出: %s" (out.Trim()))
+    out.Contains("Events injected")
+
+let launchApp () =
+    let launched = tryLaunchWithIntent () || tryLaunchWithMonkey ()
+    if not launched then
+        fail "应用启动失败（am start 与 monkey 均未成功）"
+        dumpLaunchDiagnostics ()
+    launched
 
 /// 抓取应用相关错误日志（崩溃堆栈、未捕获异常），供失败时排障。
 let dumpErrorLogs (title: string) =
