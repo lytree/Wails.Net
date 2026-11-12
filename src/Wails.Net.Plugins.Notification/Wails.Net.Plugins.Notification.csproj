@@ -12,12 +12,11 @@
     <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('android'))">24</SupportedOSPlatformVersion>
   </PropertyGroup>
 
-  <!-- 标记 Android 目标为平台特定，消除 CA1416 平台兼容性警告 -->
-  <ItemGroup Condition="$(TargetFramework.Contains('android'))">
-    <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatformAttribute">
-      <_Parameter1>android</_Parameter1>
-    </AssemblyAttribute>
-  </ItemGroup>
+  <!--
+    android 目标不要手写 [assembly: SupportedOSPlatform("android")]：
+    TFM 为 net10.0-android36.0 时 SDK 会按 SupportedOSPlatformVersion 自动生成带版本的
+    属性，手写无版本号的那条会把 CA1416 上下文降级为「所有版本」，反而误报平台兼容性。
+  -->
 
   <ItemGroup>
     <ProjectReference Include="..\Wails.Net.Application\Wails.Net.Application.csproj" />

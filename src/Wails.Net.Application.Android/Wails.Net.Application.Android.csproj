@@ -13,12 +13,15 @@
     <NoWarn>CA2255</NoWarn>
   </PropertyGroup>
 
-  <!-- 标记整个程序集为 Android 平台特定，消除 CA1416 平台兼容性警告 -->
-  <ItemGroup>
-    <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatformAttribute">
-      <_Parameter1>android</_Parameter1>
-    </AssemblyAttribute>
-  </ItemGroup>
+  <!--
+    不要手写 [assembly: SupportedOSPlatform("android")]。
+    TFM 已是 net10.0-android36.0，SDK 会依据 SupportedOSPlatformVersion 自动生成
+    [assembly: SupportedOSPlatform("android24.0")]；再补一条不带版本号的手写属性，
+    CA1416 的调用点上下文会被降级为「Android 所有版本」（实测），届时任何
+    标注了 android23.0+ 的 API（如 Keystore 的 KeyGenParameterSpec）都会被判定为
+    越界调用，在 TreatWarningsAsErrors 下直接编译失败。Bundle.Android 同样只有
+    SupportedOSPlatformVersion、没有手写属性，一直是正确的写法。
+  -->
 
   <!--
     .NET Android SDK 工作负载自动提供 Android.* 命名空间（Android.App、Android.Content、
