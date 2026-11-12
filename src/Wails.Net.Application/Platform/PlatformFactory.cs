@@ -480,7 +480,10 @@ public static class PlatformFactory
             // 若模块初始化器已运行过，此调用为 no-op，安全无副作用。
             foreach (var module in assembly.GetModules())
             {
-                LogDebug($"[AutoLoad] 触发模块初始化器: {module.Name}");
+                // 日志里只用程序集名，不取 module.Name：Module.Name 标注了
+                // RequiresAssemblyFiles（单文件发布时返回 <Unknown>），引用它会触发
+                // IL3002，而自包含 dist 正是 PublishSingleFile=true。
+                LogDebug($"[AutoLoad] 触发模块初始化器: {assemblyName}");
                 RuntimeHelpers.RunModuleConstructor(module.ModuleHandle);
             }
         }

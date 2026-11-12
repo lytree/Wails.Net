@@ -467,11 +467,15 @@ Task("Dist-Android")
             {
                 Configuration = configuration,
                 Runtime = rid,
-                SelfContained = true,
+                // 不能设 SelfContained = true：它是全局属性，会作用到还原图里所有项目。
+                // Android RID（android-arm64 等）的运行时包是 Microsoft.NETCore.App.Runtime.
+                // linux-bionic-*，只随 android workload 提供、不在 nuget.org，于是图里那些
+                // net10.0 项目会报 NU1101。Android 应用天然自包含，该属性由 Android SDK
+                // 针对应用项目自行设置，无需（也不能）由外部全局指定。
                 // 不能沿用 Restore 任务的产物：带 Runtime 的 publish 要求 assets 文件里
                 // 存在形如 net10.0/<rid> 的目标，而未指定 RID 的 Restore 不会生成它，
                 // 会报 NETSDK1047（assets file doesn't have a target for 'net10.0/win-x64'）。
-                // 这里让 publish 自己按 RID 还原，多花几秒换取可重复的自包含构建。
+                // 这里让 publish 自己按 RID 还原，多花几秒换取可重复的构建。
                 NoRestore = false,
                 MSBuildSettings = CreateMSBuildSettings(),
             };
