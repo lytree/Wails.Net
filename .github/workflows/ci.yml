@@ -339,7 +339,26 @@ jobs:
       - name: 构建 Android 测试项目
         run: dotnet build tests/Wails.Net.Application.Android.Tests/Wails.Net.Application.Android.Tests.csproj -c Release
 
+      # 该测试项目是 Android 应用形态，dotnet run 需要已连接的设备/模拟器。
+      # windows-latest 上没有设备，此前直接在"运行 Android 平台测试"步骤失败
+      # （No devices are available for this project），作业长期红灯（虽为
+      # continue-on-error）。这里用 .NET Android SDK 自己的 ComputeAvailableDevices
+      # 目标做检测：无设备时明确跳过并输出 notice，有设备（如自建 runner）时照常执行。
+      - name: 检测可用 Android 设备
+        id: devices
+        shell: pwsh
+        run: |
+          $output = dotnet build tests/Wails.Net.Application.Android.Tests/Wails.Net.Application.Android.Tests.csproj -c Release -t:ComputeAvailableDevices 2>&1 | Out-String
+          Write-Host $output
+          if ($output -match "No devices are available") {
+            Write-Host "::notice title=Android 平台测试::未检测到设备或模拟器，跳过设备端测试（编译验证已由上一步覆盖；设备端行为见 E2E 作业）"
+            "has_device=false" >> $env:GITHUB_OUTPUT
+          } else {
+            "has_device=true" >> $env:GITHUB_OUTPUT
+          }
+
       - name: 运行 Android 平台测试
+        if: steps.devices.outputs.has_device == 'true'
         run: dotnet run --project tests/Wails.Net.Application.Android.Tests/Wails.Net.Application.Android.Tests.csproj --no-build -c Release
 
   # Android E2E 设备端测试（需 Android 模拟器，允许失败）
@@ -371,6 +390,17 @@ jobs:
 
       - name: 安装 Android 工作负载
         run: dotnet workload install android
+
+      # 启用 KVM 硬件加速。android-emulator-runner 在 Linux runner 上的前置要求：
+      # /dev/kvm 需对 runner 用户可读写。缺失时模拟器退回 TCG 软件模拟（日志中的
+      # "TCG doesn't support requested feature"），启动远超 boot 超时，adb 全程 offline。
+      - name: 启用 KVM 硬件加速
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
 
       # 启动 Android 模拟器（API 34, x86_64）并运行 E2E 测试脚本
       - name: 运行 Android E2E 测试
