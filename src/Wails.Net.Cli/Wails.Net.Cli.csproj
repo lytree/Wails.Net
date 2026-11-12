@@ -20,6 +20,8 @@
   <ItemGroup>
     <PackageReference Include="System.CommandLine" />
     <PackageReference Include="SkiaSharp" />
+    <!-- Linux 原生资产（核心包只带 Windows/macOS）；见 Directory.Packages.props 的说明 -->
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
     <InternalsVisibleTo Include="Wails.Net.Cli.Tests" />
   </ItemGroup>
 
