@@ -1,5 +1,9 @@
 # Wails.Net 插件全景分析报告
 
+> **归档快照（2026-11-12 迁入）**：本文是 2026-08-07 时点的插件全景分析，**不再维护，不作为当前实现依据**。
+> 现行文档：[插件开发指南](../plugins.md)（47 插件清单与开发方式）、[插件框架](../architecture/plugin-system.md)（架构与生命周期）。
+> 已知过时点：① 头部署名的数据来源 `src/Wails.Net.Application/Plugins/` 已拆分为 40 个 `src/Wails.Net.Plugins.*` 项目；② `UsePluginsFromAssembly()` 已弃用并直接抛 `NotSupportedException`（反射扫描路径已移除）；③「双包发布未落地」已不成立，`packages/wails-net-plugin-*` 40 个 npm 包已存在。
+
 > 分析日期：2026-08-07 ｜ 数据来源：`src/Wails.Net.Application/Plugins/` 源码 + `docs/plugins.md` + `docs/architecture/plugin-system.md`
 > 结论先行：**当前共 47 个内置插件（39 桌面 + 7 移动端 + 1 Android 专属），注册约 300 个前端可调用命令**，全部基于 `IPlugin` 契约按需启用。
 

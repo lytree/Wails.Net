@@ -102,7 +102,7 @@ public interface IWebviewWindowImpl
 | `IPlatformBarcodeScanner` | `Wails.Net.Application.Plugins.Mobile` | （未实现） | （未实现） | `AndroidBarcodeScanner` | （未实现） | （未实现） |
 | `IPlatformHaptics` | `Wails.Net.Application.Plugins.Mobile` | （未实现） | （未实现） | `AndroidHaptics` | （未实现） | （未实现） |
 
-> **Android 移动端插件抽象**：5 个移动端接口（`IPlatformBiometric` / `IPlatformNfc` / `IPlatformBarcodeScanner` / `IPlatformHaptics` + `AndroidRuntimePlugin` 平台类）的 Android 实现位于 [Wails.Net.Application.Android/Mobile](../../src/Wails.Net.Application.Android/Mobile)，通过 `AndroidPlatformApp` 注入委托解耦 Activity 生命周期。
+> **Android 移动端插件抽象**：7 个移动端接口（`IPlatformBiometric` / `IPlatformNfc` / `IPlatformBarcodeScanner` / `IPlatformHaptics` / `IPlatformCamera` / `IPlatformGeolocation` / `IPlatformPermissions`）+ `AndroidRuntimePlugin` 平台类的 Android 实现位于 [Wails.Net.Application.Android/Mobile](../../src/Wails.Net.Application.Android/Mobile)，通过 `AndroidPlatformApp` 注入委托解耦 Activity 生命周期。
 
 [IManagers.cs](../../src/Wails.Net.Application/Managers/IManagers.cs) 还包含一组与平台无关的管理器接口（`IWindowManager`、`IDialogManager`、`IEventManager`、`IScreenManager`、`ISystemTrayManager`、`IBrowserManager`、`IAutostartManager`、`IEnvironmentManager` 等），它们位于核心层，委托到上述平台子接口完成实际工作。
 
@@ -332,7 +332,7 @@ _webView?.LoadUri(wailsUrl);
 
 ### 移动端插件平台后端
 
-5 个移动端插件的 Android 实现位于 [Wails.Net.Application.Android/Mobile](../../src/Wails.Net.Application.Android/Mobile)：
+7 个移动端插件的 Android 实现位于 [Wails.Net.Application.Android/Mobile](../../src/Wails.Net.Application.Android/Mobile)：
 
 | 平台类 | 底层 Android API | 关键设计 |
 |------|------|------|

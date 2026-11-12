@@ -8,7 +8,7 @@ Wails.Net 的插件框架采用 **「核心即插件」的插件化设计**：�
 
 1. **统一访问路径**：前端 API（如 `wails.window.setTitle`）和回退路径（`wails.call('window.setTitle', [{title:'...'}])`）走同一套 `CommandDispatcher`，无需双轨维护。
 2. **强类型 + DI 集成**：插件利用 `Microsoft.Extensions.DependencyInjection` 注册服务，命令参数通过 `System.Text.Json` 反序列化为强类型 Options 对象，避免运行时反射。
-3. **可裁剪可扩展**：内置 42 个插件（37 桌面 + 5 移动端）按需通过 `UsePlugin<T>()` 启用，第三方插件遵循同一 `IPlugin` 契约即可热接入。
+3. **可裁剪可扩展**：内置 47 个插件（39 桌面 + 7 移动端 + 1 Android 专属）按需通过 `UsePlugin<T>()` 启用，第三方插件遵循同一 `IPlugin` 契约即可热接入。
 
 核心代码位于 `src/Wails.Net.Application/Plugins/`；具体插件已随插件包拆分迁移到独立的 `src/Wails.Net.Plugins.*` 程序集（基座仅保留插件抽象与 FileServer/Log 等基础服务）。
 
@@ -113,7 +113,7 @@ builder
 3. `builder.Services.AddSingleton<IPlugin>(plugin)`——注册到 DI 容器，使 `RegisterFromServices()` 能收集到。
 4. `EnsurePluginManagerRegistered`——幂等地注册 `PluginManager` 单例。
 
-`UsePluginsFromAssembly(assembly?)` 扫描入口程序集中所有 `IPlugin` 实现并批量注册，适合插件自发现的场景。
+`UsePluginsFromAssembly(assembly?)` 是**已弃用入口**：签名保留到下一轮破坏性变更，方法体直接抛 `NotSupportedException`。原实现靠 `Assembly.GetTypes()` + `Activator.CreateInstance` 反射扫描并实例化，违反 AGENTS.md §3.4，现已移除；插件一律用 `UsePlugin<TPlugin>()` 显式注册。
 
 ## 4. 命令注册模式
 
@@ -312,7 +312,7 @@ if (_sandboxRoot is not null)
 
 | 维度 | Wails.Net 实现 |
 |------|---------------|
-| 核心哲学 | 核心能力即插件（窗口/剪贴板/对话框/通知等都是插件），内置 42 插件（37 桌面 + 5 移动端）覆盖系统原生能力 |
+| 核心哲学 | 核心能力即插件（窗口/剪贴板/对话框/通知等都是插件），内置 47 插件（39 桌面 + 7 移动端 + 1 Android 专属）覆盖系统原生能力 |
 | 命令注册 | `CommandRegistry.MapCommand` + C# 委托 |
 | 命令路径 | `<plugin>.<action>` 命名约定 |
 | Options 模式 | C# POCO + `System.Text.Json` 反序列化 |

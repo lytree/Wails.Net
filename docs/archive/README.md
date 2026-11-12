@@ -6,6 +6,7 @@
 |------|---------|------|
 | `comparison-with-tauri2-wails3.md` | 2026-11-12 | 原「Wails.Net vs Tauri 2 vs Wails 3 功能对比详情」三方矩阵。主文档已收敛为 [Wails.Net vs Wails v3 能力矩阵](../comparison-with-wails-v3.md)（两方对比） |
 | `fusion-strategy-comparison.md` | 2026-11-12 | 原「架构融合策略对比详情」中含 Tauri v2 参考维度的版本。主文档 [架构策略对比详情](../fusion-strategy-comparison.md) 已将第三维度改为自研表述 |
+| `plugins-analysis-2026-08-07.md` | 2026-11-12 | 原仓库根目录 `PLUGINS-ANALYSIS.md`「插件全景分析报告」（2026-08-07 时点）。主文档已由 [插件开发指南](../plugins.md) 与 [插件框架](../architecture/plugin-system.md) 覆盖；原文件的数据来源路径、`UsePluginsFromAssembly` 用法、双包发布状态均以主文档为准 |
 
 ## 归档原因
 

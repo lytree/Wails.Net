@@ -84,7 +84,7 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 |------|------|
 | [快速入门](getting-started.md) | 环境要求、创建项目、核心概念、项目结构 |
 | [架构概览](architecture.md) | 分层架构图、11 大管理器、设计模式、命名空间 |
-| [插件开发指南](plugins.md) | 插件接口、命令注册、42 个内置插件（37 桌面 + 5 移动端）、P1/P2 新能力、最佳实践 |
+| [插件开发指南](plugins.md) | 插件接口、命令注册、47 个内置插件（39 桌面 + 7 移动端 + 1 Android 专属）、P1/P2 新能力、最佳实践 |
 | [能力矩阵](comparison-with-wails-v3.md) | Wails.Net vs Wails v3 能力矩阵、独有能力、差距与路线图 |
 | [架构策略对比详情](fusion-strategy-comparison.md) | 按 Host/DI、Runtime/Window/IPC、Plugin/Security 三大主线的逐项对比 |
 

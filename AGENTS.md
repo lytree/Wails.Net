@@ -11,7 +11,7 @@
 - **参考版本**：`wails v3.1.0`（2026-11-01 weekly；2026-10-26 的 `v3.0.0` GA 之后首个 minor 版本，`v3.2.0-nightly.*` 为预发布不作基线；**2026-11-12 复核仍为最新正式版，无 `v3.1.x` hotfix / 无新 nightly**；差异与待实现项见 `docs/development/wails-v3-beta-comparison.md` §11–§13）
 - **参考范围**：**仅以 Wails v3 作为唯一上游参考实现**，不引入其他桌面框架作为对比基线或设计来源
 - **目标平台**：Windows、Linux、Android（macOS 已实现 `Wails.Net.Application.MacOS`：`#if MACOS` 分支为完整 AppKit + WKWebView 实现，`#else` 分支降级到 ServerMode；iOS 暂不实现）
-- **实施计划**：详见 `.trae/documents/wails-net-dotnet10-implementation-plan.md`
+- **实施计划**：见 [`docs/architecture/optimization-roadmap.md`](docs/architecture/optimization-roadmap.md)（三条主线优化目标、任务拆解与验收）与 [`docs/README.md`](docs/README.md)（全库文档索引）
 
 ### 1.1 技术选型（已确定，不可更改）
 
@@ -598,7 +598,7 @@ dotnet fsi script.fsx
 | TUnit | https://github.com/thomhurst/TUnit |
 | CsWin32 | https://github.com/microsoft/CsWin32 |
 | System.CommandLine | https://github.com/dotnet/command-line-api |
-| 实施计划 | `.trae/documents/wails-net-dotnet10-implementation-plan.md` |
+| 实施计划 | `docs/architecture/optimization-roadmap.md` |
 | 上游差异确认 | `docs/development/wails-v3-beta-comparison.md` |
 | 能力矩阵 | `docs/comparison-with-wails-v3.md` |
 

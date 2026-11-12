@@ -366,7 +366,7 @@ AGENTS.md 与 docs 多处称 macOS 为"骨架/ServerMode 降级"，实际 `#if M
 ### 6.4 文档治理
 
 - 本文件即修复 `refactor-and-hardening-plan.md` 缺失；
-- `PLUGINS-ANALYSIS.md`（2026-08-07）描述拆分前的内置插件状态，应重定向到 `plugins.manifest.json` 生成或归档；
+- ~~`PLUGINS-ANALYSIS.md`（2026-08-07）描述拆分前的内置插件状态，应重定向到 `plugins.manifest.json` 生成或归档~~ → **已归档**（2026-11-12 移至 `docs/archive/plugins-analysis-2026-08-07.md`），现行内容以 `docs/plugins.md` 与 `docs/architecture/plugin-system.md` 为准；
 - `docs/api/frontend-api.md` 宣称 `window.wails` 全局对象与 46 命名空间，与 runtime 实际（命名导出、无全局挂载）不符，需对齐。
 
 ---

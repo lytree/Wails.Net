@@ -343,7 +343,7 @@ dotnet fsi script.fsx
 | TUnit | https://github.com/thomhurst/TUnit |
 | CsWin32 | https://github.com/microsoft/CsWin32 |
 | System.CommandLine | https://github.com/dotnet/command-line-api |
-| 实施计划 | `.trae/documents/wails-net-dotnet10-implementation-plan.md` |
+| 实施计划 | [`docs/architecture/optimization-roadmap.md`](../architecture/optimization-roadmap.md) |
 | 问题反馈 | GitHub Issues |
 
 **架构策略**：Host/DI/Config/Logging 参考 ASP.NET Core；Runtime/Window/IPC 参考 Wails v3；Plugin/Security/Capability 自研。绑定方法 ID 使用 FNV-1a 32 位哈希（`offsetBasis=2166136261u`、`prime=16777619u`），必须与 Go 版本 `fnv.New32a()` 一致。

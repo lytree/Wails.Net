@@ -176,20 +176,20 @@ public interface IPlugin
 - `Configuration` - 应用配置
 - `LoggerFactory` - 日志工厂
 
-**内置插件**（42 个，含 5 个移动端）：
+**内置插件**（47 个：39 桌面 + 7 移动端 + 1 Android 专属）：
 
 | 类别 | 插件 |
 |------|------|
-| 系统 | OsInfoPlugin, AppInfoPlugin, ClipboardPlugin, NotificationPlugin, DpiScalePlugin |
+| 系统 | OsInfoPlugin, AppInfoPlugin, ClipboardPlugin, NotificationPlugin, DpiScalePlugin, CliPlugin |
 | 文件 | FileSystemPlugin, FsWatchPlugin, PathPlugin, UploadPlugin |
 | 网络 | HttpPlugin, WebSocketPlugin, CookiePlugin, LocalhostPlugin |
 | 窗口 | WindowPlugin, WindowsPlugin, WindowStatePlugin, PositionerPlugin, DeepLinkPlugin, FileAssociationPlugin |
-| 数据 | StorePlugin, SqlPlugin, StrongholdPlugin |
+| 数据 | StorePlugin, SqlPlugin, StrongholdPlugin, KeychainPlugin（仅 Windows/macOS） |
 | 系统 | GlobalShortcutPlugin, AutostartPlugin, PowerManagementPlugin |
 | 应用 | ApplicationPlugin, MenuPlugin（含 MenuRole 角色菜单项）, TrayPlugin, ScreenPlugin, LogPlugin |
 | 其他 | DialogPlugin, OpenerPlugin, ShellPlugin, ProcessPlugin, PersistedScopePlugin, LocalizationPlugin |
 | 更新 | UpdaterPlugin（多 Provider：Http/GitHub/GitLab/自定义） |
-| 移动端 | BiometricPlugin, NfcPlugin, BarcodeScannerPlugin, HapticsPlugin, AndroidRuntimePlugin（仅 Android） |
+| 移动端 | BiometricPlugin, NfcPlugin, BarcodeScannerPlugin, HapticsPlugin, CameraPlugin, GeolocationPlugin, PermissionsPlugin, AndroidRuntimePlugin（仅 Android） |
 
 ### 7. 传输层
 

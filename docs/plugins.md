@@ -90,8 +90,8 @@ builder.UsePlugin(new CounterPlugin());
 // 或使用泛型方式（需要无参构造函数）
 builder.UsePlugin<CounterPlugin>();
 
-// 或从程序集自动发现
-builder.UsePluginsFromAssembly();
+// 注意：程序集自动发现（UsePluginsFromAssembly）已弃用并直接抛 NotSupportedException，
+// 因为它依赖 Assembly.GetTypes 反射扫描，违反 AGENTS.md §3.4；请逐个 UsePlugin<T>() 显式注册。
 ```
 
 ### 前端调用

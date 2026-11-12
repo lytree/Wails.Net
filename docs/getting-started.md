@@ -472,7 +472,7 @@ wails.events.on('application:screen-unlocked', () => console.log('屏幕解锁')
 
 ### 3. Android 移动端插件（P2-3）
 
-5 个移动端插件仅在 `net10.0-android36.0` 目标下可用，Windows/Linux 上调用会返回 `PlatformNotSupportedException`：
+7 个移动端插件仅在 `net10.0-android36.0` 目标下可用，Windows/Linux 上调用会返回 `PlatformNotSupportedException`：
 
 ```csharp
 // 在 Android 项目中注册移动端插件
