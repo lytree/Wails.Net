@@ -207,7 +207,8 @@ public sealed class ServerModeRequestHardeningTests
 
             // Windows HTTP.SYS 在 Host 与监听前缀不匹配时可能在进入托管层前返回 400；
             // Linux 的托管 HttpListener 则到达闸门并返回 403；也有平台直接断开连接
-            // （读不到状态行，status=0）。三者都表示请求未被服务，属于拒绝语义。
+            // 404（托管监听器找不到匹配前缀）、或直接断开（读不到状态行，status=0）。
+            // 都表示请求未被服务，属于拒绝语义。
             AssertRejected(status, statusLine);
         }
         finally
@@ -324,7 +325,8 @@ public sealed class ServerModeRequestHardeningTests
                     "Sec-WebSocket-Key: ", Convert.ToBase64String(new byte[16]), "\r\n",
                     "\r\n"));
 
-            // 同上：400（HTTP.SYS 前缀校验）、403（闸门）、或直接断开（读不到状态行）
+            // 同上：400（HTTP.SYS 前缀校验）、404（托管监听器无匹配前缀）、403（闸门）、
+            // 或直接断开（读不到状态行）
             // 都属于请求被拒绝。
             AssertRejected(status, statusLine);
         }
@@ -381,19 +383,25 @@ public sealed class ServerModeRequestHardeningTests
     }
 
     /// <summary>
-    /// 断言请求被拒绝：400（HTTP.SYS 的 Host/前缀不匹配）、403（请求闸门），
-    /// 或服务端直接断开而读不到状态行（status=0）都算拒绝。
-    /// 失败时把实际状态行写进消息，否则跨平台差异很难定位（此前只有一句
-    /// "Expected to be true"，看不出服务端到底回了什么）。
+    /// 断言请求未被服务。不同平台/层次拒绝的形式不同，实测值如下：
+    /// <list type="bullet">
+    ///   <item>400：Windows HTTP.SYS 在 Host 与监听前缀不匹配时、进入托管层之前就拒绝；</item>
+    ///   <item>404：Linux 的托管 HttpListener 找不到与 Host 匹配的前缀，在路由前直接回 404
+    ///         （Linux CI 实测值，请求同样没到达请求闸门）；</item>
+    ///   <item>403：请求真正到达了闸门，由 <c>IpcRequestGuard</c> 判定 Host 不允许；</item>
+    ///   <item>0：服务端直接断开，读不到状态行。</item>
+    /// </list>
+    /// 失败时把实际状态行写进消息——否则跨平台差异很难定位
+    /// （此前只有一句 Expected to be true，看不出服务端到底回了什么）。
     /// </summary>
     private static void AssertRejected(int status, string statusLine)
     {
-        if (status is 0 or 400 or 403)
+        if (status is 0 or 400 or 403 or 404)
         {
             return;
         }
 
-        Assert.Fail($"期望请求被拒绝（400/403 或连接被断开），实际状态 {status}；状态行: '{statusLine}'");
+        Assert.Fail($"期望请求未被服务（400/403/404 或连接被断开），实际状态 {status}；状态行: '{statusLine}'");
     }
 
     private static async Task<(int Status, string StatusLine)> SendRawStatusAsync(int port, string rawRequest)
