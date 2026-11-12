@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 using TUnit.Core;
 using Wails.Net.Application.Dialogs;
@@ -157,7 +158,7 @@ public sealed class LinuxPlatformAppTests
     }
 
     [Test]
-    public async Task GetAccentColor_ReturnsDefaultBlue()
+    public async Task GetAccentColor_MatchesGnomeAccentSetting()
     {
         // 安排
         var app = new LinuxPlatformApp(new ApplicationOptions { Name = "TestApp" });
@@ -165,8 +166,80 @@ public sealed class LinuxPlatformAppTests
         // 操作
         var color = app.GetAccentColor();
 
-        // 断言：当前桩实现返回默认蓝色 #0078D4
-        await Assert.That(color).IsEqualTo("#0078D4");
+        // 断言：与系统 GNOME accent-color 设置对应的颜色一致；系统未提供该设置时回退默认蓝。
+        // 不能硬编码单一颜色——实现会读 gsettings，Ubuntu runner 返回 blue（#3584E4），
+        // 无 GNOME 环境（如 Windows 本地跑该测试）才走 #0078D4 回退。
+        var accentName = ReadGnomeAccentName();
+        var expected = accentName is not null && GnomeAccentColors.TryGetValue(accentName, out var mapped)
+            ? mapped
+            : DefaultAccentColor;
+
+        await Assert.That(color).IsEqualTo(expected);
+    }
+
+    /// <summary>
+    /// 回退色：系统未提供 GNOME accent-color 时 <c>GetAccentColor</c> 的返回值。
+    /// </summary>
+    private const string DefaultAccentColor = "#0078D4";
+
+    /// <summary>
+    /// GNOME 47 起的 accent-color 调色板（键为 <c>org.gnome.desktop.interface accent-color</c>
+    /// 的枚举名，值为对应十六进制颜色）。这是外部规范而非本项目约定，故在测试内独立声明，
+    /// 以便在实现的映射表写错时能被发现。
+    /// </summary>
+    private static readonly Dictionary<string, string> GnomeAccentColors = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["default"] = DefaultAccentColor,
+        ["blue"] = "#3584E4",
+        ["teal"] = "#2190A4",
+        ["green"] = "#3A944A",
+        ["yellow"] = "#C88800",
+        ["orange"] = "#E66100",
+        ["red"] = "#E01B24",
+        ["pink"] = "#C5638E",
+        ["purple"] = "#9141AC",
+        ["slate"] = "#5F5F5F",
+    };
+
+    /// <summary>
+    /// 独立读取系统当前的 GNOME accent-color 名称。
+    /// 与 <c>LinuxPlatformApp</c> 的实现无关，用于让测试比对"实现读到的设置"而非固定值。
+    /// </summary>
+    /// <returns>accent-color 名称；非 Linux、gsettings 缺失或该键不存在时返回 null。</returns>
+    private static string? ReadGnomeAccentName()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return null;
+        }
+
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo
+            {
+                FileName = "gsettings",
+                ArgumentList = { "get", "org.gnome.desktop.interface", "accent-color" },
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            });
+
+            if (process is null)
+            {
+                return null;
+            }
+
+            var output = process.StandardOutput.ReadToEnd().Trim();
+            process.WaitForExit(TimeSpan.FromSeconds(5));
+
+            // gsettings 输出形如 'blue'（带单引号）；键不存在时输出空串或报错。
+            return output.Trim('\'', '"').Trim() is { Length: > 0 } name ? name : null;
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            // gsettings 未安装：视为系统未提供该设置。
+            return null;
+        }
     }
 
     [Test]

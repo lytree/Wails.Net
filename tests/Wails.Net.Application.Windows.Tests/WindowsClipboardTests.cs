@@ -58,12 +58,38 @@ public sealed class WindowsClipboardTests
         // 安排
         var clipboard = new WindowsClipboard();
 
-        // 操作：设置文本后读取
-        RunOnSTAThread(() => clipboard.SetText("Hello World"));
-        var text = RunOnSTAThread(() => clipboard.GetText());
+        // 操作：设置文本后读取。
+        // 写入与读取放在同一个 STA 线程内完成，并对读取做有限重试：
+        // 剪贴板是系统共享资源，其他进程（Windows 剪贴板历史、剪贴板管理器、RDP 剪贴板重定向）
+        // 可能在 SetText 之后、GetText 之前短暂占用或改写它，表现为偶发读到空串。
+        // 重试只放宽"时序"，不放宽语义——内容读不到仍然是失败。
+        var text = RunOnSTAThread(() =>
+        {
+            clipboard.SetText("Hello World");
+            return ReadWithRetry(clipboard, "Hello World");
+        });
 
         // 断言：内容一致
         await Assert.That(text).IsEqualTo("Hello World");
+    }
+
+    /// <summary>
+    /// 反复读取剪贴板文本，直到读到期望值或用尽次数（每次间隔 50ms）。
+    /// </summary>
+    /// <param name="clipboard">剪贴板实现。</param>
+    /// <param name="expected">期望的文本内容。</param>
+    /// <param name="attempts">最大读取次数。</param>
+    /// <returns>最后一次读到的文本。</returns>
+    private static string ReadWithRetry(WindowsClipboard clipboard, string expected, int attempts = 5)
+    {
+        var text = clipboard.GetText();
+        for (var i = 1; i < attempts && text != expected; i++)
+        {
+            Thread.Sleep(50);
+            text = clipboard.GetText();
+        }
+
+        return text;
     }
 
     [Test]
@@ -102,9 +128,19 @@ public sealed class WindowsClipboardTests
         var clipboard = new WindowsClipboard();
         var html = "<b>Hello HTML</b>";
 
-        // 操作：设置 HTML 后读取
-        RunOnSTAThread(() => clipboard.SetHTML(html, "fallback"));
-        var result = RunOnSTAThread(() => clipboard.GetHTML());
+        // 操作：设置 HTML 后读取（与文本用例同理：同线程完成 + 有限重试）
+        var result = RunOnSTAThread(() =>
+        {
+            clipboard.SetHTML(html, "fallback");
+            var read = clipboard.GetHTML();
+            for (var i = 0; i < 4 && !read.Contains(html); i++)
+            {
+                Thread.Sleep(50);
+                read = clipboard.GetHTML();
+            }
+
+            return read;
+        });
 
         // 断言：返回内容包含设置的 HTML（剪贴板可能添加头部包装）
         await Assert.That(result.Contains(html)).IsTrue();
