@@ -160,6 +160,12 @@ let installApk apkPath =
 
 let appPackage = "wails.net.demo.android"
 
+/// 抓取应用相关错误日志（崩溃堆栈、未捕获异常），供失败时排障。
+let dumpErrorLogs (title: string) =
+    let logs = adb "logcat -d -s AndroidRuntime:E DOTNET:E mono-rt:E monodroid:E libc:F *:S"
+    if not (String.IsNullOrWhiteSpace logs) then
+        log (sprintf "%s:\n%s" title (logs.Trim()))
+
 /// am start 失败时输出组件解析与清单信息，用于判断是"包没装上/包名不对""没有
 /// LAUNCHER 活动"还是"活动未导出"。
 let dumpLaunchDiagnostics () =
@@ -171,9 +177,18 @@ let dumpLaunchDiagnostics () =
         |> String.concat "\n"
     log (sprintf "含 demo 的已安装包:\n%s" demoPackages)
 
+    let apkPath = (adb (sprintf "shell pm path %s" appPackage)).Trim()
+    log (sprintf "pm path: %s" apkPath)
+
     let resolved =
-        adb (sprintf "shell cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER %s" appPackage)
+        adb (sprintf "shell cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p %s" appPackage)
     log (sprintf "resolve-activity: %s" (resolved.Trim()))
+
+    // 列出设备上全部 LAUNCHER 活动，确认本包是否出现在其中——
+    // 若这里都没有本包，说明 APK 清单里根本没有 MAIN/LAUNCHER intent-filter。
+    let allLaunchers =
+        adb "shell cmd package query-activities --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER"
+    log (sprintf "全部 LAUNCHER 活动:\n%s" (allLaunchers.Trim()))
 
     let dump = adb (sprintf "shell dumpsys package %s" appPackage)
     let interesting =
@@ -184,74 +199,140 @@ let dumpLaunchDiagnostics () =
         |> String.concat "\n"
     log (sprintf "dumpsys package（Activity 相关）:\n%s" interesting)
 
-/// 用 LAUNCHER intent 启动应用。
-/// 不能用 `am start -n <pkg>/<pkg>.MainActivity`：.NET Android 生成的 Java 类名是
-/// crc64<hash>.MainActivity（C# 类名只存在于托管侧），组件名不匹配会让 am start
-/// 直接失败——旧脚本丢弃了该命令的输出，于是表现为"应用没起来、日志为空"。
-/// 判定依据用退出码而不是输出文本：am start 的报错走 stderr，只看 stdout 会误判为成功。
+/// 应用是否在运行：`pidof` 有输出即存活。
+/// 这是唯一可靠的"启动成功"判据。既不能用退出码也不能用输出文本判定——
+/// 实测 `am start` 解析不到 Intent 时只在 stdout 打印
+/// `Error: Activity not started, unable to resolve Intent ...`，退出码仍是 0。
+/// 旧实现按退出码判定，于是把"根本没解析到组件"误判为启动成功，
+/// `||` 又短路掉 monkey 兜底，最终表现为"启动成功但 pidof 为空"。
+let appPid () = (adb (sprintf "shell pidof %s" appPackage)).Trim()
+
+/// 轮询等待进程出现（冷启动 + JIT 预热通常 1~3 秒）。
+let waitForPid (timeoutMs: int) =
+    let deadline = DateTime.UtcNow.AddMilliseconds(float timeoutMs)
+    let mutable pid = appPid ()
+    while pid = "" && DateTime.UtcNow < deadline do
+        Thread.Sleep 500
+        pid <- appPid ()
+    pid
+
+/// 用 LAUNCHER intent 启动应用（不指定组件）。
+/// 备注：在 API 34 模拟器上该形式实测返回
+/// `Error: Activity not started, unable to resolve Intent { ... pkg=<pkg> }`，
+/// 而 APK 清单内有 MAIN/LAUNCHER 且 exported=true（已核验），故属于 `-p` 包名
+/// 限定解析的行为差异，不是清单问题。保留作为兜底尝试。
 let tryLaunchWithIntent () =
     let code, out, err =
         runProcess "adb"
             (sprintf "shell am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p %s" appPackage)
-            30000
+            60000
     log (sprintf "am start exit=%d 输出=%s 错误=%s" code (out.Trim()) (err.Trim()))
-    code = 0
+    let unresolved =
+        out.Contains("unable to resolve") || err.Contains("unable to resolve")
+    code = 0 && not unresolved
 
-/// 兜底：部分设备/清单组合下 am start 解析不到组件，但 monkey 能正常拉起 LAUNCHER 活动。
+/// 向设备查询本包真实的 LAUNCHER 组件名，例如
+/// `wails.net.demo.android/crc64c664fe95ef5e8873.MainActivity`。
+/// 不能硬编码：该 Java 类名是 .NET Android 由 C# 类型名算出的 crc64 前缀，
+/// 换类名/命名空间就会变。
+let resolveLauncherComponent () =
+    let attempts = [
+        sprintf "shell cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p %s" appPackage
+        sprintf "shell cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER %s" appPackage
+    ]
+    attempts
+    |> List.tryPick (fun args ->
+        let out = adb args
+        out.Split('\n')
+        |> Array.map (fun l -> l.Trim())
+        |> Array.tryFind (fun l -> l.StartsWith(appPackage + "/") && not (l.Contains(" "))))
+
+/// 按解析出的组件名精确启动（最贴近"点桌面图标"的行为）。
+let tryLaunchWithComponent () =
+    match resolveLauncherComponent () with
+    | None ->
+        log "未能解析出 LAUNCHER 组件名，跳过 -n 启动"
+        false
+    | Some launcherComponent ->
+        log (sprintf "解析到 LAUNCHER 组件: %s" launcherComponent)
+        let code, out, err =
+            runProcess "adb" (sprintf "shell am start -W -n %s" launcherComponent) 60000
+        log (sprintf "am start -n exit=%d 输出=%s 错误=%s" code (out.Trim()) (err.Trim()))
+        let unresolved =
+            out.Contains("unable to resolve") || err.Contains("unable to resolve")
+        code = 0 && not unresolved
+
+/// 兜底：am start 解析不到组件时，monkey 由 PackageManager 自行解析 LAUNCHER 活动。
 let tryLaunchWithMonkey () =
     let code, out, err =
-        runProcess "adb" (sprintf "shell monkey -p %s -c android.intent.category.LAUNCHER 1" appPackage) 30000
+        runProcess "adb" (sprintf "shell monkey -p %s -c android.intent.category.LAUNCHER 1" appPackage) 60000
     log (sprintf "monkey exit=%d 输出=%s 错误=%s" code (out.Trim()) (err.Trim()))
     code = 0 && out.Contains("Events injected")
 
 let launchApp () =
-    let launched = tryLaunchWithIntent () || tryLaunchWithMonkey ()
-    if not launched then
-        fail "应用启动失败（am start 与 monkey 均未成功）"
-        dumpLaunchDiagnostics ()
-    launched
-
-/// 抓取应用相关错误日志（崩溃堆栈、未捕获异常），供失败时排障。
-let dumpErrorLogs (title: string) =
-    let logs = adb "logcat -d -s AndroidRuntime:E DOTNET:E mono-rt:E monodroid:E libc:F *:S"
-    if not (String.IsNullOrWhiteSpace logs) then
-        log (sprintf "%s:\n%s" title (logs.Trim()))
+    let existing = appPid ()
+    if existing <> "" then
+        pass (sprintf "应用已在运行（pid=%s），无需重复启动" existing)
+        true
+    else
+        // 顺序按可靠性排列：monkey 由系统解析活动，对 `-p`/组件名差异最不敏感；
+        // 其次是按解析出的组件名精确启动；最后才是不指定组件的 LAUNCHER intent。
+        let attempts = [
+            ("monkey（LAUNCHER 分类）", tryLaunchWithMonkey)
+            ("am start -n <解析组件>", tryLaunchWithComponent)
+            ("am start（LAUNCHER intent）", tryLaunchWithIntent)
+        ]
+        let mutable started = false
+        for (name, launch) in attempts do
+            if not started then
+                launch () |> ignore
+                let pid = waitForPid 8000
+                if pid <> "" then
+                    pass (sprintf "应用已启动（%s，pid=%s）" name pid)
+                    started <- true
+        if not started then
+            fail "应用启动失败（monkey 与两种 am start 均未能拉起进程）"
+            dumpLaunchDiagnostics ()
+            dumpErrorLogs "错误日志"
+        started
 
 let startApp () =
     info "步骤 3/4：启动应用并验证 Activity 进入前台"
     adb "logcat -c" |> ignore
 
-    let launched = launchApp()
-
-    // 等待 WebView 初始化
-    Thread.Sleep(8000)
-
-    let pid = (adb (sprintf "shell pidof %s" appPackage)).Trim()
-    if String.IsNullOrWhiteSpace pid then
-        fail (sprintf "应用进程未存活（pidof %s 为空），应用可能在启动时崩溃" appPackage)
-        dumpErrorLogs "错误日志"
+    if not (launchApp ()) then
         false
     else
-        pass (sprintf "应用进程已启动（pid=%s）" pid)
+        // 等待 WebView 初始化
+        Thread.Sleep(8000)
 
-        // 平台事件的转发不产生任何 logcat 文本（事件 ID 走内部通道），因此不能用
-        // "日志里出现 ActivityCreated" 作为判据。改为验证窗口焦点落在本应用上。
-        let windows = adb "shell dumpsys window"
-        let focusLines =
-            windows.Split('\n')
-            |> Array.filter (fun l -> l.Contains("mCurrentFocus") || l.Contains("mFocusedApp"))
-            |> String.concat "\n"
-        log (sprintf "窗口焦点: %s" (focusLines.Trim()))
-
-        let inForeground =
-            focusLines.Contains(appPackage) || focusLines.Contains("Wails.Net Demo")
-        if inForeground then
-            pass "MainActivity 已进入前台（mCurrentFocus/mFocusedApp 指向本应用）"
-        else
-            fail (sprintf "MainActivity 未进入前台（当前焦点: %s）" (focusLines.Trim()))
+        // 进程存活已在 launchApp 里确认过，这里复查一次：能覆盖"拉起后立刻崩溃"的情况
+        let pid = appPid ()
+        if String.IsNullOrWhiteSpace pid then
+            fail (sprintf "应用进程在启动后消失（pidof %s 为空），可能启动时崩溃" appPackage)
             dumpErrorLogs "错误日志"
+            false
+        else
+            pass (sprintf "应用进程存活（pid=%s）" pid)
 
-        launched && inForeground
+            // 平台事件的转发不产生任何 logcat 文本（事件 ID 走内部通道），因此不能用
+            // "日志里出现 ActivityCreated" 作为判据。改为验证窗口焦点落在本应用上。
+            let windows = adb "shell dumpsys window"
+            let focusLines =
+                windows.Split('\n')
+                |> Array.filter (fun l -> l.Contains("mCurrentFocus") || l.Contains("mFocusedApp"))
+                |> String.concat "\n"
+            log (sprintf "窗口焦点: %s" (focusLines.Trim()))
+
+            let inForeground =
+                focusLines.Contains(appPackage) || focusLines.Contains("Wails.Net Demo")
+            if inForeground then
+                pass "MainActivity 已进入前台（mCurrentFocus/mFocusedApp 指向本应用）"
+            else
+                fail (sprintf "MainActivity 未进入前台（当前焦点: %s）" (focusLines.Trim()))
+                dumpErrorLogs "错误日志"
+
+            inForeground
 
 let uiAutomatorDump (name: string) =
     adb (sprintf "shell uiautomator dump /sdcard/%s" name) |> ignore
@@ -318,7 +399,8 @@ let verifyWebView () =
 let cleanup () =
     info "清理：关闭 Demo 应用"
     adb "shell am force-stop wails.net.demo.android" |> ignore
-    adb "shell rm /sdcard/wails_ui.xml /sdcard/wails_ui2.xml" |> ignore
+    // -f：文件可能不存在（步骤 4 未执行到），不加会输出 "No such file or directory"
+    adb "shell rm -f /sdcard/wails_ui.xml /sdcard/wails_ui2.xml" |> ignore
 
 // ----------------------------------------------------------------------------
 // 主流程
@@ -364,9 +446,13 @@ let main () =
                     if not installOk then
                         false
                     else
+                        // 启动失败时继续跑 WebView 校验只会被前台 UI（桌面启动器）
+                        // 误导为"页面元素缺失"，掩盖真正原因，故直接返回。
                         let startOk = startApp ()
-                        let webviewOk = verifyWebView ()
-                        startOk && webviewOk
+                        if not startOk then
+                            false
+                        else
+                            verifyWebView ()
 
         cleanup ()
 
