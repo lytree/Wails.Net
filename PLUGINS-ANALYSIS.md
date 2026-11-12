@@ -11,7 +11,7 @@
 |------|------|
 | 插件总数 | **47**（39 桌面 + 7 移动端 + 1 Android 专属） |
 | 命令总数 | ≈300（桌面 282 + 移动端 19 + Android 专属 2） |
-| 代码位置 | `src/Wails.Net.Application/Plugins/BuiltIn/`（桌面）、`Plugins/Mobile/`（移动端）、`src/Wails.Net.Application.Android/Mobile/`（Android 专属） |
+| 代码位置 | `src/Wails.Net.Plugins.*`（桌面 39 个项目）、`src/Wails.Net.Plugins.Mobile`（移动端 7 个）、`src/Wails.Net.Application.Android`（Android 专属） |
 | 启用方式 | 按需 `builder.UsePlugin<T>()`，**无默认全量注册** |
 | 前端访问 | `wails.call('<plugin>.<action>', [args])`（vite 项目经 `@wails-net/runtime` 类型化封装） |
 | 插件契约 | `IPlugin`：`Name` + `ConfigureServices`（注册 DI）+ `Configure`（注册命令） |
@@ -29,7 +29,7 @@
 
 ---
 
-## 2. 桌面插件（39 个，`Plugins/BuiltIn/`）
+## 2. 桌面插件（39 个，`src/Wails.Net.Plugins.*`）
 
 ### 2.1 系统 / 应用类（10 个）
 

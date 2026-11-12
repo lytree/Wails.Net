@@ -139,7 +139,7 @@ commands.MapCommand("fs.readAsync",
     (Func<string, Task<string>>)(async path => await File.ReadAllTextAsync(path)));
 ```
 
-`CommandRegistry.Register` 在注册时通过 `CommandInvokerCompiler.Compile` 编译表达式树生成强类型调用器，运行时**零反射调用**——这是 Wails.Net 在性能上区别于传统反射绑定方案的关键设计。
+`MapCommand` 的泛型重载在注册点构造强类型闭包（`CompiledCommandInvoker` 委托），运行时**零反射调用**——这是 Wails.Net 在性能上区别于传统反射绑定方案的关键设计。
 
 ### 4.2 Options 对象模式
 
@@ -185,7 +185,7 @@ context.Commands.MapCommand("fs.readTextFile", (Func<string, string>)(path => ..
 
 ## 5. 内置插件清单
 
-Wails.Net 在 `src/Wails.Net.Application/Plugins/BuiltIn/` 下提供 **37 个桌面内置插件**，另在 `src/Wails.Net.Application/Plugins/Mobile/` 与 `src/Wails.Net.Application.Android/Mobile/` 下提供 **5 个移动端插件**（含 `AndroidRuntimePlugin`），合计 **42 个内置插件**，共注册 **271 个命令**。按功能分类如下：
+Wails.Net 的内置插件已按插件拆分为独立项目：桌面插件位于 `src/Wails.Net.Plugins.*`（**39 个**），移动端插件集中在 [`src/Wails.Net.Plugins.Mobile`](../../src/Wails.Net.Plugins.Mobile)（**7 个**），合计 **40 个插件项目**，共注册 **271 个命令**。按功能分类如下：
 
 ### 5.1 系统 / 应用类
 
@@ -441,6 +441,6 @@ const forecast = await wails.call('weather.fetchForecast', ['Shanghai']);
 - [PluginBuilderExtensions.cs](../../src/Wails.Net.Application/Plugins/PluginBuilderExtensions.cs)
 - [CommandRegistry.cs](../../src/Wails.Net.Application/Commands/CommandRegistry.cs)
 - [MapCommandExtensions.cs](../../src/Wails.Net.Application/Commands/MapCommandExtensions.cs)
-- [BuiltIn 目录](../../src/Wails.Net.Application/Plugins/BuiltIn)
+- 内置插件项目：[移动端](../../src/Wails.Net.Plugins.Mobile) · 桌面端见 `src/Wails.Net.Plugins.*`（39 个独立项目）
 
 **最后更新**：2026-07-20

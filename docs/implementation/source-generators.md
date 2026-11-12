@@ -1,6 +1,6 @@
 # 源代码生成器与代码生成
 
-> 本文档详细描述 Wails.Net 项目的两套代码生成系统：编译期源生成器（`Wails.Net.SourceGenerators`）与运行时代码生成器（`Wails.Net.Generator`），以及表达式树编译器与运行时 JavaScript 生成器的设计与实现。
+> 本文档详细描述 Wails.Net 项目的两套代码生成系统：编译期源生成器（`Wails.Net.SourceGenerators`）与运行时代码生成器（`Wails.Net.Generator`），以及命令调用器（源生成器 / `MapCommand` 闭包）与运行时 JavaScript 生成器的设计与实现。
 
 ---
 
@@ -13,12 +13,12 @@ Wails.Net 采用**两套互补**的代码生成系统以消除运行时反射、
 | **编译期源生成器** | `Wails.Net.SourceGenerators` | 编译期（Roslyn 增量生成器） | 强类型调用器委托、绑定元数据 |
 | **运行时代码生成器** | `Wails.Net.Generator` | CLI 命令 `wails.net generate` | TypeScript 类型定义、调用封装、事件常量 |
 | **运行时 JS 生成器** | `@wails-net/runtime` | 应用启动期 | 注入 Webview 的 `window.wails` API |
-| **表达式树编译器** | `Wails.Net.Application.Commands` | 命令注册时（首次调用前） | `CompiledCommandInvoker` 委托 |
+| **命令调用器闭包** | `Wails.Net.Application.Commands` | 命令注册点（`MapCommand` 调用时） | `CompiledCommandInvoker` 委托 |
 
 设计原则：
 
 1. **编译期能确定的，绝不留到运行时**——元数据、调用器、类型映射在编译期完成
-2. **零反射调用**——通过源生成器调用器与表达式树编译委托实现
+2. **零反射调用**——由源生成器调用器与 `MapCommand` 泛型闭包实现
 3. **AOT 友好**——避免 `MethodInfo.Invoke` 与运行时反射分析
 4. **多平台一致**——FNV-1a 哈希与 TypeScript 类型映射在编译期与运行时完全一致
 
@@ -276,115 +276,71 @@ private static uint ComputeFnv1aHash(string text)
 
 ### 2.9 生成的调用器签名
 
-调用器按方法返回类型分三种生成路径：
+调用器统一签名为 `public static Task<object?> X(object instance, JsonElement[] args, CancellationToken cancellationToken)`，按方法返回类型分三条生成路径：
 
-```csharp
-// void 方法（非异步）
-sb.AppendLine($"            {callExpr};");
-sb.AppendLine("            return null;");
+| 方法形态 | 生成的调用体 |
+|---------|-------------|
+| `void`（同步） | 调用后 `return Task.FromResult<object?>(null);` |
+| `T`（同步返回值） | `var result = svc.M(args); return Task.FromResult<object?>(result);` |
+| `Task` / `Task<T>` / `ValueTask` | 加 `async` 修饰，`await svc.M(args).ConfigureAwait(false)` 后返回结果（`Task<T>` 返回装箱结果，`Task` 返回 `null`） |
 
-// Task / Task<T>（异步）
-sb.AppendLine($"            return {callExpr};");
-
-// 同步返回值
-sb.AppendLine($"            return {callExpr};");
-```
-
-异步方法返回 `Task` 或 `Task<T>` 实例，由调用方 `await`。
+同步方法**不加** `async` 修饰，避免 CS1998（async 方法缺少 await）警告；调用方只 `await` 委托返回值，无需反射提取 `Task.Result`。
 
 ---
 
-## 3. 表达式树编译器（CommandInvokerCompiler）
+## 3. 命令调用器的构建（编译期闭包）
 
-### 3.1 设计目标
+> **历史说明**：本节原为「表达式树编译器（`CommandInvokerCompiler`）」。该实现已在「去反射改源生成器」（commit `0fd6144`）中整体删除——它以 `MethodInfo` 为输入、本身依赖 `System.Reflection`，与 AGENTS.md §3.4 冲突。当前运行时注册的命令改由 [`MapCommandExtensions`](../../src/Wails.Net.Application/Commands/MapCommandExtensions.cs) 的泛型重载在**注册点**构造闭包，参数类型在编译期已确定。
 
-[CommandInvokerCompiler.cs](../../src/Wails.Net.Application/Commands/CommandInvokerCompiler.cs) 处理未由源生成器覆盖的场景（如运行时动态注册的命令、第三方程序集方法）。借鉴 ASP.NET Core MVC 的表达式树编译模式：
+### 3.1 委托形态
 
 ```csharp
-public delegate object? CompiledCommandInvoker(
-    object instance,
+public delegate Task<object?> CompiledCommandInvoker(
+    object? instance,
     JsonElement parameters,
     ICommandContext? ctx);
 ```
 
-### 3.2 编译流程
-
-将 `MethodInfo` 编译为 `CompiledCommandInvoker` 委托：
+### 3.2 闭包构建
 
 ```csharp
-private static CompiledCommandInvoker? CompileCore(MethodInfo method, JsonSerializerOptions jsonOptions)
+public static CommandRegistry MapCommand<T>(this CommandRegistry registry, string name, Action<T> handler)
 {
-    var instanceParam = Expression.Parameter(typeof(object), "instance");
-    var parametersParam = Expression.Parameter(typeof(JsonElement), "parameters");
-    var ctxParam = Expression.Parameter(typeof(ICommandContext), "ctx");
-
-    var methodParams = method.GetParameters();
-    var args = new Expression[methodParams.Length];
-
-    for (var i = 0; i < methodParams.Length; i++)
+    var options = _jsonOptions;
+    return registry.Register(name, (instance, parameters, ctx) =>
     {
-        var paramType = methodParams[i].ParameterType;
-        if (paramType == typeof(ICommandContext))
-            args[i] = ctxParam;
-        else if (paramType == typeof(CancellationToken))
-            args[i] = Expression.Property(ctxParam, ctxCancellationTokenProp);
-        else if (paramType == typeof(IServiceProvider))
-            args[i] = Expression.Property(ctxParam, ctxServicesProp);
-        else
-            args[i] = Expression.Convert(
-                Expression.Call(deserializeMethod,
-                    Expression.Call(parametersParam, getRawTextMethod),
-                    Expression.Constant(paramType, typeof(Type)),
-                    Expression.Constant(jsonOptions, typeof(JsonSerializerOptions))),
-                paramType);
-    }
-
-    var call = Expression.Call(Expression.Convert(instanceParam, declaringType), method, args);
-    var body = method.ReturnType == typeof(void)
-        ? (Expression)Expression.Block(call, Expression.Constant(null, typeof(object)))
-        : Expression.Convert(call, typeof(object));
-
-    return Expression.Lambda<CompiledCommandInvoker>(body, instanceParam, parametersParam, ctxParam).Compile();
+        var arg = Deserialize<T>(parameters, options);   // T 在编译期已知
+        handler(arg);
+        return Task.FromResult<object?>(null);
+    }, new[] { typeof(T) });
 }
 ```
 
-### 3.3 参数绑定策略
+闭包捕获 `handler`，`CommandRegistry` 只保存委托，**不保存 `MethodInfo`**，因此也没有「编译缓存」这一环节。
 
-与 `CommandDispatcher.ExecuteCommandAsync` 原有逻辑一致：
+### 3.3 参数解析策略
 
-| 参数类型 | 绑定来源 |
-|---------|---------|
-| `ICommandContext` | 注入 `ctx` 参数 |
-| `CancellationToken` | 注入 `ctx.CancellationToken` |
-| `IServiceProvider` | 注入 `ctx.Services` |
-| 其他类型 | `JsonSerializer.Deserialize(parameters.GetRawText(), type, options)` |
+与源生成器调用器保持一致，按**业务参数个数**决定解析方式：
 
-### 3.4 编译缓存
+| 业务参数个数 | 解析方式 |
+|--------------|----------|
+| 0 | 忽略 `parameters` |
+| 1 | `parameters` 整体反序列化为 `T` |
+| ≥2 | `parameters` 视为 JSON 数组，按位置反序列化 `T1..Tn`，缺位取默认值 |
 
-使用 `ConcurrentDictionary` 缓存编译结果，避免重复编译同一 `MethodInfo`：
+反序列化选项固定为 `JsonSerializerDefaults.Web` 加 `JsonStringEnumConverter`（驼峰命名），因此前端可传 `"copy"` 这类语义化枚举字符串，无需依赖枚举序号。`ICommandContext` 由重载签名直接注入，不参与 JSON 解析。
 
-```csharp
-private static readonly ConcurrentDictionary<MethodInfo, CompiledCommandInvoker?> _cache = new();
+### 3.4 与源生成器的分工
 
-public static CompiledCommandInvoker? Compile(MethodInfo method)
-{
-    return _cache.GetOrAdd(method, static (m, options) => CompileCore(m, options), _jsonOptions);
-}
-```
-
-编译仅在首次调用时发生，之后所有调用直接命中委托，零反射开销。
-
-### 3.5 与源生成器的关系
-
-| 维度 | 源生成器调用器 | 表达式树编译委托 |
+| 维度 | 源生成器调用器 | MapCommand 闭包 |
 |------|---------------|----------------|
-| 触发时机 | 编译期 | 运行时（首次注册） |
-| 输入 | `IMethodSymbol` | `MethodInfo` |
+| 触发时机 | 编译期（`[ModuleInitializer]`） | 注册点（`MapCommand` 调用时） |
+| 输入 | `IMethodSymbol` | 强类型 `handler` 委托 |
 | 输出 | 静态方法 | `CompiledCommandInvoker` 委托 |
-| 适用场景 | 编译时已知的 `[Binding]`/`[Command]` 方法 | 运行时动态注册的方法、第三方程序集 |
-| 性能 | 最优（直接静态调用） | 接近最优（委托调用，无反射） |
+| 适用场景 | `[Binding]` / `[Command]` 方法 | 运行时组装的命令、插件内部注册 |
+| 元数据 | `GeneratedBindingsMetadata` 全量（含 TS 类型） | 仅 `ParameterTypes`（注册时显式传入） |
 
-两者互补：源生成器覆盖编译期可见方法，表达式树编译器覆盖运行时动态场景。
+两条路径产出同一个委托类型，`CommandDispatcher` 无需区分来源；原「编译缓存」小节随 `CommandInvokerCompiler` 删除而不再适用。
 
 ---
 
@@ -632,29 +588,29 @@ var platformRuntime = options.IsServerMode
 
 ---
 
-## 6. 三层调用性能优化
+## 6. 调用性能与元数据查询
 
-### 6.1 调用优先级
+### 6.1 调用路径
 
-`BindingManager.Call` 按以下优先级尝试调用：
+`BindingManager.Call` 只有一条路径——源生成器调用器：
 
 ```
-1. 源生成器调用器（GeneratedBindingRegistry.TryGetInvoker）
-       ↓ 未命中
-2. 表达式树编译委托（CommandInvokerCompiler.Compile）
-       ↓ 未命中
-3. 反射 MethodInfo.Invoke（最终回退）
+BindingManager.Call(fullName, args)
+       ↓
+GeneratedBindingRegistry.TryGetInvoker(fullName)
+       ├─ 命中   → await invoker(instance, args, cancellationToken)   直接委托调用
+       ├─ 歧义键 → ReferenceError（fail-closed，附冲突类型说明）
+       └─ 未命中 → ReferenceError → MessageProcessor / InvocationGateway 回退 CommandDispatcher
 ```
+
+去反射后不再有「表达式树编译委托」与「反射 `MethodInfo.Invoke`」两级回退（即原「三层调用优化」）。
 
 ### 6.2 零反射调用路径
 
-#### 路径 1：源生成器调用器（最优）
-
 ```csharp
-if (GeneratedBindingRegistry.TryGetInvoker(fullName, out var invoker))
+if (GeneratedBindingRegistry.TryGetInvoker(fullName, out var invoker) && invoker is not null)
 {
-    var instance = ResolveInstance(typeFullName);
-    return invoker!(instance, args, cancellationToken);
+    return await InvokeGeneratedAsync(fullName, invoker, args, cancellationToken);
 }
 ```
 
@@ -662,49 +618,18 @@ if (GeneratedBindingRegistry.TryGetInvoker(fullName, out var invoker))
 - 参数反序列化使用编译期已知的泛型 `JsonElement.Deserialize<T>`
 - AOT 完全可裁剪
 
-#### 路径 2：表达式树编译委托（次优）
-
-```csharp
-var compiled = CommandInvokerCompiler.Compile(methodInfo);
-if (compiled is not null)
-{
-    return compiled(instance, parameters, ctx);
-}
-```
-
-- 首次编译后缓存，后续调用零反射
-- 表达式树编译的委托与源生成器调用器性能接近
-- 适用于运行时动态注册的方法
-
-#### 路径 3：反射 MethodInfo.Invoke（最终回退）
-
-```csharp
-return methodInfo.Invoke(instance, BindingFlags.Default, null, args, null);
-```
-
-- 仅当上述两条路径均不可用时使用
-- 性能最差（每次调用都有反射开销）
-- 不支持 AOT 裁剪
-
 ### 6.3 性能对比
 
 | 调用路径 | 首次调用 | 后续调用 | AOT 兼容 |
 |---------|---------|---------|---------|
 | 源生成器调用器 | 极快（直接委托） | 极快 | ✅ |
-| 表达式树编译委托 | 慢（编译表达式树） | 极快（委托调用） | ⚠️（仅生成代码可见） |
-| 反射 `MethodInfo.Invoke` | 中等 | 中等（每次有反射开销） | ❌ |
+| `MapCommand` 闭包 | 快（`Deserialize<T>` + 直接调用） | 极快 | ✅（调用图静态可见） |
+| 表达式树编译委托 | ~~慢~~ | — | 已随 `CommandInvokerCompiler` 删除 |
+| 反射 `MethodInfo.Invoke` | — | — | 已禁止（AGENTS.md §3.4） |
 
 ### 6.4 元数据查询路径
 
-绑定元数据查询同样遵循编译期优先：
-
-```
-1. GeneratedBindingsMetadata.Methods（编译期填充）
-       ↓ 未找到
-2. 运行时反射分析（Assembly.GetTypes）
-```
-
-`BindingAnalyzer` 优先从 `GeneratedBindingsMetadata` 读取，避免运行时反射分析。`TypeScriptGenerator` 通过 `BindingAnalyzer` 间接使用编译期元数据，确保生成的 TypeScript 类型定义与后端实际签名完全一致。
+绑定元数据只有一个来源：`GeneratedBindingsMetadata.Methods`（源生成器在编译期填充）。`BindingAnalyzer` 直接读取该列表，`TypeScriptGenerator` 通过 `BindingAnalyzer` 间接使用，因此不存在「未找到再反射分析程序集」的回退分支——`Assembly.GetTypes` 在 `src/` 内属禁止 API。这样生成的 TypeScript 类型定义与后端实际签名完全一致。
 
 ---
 
@@ -722,11 +647,14 @@ return methodInfo.Invoke(instance, BindingFlags.Default, null, args, null);
 | [BindingAttribute.cs](../../src/Wails.Net.Application/Bindings/BindingAttribute.cs) | `[Binding]` 特性定义 |
 | [CommandAttribute.cs](../../src/Wails.Net.Application/Commands/CommandAttribute.cs) | `[Command]` 特性定义 |
 
-### 表达式树编译器
+### 命令调用器构建
 
 | 文件 | 职责 |
 |------|------|
-| [CommandInvokerCompiler.cs](../../src/Wails.Net.Application/Commands/CommandInvokerCompiler.cs) | `MethodInfo` → `CompiledCommandInvoker` 编译 |
+| [CompiledCommandInvoker.cs](../../src/Wails.Net.Application/Commands/CompiledCommandInvoker.cs) | 调用器委托定义（`Task<object?>`） |
+| [MapCommandExtensions.cs](../../src/Wails.Net.Application/Commands/MapCommandExtensions.cs) | 泛型闭包构建（运行时注册的命令） |
+| [CommandRegistry.cs](../../src/Wails.Net.Application/Commands/CommandRegistry.cs) | 命令名 → 调用器注册表 |
+| [CommandDispatcher.cs](../../src/Wails.Net.Application/Commands/CommandDispatcher.cs) | 调度、能力/Scope 校验、中间件管道、超时 |
 
 ### 运行时代码生成器
 
@@ -748,12 +676,12 @@ return methodInfo.Invoke(instance, BindingFlags.Default, null, args, null);
 
 ## 8. 设计总结
 
-Wails.Net 的代码生成系统通过**编译期与运行时分层**、**多级回退**的策略实现了性能与灵活性的平衡：
+Wails.Net 的代码生成系统通过**编译期分层**的策略实现了性能与灵活性的平衡：
 
 1. **编译期完成尽可能多的工作**：调用器生成、元数据填充、FNV-1a 哈希、TypeScript 类型映射
-2. **运行时多层回退保证兼容性**：源生成器 → 表达式树 → 反射，覆盖从静态到动态的各种注册场景
+2. **两条零反射注册路径覆盖静态与动态场景**：`[Binding]`/`[Command]` 走源生成器，运行时组装的命令走 `MapCommand` 泛型闭包；没有反射回退层
 3. **三端哈希一致性**：源生成器、`BindingIdGenerator`、`BindingManager.FNV1aHash` 使用相同的 FNV-1a 算法
 4. **类型映射一致性**：`TypeScriptTypeMapper.MapType`（运行时）与 `BindingSourceGenerator.MapTypeToTypeScript`（编译期）保持映射规则同步
 5. **AOT 友好设计**：消除运行时反射，为 Native AOT 裁剪扫清障碍
 
-这一架构既保留了 Wails v3 的对象模型与 IPC 设计，又融入了 ASP.NET Core 的表达式树编译模式与自研的插件能力模型，是 .NET 10 桌面应用框架的有益探索。
+这一架构既保留了 Wails v3 的对象模型与 IPC 设计，又融入了 ASP.NET Core Minimal API 的闭包注册风格与自研的插件能力模型，是 .NET 10 桌面应用框架的有益探索。

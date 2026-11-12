@@ -728,32 +728,32 @@
 | 实现项 | Wails.Net | Wails v3 |
 |--------|-----------|---------|
 | **调度器** | `CommandDispatcher` | `Bindings` 直接调用 |
-| **命令注册** | `CommandRegistry.Register` | `Application.Bind` |
-| **命令标记** | `[Command]` / `[DesktopCommand]` | 反射公共方法 |
-| **表达式树编译** | ✅ `CommandInvokerCompiler.Compile` | N/A |
+| **命令注册** | `CommandRegistry.Register` / `MapCommand` / `[Command]` + 源生成器 | `Application.Bind` |
+| **命令标记** | `[Command]` | 反射公共方法 |
+| **调用器构建** | ✅ `MapCommand` 泛型闭包 + 源生成器生成调用器 | N/A |
 | **零反射调用** | ✅ `CompiledCommandInvoker` 委托 | ❌ 反射 |
 | **中间件管道** | ✅ `ICommandMiddleware` | ❌ |
 | **超时自动取消** | ✅ `_defaultTimeout` + `CreateLinkedTokenSource` | ❌ |
 | **特殊参数注入** | `ICommandContext` / `CancellationToken` / `IServiceProvider` | N/A |
-| **权限校验** | ✅ `ValidateCommand` + `ValidateScopes` | ❌ |
-| **TargetInvocationException 解包** | ✅ | ✅ |
-| **命令自动注册** | ✅ `RegisterFromAssembly` 程序集扫描 | N/A |
+| **权限校验** | ✅ `ValidateCapabilities` + `ValidateScopes` | ❌ |
+| **异常类型映射** | ✅ 按具体异常类型（无 `TargetInvocationException` 解包） | ✅ |
+| **命令自动注册** | ✅ 源生成器 `[ModuleInitializer]` 自动注册 | N/A |
 
 **Wails.Net 关键实现**：
 - [CommandDispatcher](../src/Wails.Net.Application/Commands/CommandDispatcher.cs) `DispatchAsync` 调度流程：
   1. 创建带超时的 `CancellationTokenSource`，合并外部取消令牌和超时令牌
   2. 查找命令条目（未找到返回 `Command not found`）
-  3. 权限校验：`ValidateCommand`（`[RequireCapability]` 特性 + `CommandEntry.RequiredCapabilities`）+ `ValidateScopes`（参数级 Scope）
+  3. 权限校验：`ValidateCapabilities`（`[RequireCapability]` 编译期能力 + `CommandEntry` 显式声明）+ `ValidateScopes`（参数级 Scope）
   4. 构建中间件管道：从最后一个中间件向前构建，第一个中间件最先执行
-  5. 终端处理器 `ExecuteCommandAsync`：优先使用编译后的 `Invoker`（零反射），回退到反射调用
-  6. 处理异步返回值（`Task` / `Task<T>`）
-  7. 异常处理：`TargetInvocationException` 解包内层异常
-- [CommandInvokerCompiler](../src/Wails.Net.Application/Commands/CommandInvokerCompiler.cs) 通过表达式树编译生成强类型调用器委托 `CompiledCommandInvoker`。
-- [CommandRegistry.RegisterFromAssembly](../src/Wails.Net.Application/Commands/CommandRegistry.cs) 扫描标记 `[DesktopCommand]` 的类，标记 `[Command]` 的方法按指定名称注册，未标记的公共非 void 方法按 "类名.方法名" 小写形式注册。
+  5. 终端处理器 `ExecuteCommandAsync`：只调用编译期构建的 `Invoker`（零反射），无反射回退
+  6. 处理异步返回值（`Task` / `Task<T>`，委托统一返回 `Task<object?>`）
+  7. 异常处理：按具体异常类型返回（`MethodInfo.Invoke` 的 `TargetInvocationException` 解包已随反射删除）
+- [`MapCommandExtensions`](../src/Wails.Net.Application/Commands/MapCommandExtensions.cs) 的泛型重载在注册点构造强类型闭包，产出 `CompiledCommandInvoker` 委托（原 `CommandInvokerCompiler` 表达式树编译已删除）。
+- 命令由源生成器在 `[ModuleInitializer]` 中注册；`[DesktopCommand]` 的程序集扫描（`RegisterFromAssembly`）已随反射实现移除而停用。
 
 **差异分析**：
 - Wails.Net 的 `CommandDispatcher` 是**两者中唯一**支持中间件管道的方案，类似 ASP.NET Core 中间件，可用于日志、审计、限流等横切关注点。
-- 表达式树编译实现零反射调用，遵循 AGENTS.md §3.4 "禁止使用反射获取对应方法"约束。
+- 编译期闭包与源生成器共同实现零反射调用，遵循 AGENTS.md §3.4 "禁止使用反射获取对应方法"约束。
 - 超时自动取消是 Wails.Net 独有，Wails v3 无超时机制。
 - Wails v3 完全反射调用，性能最差。
 

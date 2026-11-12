@@ -340,13 +340,13 @@
 | **插件上下文** | `IPluginContext`（Commands / Permissions / Services） | `Manager` |
 | **命令注册** | `commands.MapCommand` | `Application.Bind` |
 | **权限声明** | `context.Permissions.DeclarePermission` | N/A |
-| **内置插件数** | **38 个桌面** + **4 个移动端** + **1 个 Android 运行时** = **43 个** | 有限 |
+| **内置插件数** | **39 个桌面** + **7 个移动端** + **1 个 Android 运行时** = **47 个** | 有限 |
 | **第三方加载** | ✅ 通过 `ConfigureServices` 注册 | ✅ Go import |
 | **IHostedService 适配** | ✅ 双重触发防护（`_started` / `_stopped` Interlocked） | N/A |
 
-### Wails.Net 内置插件清单（38 个桌面 + 4 个移动端 + 1 个 Android 运行时）
+### Wails.Net 内置插件清单（39 个桌面 + 7 个移动端 + 1 个 Android 运行时）
 
-**桌面插件**（38 个，位于 `src/Wails.Net.Application/Plugins/BuiltIn/`，按插件名分组）：
+**桌面插件**（39 个，位于 `src/Wails.Net.Plugins.*`，按插件名分组）：
 
 | 类别 | 插件（插件名 → 类名） |
 |------|---------------------|

@@ -57,7 +57,7 @@ public interface IPlugin
 
 ### 4. 40+ 内置插件
 
-`src/Wails.Net.Application/Plugins/BuiltIn/` 目录下包含 37 个桌面内置插件，另在 `src/Wails.Net.Application/Plugins/Mobile/` 与 `src/Wails.Net.Application.Android/Mobile/` 下提供 5 个移动端插件（含 `AndroidRuntimePlugin`），合计 42 个内置插件，覆盖：
+内置插件已按插件拆分为独立项目：桌面插件位于 `src/Wails.Net.Plugins.*`（39 个项目，一个项目一个插件），移动端插件集中在 [`src/Wails.Net.Plugins.Mobile`](../../src/Wails.Net.Plugins.Mobile)（7 个），合计 40 个插件项目，覆盖：
 
 - 窗口/屏幕：`WindowPlugin`、`ScreenPlugin`、`WindowStatePlugin`、`WindowsPlugin`
 - 文件/存储：`FileSystemPlugin`、`FsWatchPlugin`、`StorePlugin`、`SqlPlugin`、`StrongholdPlugin`、`UploadPlugin`
@@ -100,6 +100,6 @@ public interface IPlugin
 - [PluginManager.cs](../../src/Wails.Net.Application/Plugins/PluginManager.cs)
 - [IPluginContext.cs](../../src/Wails.Net.Application/Plugins/IPluginContext.cs)
 - [PluginContext.cs](../../src/Wails.Net.Application/Plugins/PluginContext.cs)
-- [BuiltIn 插件目录](../../src/Wails.Net.Application/Plugins/BuiltIn)
+- [Wails.Net.Plugins.Mobile（移动端插件）](../../src/Wails.Net.Plugins.Mobile) · 桌面插件见 `src/Wails.Net.Plugins.*`（39 个独立项目）
 - [docs/architecture/plugin-system.md](../architecture/plugin-system.md)
 - [docs/plugins.md](../plugins.md)

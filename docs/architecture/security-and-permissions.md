@@ -14,7 +14,7 @@ Wails.Net 的安全体系采用 **多层防护策略**，将安全职责分散�
 | 文件系统沙箱 | 限制文件命令可访问的路径范围 | `FileSystemPlugin`、`PersistedScopePlugin` |
 | 加密存储 | 安全保存密码、密钥等敏感数据 | `StrongholdPlugin` |
 
-核心安全代码位于 `src/Wails.Net.Application/Security/`，文件系统与加密插件位于 `src/Wails.Net.Application/Plugins/BuiltIn/`。
+核心安全代码位于 `src/Wails.Net.Application/Security/`，文件系统与加密插件分别位于 `src/Wails.Net.Plugins.FileSystem`、`src/Wails.Net.Plugins.Stronghold`。
 
 设计原则：
 

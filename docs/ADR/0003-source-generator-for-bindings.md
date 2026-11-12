@@ -52,13 +52,14 @@ const uint prime = 16777619u;
 
 与 `Wails.Net.Application.Bindings.BindingManager.FNV1aHash` 和 `Wails.Net.Generator.BindingIdGenerator.Generate` 完全一致，确保前后端绑定 ID 跨实现一致。
 
-### 4. 表达式树编译器作为补充
+### 4. 表达式树编译器作为补充（后续已移除）
 
-参见 [CommandInvokerCompiler.cs](../../src/Wails.Net.Application/Commands/CommandInvokerCompiler.cs)：
+> **状态更新**：本节的表达式树编译器 `CommandInvokerCompiler` 已在「去反射改源生成器」（commit `0fd6144`）中整体删除——它仍以 `MethodInfo` 为输入、仍依赖 `System.Reflection`，与 AGENTS.md §3.4 的禁令冲突。「动态注册走表达式树」的补充方案由 [`MapCommandExtensions.cs`](../../src/Wails.Net.Application/Commands/MapCommandExtensions.cs) 的泛型闭包取代。以下保留原决策记录供追溯。
 
-- 对于无法在编译期被源生成器覆盖的场景（如运行时通过 `CommandRegistry.Register` 动态注册的命令），使用 `System.Linq.Expressions` 将 `MethodInfo` 编译为 `CompiledCommandInvoker` 委托。
-- 编译结果缓存在 `ConcurrentDictionary<MethodInfo, CompiledCommandInvoker?>`，仅编译一次，后续调用零反射。
+- 原方案：对无法在编译期被源生成器覆盖的场景（如运行时通过 `CommandRegistry.Register` 动态注册的命令），使用 `System.Linq.Expressions` 将 `MethodInfo` 编译为 `CompiledCommandInvoker` 委托。
+- 原缓存：编译结果存入 `ConcurrentDictionary<MethodInfo, CompiledCommandInvoker?>`，同一方法只编译一次。
 - 参数绑定策略：`ICommandContext` → 注入 ctx；`CancellationToken` → 注入 `ctx.CancellationToken`；`IServiceProvider` → 注入 `ctx.Services`；其他类型 → `JsonSerializer.Deserialize` 反序列化。
+- **现行替代**：`MapCommand` 的强类型泛型重载在注册点构造闭包，参数在编译期已知的 `T` 上反序列化，`CommandEntry.Invoker` 直接持有委托——既不需要 `MethodInfo`，也不需要编译缓存。
 
 ### 5. 元数据同步生成
 
@@ -72,7 +73,7 @@ const uint prime = 16777619u;
 - **零反射调用**：`[ModuleInitializer]` 在模块加载时一次性注册调用器，运行时调用为委托直接调用，性能接近手写代码。
 - **编译期类型检查**：源生成器在编译时即可发现参数类型不匹配、方法不存在等问题（通过生成的强类型调用器代码）。
 - **元数据免反射**：`TypeScriptGenerator` 不再需要运行时反射分析程序集，启动时间缩短。
-- **降级路径完整**：动态注册的命令通过 `CommandInvokerCompiler` 表达式树编译，仍能享受零反射调用的性能优势。
+- **降级路径完整**：动态注册的命令通过 `MapCommand` 泛型闭包（原为表达式树编译）同样享受零反射调用的性能优势。
 
 **负面影响**：
 
@@ -80,11 +81,11 @@ const uint prime = 16777619u;
 - **调试复杂度**：生成的代码在 `WailsGeneratedBindings.g.cs` 中，调试时需要找到对应生成的调用器方法；IDE 中可通过 "Go to Source Generator Output" 查看。
 - **`[ModuleInitializer]` 时机约束**：模块初始化器在类型首次被访问时执行，必须保证 `GeneratedBindingRegistry` 静态字典线程安全（当前使用普通 `Dictionary`，依赖 CLR 模块加载的线程安全保证；若并行加载模块需重新评估）。
 - **生成器与运行时哈希必须严格同步**：`ComputeFnv1aHash` 在源生成器中重复实现，必须与运行时版本保持一致，否则绑定 ID 不匹配；当前通过单元测试 `FNV1aHash_ReturnsConsistentValue` 保证。
-- **动态命令仍需反射元数据**：`CommandInvokerCompiler.Compile` 仍接收 `MethodInfo`，无法完全消除运行时反射（仅在降级路径）。
+- **动态命令仍需反射元数据（已消除）**：原 `CommandInvokerCompiler.Compile` 接收 `MethodInfo`，是反射在 `src/` 内残留的最后一处窗口；该实现删除后，生产代码不再存在「以 `MethodInfo` 为入参」的调用路径，降级路径改由 `MapCommand` 闭包承担。
 
 ## 考虑过的替代方案
 
-1. **动态代码生成（`System.Reflection.Emit`）**：放弃。`Emit` 不支持 AOT，且生成的动态程序集难以调试；表达式树（`System.Linq.Expressions`）是 `Emit` 的高级封装，已通过 `CommandInvokerCompiler` 用于降级路径。
+1. **动态代码生成（`System.Reflection.Emit`）**：放弃。`Emit` 不支持 AOT，且生成的动态程序集难以调试；表达式树（`System.Linq.Expressions`）是 `Emit` 的高级封装，曾用于降级路径，后因仍需 `MethodInfo` 作为输入而一并移除。
 2. **表达式树-only（不引入源生成器）**：放弃。表达式树仍需要运行时 `MethodInfo` 作为输入，无法消除启动时反射扫描；且无法在编译期生成 TypeScript 元数据。源生成器在编译期完成所有工作，运行时零反射。
 3. **保持运行时反射**：放弃。AGENTS.md 3.4 节明确禁止"使用反射获取对应方法"；且反射路径无法通过 AOT 裁剪分析，发布后可能运行时失败。
 4. **Castle DynamicProxy / LinFu.DynamicProxy 等动态代理**：放弃。这些库依赖 `Emit` 或反射，同样不支持 AOT；且引入第三方依赖增加攻击面。
@@ -96,7 +97,8 @@ const uint prime = 16777619u;
 - [BindingSourceGenerator.cs](../../src/Wails.Net.SourceGenerators/BindingSourceGenerator.cs)
 - [GeneratedBindingRegistry.cs](../../src/Wails.Net.Application/Bindings/GeneratedBindingRegistry.cs)
 - [GeneratedBindingsMetadata.cs](../../src/Wails.Net.Application/Bindings/GeneratedBindingsMetadata.cs)
-- [CommandInvokerCompiler.cs](../../src/Wails.Net.Application/Commands/CommandInvokerCompiler.cs)
+- [CompiledCommandInvoker.cs](../../src/Wails.Net.Application/Commands/CompiledCommandInvoker.cs)
+- [MapCommandExtensions.cs](../../src/Wails.Net.Application/Commands/MapCommandExtensions.cs)
 - [BindingAttribute.cs](../../src/Wails.Net.Application/Bindings/BindingAttribute.cs)
 - [CommandAttribute.cs](../../src/Wails.Net.Application/Commands/CommandAttribute.cs)
 - [docs/implementation/source-generators.md](../implementation/source-generators.md)

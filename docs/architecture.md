@@ -102,11 +102,11 @@ DesktopApplicationBuilder
 编译期：
   C# 服务类型（标记 [Binding] 或公共方法）
     │
-    └── BindingSourceGenerator 扫描公共方法
+    └── BindingSourceGenerator 扫描 [Binding] / [Command] 方法
         │
         ├── 生成 GeneratedBindingRegistry.Register(...) 代码
         ├── 生成 FNV-1a 32 位哈希 ID（与 Go 版本 fnv.New32a() 一致）
-        └── 生成表达式树编译的调用委托（CommandInvokerCompiler）
+        └── 生成强类型调用器（Task<object?> 委托，无反射调用）
 
 运行时：
   app.RegisterBindings<TService>()
@@ -146,7 +146,7 @@ DispatchAsync(request)
     │     └── 中间件 N → next → 终端
     └── 终端处理器
         ├── 参数绑定 (ICommandContext / CancellationToken / IServiceProvider / JSON)
-        ├── 表达式树调用（CommandInvokerCompiler 编译期生成，无反射开销）
+        ├── 调用器调用（`MapCommand` 闭包或源生成器调用器，无反射开销）
         └── 异步返回值处理 (Task<T>)
 ```
 
@@ -303,7 +303,7 @@ Wails.Net.Application.Linux         # Linux 平台实现（GTK4 + WebKitGTK via 
 Wails.Net.Application.Android       # Android 平台实现（.NET Android + WebKit.WebView + WebMessageListener）
 Wails.Net.AssetServer              # 资源服务器（静态文件 + IHttpServiceHandler 路由挂载）
 @wails-net/runtime               # JS 运行时（@wails-net/runtime + transport.template.js）
-Wails.Net.Generator                # 代码生成器（BindingSourceGenerator / CommandInvokerCompiler）
+Wails.Net.Generator                # 代码生成器（BindingSourceGenerator / TypeScriptGenerator）
 Wails.Net.Cli                      # CLI 工具（wails.net new/build/run/package）
 Wails.Net.Events                   # 事件类型定义
 Wails.Net.Errors                   # 错误类型（CallError / CallErrorKind）

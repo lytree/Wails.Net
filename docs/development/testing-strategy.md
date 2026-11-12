@@ -7,7 +7,7 @@
 >
 > 关联：[AGENTS.md](../../AGENTS.md) · [ADR-0003 源生成器绑定](../ADR/0003-source-generator-for-bindings.md)
 
-> **🔖 接手入口（2026-08-02）**：新窗口 / 新会话请先读 [`.workbuddy/memory/MEMORY.md`](../../.workbuddy/memory/MEMORY.md) —— 它汇总了**项目定位、架构红线（§3.4 禁反射 / 全名格式 / `CancellationToken` 白名单）、测试基础设施现状（`Wails.Net.Testing` Mock 运行时、GuiContract 第 4 平台、TUnit 链接源码约束）、当前进度快照、如何跑测试、已知可复用陷阱（C# 重载决议陷阱）与挂起问题清单（附录 A 五项）**，是跨会话的「接手须知」。本文件是其战略层路线图补充。
+> **🔖 接手入口（2026-08-02）**：新窗口 / 新会话请先读 `.workbuddy/memory/MEMORY.md`（个人会话记忆，不入库，故此处不做链接） —— 它汇总了**项目定位、架构红线（§3.4 禁反射 / 全名格式 / `CancellationToken` 白名单）、测试基础设施现状（`Wails.Net.Testing` Mock 运行时、GuiContract 第 4 平台、TUnit 链接源码约束）、当前进度快照、如何跑测试、已知可复用陷阱（C# 重载决议陷阱）与挂起问题清单（附录 A 五项）**，是跨会话的「接手须知」。本文件是其战略层路线图补充。
 
 ---
 
