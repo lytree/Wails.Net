@@ -160,11 +160,16 @@ let installApk apkPath =
 
 let appPackage = "wails.net.demo.android"
 
-/// am start 失败时输出组件解析与清单信息，用于判断是"包没装上""没有 LAUNCHER 活动"
-/// 还是"活动未导出"。
+/// am start 失败时输出组件解析与清单信息，用于判断是"包没装上/包名不对""没有
+/// LAUNCHER 活动"还是"活动未导出"。
 let dumpLaunchDiagnostics () =
-    let packages = adb (sprintf "shell pm list packages %s" appPackage)
-    log (sprintf "pm list packages %s: %s" appPackage (packages.Trim()))
+    // 不按包名过滤，先在全部包里找含 demo 的项——避免"包名与预期不一致"这种情况被过滤掉
+    let allPackages = adb "shell pm list packages"
+    let demoPackages =
+        allPackages.Split('\n')
+        |> Array.filter (fun l -> l.Contains("demo"))
+        |> String.concat "\n"
+    log (sprintf "含 demo 的已安装包:\n%s" demoPackages)
 
     let resolved =
         adb (sprintf "shell cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER %s" appPackage)
@@ -183,17 +188,21 @@ let dumpLaunchDiagnostics () =
 /// 不能用 `am start -n <pkg>/<pkg>.MainActivity`：.NET Android 生成的 Java 类名是
 /// crc64<hash>.MainActivity（C# 类名只存在于托管侧），组件名不匹配会让 am start
 /// 直接失败——旧脚本丢弃了该命令的输出，于是表现为"应用没起来、日志为空"。
+/// 判定依据用退出码而不是输出文本：am start 的报错走 stderr，只看 stdout 会误判为成功。
 let tryLaunchWithIntent () =
-    let out =
-        adb (sprintf "shell am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p %s" appPackage)
-    log (sprintf "am start 输出: %s" (out.Trim()))
-    not (out.Contains("Error") || out.Contains("does not exist") || out.Contains("Exception"))
+    let code, out, err =
+        runProcess "adb"
+            (sprintf "shell am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -p %s" appPackage)
+            30000
+    log (sprintf "am start exit=%d 输出=%s 错误=%s" code (out.Trim()) (err.Trim()))
+    code = 0
 
 /// 兜底：部分设备/清单组合下 am start 解析不到组件，但 monkey 能正常拉起 LAUNCHER 活动。
 let tryLaunchWithMonkey () =
-    let out = adb (sprintf "shell monkey -p %s -c android.intent.category.LAUNCHER 1" appPackage)
-    log (sprintf "monkey 输出: %s" (out.Trim()))
-    out.Contains("Events injected")
+    let code, out, err =
+        runProcess "adb" (sprintf "shell monkey -p %s -c android.intent.category.LAUNCHER 1" appPackage) 30000
+    log (sprintf "monkey exit=%d 输出=%s 错误=%s" code (out.Trim()) (err.Trim()))
+    code = 0 && out.Contains("Events injected")
 
 let launchApp () =
     let launched = tryLaunchWithIntent () || tryLaunchWithMonkey ()
