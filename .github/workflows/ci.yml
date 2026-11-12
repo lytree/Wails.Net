@@ -267,7 +267,8 @@ jobs:
     name: 测试 (Linux 平台)
     runs-on: ubuntu-latest
     needs: build
-    continue-on-error: true # Linux 原生库环境可能不稳定，允许失败
+    # 曾用 continue-on-error 容忍"原生库不稳定"，实为掩盖真实失败（作业永远绿）。
+    # 现已修到步骤级全绿，撤掉容忍，让回归可见。
     steps:
       - name: 检出代码
         uses: actions/checkout@v7
@@ -308,7 +309,8 @@ jobs:
     name: 测试 (Android 平台)
     runs-on: windows-latest
     needs: build
-    continue-on-error: true # Android 工作负载环境可能不稳定，允许失败
+    # 无设备时"运行 Android 平台测试"步骤会明确跳过并输出 notice（见步骤内说明），
+    # 不需要用 continue-on-error 兜底；去掉后构建阶段的失败才可见。
     steps:
       - name: 检出代码
         uses: actions/checkout@v7
@@ -401,7 +403,8 @@ jobs:
     name: 测试 (Android E2E 模拟器)
     runs-on: ubuntu-latest
     needs: build
-    continue-on-error: true # Android 模拟器环境可能不稳定，允许失败
+    # E2E 已在模拟器上连续多轮全绿（启动判据改用 pidof、IPC 桥补 [Export]、
+    # 无障碍树轮询加固），撤掉 continue-on-error，避免"红作业显示为绿"。
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: 检出代码
@@ -725,7 +728,7 @@ jobs:
     runs-on: windows-latest
     needs: [pack, gitversion]
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-    continue-on-error: true # Android 构建需要完整 Android SDK 配置
+    # 与 Windows/Linux 一致：构建失败就是失败，不再容忍。
     env:
       WAILS_NET_VERSION: ${{ needs.gitversion.outputs.semVer }}
     steps:
@@ -905,13 +908,11 @@ jobs:
           name: dist-linux
           path: artifacts/dist/linux
 
-      # Android 构建允许失败（continue-on-error），产物可能不存在，跳过下载
       - name: 下载 Android 自包含产物
         uses: actions/download-artifact@v8
         with:
           name: dist-android
           path: artifacts/dist/android
-        continue-on-error: true
 
       - name: 列出待发布产物
         shell: bash
