@@ -349,13 +349,25 @@ jobs:
         shell: pwsh
         run: |
           $output = dotnet build tests/Wails.Net.Application.Android.Tests/Wails.Net.Application.Android.Tests.csproj -c Release -t:ComputeAvailableDevices 2>&1 | Out-String
+          $exitCode = $LASTEXITCODE
           Write-Host $output
+
+          # 无设备时该目标本身也会以非零退出码结束，而 GitHub 的 pwsh 包装器会把
+          # $LASTEXITCODE 透传成步骤退出码，所以两个分支都要显式 exit 0，
+          # 否则"跳过"照样把 job 打红（此前就是这样失败的）。
           if ($output -match "No devices are available") {
             Write-Host "::notice title=Android 平台测试::未检测到设备或模拟器，跳过设备端测试（编译验证已由上一步覆盖；设备端行为见 E2E 作业）"
             "has_device=false" >> $env:GITHUB_OUTPUT
-          } else {
-            "has_device=true" >> $env:GITHUB_OUTPUT
+            exit 0
           }
+
+          if ($exitCode -ne 0) {
+            Write-Host "错误：检测 Android 设备失败（exit=$exitCode）"
+            exit 1
+          }
+
+          "has_device=true" >> $env:GITHUB_OUTPUT
+          exit 0
 
       - name: 运行 Android 平台测试
         if: steps.devices.outputs.has_device == 'true'
@@ -487,21 +499,46 @@ jobs:
         run: dotnet pack ${{ env.SOLUTION }} -c Release --no-build --no-restore -o ${{ env.PACKAGE_OUTPUT }} -p:SkipFrontendBuild=true -p:WailsNetVersion=${{ env.WAILS_NET_VERSION }}
 
       # 单独打包 Templates 项目
-      # Templates 不在 slnx 中（dotnet pack 会因 NU5017 误报退出码 1，但 nupkg 实际正确生成）
+      # Templates 不在 slnx 中，且 dotnet pack 会报 NU5017「既无依赖项也无内容」。
+      # 已核实这是误报：模板内容以 Content 项打进 content/ 下，nupkg 实际完整（29KB，
+      # 含 content/App/.template.config/template.json 等），下方的验证步骤会解包复核。
+      #
+      # 两个必须注意的点：
+      #   1. 必须显式 exit 0：GitHub 的 pwsh 包装器会把 $LASTEXITCODE 透传为步骤退出码，
+      #      仅“容忍”而不复位退出码，整个 job 仍会被判失败（此前就是这样红的）。
+      #   2. 必须传 WailsNetVersion：否则该包沿用 Directory.Build.props 里的开发默认值
+      #      1.0.0-alpha.1，与同一次发布的其他包版本号不一致。
       - name: 打包 Templates 项目
         shell: pwsh
         run: |
-          $templatesExit = 0
-          dotnet pack src/Wails.Net.Templates/Wails.Net.Templates.csproj -c Release -o ${{ env.PACKAGE_OUTPUT }}
-          if ($LASTEXITCODE -ne 0) { $templatesExit = $LASTEXITCODE; Write-Host "Templates 打包返回非零退出码 $templatesExit（NU5017 误报，nupkg 已生成）" }
+          dotnet pack src/Wails.Net.Templates/Wails.Net.Templates.csproj -c Release -o ${{ env.PACKAGE_OUTPUT }} -p:WailsNetVersion=${{ env.WAILS_NET_VERSION }}
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Templates 打包返回非零退出码 $LASTEXITCODE（NU5017 已知误报，内容由验证步骤复核）"
+          }
+          exit 0
 
-      # 验证 Templates nupkg 实际生成
+      # 验证 Templates nupkg 实际生成且包含模板内容
       - name: 验证 Templates 包
         shell: pwsh
         run: |
-          $templatesPkg = Get-ChildItem ${{ env.PACKAGE_OUTPUT }} -Filter "Wails.Net.Templates.*.nupkg" -ErrorAction SilentlyContinue
+          $templatesPkg = Get-ChildItem ${{ env.PACKAGE_OUTPUT }} -Filter "Wails.Net.Templates.*.nupkg" -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $templatesPkg) { Write-Host "错误：Templates 包未生成"; exit 1 }
           Write-Host "Templates 包已生成: $($templatesPkg.Name)"
+
+          $tempDir = Join-Path $env:TEMP "templates-verify-$(Get-Random)"
+          New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
+          Copy-Item $templatesPkg.FullName -Destination (Join-Path $tempDir "templates.zip")
+          Expand-Archive -Path (Join-Path $tempDir "templates.zip") -DestinationPath $tempDir -Force
+
+          # NU5017 是误报，但\"误报\"本身不足以证明包是好的——这里直接确认模板内容在位
+          $templateConfig = Join-Path $tempDir "content\App\.template.config\template.json"
+          if (-not (Test-Path $templateConfig)) {
+            Write-Host "错误：Templates 包缺少 content/App/.template.config/template.json"
+            exit 1
+          }
+          $contentFiles = Get-ChildItem (Join-Path $tempDir "content") -Recurse -File
+          Write-Host "Templates 包内容验证通过，content/ 下 $($contentFiles.Count) 个文件"
+          Remove-Item -Recurse -Force $tempDir
 
       # 验证统一 SDK 包（Wails.Net.Sdk）已生成且包含 build/ 目录
       - name: 验证 Wails.Net.Sdk 包
