@@ -23,7 +23,7 @@
     <ProjectReference Include="..\..\src\Wails.Net.Generator\Wails.Net.Generator.csproj" />
     <!-- M3：L1 纯托管插件已拆分为独立包，测试引用插件包（混合测试文件保留在本项目） -->
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Http\Wails.Net.Plugins.Http.csproj" />
-    <ProjectReference Include="..\..\src\Wails.Net.Plugins.WebSocket\Wails.Net.Plugins.WebSocket.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Websocket\Wails.Net.Plugins.Websocket.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Upload\Wails.Net.Plugins.Upload.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Stronghold\Wails.Net.Plugins.Stronghold.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Localization\Wails.Net.Plugins.Localization.csproj" />
@@ -31,13 +31,13 @@
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Process\Wails.Net.Plugins.Process.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Store\Wails.Net.Plugins.Store.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Sql\Wails.Net.Plugins.Sql.csproj" />
-    <ProjectReference Include="..\..\src\Wails.Net.Plugins.OsInfo\Wails.Net.Plugins.OsInfo.csproj" />
-    <ProjectReference Include="..\..\src\Wails.Net.Plugins.AppInfo\Wails.Net.Plugins.AppInfo.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Osinfo\Wails.Net.Plugins.Osinfo.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Appinfo\Wails.Net.Plugins.Appinfo.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Path\Wails.Net.Plugins.Path.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Log\Wails.Net.Plugins.Log.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Window\Wails.Net.Plugins.Window.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Windows\Wails.Net.Plugins.Windows.csproj" />
-    <ProjectReference Include="..\..\src\Wails.Net.Plugins.WindowState\Wails.Net.Plugins.WindowState.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.WindowState\Wails.Net.Plugins.Windowstate.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Screen\Wails.Net.Plugins.Screen.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Positioner\Wails.Net.Plugins.Positioner.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Dialog\Wails.Net.Plugins.Dialog.csproj" />
@@ -48,7 +48,7 @@
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Tray\Wails.Net.Plugins.Tray.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Application\Wails.Net.Plugins.Application.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Autostart\Wails.Net.Plugins.Autostart.csproj" />
-    <ProjectReference Include="..\..\src\Wails.Net.Plugins.PowerManagement\Wails.Net.Plugins.PowerManagement.csproj" />
+    <ProjectReference Include="..\..\src\Wails.Net.Plugins.Powermanagement\Wails.Net.Plugins.Powermanagement.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Globalshortcut\Wails.Net.Plugins.Globalshortcut.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Dpiscale\Wails.Net.Plugins.Dpiscale.csproj" />
     <ProjectReference Include="..\..\src\Wails.Net.Plugins.Fileassociation\Wails.Net.Plugins.Fileassociation.csproj" />
