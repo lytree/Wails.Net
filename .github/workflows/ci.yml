@@ -344,31 +344,48 @@ jobs:
       # （No devices are available for this project），作业长期红灯（虽为
       # continue-on-error）。这里用 .NET Android SDK 自己的 ComputeAvailableDevices
       # 目标做检测：无设备时明确跳过并输出 notice，有设备（如自建 runner）时照常执行。
+      # 该测试项目是 Android 应用形态，dotnet run 需要已连接的设备/模拟器，而
+      # windows-latest 上没有设备（此前步骤直接失败于 No devices are available，
+      # 作业长期红灯，仅靠 continue-on-error 兜着）。
+      # 这里不去解析 dotnet/MSBuild 的退出码（其错误语义在 PowerShell 下容易被当成
+      # 终止错误，实测会跳过整个判定逻辑），改为直接问 adb：有 device 状态的行才算有设备。
       - name: 检测可用 Android 设备
         id: devices
         shell: pwsh
         run: |
-          # GitHub 的 PowerShell 运行器默认 ErrorActionPreference=Stop 且启用
-          # $PSNativeCommandUseErrorActionPreference：dotnet 以非零码退出时会直接终止
-          # 脚本（"跳过"逻辑根本执行不到，job 照样变红）。这里显式放宽，退出码自行判断。
           $ErrorActionPreference = 'Continue'
-          $PSNativeCommandUseErrorActionPreference = $false
 
-          $output = dotnet build tests/Wails.Net.Application.Android.Tests/Wails.Net.Application.Android.Tests.csproj -c Release -t:ComputeAvailableDevices 2>&1 | Out-String
-          $exitCode = $LASTEXITCODE
-          Write-Host $output
+          $adb = $null
+          foreach ($candidate in @(
+              (Join-Path $env:ANDROID_HOME 'platform-tools\adb.exe'),
+              (Join-Path $env:ANDROID_SDK_ROOT 'platform-tools\adb.exe'),
+              'C:\Android\android-sdk\platform-tools\adb.exe')) {
+            if ($candidate -and (Test-Path $candidate)) { $adb = $candidate; break }
+          }
 
-          if ($output -match "No devices are available") {
+          if (-not $adb) {
+            $cmd = Get-Command adb -ErrorAction SilentlyContinue
+            if ($cmd) { $adb = $cmd.Source }
+          }
+
+          if (-not $adb) {
+            Write-Host "::notice title=Android 平台测试::未找到 adb，跳过设备端测试"
+            "has_device=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          Write-Host "使用 adb: $adb"
+          $devices = & $adb devices 2>&1
+          Write-Host ($devices -join "`n")
+
+          $online = @($devices | Where-Object { $_ -match '\sdevice$' })
+          if ($online.Count -eq 0) {
             Write-Host "::notice title=Android 平台测试::未检测到设备或模拟器，跳过设备端测试（编译验证已由上一步覆盖；设备端行为见 E2E 作业）"
             "has_device=false" >> $env:GITHUB_OUTPUT
             exit 0
           }
 
-          if ($exitCode -ne 0) {
-            Write-Host "错误：检测 Android 设备失败（exit=$exitCode）"
-            exit 1
-          }
-
+          Write-Host "检测到 $($online.Count) 台设备"
           "has_device=true" >> $env:GITHUB_OUTPUT
           exit 0
 
