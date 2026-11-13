@@ -14,9 +14,12 @@
 #   - tag（v*.*.*）：运行完整流水线，包括 publish 到 NuGet.org
 #
 # 版本号管理（GitVersion 自动计算）：
-#   - gitversion 作业读取仓库根目录 GitVersion.yml，按 Git 历史/分支/标签自动算出版本号；
+#   - 非 tag 构建：gitversion 作业读取仓库根目录 GitVersion.yml，按 Git 历史/分支算出版本号；
+#   - tag 构建：版本直接取标签名（去掉 v 前缀），保证 NuGet / npm / GitHub Release 同版本；
+#     GitVersion 6.8.2 不会把 tag 识别为 version source（实测得到 1.0.0-271 之类的分支版本），
+#     发布线必须确定性取值，不能用分支计算结果覆盖发布版本。
 #   - 通过 -p:WailsNetVersion=<SemVer> 注入 build/pack 阶段，覆盖 Directory.Build.props 的默认值；
-#   - 打 Git tag（如 v0.1.0-alpha.1）即触发完整流水线，publish 阶段推送 NuGet 包到 nuget.org。
+#   - 打 Git tag（如 v1.0.0-alpha.1）即触发完整流水线，publish 阶段推送 NuGet 包到 nuget.org。
 #
 # 统一 SDK（Wails.Net.Sdk）：
 #   - multi-target net10.0;net10.0-windows10.0.19041.0，根据 TFM 自动选择平台 Bundle
@@ -98,12 +101,26 @@ jobs:
       - name: 计算版本
         id: gitversion
         run: |
-          {
-            echo "semVer=$(dotnet gitversion /showvariable SemVer /nocache)"
-            echo "fullSemVer=$(dotnet gitversion /showvariable FullSemVer /nocache)"
-            echo "assemblySemVer=$(dotnet gitversion /showvariable AssemblySemVer /nocache)"
-          } >> "$GITHUB_OUTPUT"
-          echo "Resolved version: $(dotnet gitversion /showvariable SemVer /nocache)"
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            # 发布线：标签名即版本号（v1.0.0-alpha.1 -> 1.0.0-alpha.1），
+            # 与 Directory.Build.props / packages/*/package.json 的 WailsNetVersion 对齐。
+            VER="${{ github.ref_name }}"
+            VER="${VER#[vV]}"
+            CORE="${VER%%-*}"
+            {
+              echo "semVer=$VER"
+              echo "fullSemVer=$VER"
+              echo "assemblySemVer=$CORE.0"
+            } >> "$GITHUB_OUTPUT"
+            echo "Resolved version (tag): $VER (assembly: $CORE.0)"
+          else
+            {
+              echo "semVer=$(dotnet gitversion /showvariable SemVer /nocache)"
+              echo "fullSemVer=$(dotnet gitversion /showvariable FullSemVer /nocache)"
+              echo "assemblySemVer=$(dotnet gitversion /showvariable AssemblySemVer /nocache)"
+            } >> "$GITHUB_OUTPUT"
+            echo "Resolved version: $(dotnet gitversion /showvariable SemVer /nocache)"
+          fi
 
   build:
     name: 构建

@@ -84,6 +84,8 @@ git push origin main --tags
 
 发布前 CI 执行版本一致性校验（`scripts/verify-versions.mjs`）：`Directory.Build.props` 的 `WailsNetVersion` 必须等于所有 `packages/*/package.json` 的 `version`，不一致即失败——保证 NuGet 与 npm 同版本发布。
 
+> **tag 触发时版本直取标签名**：CI 的 `gitversion` 作业在 `github.ref_type == tag` 时不再调用 GitVersion，而是直接取 `github.ref_name` 去掉 `v` 前缀（如 `v1.0.0-alpha.1` → `1.0.0-alpha.1`），并派生 `assemblySemVer`。原因是 GitVersion 6.8.2 在当前配置下不会把 tag 识别为 version source，会算出 `1.0.0-271` 之类的分支版本，导致 NuGet / GitHub Release 与 npm 版本错位。因此发布前需保证 **tag 名 = `WailsNetVersion` = 各 `package.json` 的 `version`**；脚本校验后两者，tag 名由发布者保证。非 tag 构建仍由 GitVersion 按分支计算版本。
+
 本地校验命令：
 
 ```bash
