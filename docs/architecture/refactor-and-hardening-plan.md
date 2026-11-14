@@ -242,7 +242,21 @@
 | 能力门控（防回归） | `SupportsNativeMessageChannel` 默认 `false`：Linux 的 `SetNativeMessageHandler` 是空操作、Android 走 `JavascriptInterface` 独立桥，误标为真会让 `EventIPCTransport` 认为原生通道已接管而跳过 `ExecJS` 兜底，重演 RH-WIN-01 掩盖的事件丢失 |
 | 测试 | `WindowNativeIpcRegistrationTests`（5 项）：能力为真时注册、为假时跳过、销毁反注册 + 通知平台、重复销毁幂等、32 并发建窗 ID 唯一且逐个注册 |
 
-剩余（未做）：平台 App 仍各自持有 `_windows` 缓存（已保证一致性，未实现"查询型"单一注册表，即平台不再存任何窗口表）；RH-IPC-02 进展见 §3.3。
+#### 实施进展（2026-11-14 终态）
+
+平台窗口表已彻底移除（本项收尾，提交 `refactor(runtime): 平台层不再持有窗口表，统一查询 WindowManager`）：
+
+| 项 | 落地方式 |
+|---|---|
+| 平台窗口表删除 | Windows / Linux / macOS / Android 的 `Dictionary<uint, XxxWebviewWindow> _windows` 全部删除，改为只读查询 |
+| 查询入口 | 新增 `IPlatformWindowAccessor`（唯一实现 = `WindowManager`）+ `IPlatformApp.AttachWindowAccessor`（DIM）；`WindowManager` 在构造与 `SetPlatformApp` 两处注入，覆盖"构造期已有 platformApp"与"DI 后置注入"两条路径 |
+| 平台枚举方式 | `EnumerateWindows()` 私有 helper：遍历 accessor 快照 + `is XxxWebviewWindow` 类型判断（零反射），承载 Show/Hide/应用菜单/图标/暗主模式/主窗口句柄/GetCurrentWindowId |
+| 快照语义 | 只返回 `Impl` 已回填的窗口；创建过程中的窗口不可见（测试 `WindowPlatformAccessorTests` 守门），避免平台操作半初始化实例 |
+| 保留项 | `IPlatformApp.OnWindowDestroyed` 保留给需要平台侧资源清理的实现（Mock / 后续原生资源回收），不再是"缓存一致性"补丁 |
+| 测试 | 新增 `WindowPlatformAccessorTests`（4 项）：构造注入、后置注入、生命周期快照、空集合语义 |
+
+剩余（未做）：`IIpcTransportStrategy` 在桌面四平台仍未推广（RH-IPC-02 §3.3 第 4 点）；RH-IPC-02 进展见 §3.3。
+
 
 ### 3.3 [破坏性] 四平台 IPC/资源/ready 管线统一（RH-IPC-02，继承 OPT-IPC-003 剩余）
 

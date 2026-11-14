@@ -194,9 +194,10 @@ public interface IPlatformApp
     /// <summary>
     /// 窗口销毁通知（RH-WIN-02）。
     /// <para>
-    /// <see cref="Managers.WindowManager"/> 在移除窗口记录后调用，供平台层清理自身的窗口缓存。
-    /// 平台自持的窗口字典因此降级为缓存：唯一事实源是 <see cref="Managers.WindowManager"/>，
-    /// 平台缓存只需与之保持一致，用于执行原生操作（菜单、暗色模式、句柄枚举等）。
+    /// <see cref="Managers.WindowManager"/> 在移除窗口记录后调用。
+    /// RH-WIN-02 终态起平台层不再自持窗口表，本回调仅保留给需要做平台侧清理
+    /// （关闭原生资源、取消注册托盘/快捷键关联等）的实现；枚举窗口请改用
+    /// <see cref="AttachWindowAccessor"/> 注入的 <see cref="IPlatformWindowAccessor"/>。
     /// </para>
     /// <para>
     /// 默认空实现，不维护窗口缓存的平台无需覆盖。
@@ -206,6 +207,22 @@ public interface IPlatformApp
     void OnWindowDestroyed(uint windowId)
     {
         // 默认空实现：平台若自持窗口缓存应覆盖以移除条目。
+    }
+
+    /// <summary>
+    /// 注入窗口只读查询入口（RH-WIN-02 终态）。
+    /// <para>
+    /// 由 <see cref="Managers.WindowManager"/> 在构造与 <c>SetPlatformApp</c> 时调用，
+    /// 使平台层无需自持窗口字典即可遍历/查找窗口，消除"平台 _windows 与 WindowManager 并存"。
+    /// </para>
+    /// <para>
+    /// 默认空实现，仅供仍持有窗口缓存的兼容实现忽略。
+    /// </para>
+    /// </summary>
+    /// <param name="accessor">窗口只读查询入口（实现方为 <see cref="Managers.WindowManager"/>）。</param>
+    void AttachWindowAccessor(IPlatformWindowAccessor accessor)
+    {
+        // 默认空实现：不需要枚举窗口的平台可忽略。
     }
 
     /// <summary>

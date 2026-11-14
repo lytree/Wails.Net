@@ -10,7 +10,7 @@ namespace Wails.Net.Application.Managers;
 /// 窗口管理器，负责窗口的创建、销毁和查询。
 /// 对应 Wails v3 Go 版本中的 windowManager。
 /// </summary>
-public class WindowManager : IWindowManager
+public class WindowManager : IWindowManager, IPlatformWindowAccessor
 {
     /// <summary>
     /// 窗口字典，按 ID 索引。
@@ -52,6 +52,8 @@ public class WindowManager : IWindowManager
     {
         _platformApp = platformApp;
         _application = application;
+        // RH-WIN-02 终态：平台层通过本管理器查询窗口，不再自持窗口字典。
+        _platformApp?.AttachWindowAccessor(this);
     }
 
     /// <summary>
@@ -64,6 +66,43 @@ public class WindowManager : IWindowManager
     public void SetPlatformApp(IPlatformApp platformApp)
     {
         _platformApp = platformApp;
+        // RH-WIN-02 终态：DI 路径下 platformApp 后置注入时同样需要绑定窗口查询入口。
+        _platformApp.AttachWindowAccessor(this);
+    }
+
+    /// <summary>
+    /// 枚举所有已完成平台创建并回填实现的窗口（RH-WIN-02 终态）。
+    /// <para>
+    /// 平台层（<see cref="IPlatformApp"/> 实现）通过此方法遍历窗口执行原生操作，
+    /// 不再各自维护 <c>Dictionary&lt;uint, XxxWebviewWindow&gt;</c>。
+    /// 返回快照并按窗口 ID 升序排列：平台侧"取第一个窗口"（主窗口/当前窗口回退）因此有确定语义，
+    /// 不再依赖 <see cref="ConcurrentDictionary{TKey,TValue}"/> 的枚举顺序。
+    /// </para>
+    /// </summary>
+    /// <returns>平台窗口实现只读快照（ID 升序）；无窗口时返回空列表。</returns>
+    public IReadOnlyList<IWebviewWindowImpl> EnumeratePlatformWindows()
+    {
+        if (_windows.IsEmpty)
+        {
+            return [];
+        }
+
+        var result = new List<IWebviewWindowImpl>(_windows.Count);
+        foreach (var window in _windows.Values)
+        {
+            if (window.Impl is { } impl)
+            {
+                result.Add(impl);
+            }
+        }
+
+        if (result.Count == 0)
+        {
+            return [];
+        }
+
+        result.Sort(static (left, right) => left.Id.CompareTo(right.Id));
+        return result;
     }
 
     /// <summary>

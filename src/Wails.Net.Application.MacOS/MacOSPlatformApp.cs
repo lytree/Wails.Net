@@ -33,9 +33,30 @@ public sealed class MacOSPlatformApp : IPlatformApp
     private readonly ApplicationOptions _options;
 
     /// <summary>
-    /// 已创建的 Webview 窗口字典，按窗口 ID 索引。
+    /// 窗口只读查询入口（RH-WIN-02 终态）。
+    /// 由 <see cref="WindowManager"/> 注入，替代此前的自持窗口字典。
     /// </summary>
-    private readonly Dictionary<uint, MacOSWebviewWindow> _windows = new();
+    private IPlatformWindowAccessor? _windowAccessor;
+
+    /// <summary>
+    /// 枚举本平台创建的窗口（按窗口 ID 升序）。
+    /// RH-WIN-02 终态：窗口唯一事实源是 <see cref="WindowManager"/>，平台只做只读查询 + 类型判断。
+    /// </summary>
+    private IEnumerable<MacOSWebviewWindow> EnumerateWindows()
+    {
+        if (_windowAccessor is null)
+        {
+            yield break;
+        }
+
+        foreach (var impl in _windowAccessor.EnumeratePlatformWindows())
+        {
+            if (impl is MacOSWebviewWindow window)
+            {
+                yield return window;
+            }
+        }
+    }
 
     /// <summary>
     /// 主线程 ID。
@@ -226,11 +247,11 @@ public sealed class MacOSPlatformApp : IPlatformApp
             return 0;
         }
 
-        foreach (var (id, window) in _windows)
+        foreach (var window in EnumerateWindows())
         {
             if (ReferenceEquals(window.NativeWindow, keyWindow))
             {
-                return id;
+                return window.Id;
             }
         }
 
@@ -430,13 +451,10 @@ public sealed class MacOSPlatformApp : IPlatformApp
     }
 
     /// <inheritdoc />
-    /// <remarks>
-    /// RH-WIN-02：<c>_windows</c> 降级为平台侧缓存，窗口销毁后必须移除，
-    /// 否则 <see cref="Hide"/> 等枚举路径会继续操作已销毁的 NSWindow。
-    /// </remarks>
-    public void OnWindowDestroyed(uint windowId)
+    public void AttachWindowAccessor(IPlatformWindowAccessor accessor)
     {
-        _windows.Remove(windowId);
+        ArgumentNullException.ThrowIfNull(accessor);
+        _windowAccessor = accessor;
     }
 
     /// <inheritdoc />
@@ -444,7 +462,7 @@ public sealed class MacOSPlatformApp : IPlatformApp
     {
 #if MACOS
         var window = new MacOSWebviewWindow(id, options, _options.Mac);
-        _windows[id] = window;
+        // 窗口登记由 WindowManager 完成（RH-WIN-02 终态），平台侧不再持有窗口字典。
         window.Create();
         return window;
 #else

@@ -117,9 +117,42 @@ public sealed class WindowsPlatformApp : IPlatformApp
     private readonly WindowsOptions? _windowsOptions;
 
     /// <summary>
-    /// 已创建的窗口字典，按窗口 ID 索引。用于 Hide/Show 遍历及主窗口查找。
+    /// 窗口只读查询入口（RH-WIN-02 终态）。
+    /// 由 <see cref="WindowManager"/> 注入，替代此前的自持窗口字典；
+    /// 唯一事实源是 <see cref="WindowManager"/>。
     /// </summary>
-    private readonly Dictionary<uint, Win32WebviewWindow> _windows = new();
+    private IPlatformWindowAccessor? _windowAccessor;
+
+    /// <summary>
+    /// 枚举本平台创建的窗口（按窗口 ID 升序）。
+    /// <para>
+    /// RH-WIN-02 终态：不再持有 <c>Dictionary&lt;uint, Win32WebviewWindow&gt;</c>，
+    /// 改为查询 <see cref="WindowManager"/> 并做类型判断取回平台实现（零反射）。
+    /// 创建过程中的窗口 <see cref="WebviewWindow.Impl"/> 尚未回填，不会出现在结果中。
+    /// </para>
+    /// </summary>
+    private IEnumerable<Win32WebviewWindow> EnumerateWindows()
+        => EnumerateWindowsCore(_windowAccessor);
+
+    /// <summary>
+    /// 从查询入口枚举 <see cref="Win32WebviewWindow"/> 实现（按 ID 升序，保证行为确定）。
+    /// </summary>
+    private static IEnumerable<Win32WebviewWindow> EnumerateWindowsCore(IPlatformWindowAccessor? accessor)
+    {
+        if (accessor is null)
+        {
+            yield break;
+        }
+
+        var snapshot = accessor.EnumeratePlatformWindows();
+        foreach (var impl in snapshot)
+        {
+            if (impl is Win32WebviewWindow window)
+            {
+                yield return window;
+            }
+        }
+    }
 
     /// <summary>
     /// 主线程待执行 Action 队列，由 DispatchOnMainThread(Action) 投递，WndProc 消费。
@@ -350,7 +383,7 @@ public sealed class WindowsPlatformApp : IPlatformApp
         if (menu is null)
         {
             // 移除所有窗口的菜单。
-            foreach (var window in _windows.Values)
+            foreach (var window in EnumerateWindows())
             {
                 window.ClearMenu();
             }
@@ -363,7 +396,7 @@ public sealed class WindowsPlatformApp : IPlatformApp
         _applicationMenu.Build();
 
         // 将菜单设置到所有已创建窗口。
-        foreach (var window in _windows.Values)
+        foreach (var window in EnumerateWindows())
         {
             window.SetMenuHandle(_applicationMenu.Hmenu);
         }
@@ -376,19 +409,19 @@ public sealed class WindowsPlatformApp : IPlatformApp
         var foreground = PInvoke.GetForegroundWindow();
         if (!foreground.IsNull)
         {
-            foreach (var pair in _windows)
+            foreach (var window in EnumerateWindows())
             {
-                if (pair.Value.Hwnd == foreground)
+                if (window.Hwnd == foreground)
                 {
-                    return pair.Key;
+                    return window.Id;
                 }
             }
         }
 
         // 回退：返回第一个窗口 ID 或 0。
-        foreach (var pair in _windows)
+        foreach (var window in EnumerateWindows())
         {
-            return pair.Key;
+            return window.Id;
         }
 
         return 0;
@@ -447,7 +480,7 @@ public sealed class WindowsPlatformApp : IPlatformApp
     public void Hide()
     {
         // 遍历所有窗口并隐藏。
-        foreach (var window in _windows.Values)
+        foreach (var window in EnumerateWindows())
         {
             window.Hide();
         }
@@ -457,7 +490,7 @@ public sealed class WindowsPlatformApp : IPlatformApp
     public void Show()
     {
         // 遍历所有窗口并显示。
-        foreach (var window in _windows.Values)
+        foreach (var window in EnumerateWindows())
         {
             window.Show();
         }
@@ -508,23 +541,19 @@ public sealed class WindowsPlatformApp : IPlatformApp
     public bool SupportsNativeMessageChannel => true;
 
     /// <inheritdoc />
-    /// <remarks>
-    /// 本类的 <c>_windows</c> 是平台侧缓存（唯一事实源在 <c>WindowManager</c>），
-    /// 窗口销毁后必须移除，否则 <see cref="SetApplicationMenu"/>、<see cref="Hide"/>、
-    /// <see cref="GetCurrentWindowId"/> 等枚举路径会继续操作已销毁的 HWND。
-    /// </remarks>
-    public void OnWindowDestroyed(uint windowId)
+    public void AttachWindowAccessor(IPlatformWindowAccessor accessor)
     {
-        _windows.Remove(windowId);
+        ArgumentNullException.ThrowIfNull(accessor);
+        _windowAccessor = accessor;
     }
 
     /// <inheritdoc />
     public IWebviewWindowImpl? CreateWebviewWindow(uint id, WebviewWindowOptions options)
     {
-        // 创建 Win32WebviewWindow 实例并加入窗口字典。
+        // 创建 Win32WebviewWindow 实例。窗口登记由 WindowManager 完成（RH-WIN-02 终态），
+        // 平台侧不再持有窗口字典。
         // 将应用级 WindowsOptions 传入窗口，用于配置 WebView2 环境（用户数据目录、浏览器路径等）。
         var window = new Win32WebviewWindow(id, options, _windowsOptions);
-        _windows[id] = window;
 
         // 应用暗色模式。
         ApplyDarkModeToWindow(window.Hwnd, IsDarkMode());
@@ -894,7 +923,7 @@ public sealed class WindowsPlatformApp : IPlatformApp
     /// <returns>主窗口句柄，若无窗口则返回 NULL。</returns>
     private HWND GetMainThreadHwnd()
     {
-        foreach (var window in _windows.Values)
+        foreach (var window in EnumerateWindows())
         {
             if (!window.Hwnd.IsNull)
             {
@@ -1011,7 +1040,7 @@ public sealed class WindowsPlatformApp : IPlatformApp
             return;
         }
 
-        foreach (var window in _windows.Values)
+        foreach (var window in EnumerateWindows())
         {
             ApplyIcon(window, hicon);
         }

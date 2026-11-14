@@ -40,6 +40,13 @@ public sealed class MockPlatformApp : IPlatformApp, IDisposable
 
     /// <summary>
     /// 已创建的窗口字典（按窗口 ID 索引）。
+    /// <para>
+    /// RH-WIN-02 终态后，<b>真实平台</b>（Windows/Linux/macOS/Android）已不再持有窗口表，
+    /// 统一通过 <see cref="IPlatformWindowAccessor"/> 查询 <c>WindowManager</c>。
+    /// 本字段保留是因为测试宿主需要直接暴露窗口实例供断言（<see cref="Windows"/>、
+    /// <see cref="TryGetWindow"/>）——它扮演的是"平台原生窗口句柄表"的角色，不是框架注册表。
+    /// 存取时序与真实平台一致：创建时登记、<see cref="OnWindowDestroyed"/> 时移除。
+    /// </para>
     /// </summary>
     private readonly ConcurrentDictionary<uint, MockWebviewWindow> _windows = new();
 

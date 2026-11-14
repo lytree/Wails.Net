@@ -67,9 +67,30 @@ public sealed class LinuxPlatformApp : IPlatformApp
     private MainLoop? _mainLoop;
 
     /// <summary>
-    /// 已创建的 Webview 窗口字典，按窗口 ID 索引。
+    /// 窗口只读查询入口（RH-WIN-02 终态）。
+    /// 由 <see cref="WindowManager"/> 注入，替代此前的自持窗口字典。
     /// </summary>
-    private readonly Dictionary<uint, LinuxWebviewWindow> _windows = new();
+    private IPlatformWindowAccessor? _windowAccessor;
+
+    /// <summary>
+    /// 枚举本平台创建的窗口（按窗口 ID 升序）。
+    /// RH-WIN-02 终态：窗口唯一事实源是 <see cref="WindowManager"/>，平台只做只读查询 + 类型判断。
+    /// </summary>
+    private IEnumerable<LinuxWebviewWindow> EnumerateWindows()
+    {
+        if (_windowAccessor is null)
+        {
+            yield break;
+        }
+
+        foreach (var impl in _windowAccessor.EnumeratePlatformWindows())
+        {
+            if (impl is LinuxWebviewWindow window)
+            {
+                yield return window;
+            }
+        }
+    }
 
     /// <summary>
     /// 单实例文件锁流，持有期间阻止其他实例获取同名锁。
@@ -695,9 +716,9 @@ public sealed class LinuxPlatformApp : IPlatformApp
     public uint GetCurrentWindowId()
     {
         // 返回第一个窗口的 ID（简化实现）。
-        foreach (var id in _windows.Keys)
+        foreach (var window in EnumerateWindows())
         {
-            return id;
+            return window.Id;
         }
 
         return 0;
@@ -796,7 +817,7 @@ public sealed class LinuxPlatformApp : IPlatformApp
             return;
         }
 
-        foreach (var window in _windows.Values)
+        foreach (var window in EnumerateWindows())
         {
             window.Hide();
         }
@@ -810,7 +831,7 @@ public sealed class LinuxPlatformApp : IPlatformApp
             return;
         }
 
-        foreach (var window in _windows.Values)
+        foreach (var window in EnumerateWindows())
         {
             window.Show();
         }
@@ -835,13 +856,10 @@ public sealed class LinuxPlatformApp : IPlatformApp
     }
 
     /// <inheritdoc />
-    /// <remarks>
-    /// RH-WIN-02：<c>_windows</c> 降级为平台侧缓存，窗口销毁后必须移除，
-    /// 否则 <see cref="Hide"/>、暗色模式切换等枚举路径会继续操作已销毁的 GTK 窗口。
-    /// </remarks>
-    public void OnWindowDestroyed(uint windowId)
+    public void AttachWindowAccessor(IPlatformWindowAccessor accessor)
     {
-        _windows.Remove(windowId);
+        ArgumentNullException.ThrowIfNull(accessor);
+        _windowAccessor = accessor;
     }
 
     /// <inheritdoc />
@@ -853,8 +871,8 @@ public sealed class LinuxPlatformApp : IPlatformApp
         }
 
         // 将应用级 LinuxOptions 传入窗口，用于配置 WebKitGTK 环境（用户数据目录、附加参数等）。
+        // 窗口登记由 WindowManager 完成（RH-WIN-02 终态），平台侧不再持有窗口字典。
         var window = new LinuxWebviewWindow(id, options, _linuxOptions);
-        _windows[id] = window;
 
         // 若已设置应用菜单，将其应用到新窗口（注入 GMenu 模型与 ActionGroup）。
         if (_appMenu is not null)
