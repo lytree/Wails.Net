@@ -58,8 +58,22 @@ let fail (msg: string) = Console.WriteLine("  ✗ " + msg)
 // ----------------------------------------------------------------------------
 // 进程执行辅助
 // ----------------------------------------------------------------------------
+/// 截断过长输出，避免超时日志里贴上几万行 stdout 反而淹没有效信息。
+let truncateOutput (maxChars: int) (text: string) =
+    if String.IsNullOrEmpty text then ""
+    elif text.Length <= maxChars then text
+    else text.Substring(0, maxChars) + sprintf "\n…（已截断，原始长度 %d 字符）" text.Length
+
 let runProcess (fileName: string) (args: string) (timeoutMs: int) =
-    // 启动失败时返回特殊退出码 -127，调用方按"可执行文件不可用"处理
+    // 退出码约定：
+    //   -127 = 可执行文件不可用/启动失败（调用方按"环境缺失"处理）
+    //   -124 = 超时且已被强制终止（distinct，便于与真实退出码区分）
+    //
+    // 关键点：必须先异步读取 stdout/stderr，再等待退出。
+    // 旧实现用同步 ReadToEnd()，它会一直阻塞到子进程关闭管道，
+    // 于是后面的 WaitForExit(timeoutMs) 永远在进程已退出后才执行，
+    // timeoutMs 参数形同虚设——子进程一旦挂住（实测 CI 中 adb build/install 挂起），
+    // 脚本会一直卡住直到 runner 被杀，事后连日志 blob 都不存在，无从排障。
     try
         let psi = ProcessStartInfo(fileName, args,
                                     RedirectStandardOutput = true,
@@ -70,12 +84,34 @@ let runProcess (fileName: string) (args: string) (timeoutMs: int) =
         if not (p.Start()) then
             -127, "", sprintf "无法启动进程: %s %s" fileName args
         else
-            let stdout = p.StandardOutput.ReadToEnd()
-            let stderr = p.StandardError.ReadToEnd()
+            let stdoutTask = p.StandardOutput.ReadToEndAsync()
+            let stderrTask = p.StandardError.ReadToEndAsync()
+
+            let collect () =
+                let read (t: Threading.Tasks.Task<string>) =
+                    // 强杀进程后管道读取可能抛异常（句柄被回收），此时拿不到内容也不算错误
+                    try t.GetAwaiter().GetResult() with _ -> ""
+                read stdoutTask, read stderrTask
+
             if not (p.WaitForExit(timeoutMs)) then
-                p.Kill(entireProcessTree = true)
-                failwithf "进程超时（%dms）: %s %s" timeoutMs fileName args
-            p.ExitCode, stdout, stderr
+                // 先杀进程树（dotnet build 会派生 MSBuild/编译器子进程），
+                // 再等一次回收，最后取已缓冲的输出，保证超时现场可查。
+                (try p.Kill(entireProcessTree = true) with _ -> ())
+                (try p.WaitForExit(5000) |> ignore with _ -> ())
+                let out, err = collect ()
+                let message =
+                    sprintf "进程超时（%dms，已强制终止进程树）: %s %s" timeoutMs fileName args
+                Console.Error.WriteLine("  ✗ " + message)
+                let partialOut = truncateOutput 4000 out
+                let partialErr = truncateOutput 4000 err
+                if not (String.IsNullOrWhiteSpace partialOut) then
+                    Console.Error.WriteLine("超时前 stdout:\n" + partialOut)
+                if not (String.IsNullOrWhiteSpace partialErr) then
+                    Console.Error.WriteLine("超时前 stderr:\n" + partialErr)
+                -124, out, message + (if String.IsNullOrWhiteSpace err then "" else "\n" + partialErr)
+            else
+                let out, err = collect ()
+                p.ExitCode, out, err
     with
     | :? System.ComponentModel.Win32Exception as ex ->
         // Windows/Linux 上可执行文件不在 PATH 时抛 Win32Exception（errorCode=2）
