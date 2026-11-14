@@ -411,7 +411,7 @@ AGENTS.md 与 docs 多处称 macOS 为"骨架/ServerMode 降级"，实际 `#if M
 |---|---|---|
 | 源生成器测试 | `SourceGenerators.Tests` 仅 2 文件（Binding + 分析器） | snapshot 测试覆盖全部生成器输出（OPT-TEST-001） |
 | 前端 runtime 测试 | 3 个 vitest 文件（`commands` / `transport` / `stream`），由 CI `test-frontend` 作业执行 | invoke/cancel/events/channels/fallback 全覆盖（OPT-TEST-002），含 3.5 新协议 |
-| IPC 全链路无头测试 | WailsTestHost 具备底座 | 增加"真实 EventIPCTransport + Mock 窗口"组合，守住 3.1 类断链（OPT-TEST-003） |
+| IPC 全链路无头测试 | WailsTestHost 具备底座 | 增加"真实 EventIPCTransport + Mock 窗口"组合，守住 3.1 类断链（OPT-TEST-003）<br>**已补**：`Wails.Net.Testing.Tests/EventDownlinkHeadlessTests.cs` 三条契约——不支持原生通道必走 ExecJS、已装配原生通道不得重复注入、声明支持但未装配必须回退而非丢事件 |
 | 插件测试 | 17 个插件零测试（Tray/Menu/Window/Notification 等） | SEC-H-003 迁移时按插件补命令级测试（含权限拒绝路径） |
 | NativeAOT CI | 仅 `Wails.Net.Cli` | 扩展到模板 App 产物（真实验证禁反射收益），Linux RID 提升为必过 |
 | Linux CI | ubuntu 测试 allowed-failure | GirCore 依赖固定安装后转必过，消除平台一致性盲区 |
@@ -453,7 +453,7 @@ AGENTS.md 与 docs 多处称 macOS 为"骨架/ServerMode 降级"，实际 `#if M
 ## 10. 总验收清单
 
 - [ ] `WebviewWindow` facade 在四平台端到端可用（RH-WIN-01/02）；
-- [ ] 非 Windows 平台后端→前端事件下行有测试守门；
+- [x] 非 Windows 平台后端→前端事件下行有测试守门（无头层 `EventDownlinkHeadlessTests` 三条契约；各平台原生回调仍由 Windows 平台测试与 Android E2E 覆盖）；
 - [ ] Strict 为默认且语义自洽：capability 加载与检查生效条件一致，DenyByDefault 无失效组合；
 - [ ] 全部内置插件命令显式声明安全姿态，`wails-net check` 自动发现插件权限并生成 schema；
 - [ ] Strict 下无绕过权限链的消息路径（含 `window.*`）；
