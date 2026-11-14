@@ -500,6 +500,25 @@ public sealed class WindowsPlatformApp : IPlatformApp
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Windows 通过 WebView2 <c>WebMessageReceived</c>（接收）与 <c>PostWebMessageAsJson</c>（投递）
+    /// 提供原生消息通道，回调由 <see cref="Win32WebviewWindow.SetNativeMessageHandler"/> 安装，
+    /// 因此声明为支持。RH-WIN-02 起 <c>WindowManager</c> 据此决定是否注册到 NativeIpcTransport。
+    /// </remarks>
+    public bool SupportsNativeMessageChannel => true;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// 本类的 <c>_windows</c> 是平台侧缓存（唯一事实源在 <c>WindowManager</c>），
+    /// 窗口销毁后必须移除，否则 <see cref="SetApplicationMenu"/>、<see cref="Hide"/>、
+    /// <see cref="GetCurrentWindowId"/> 等枚举路径会继续操作已销毁的 HWND。
+    /// </remarks>
+    public void OnWindowDestroyed(uint windowId)
+    {
+        _windows.Remove(windowId);
+    }
+
+    /// <inheritdoc />
     public IWebviewWindowImpl? CreateWebviewWindow(uint id, WebviewWindowOptions options)
     {
         // 创建 Win32WebviewWindow 实例并加入窗口字典。
@@ -530,11 +549,10 @@ public sealed class WindowsPlatformApp : IPlatformApp
             ApplyIcon(window, hicon);
         }
 
-        // P0-C2：若原生 IPC 已启用，将窗口注册到 NativeIpcTransport。
-        // 注册过程会调用 window.SetNativeMessageHandler 安装消息路由回调，
-        // 使 WebView2 的 WebMessageReceived 事件转发至 NativeIpcTransport.HandleIncomingAsync。
-        // 对应 Wails v3 runtime_windows.go 中 window.chrome.webview.postMessage 的接收端。
-        Application.Get()?.NativeIpcTransport?.RegisterWindow(id, window);
+        // P0-C2：不再在此注册 NativeIpcTransport。
+        // RH-WIN-02 起窗口注册/注销统一由 WindowManager 依据
+        // IPlatformApp.SupportsNativeMessageChannel 完成（本类声明为 true），
+        // 避免平台层回退到 Application.Get() 静态定位器。
 
         // 显示窗口。Win32 CreateWindowEx 默认创建不可见窗口（无 WS_VISIBLE 样式），
         // 必须显式调用 ShowWindow 才能显示。对应 Wails v3 Go 版本中

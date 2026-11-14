@@ -2464,8 +2464,8 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         }
 
         // P0-C2：从 NativeIpcTransport 注销窗口，避免向已销毁窗口投递消息。
-        // 对应 Wails v3 runtime_windows.go 中关闭窗口时移除 postMessage 路由。
-        Application.Get()?.NativeIpcTransport?.UnregisterWindow(_id);
+        // RH-WIN-02 起该注销统一由 WindowManager.ReleaseWindow 在移除窗口记录时完成，
+        // 此处不再直接访问 Application.Get() 静态定位器。
 
         if (!_hwnd.IsNull)
         {

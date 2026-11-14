@@ -177,6 +177,38 @@ public interface IPlatformApp
     void DispatchOnMainThread(Action action);
 
     /// <summary>
+    /// 平台是否支持原生消息通道（前端 <c>postMessage</c> → 后端，后端事件 → 前端原生投递）。
+    /// <para>
+    /// RH-WIN-02：窗口向 <see cref="Transport.INativeIpcTransport"/> 的注册与注销统一由
+    /// <see cref="Managers.WindowManager"/> 依据此能力完成，平台实现不再自行注册。
+    /// </para>
+    /// <para>
+    /// 默认 <c>false</c>：仅 Windows（WebView2 <c>WebMessageReceived</c>）与测试宿主（Mock）为真。
+    /// Linux 的 <see cref="IWebviewWindowImpl.SetNativeMessageHandler"/> 为空操作、Android 走
+    /// <c>JavascriptInterface</c> 独立桥，若误标为真，<c>EventIPCTransport</c> 会因"原生通道已接管"
+    /// 而跳过 <c>ExecJS</c> 兜底，导致后端事件在前端丢失（RH-WIN-01 曾掩盖此缺陷）。
+    /// </para>
+    /// </summary>
+    bool SupportsNativeMessageChannel => false;
+
+    /// <summary>
+    /// 窗口销毁通知（RH-WIN-02）。
+    /// <para>
+    /// <see cref="Managers.WindowManager"/> 在移除窗口记录后调用，供平台层清理自身的窗口缓存。
+    /// 平台自持的窗口字典因此降级为缓存：唯一事实源是 <see cref="Managers.WindowManager"/>，
+    /// 平台缓存只需与之保持一致，用于执行原生操作（菜单、暗色模式、句柄枚举等）。
+    /// </para>
+    /// <para>
+    /// 默认空实现，不维护窗口缓存的平台无需覆盖。
+    /// </para>
+    /// </summary>
+    /// <param name="windowId">已销毁的窗口 ID。</param>
+    void OnWindowDestroyed(uint windowId)
+    {
+        // 默认空实现：平台若自持窗口缓存应覆盖以移除条目。
+    }
+
+    /// <summary>
     /// 创建平台特定的 Webview 窗口。
     /// </summary>
     /// <param name="id">窗口 ID。</param>

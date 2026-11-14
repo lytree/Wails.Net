@@ -430,6 +430,16 @@ public sealed class MacOSPlatformApp : IPlatformApp
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// RH-WIN-02：<c>_windows</c> 降级为平台侧缓存，窗口销毁后必须移除，
+    /// 否则 <see cref="Hide"/> 等枚举路径会继续操作已销毁的 NSWindow。
+    /// </remarks>
+    public void OnWindowDestroyed(uint windowId)
+    {
+        _windows.Remove(windowId);
+    }
+
+    /// <inheritdoc />
     public IWebviewWindowImpl? CreateWebviewWindow(uint id, WebviewWindowOptions options)
     {
 #if MACOS

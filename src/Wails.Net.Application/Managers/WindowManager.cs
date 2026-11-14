@@ -126,22 +126,18 @@ public class WindowManager : IWindowManager
         _application?.RegisterWindowCsp(options.Name, options.Csp);
 
         // 注册窗口关闭事件监听器，当窗口发出 WindowClosed 事件时自动从管理器中移除
-        window.On((uint)WindowEventType.WindowClosed, () =>
-        {
-            if (_windows.TryRemove(id, out _))
-            {
-                if (!string.IsNullOrEmpty(window.Name))
-                {
-                    _windowNames.TryRemove(window.Name, out _);
-                    // P0-4：清理窗口级 CSP 注册，避免内存泄漏
-                    _application?.AssetServer?.SetCspHeaderForWindow(window.Name, null);
-                }
-            }
-        });
+        window.On((uint)WindowEventType.WindowClosed, () => ReleaseWindow(id, window));
 
         // 通知平台应用创建窗口，并回填平台实现，使 facade 全部方法可用（RH-WIN-01）。
         var impl = _platformApp?.CreateWebviewWindow(id, options);
         window.Impl = impl;
+
+        // RH-WIN-02：原生 IPC 的窗口注册从平台层收敛到此，平台只需声明
+        // SupportsNativeMessageChannel 能力，不再各自调用 NativeIpcTransport.RegisterWindow。
+        if (impl is not null && _platformApp?.SupportsNativeMessageChannel == true)
+        {
+            _application?.NativeIpcTransport?.RegisterWindow(id, impl);
+        }
 
         // P1-3-4：触发窗口创建事件，让外部组件可以订阅新窗口的控制台消息等
         WindowCreated?.Invoke(window);
@@ -204,12 +200,9 @@ public class WindowManager : IWindowManager
     /// <param name="id">窗口 ID。</param>
     public void DestroyWindow(uint id)
     {
-        if (_windows.TryRemove(id, out var window))
+        if (_windows.TryGetValue(id, out var window))
         {
-            if (!string.IsNullOrEmpty(window.Name))
-            {
-                _windowNames.TryRemove(window.Name, out _);
-            }
+            ReleaseWindow(id, window);
 
             try
             {
@@ -219,6 +212,45 @@ public class WindowManager : IWindowManager
             {
                 // 关闭窗口时的异常不应中断管理器操作
             }
+        }
+    }
+
+    /// <summary>
+    /// 释放窗口记录（RH-WIN-02）：从注册表移除、反注册原生 IPC、通知平台清理缓存、清理窗口级 CSP。
+    /// <para>
+    /// 幂等：窗口正常关闭（<see cref="WindowEventType.WindowClosed"/>）与
+    /// <see cref="DestroyWindow"/> 两条路径都会调用，重复调用直接返回。
+    /// </para>
+    /// </summary>
+    /// <param name="id">窗口 ID。</param>
+    /// <param name="window">窗口 facade 实例。</param>
+    private void ReleaseWindow(uint id, WebviewWindow window)
+    {
+        if (!_windows.TryRemove(id, out _))
+        {
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(window.Name))
+        {
+            _windowNames.TryRemove(window.Name, out _);
+
+            // P0-4：清理窗口级 CSP 注册，避免内存泄漏
+            _application?.AssetServer?.SetCspHeaderForWindow(window.Name, null);
+        }
+
+        // RH-WIN-02：原生 IPC 注销同样收敛到此，替代平台窗口 Close() 内的
+        // Application.Get()?.NativeIpcTransport?.UnregisterWindow 静态调用。
+        _application?.NativeIpcTransport?.UnregisterWindow(id);
+
+        // RH-WIN-02：通知平台清理自持的窗口缓存，避免对已销毁窗口继续执行原生操作。
+        try
+        {
+            _platformApp?.OnWindowDestroyed(id);
+        }
+        catch
+        {
+            // 平台缓存清理失败不应中断窗口移除流程
         }
     }
 

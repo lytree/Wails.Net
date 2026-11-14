@@ -211,11 +211,24 @@ public sealed class MockPlatformApp : IPlatformApp, IDisposable
     public string[]? OpenMultipleFilesDialogResult { get; set; }
 
     /// <summary>
-    /// 获取或设置是否在 <see cref="CreateWebviewWindow"/> 时把窗口注册到
-    /// <c>Application.Get().NativeIpcTransport</c>，默认 true。
+    /// 获取或设置是否把窗口注册到 <c>WindowManager</c> 驱动的原生 IPC 通道
+    /// （<see cref="Application.NativeIpcTransport"/>），默认 true。
+    /// <para>
+    /// RH-WIN-02 起注册动作由 <c>WindowManager</c> 依据
+    /// <see cref="IPlatformApp.SupportsNativeMessageChannel"/> 完成，本属性即该能力的返回值；
     /// 关闭后可用于纯窗口契约测试（不需要 IPC 管线）。
+    /// </para>
     /// </summary>
     public bool RegisterWindowsWithNativeIpc { get; set; } = true;
+
+    /// <inheritdoc />
+    public bool SupportsNativeMessageChannel => RegisterWindowsWithNativeIpc;
+
+    /// <inheritdoc />
+    public void OnWindowDestroyed(uint windowId)
+    {
+        _windows.TryRemove(windowId, out _);
+    }
 
     /// <summary>
     /// 获取或设置单实例通知回调，用于断言 <see cref="NotifySingleInstance"/> 的参数。
@@ -425,12 +438,9 @@ public sealed class MockPlatformApp : IPlatformApp, IDisposable
         _windows[id] = window;
         Volatile.Write(ref _lastWindowId, id);
 
-        // 与真实平台实现一致：若原生 IPC 已启用，注册窗口以安装消息路由回调。
-        // 这是 WailsTestHost 能够跑通完整 IPC 管线的关键一步。
-        if (RegisterWindowsWithNativeIpc)
-        {
-            WailsApplication.Get()?.NativeIpcTransport?.RegisterWindow(id, window);
-        }
+        // 注册动作已上移到 WindowManager（RH-WIN-02）：它依据
+        // SupportsNativeMessageChannel（即 RegisterWindowsWithNativeIpc）决定是否调用
+        // NativeIpcTransport.RegisterWindow，此方法与真实平台实现保持一致，不再自行注册。
 
         window.Show();
         return window;

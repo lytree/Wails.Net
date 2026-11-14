@@ -835,6 +835,16 @@ public sealed class LinuxPlatformApp : IPlatformApp
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// RH-WIN-02：<c>_windows</c> 降级为平台侧缓存，窗口销毁后必须移除，
+    /// 否则 <see cref="Hide"/>、暗色模式切换等枚举路径会继续操作已销毁的 GTK 窗口。
+    /// </remarks>
+    public void OnWindowDestroyed(uint windowId)
+    {
+        _windows.Remove(windowId);
+    }
+
+    /// <inheritdoc />
     public IWebviewWindowImpl? CreateWebviewWindow(uint id, WebviewWindowOptions options)
     {
         if (!OperatingSystem.IsLinux())

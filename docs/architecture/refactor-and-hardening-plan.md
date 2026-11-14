@@ -204,6 +204,21 @@
 - 多窗口 demo（MultiWindow/Frameless/DragAndDrop）行为不变；
 - 并发创建窗口压力测试无 ID 冲突。
 
+#### 实施进展（2026-11-14）
+
+已完成（提交见 `refactor(runtime): RH-WIN-02 统一窗口注册表与原生 IPC 装配`）：
+
+| 项 | 落地方式 |
+|---|---|
+| 单一事实源 = WindowManager | R1-2 起 `Application` 已无 `_windows`/`_nextWindowId`，`Windows`/`GetWindow`/`DestroyWindow`/`ShutdownAsync` 全部委托，ID 走 `Interlocked.Increment` |
+| 原生 IPC 注册统一 | `WindowManager.CreateWebviewWindow` 在回填 `Impl` 后依据新增的 `IPlatformApp.SupportsNativeMessageChannel` 调用 `RegisterWindow`；`WindowsPlatformApp.cs` 与 `MockPlatformApp` 内的注册特判删除 |
+| 原生 IPC 注销统一 | `WindowManager.ReleaseWindow`（`WindowClosed` 事件与 `DestroyWindow` 双路径共用、幂等）负责 `UnregisterWindow`；`Win32WebviewWindow.Close` 内的注销与 `Application.Get()` 静态定位器删除 |
+| 平台字典降级为缓存 | 新增 `IPlatformApp.OnWindowDestroyed(uint)`（默认空实现），Windows/Linux/macOS/Android/Mock 在窗口销毁时移除自身缓存条目——修复此前"平台字典只增不删，退出/换主题时仍遍历已销毁窗口"的缺陷 |
+| 能力门控（防回归） | `SupportsNativeMessageChannel` 默认 `false`：Linux 的 `SetNativeMessageHandler` 是空操作、Android 走 `JavascriptInterface` 独立桥，误标为真会让 `EventIPCTransport` 认为原生通道已接管而跳过 `ExecJS` 兜底，重演 RH-WIN-01 掩盖的事件丢失 |
+| 测试 | `WindowNativeIpcRegistrationTests`（5 项）：能力为真时注册、为假时跳过、销毁反注册 + 通知平台、重复销毁幂等、32 并发建窗 ID 唯一且逐个注册 |
+
+剩余（未做）：平台 App 仍各自持有 `_windows` 缓存（已保证一致性，未实现"查询型"单一注册表，即平台不再存任何窗口表）；RH-IPC-02 管线统一未开始。
+
 ### 3.3 [破坏性] 四平台 IPC/资源/ready 管线统一（RH-IPC-02，继承 OPT-IPC-003 剩余）
 
 #### 现状（平台层重复度实测）
