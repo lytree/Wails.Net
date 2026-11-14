@@ -249,6 +249,12 @@ jobs:
       - name: 运行 AssetServer 测试
         run: dotnet run --project tests/Wails.Net.AssetServer.Tests/Wails.Net.AssetServer.Tests.csproj --no-build -c Release
 
+      # Testing 包（MockPlatform / WailsTestHost）自身测试。此前只在本地跑过，
+      # CI 漏跑导致"事件下行无头守门"等用例的回归不会被发现；
+      # 该包是发布给用户的公开包，契约测试必须在 CI 上守。
+      - name: 运行 Testing 包测试
+        run: dotnet run --project tests/Wails.Net.Testing.Tests/Wails.Net.Testing.Tests.csproj --no-build -c Release
+
   # Windows 平台测试（依赖 Win32 API、注册表、WinForms 剪贴板）
   test-windows:
     name: 测试 (Windows 平台)
