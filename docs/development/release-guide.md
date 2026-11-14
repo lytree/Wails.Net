@@ -149,13 +149,27 @@ build → test → pack → dist → publish
 
 ### 必需的 Secrets
 
-本项目使用 **NuGet Trusted Publishing**（基于 GitHub OIDC）发布到 nuget.org，无需长期 API Key。仅需一个 Secret：
+本项目使用 **NuGet Trusted Publishing**（基于 GitHub OIDC）发布到 nuget.org，无需长期 API Key。需要两个 Secret：
 
 | Secret | 说明 | 配置位置 |
 |--------|------|--------|
 | `NUGET_USER` | nuget.org 用户名（profile name，非邮箱），用于 Trusted Publishing 换取临时 API key | GitHub → Settings → Secrets and variables → Actions → Repository secrets |
+| `NPM_TOKEN` | npmjs.com 自动化 token（Automation 或 Classic），对 `@wails-net` 作用域有 publish 权限 | 同上 |
 
 > 不再需要 `NUGET_API_KEY`。Trusted Publishing 通过 `NuGet/login@v1` 用 GitHub OIDC token 换取一次性临时 key（约 1 小时过期），详见下方 [Trusted Publishing 配置](#trusted-publishing-配置) 章节。
+
+### 发布失败排查（已知报错）
+
+两个发布作业都带「secret 预检」步骤，缺配置时会在作业开头直接失败并给出中文提示，而不是等到构建完才报底层错误。若无预检，历史报错签名如下：
+
+| 作业 | 原始报错 | 真实原因 | 处理 |
+|------|---------|---------|------|
+| `发布到 npmjs.org` | `npm error code ENEEDAUTH` | `secrets.NPM_TOKEN` 为空（token 错误会是 `E401`/`E403`，二者含义不同） | 配置 `NPM_TOKEN` 后对该 run **重跑失败作业**，不必重新打 tag |
+| `发布到 NuGet.org` | `##[error]Input required and not supplied: user` | `secrets.NUGET_USER` 未配置 | 配置 `NUGET_USER`；若已配置仍失败，检查 nuget.org 侧 Trusted Publishing policy 的 Repository / Workflow / Environment 是否与 ci.yml 一致 |
+
+> 已发布的正式版本无法"补成"预发布之外的另一种形态：如果 tag 建错了 Release 属性，用 `PATCH /repos/{owner}/{repo}/releases/{id}` 改 `prerelease` / `make_latest` 即可，无需重建 tag。
+
+**预发布 tag 的处理**：tag 名含 `-`（如 `v1.0.0-alpha.1`）时，`publish-github-release` 会自动加 `--prerelease`，避免 alpha 包被 GitHub 标成 Latest 引导稳定版用户下载。
 
 ### 构建产物
 

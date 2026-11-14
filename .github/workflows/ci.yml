@@ -843,6 +843,22 @@ jobs:
       # Trusted Publishing：用 GitHub OIDC token 向 nuget.org 换取一次性临时 API key（约 1 小时过期）。
       # 无需长期 NUGET_API_KEY secret，仅需 NUGET_USER（nuget.org 用户名，非邮箱）。
       # 前提：已在 nuget.org → Trusted Publishing 创建 policy（指定本仓库 + ci.yml + environment=nuget-org）。
+      # 前置检查：secret 缺失时 NuGet/login 只报 "Input required and not supplied: user"，
+      # 与"policy 配错""用户名写错"混在一起难分辨，这里提前给出可操作的提示。
+      - name: 校验 NUGET_USER secret 已配置
+        shell: pwsh
+        env:
+          NUGET_USER: ${{ secrets.NUGET_USER }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:NUGET_USER)) {
+            Write-Host "::error title=缺少 NUGET_USER secret::NuGet Trusted Publishing 需要 nuget.org 用户名（profile name，非邮箱）。"
+            Write-Host "修复：仓库 Settings → Secrets and variables → Actions 新增 NUGET_USER；"
+            Write-Host "并确认 nuget.org → Trusted Publishing 的 policy 为 Repository=lytree/Wails.Net、Workflow=ci.yml、Environment=nuget-org。"
+            Write-Host "详见 docs/development/release-guide.md。"
+            exit 1
+          }
+          Write-Host "NUGET_USER 已配置（$($env:NUGET_USER)）"
+
       - name: NuGet 登录（OIDC → 临时 API key）
         uses: NuGet/login@v1
         id: nuget_login
@@ -884,6 +900,20 @@ jobs:
         run: |
           corepack enable
           corepack prepare pnpm@9.15.0 --activate
+
+      # 前置检查：secret 为空时 pnpm publish 只报 `npm error code ENEEDAUTH`，
+      # 看起来像 token 失效，实际是没配置；提前失败可省掉约 3 分钟的构建。
+      - name: 校验 NPM_TOKEN secret 已配置
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NPM_TOKEN}" ]; then
+            echo "::error title=缺少 NPM_TOKEN secret::npm 发布需要 npmjs.com 自动化 token（Automation 或 Classic，对 @wails-net 作用域有 publish 权限）。"
+            echo "修复：仓库 Settings → Secrets and variables → Actions 新增 NPM_TOKEN。"
+            echo "详见 docs/development/release-guide.md。"
+            exit 1
+          fi
+          echo "NPM_TOKEN 已配置（长度 ${#NPM_TOKEN}）"
 
       - name: 版本一致性校验（WailsNetVersion == 前端包版本）
         run: node scripts/verify-versions.mjs
@@ -956,11 +986,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          # 创建 Release（若已存在则跳过），自动生成 Release Notes
+          # 创建 Release（若已存在则跳过），自动生成 Release Notes。
+          # 预发布版本（tag 含 '-'，如 v1.0.0-alpha.1）必须带 --prerelease：
+          # 否则 GitHub 会把它标成 Latest，稳定版用户会被引导去下 alpha 包。
+          PRERELEASE_ARGS=""
+          if [[ "${{ github.ref_name }}" == *-* ]]; then
+            PRERELEASE_ARGS="--prerelease"
+            echo "检测到预发布 tag（${{ github.ref_name }}），将以 prerelease 发布"
+          fi
           gh release create "${{ github.ref_name }}" \
             --title "Wails.Net ${{ env.WAILS_NET_VERSION }}" \
             --generate-notes \
-            --verify-tag || echo "Release ${{ github.ref_name }} 已存在，继续上传资产"
+            --verify-tag \
+            $PRERELEASE_ARGS || echo "Release ${{ github.ref_name }} 已存在，继续上传资产"
 
       - name: 上传 NuGet 包到 Release
         env:
