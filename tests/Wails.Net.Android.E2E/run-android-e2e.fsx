@@ -22,10 +22,11 @@
 //   dotnet fsi run-android-e2e.fsx -- --no-build          # 跳过 APK 构建
 //   dotnet fsi run-android-e2e.fsx -- --no-install        # 跳过 APK 安装
 //   dotnet fsi run-android-e2e.fsx -- --apk-path <path>   # 指定 APK 路径
+//   dotnet fsi run-android-e2e.fsx -- --budget-minutes 20 # 总耗时预算（默认 15 分钟）
 //
 // 退出码：
 //   0 = 全部测试通过
-//   1 = 测试失败
+//   1 = 测试失败（含总预算超限）
 //   2 = 环境错误（adb 缺失、无设备等）
 // ============================================================================
 
@@ -47,6 +48,19 @@ let customApkPath =
     | Some i when i + 1 < argv.Length -> Some argv.[i + 1]
     | _ -> None
 
+// 总预算：脚本自己守时，而不是等 CI 步骤被外部强杀。
+// 原因：单条命令虽各有超时，但 uiautomator 有 12 次重试 × 60s + 2s 间隔，
+// 最坏情况可堆到十几分钟；被外部杀死时日志尾部（含 logcat dump）会一起丢失。
+let budgetMinutes =
+    match argv |> List.tryFindIndex ((=) "--budget-minutes") with
+    | Some i when i + 1 < argv.Length ->
+        match Int32.TryParse argv.[i + 1] with
+        | true, value when value > 0 -> value
+        | _ -> 15
+    | _ -> 15
+
+let scriptClock = Stopwatch.StartNew()
+
 // 日志函数统一接受预格式化字符串，避免 F# 类型推断与 kprintf 的 unit 返回类型冲突。
 let log (msg: string) =
     if verbose then Console.WriteLine("[verbose] " + msg)
@@ -54,6 +68,18 @@ let log (msg: string) =
 let info (msg: string) = Console.WriteLine("[info] " + msg)
 let pass (msg: string) = Console.WriteLine("  ✓ " + msg)
 let fail (msg: string) = Console.WriteLine("  ✗ " + msg)
+
+/// 总预算超限：单独一种异常类型，便于 main 与真正的脚本错误区分处理。
+exception BudgetExceeded of string
+
+/// 在每个阶段入口与重试循环内检查总预算。超限即主动失败并保留现场，
+/// 而不是让 CI 步骤在外部超时被强杀（那样连 logcat dump 都来不及输出）。
+let guardBudget (stage: string) =
+    let elapsed = scriptClock.Elapsed
+    if elapsed.TotalMinutes > float budgetMinutes then
+        raise (BudgetExceeded(
+            sprintf "总耗时 %d 分 %d 秒，已超过预算 %d 分钟（阶段：%s）"
+                (int elapsed.TotalMinutes) elapsed.Seconds budgetMinutes stage))
 
 // ----------------------------------------------------------------------------
 // 进程执行辅助
@@ -166,6 +192,7 @@ let checkEnvironment () =
 // 测试步骤
 // ----------------------------------------------------------------------------
 let buildApk () =
+    guardBudget "构建 APK"
     info "步骤 1/4：构建 Demo Android APK"
     let code, _, _ = dotnetCmd "build examples/Wails.Net.Demo.Android/Wails.Net.Demo.Android.csproj -c Release" 600000
     if code <> 0 then
@@ -184,6 +211,7 @@ let findApkPath () =
     candidates |> List.tryFind File.Exists
 
 let installApk apkPath =
+    guardBudget "安装 APK"
     info "步骤 2/4：安装 APK 到设备"
     log (sprintf "APK 路径: %s" apkPath)
     let result = adb (sprintf "install -r -t %s" apkPath)
@@ -333,6 +361,7 @@ let launchApp () =
         started
 
 let startApp () =
+    guardBudget "启动应用"
     info "步骤 3/4：启动应用并验证 Activity 进入前台"
     adb "logcat -c" |> ignore
 
@@ -391,6 +420,7 @@ let uiAutomatorDumpUntil (name: string) (matched: string -> bool) (attempts: int
     let mutable hit = false
     let mutable i = 0
     while not hit && i < attempts do
+        guardBudget (sprintf "uiautomator dump（第 %d/%d 次）" (i + 1) attempts)
         if i > 0 then Thread.Sleep 2000
         xml <- uiAutomatorDump name
         hit <- matched xml
@@ -414,6 +444,7 @@ let tryFindNodeCenter (xml: string) (text: string) =
         Some((x1 + x2) / 2, (y1 + y2) / 2)
 
 let verifyWebView () =
+    guardBudget "验证 WebView 与 IPC"
     info "步骤 4/4：验证 WebView 加载与 IPC 绑定"
     // 1. 通过 uiautomator dump 验证 WebView 渲染（轮询等待无障碍树构建完成）
     //    特征只取只存在于页面 DOM 里的文字。"Wails.Net Demo" 不能用：它同时是
@@ -478,7 +509,7 @@ let main () =
     let envCode = checkEnvironment ()
     if envCode <> 0 then envCode
     else
-        let allPass =
+        let runAll () =
             let buildOk =
                 if noBuild then
                     info "跳过 APK 构建（--no-build）"
@@ -519,9 +550,23 @@ let main () =
                         else
                             verifyWebView ()
 
+        // 超预算按"测试失败"处理（而非环境错误 2）：设备/模拟器跑得慢属于测试环境问题，
+        // 但要留下 logcat 与已耗时，便于判断是 emulator 退化还是产品侧卡住。
+        let allPass =
+            try
+                runAll ()
+            with
+            | BudgetExceeded message ->
+                fail message
+                Console.WriteLine(sprintf "[info] 脚本总耗时 %.1f 秒（预算 %d 分钟）"
+                                      scriptClock.Elapsed.TotalSeconds budgetMinutes)
+                dumpErrorLogs "超预算时的错误日志"
+                false
+
         cleanup ()
 
         Console.WriteLine("==============================================")
+        Console.WriteLine(sprintf "总耗时 %.1f 秒" scriptClock.Elapsed.TotalSeconds)
         if allPass then
             Console.WriteLine("结果：全部测试通过 ✓")
             0
