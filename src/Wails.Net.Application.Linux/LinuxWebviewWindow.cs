@@ -183,7 +183,13 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     /// 脚本会在每个新文档创建时、页面脚本执行前运行（等价于 WebView2 的
     /// <c>AddScriptToExecuteOnDocumentCreatedAsync</c>）。仅注入一次。
     /// </summary>
-    private bool _runtimeInjected;
+    /// <summary>
+    /// 运行时引导协调器（RH-IPC-02）：统一「document-start 注入」与
+    /// 「WindowRuntimeReady 派发」的时序，替代原 <c>_runtimeInjected</c> 布尔标记。
+    /// 派发语义为「导航完成 + 运行时注入完成」二者皆满足且仅一次；
+    /// 改造前本平台在注入完成后立即派发（早于导航完成），与其他三平台语义不一致。
+    /// </summary>
+    private readonly WindowRuntimeBootstrap _runtimeBootstrap;
 
     /// <summary>
     /// JSON 序列化选项，用于 IPC 响应序列化。
@@ -304,6 +310,12 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         _id = id;
         _options = options;
         _linuxOptions = linuxOptions;
+
+        // RH-IPC-02：必须在 CreateWebView()（内部会调用 InjectRuntimeJs）之前就绪。
+        _runtimeBootstrap = new WindowRuntimeBootstrap(
+            id,
+            static wid => WailsApplication.Get()?.DispatchWindowEvent(wid, (uint)WindowEventType.WindowRuntimeReady),
+            static () => WailsApplication.Get()?.GenerateRuntimeJs(false));
         _minWidth = options.MinWidth;
         _minHeight = options.MinHeight;
         _maxWidth = options.MaxWidth;
@@ -454,53 +466,47 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     /// </summary>
     private void InjectRuntimeJs()
     {
-        if (_runtimeInjected || _webView is null)
+        if (_webView is null)
         {
             return;
         }
 
-        var app = WailsApplication.Get();
-        if (app is null)
+        // RH-IPC-02：脚本生成与「只注册一次」由 WindowRuntimeBootstrap 统一处理。
+        if (!_runtimeBootstrap.TryGetScript(out var js))
         {
             return;
         }
 
         try
         {
-            var js = app.GenerateRuntimeJs(false);
-            if (!string.IsNullOrEmpty(js))
-            {
-                // 通过 UserContentManager.AddScript 注册 UserScript，
-                // 脚本会在每个新文档创建时、页面脚本执行前注入。
-                // UserContentInjectedFrames.AllFrames 确保主框架与子框架均注入。
-                // UserScriptInjectionTime.Start 对应 WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START。
-                var ucm = _webView.GetUserContentManager();
+            // 通过 UserContentManager.AddScript 注册 UserScript，
+            // 脚本会在每个新文档创建时、页面脚本执行前注入。
+            // UserContentInjectedFrames.AllFrames 确保主框架与子框架均注入。
+            // UserScriptInjectionTime.Start 对应 WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START。
+            var ucm = _webView.GetUserContentManager();
 
-                // §11.2 第 3 项（GHSA-2p5f-2gx8-mh8m 缓解）：先注入帧守卫（所有帧），
-                // 使跨源 / 不透明源子帧标记为不可信并阻断 wails: 端点访问；
-                // WebKit 按注册顺序在同一注入时机执行脚本，因此守卫先于运行时标志生效。
-                var guardScript = UserScript.New(
-                    LinuxFrameGuard.GetGuardScript(),
-                    UserContentInjectedFrames.AllFrames,
-                    UserScriptInjectionTime.Start,
-                    null,
-                    null);
-                ucm.AddScript(guardScript);
+            // §11.2 第 3 项（GHSA-2p5f-2gx8-mh8m 缓解）：先注入帧守卫（所有帧），
+            // 使跨源 / 不透明源子帧标记为不可信并阻断 wails: 端点访问；
+            // WebKit 按注册顺序在同一注入时机执行脚本，因此守卫先于运行时标志生效。
+            var guardScript = UserScript.New(
+                LinuxFrameGuard.GetGuardScript(),
+                UserContentInjectedFrames.AllFrames,
+                UserScriptInjectionTime.Start,
+                null,
+                null);
+            ucm.AddScript(guardScript);
 
-                // 运行时标志仅在可信帧注入（守卫未执行时按可信处理，保持兼容）。
-                var script = UserScript.New(
-                    LinuxFrameGuard.WrapRuntimeScript(js),
-                    UserContentInjectedFrames.AllFrames,
-                    UserScriptInjectionTime.Start,
-                    null,
-                    null);
-                ucm.AddScript(script);
-                _runtimeInjected = true;
+            // 运行时标志仅在可信帧注入（守卫未执行时按可信处理，保持兼容）。
+            var script = UserScript.New(
+                LinuxFrameGuard.WrapRuntimeScript(js),
+                UserContentInjectedFrames.AllFrames,
+                UserScriptInjectionTime.Start,
+                null,
+                null);
+            ucm.AddScript(script);
 
-                // OPT-RUNTIME-002（2026-08-15）：运行时注入完成后派发 WindowRuntimeReady，
-                // 对齐 Windows/macOS 行为，使生命周期 ready 状态四平台一致。
-                WailsApplication.Get()?.DispatchWindowEvent(_id, (uint)WindowEventType.WindowRuntimeReady);
-            }
+            // 注入成功；ready 事件待「导航完成」后由 WindowRuntimeBootstrap 统一派发。
+            _runtimeBootstrap.MarkRuntimeInjected();
         }
         catch
         {
@@ -1007,6 +1013,10 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
                     _ = _webView.EvaluateJavascriptAsync(
                         DragRegionHelper.GetDragRegionScript());
                 }
+
+                // RH-IPC-02：上报「导航完成」这一事实，由 WindowRuntimeBootstrap 与注入状态共同裁决
+                // 是否派发 WindowRuntimeReady（改造前在注入完成时就派发，早于页面真正就绪）。
+                _runtimeBootstrap.MarkNavigationCompleted();
                 break;
         }
     }

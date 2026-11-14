@@ -6,6 +6,7 @@ using Wails.Net.Application.Menus;
 using Wails.Net.Application.Webview;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Windows;
+using Wails.Net.Events;
 using Menu = Wails.Net.Application.Menus.Menu;
 using WailsApplication = Wails.Net.Application.Application;
 
@@ -16,7 +17,6 @@ using CoreGraphics;
 using Foundation;
 using WebKit;
 using Wails.Net.Application.Screens;
-using Wails.Net.Events;
 #endif
 
 namespace Wails.Net.Application.Platform;
@@ -124,12 +124,15 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
     /// UI 代理（alert/confirm/prompt 对话框）。
     /// </summary>
     private MacUiDelegate? _uiDelegate;
+#endif
 
     /// <summary>
-    /// 运行时是否已注入。
+    /// 运行时引导协调器（RH-IPC-02）：统一「document-start 注入」与
+    /// 「WindowRuntimeReady 派发」的时序，替代原 <c>_runtimeInjected</c> 布尔标记。
+    /// 派发语义为「导航完成 + 运行时注入完成」二者皆满足且仅一次。
+    /// 置于 <c>#if MACOS</c> 之外，使非 macOS 分支同样可编译。
     /// </summary>
-    private bool _runtimeInjected;
-#endif
+    private readonly WindowRuntimeBootstrap _runtimeBootstrap;
 
     /// <summary>
     /// 显式关闭标志（Close() 调用后允许 windowShouldClose 直接关闭）。
@@ -158,6 +161,12 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
         _options = options;
         _macOptions = macOptions;
         _macWindowOptions = options.Mac;
+
+        // RH-IPC-02：ready 事件的派发条件与去重由协调器统一裁决。
+        _runtimeBootstrap = new WindowRuntimeBootstrap(
+            id,
+            static wid => WailsApplication.Get()?.DispatchWindowEvent(wid, (uint)WindowEventType.WindowRuntimeReady),
+            static () => WailsApplication.Get()?.GenerateRuntimeJs(false));
     }
 
     /// <summary>
@@ -512,26 +521,24 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
     /// </summary>
     private void InjectRuntimeJs()
     {
-        if (_runtimeInjected || _webView is null || _configuration?.UserContentController is not { } ucc)
+        if (_webView is null || _configuration?.UserContentController is not { } ucc)
         {
             return;
         }
 
-        var app = WailsApplication.Get();
-        if (app is null)
+        // RH-IPC-02：脚本生成与「只注册一次」由 WindowRuntimeBootstrap 统一处理。
+        if (!_runtimeBootstrap.TryGetScript(out var js))
         {
             return;
         }
 
         try
         {
-            var js = app.GenerateRuntimeJs(false);
-            if (!string.IsNullOrEmpty(js))
-            {
-                var script = new WKUserScript(new NSString(js), WKUserScriptInjectionTime.AtDocumentStart, false);
-                ucc.AddUserScript(script);
-                _runtimeInjected = true;
-            }
+            var script = new WKUserScript(new NSString(js), WKUserScriptInjectionTime.AtDocumentStart, false);
+            ucc.AddUserScript(script);
+
+            // 注入成功；ready 事件待「导航完成」后由 WindowRuntimeBootstrap 统一派发。
+            _runtimeBootstrap.MarkRuntimeInjected();
         }
         catch
         {
@@ -1605,7 +1612,9 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
             ExecJS($"(function(){{var s=document.createElement('style');s.appendChild(document.createTextNode({css}));document.head.appendChild(s);}})();");
         }
 
-        DispatchWindowEvent(WindowEventType.WindowRuntimeReady);
+        // RH-IPC-02：上报「导航完成」这一事实，由 WindowRuntimeBootstrap 与注入状态共同裁决
+        // 是否派发 WindowRuntimeReady（改造前无条件派发，未校验注入是否成功）。
+        _runtimeBootstrap.MarkNavigationCompleted();
     }
 
     /// <summary>
@@ -1634,9 +1643,23 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
 
     /// <summary>
     /// 处理前端脚本消息（webkit.messageHandlers.external）。
+    /// <para>
+    /// RH-IPC-02：不再在 AppKit 主线程上 <c>GetAwaiter().GetResult()</c> 同步等待命令完成。
+    /// 同步阻塞会让界面卡死，且当命令内部需要 <c>DispatchOnMainThread</c> 回到主线程时必然死锁。
+    /// <c>WKScriptMessageHandler</c> 本身没有同步返回值，改为后台等待、完成后回主线程投递响应。
+    /// </para>
     /// </summary>
     /// <param name="message">消息体字符串。</param>
     internal void HandleScriptMessage(string message)
+    {
+        _ = HandleScriptMessageAsync(message);
+    }
+
+    /// <summary>
+    /// <see cref="HandleScriptMessage"/> 的异步实现：等待消息处理完成后再回主线程推送响应。
+    /// </summary>
+    /// <param name="message">消息体字符串。</param>
+    private async Task HandleScriptMessageAsync(string message)
     {
         try
         {
@@ -1648,15 +1671,17 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
 
             if (_nativeMessageHandler is not null)
             {
-                _ = _nativeMessageHandler(message);
+                await _nativeMessageHandler(message).ConfigureAwait(false);
                 return;
             }
 
-            var response = app.HandleMessageFromFrontend(message, _id).GetAwaiter().GetResult();
+            var response = await app.HandleMessageFromFrontend(message, _id).ConfigureAwait(false);
             if (response is not null)
             {
                 var json = JsonSerializer.Serialize(response);
-                PostNativeMessage(json);
+
+                // ExecJS 最终调用 WKWebView.EvaluateJavaScript，必须在主线程执行。
+                app.DispatchOnMainThread(() => PostNativeMessage(json));
             }
         }
         catch

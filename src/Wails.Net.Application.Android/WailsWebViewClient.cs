@@ -44,6 +44,14 @@ public sealed class WailsWebViewClient : WebViewClient
     private readonly uint _windowId;
 
     /// <summary>
+    /// 运行时引导协调器（RH-IPC-02）：统一 ready 派发的去重与前置条件。
+    /// Android 不单独注入 runtime（<c>wails.runtime.js</c> 由资源拦截随文档供给），
+    /// 故以 <c>runtimeInjectionRequired: false</c> 构造，只等导航完成即派发，
+    /// 与改造前 <c>OnPageFinished</c> 的时机一致。窗口 ID 为 0 时不派发（纯资源拦截场景）。
+    /// </summary>
+    private readonly WindowRuntimeBootstrap? _runtimeBootstrap;
+
+    /// <summary>
     /// R2-4：当前窗口的 <see cref="WebviewRequestPipeline"/>，懒加载并缓存。
     /// </summary>
     private WebviewRequestPipeline? _pipeline;
@@ -59,6 +67,14 @@ public sealed class WailsWebViewClient : WebViewClient
         _assetServer = assetServer;
         _windowName = windowName;
         _windowId = windowId;
+
+        // RH-IPC-02：ready 事件的「只派发一次」由协调器统一保证。
+        _runtimeBootstrap = windowId == 0
+            ? null
+            : new WindowRuntimeBootstrap(
+                windowId,
+                static wid => WailsApplication.Get()?.DispatchWindowEvent(wid, (uint)WindowEventType.WindowRuntimeReady),
+                runtimeInjectionRequired: false);
     }
 
     /// <summary>
@@ -218,12 +234,9 @@ public sealed class WailsWebViewClient : WebViewClient
     {
         base.OnPageFinished(view, url);
 
-        if (_windowId == 0)
-        {
-            return; // 未绑定窗口（纯资源拦截场景），不派发窗口事件
-        }
-
-        WailsApplication.Get()?.DispatchWindowEvent(_windowId, (uint)WindowEventType.WindowRuntimeReady);
+        // RH-IPC-02：上报「导航完成」由协调器裁决派发与去重；
+        // 窗口 ID 为 0（纯资源拦截场景）时协调器为 null，不派发窗口事件。
+        _runtimeBootstrap?.MarkNavigationCompleted();
     }
 
     /// <summary>

@@ -217,9 +217,28 @@
 | 能力门控（防回归） | `SupportsNativeMessageChannel` 默认 `false`：Linux 的 `SetNativeMessageHandler` 是空操作、Android 走 `JavascriptInterface` 独立桥，误标为真会让 `EventIPCTransport` 认为原生通道已接管而跳过 `ExecJS` 兜底，重演 RH-WIN-01 掩盖的事件丢失 |
 | 测试 | `WindowNativeIpcRegistrationTests`（5 项）：能力为真时注册、为假时跳过、销毁反注册 + 通知平台、重复销毁幂等、32 并发建窗 ID 唯一且逐个注册 |
 
-剩余（未做）：平台 App 仍各自持有 `_windows` 缓存（已保证一致性，未实现"查询型"单一注册表，即平台不再存任何窗口表）；RH-IPC-02 管线统一未开始。
+剩余（未做）：平台 App 仍各自持有 `_windows` 缓存（已保证一致性，未实现"查询型"单一注册表，即平台不再存任何窗口表）；RH-IPC-02 进展见 §3.3。
 
 ### 3.3 [破坏性] 四平台 IPC/资源/ready 管线统一（RH-IPC-02，继承 OPT-IPC-003 剩余）
+
+#### 实施进展（2026-11-14）
+
+下方「现状」表记录的是 2026-08-18 基线，**其中前三行（POST /wails、静态资源 + SPA 回退、上行 IPC 同步阻塞的管线化）已由 R2-4 完成**：核心包新增 `Wails.Net.Application.Webview.WebviewRequestPipeline` + `WebviewRequest` / `WebviewResponse` / `WebviewPipelineSync`，五处回调（Win32 / Linux / macOS 的 scheme 与 WebMessage、Android 两处）全部改为「原生壳 + `pipeline.HandleAsync`」，详见 `fusion-architecture-audit.md` 的 R2-4 条目。
+
+本轮补齐表中后三行：
+
+| 项 | 落地方式 |
+|---|---|
+| runtime JS 注入（原 3 份） | 新增 `WindowRuntimeBootstrap`（核心包，非反射）：统一"只注册一次"的脚本获取（`TryGetScript`，生成失败可重试）、注入成功上报（`MarkRuntimeInjected`）、控制器重建复位（`ResetInjection`）。三平台只保留各自的 document-start 注册 API（`AddScriptToExecuteOnDocumentCreatedAsync` / `UserContentManager.AddScript` / `WKUserContentController.AddUserScript`） |
+| WindowRuntimeReady 派发（原 4 处 4 种时机） | 统一为**导航完成 + 运行时注入完成，二者皆满足且仅派发一次**。Windows `NavigationCompleted`、Linux `LoadEvent.Finished`、macOS `OnNavigationFinished`、Android `OnPageFinished` 只上报事实；Android 因 runtime 由资源拦截随文档供给，以 `runtimeInjectionRequired: false` 构造，只等导航完成（与改造前时机一致） |
+| 上行 IPC 阻塞（macOS 脚本通道） | `HandleScriptMessage` 不再在 AppKit 主线程 `GetAwaiter().GetResult()`，改为后台等待后用 `DispatchOnMainThread` 回主线程投递响应，消除"命令内部回到主线程即死锁"的路径 |
+
+行为变化（需知悉）：
+
+- **Linux 的 ready 时机后移**：此前在注入完成（导航尚未完成）时就派发，现在等 `LoadEvent.Finished`；订阅方拿到 ready 时页面才真正就绪。
+- **macOS 的 ready 增加注入前置条件**：此前 `OnNavigationFinished` 无条件派发，现在注入失败则不派发（可由后续导航重试）。
+
+剩余（未做）：frameless 拖拽脚本与 DropTargetDetails 仍各平台本地实现（仅 Windows/Linux 各一份，逻辑相同但注入 API 不同）；`IIpcTransportStrategy` 推广（方案第 4 点）未动。
 
 #### 现状（平台层重复度实测）
 

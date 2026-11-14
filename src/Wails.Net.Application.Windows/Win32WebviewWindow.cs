@@ -340,9 +340,11 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     private HMENU _contextMenu;
 
     /// <summary>
-    /// 标记运行时 JS 是否已注入，避免重复注入。
+    /// 运行时引导协调器（RH-IPC-02）：统一「document-start 注入」与
+    /// 「WindowRuntimeReady 派发」的时序，替代原 <c>_runtimeInjected</c> 布尔标记。
+    /// 派发语义为「导航完成 + 运行时注入完成」二者皆满足且仅一次。
     /// </summary>
-    private bool _runtimeInjected;
+    private readonly WindowRuntimeBootstrap _runtimeBootstrap;
 
     /// <summary>
     /// 原生 IPC 消息处理器（P0-C2）。
@@ -382,6 +384,13 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         _id = id;
         _options = options;
         _windowsOptions = windowsOptions;
+
+        // RH-IPC-02：Windows 走 WebView2 的 document-start 注入，
+        // ready 事件由「注入完成 + NavigationCompleted」共同决定（与原行为一致）。
+        _runtimeBootstrap = new WindowRuntimeBootstrap(
+            id,
+            static wid => Application.Get()?.DispatchWindowEvent(wid, (uint)WindowEventType.WindowRuntimeReady),
+            static () => Application.Get()?.GenerateRuntimeJs(false));
 
         EnsureWindowClassRegistered();
         CreateNativeWindow();
@@ -683,8 +692,8 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         _controller = controller;
         _webview = controller.CoreWebView2;
 
-        // 重建时新 WebView 需要重新注入运行时脚本，重置注入标记。
-        _runtimeInjected = false;
+        // 重建时新 WebView 需要重新注入运行时脚本，并重新派发一次 ready。
+        _runtimeBootstrap.ResetInjection();
 
         // 设置 WebView2 边界为窗口客户区大小。
         UpdateBounds();
@@ -1546,8 +1555,9 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         }
 
         // 触发 WindowRuntimeReady 事件，通知应用层运行时已就绪。
-        // 对应 Wails v3 Go 版本中的 emit(WindowRuntimeReady) 调用。
-        Application.Get()?.DispatchWindowEvent(_id, (uint)WindowEventType.WindowRuntimeReady);
+        // RH-IPC-02：派发条件（注入完成 + 导航完成）与去重由 WindowRuntimeBootstrap 统一裁决，
+        // 此处只上报「导航完成」这一事实。
+        _runtimeBootstrap.MarkNavigationCompleted();
     }
 
     /// <summary>
@@ -1560,28 +1570,36 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     /// </summary>
     private void InjectRuntimeJs()
     {
-        if (_runtimeInjected || _webview is null)
+        if (_webview is null)
         {
             return;
         }
 
-        var app = Application.Get();
-        if (app is null)
+        // RH-IPC-02：脚本生成与「只注册一次」由 WindowRuntimeBootstrap 统一处理。
+        if (!_runtimeBootstrap.TryGetScript(out var js))
         {
             return;
         }
 
         try
         {
-            var js = app.GenerateRuntimeJs(false);
-            if (!string.IsNullOrEmpty(js))
-            {
-                // AddScriptToExecuteOnDocumentCreatedAsync 会在每个新文档创建时、
-                // 页面脚本执行前注入 JS，确保 window.wails 在页面脚本中可用。
-                // ExecuteScriptAsync 只在调用时执行一次，页面已加载完，时机太晚。
-                _ = _webview.AddScriptToExecuteOnDocumentCreatedAsync(js);
-                _runtimeInjected = true;
-            }
+            // AddScriptToExecuteOnDocumentCreatedAsync 会在每个新文档创建时、
+            // 页面脚本执行前注入 JS，确保 window.wails 在页面脚本中可用。
+            // ExecuteScriptAsync 只在调用时执行一次，页面已加载完，时机太晚。
+            _ = _webview.AddScriptToExecuteOnDocumentCreatedAsync(js)
+                .ContinueWith(
+                    static (task, state) =>
+                    {
+                        // 注册成功才算注入完成；失败时保持未注入，后续导航可重试。
+                        if (task.Status == TaskStatus.RanToCompletion)
+                        {
+                            ((WindowRuntimeBootstrap)state!).MarkRuntimeInjected();
+                        }
+                    },
+                    _runtimeBootstrap,
+                    CancellationToken.None,
+                    TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default);
         }
         catch
         {
