@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Wails.Net.Application.Commands;
 using Wails.Net.Application.Manifests;
 using Wails.Net.Application.Plugins;
+using Wails.Net.Application.Security;
 
 namespace Wails.Net.Application.Hosting;
 
@@ -145,7 +146,14 @@ public sealed class DesktopApplication : IDesktopApplication
     public PluginsManifest GeneratePluginsManifest()
     {
         var pluginManager = Services.GetRequiredService<PluginManager>();
-        return ManifestGenerator.GeneratePluginsManifest(pluginManager.Plugins);
+        // 命令与权限集的归属由插件注册作用域记录，这里把注册结果一并传入，
+        // 使清单输出每个插件实际注册的 Commands / PermissionSets（SEC-H-003 收尾）。
+        var commandRegistry = Services.GetService<CommandRegistry>();
+        var permissionSets = Services.GetService<PermissionManager>()?.GetPermissionSets();
+        return ManifestGenerator.GeneratePluginsManifest(
+            pluginManager.Plugins,
+            commandRegistry,
+            permissionSets);
     }
 
     /// <summary>

@@ -30,6 +30,34 @@ internal sealed class PluginContext : IPluginContext
     public IPermissionRegistrar Permissions { get; }
 
     /// <summary>
+    /// 进入指定插件的注册作用域。
+    /// <para>
+    /// 由 <see cref="PluginManager"/> 与 <see cref="Hosting.DesktopApplicationBuilder"/> 在调用
+    /// 单个插件的 <c>Configure</c> 前后成对调用，使该插件注册的命令与权限集自动带上归属插件名，
+    /// 供 <see cref="Manifests.ManifestGenerator.GeneratePluginsManifest"/> 按插件分组
+    /// （插件名与命令/权限前缀不总一致，如 <c>filesystem</c> → <c>fs.*</c>，故必须记录归属）。
+    /// </para>
+    /// </summary>
+    /// <param name="pluginName">插件名；为 null 时清空作用域。</param>
+    internal void BeginPlugin(string? pluginName)
+    {
+        Commands.CurrentPluginScope = pluginName;
+
+        switch (Permissions)
+        {
+            case DeferredPermissionRegistrar deferred:
+                deferred.CurrentPluginScope = pluginName;
+                break;
+            case PermissionRegistrar registrar:
+                registrar.CurrentPluginScope = pluginName;
+                break;
+            default:
+                // NullPermissionRegistrar 等空实现不记录归属。
+                break;
+        }
+    }
+
+    /// <summary>
     /// 构造插件上下文。
     /// </summary>
     /// <param name="services">DI 服务容器。</param>

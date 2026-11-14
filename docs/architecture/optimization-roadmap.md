@@ -934,7 +934,7 @@ capability 文件仅启动期加载（`CapabilityFileLoader.cs:36-69` 目录扫�
 - [ ] Host/UI/Window/IPC ready 状态明确可等待（含 Linux/Android `WindowRuntimeReady`）。（🟡 核心完成 2026-08-15；Android 待补）
 - [ ] asset protocol scope 生效并有测试（§6.4）。（❌ 后续批次）
 - [ ] 插件可声明并承载前端资产。（❌ 后续批次）
-- [ ] 插件命令、权限和前端 API 有统一清单。（❌ 后续批次）
+- [ ] 插件命令、权限和前端 API 有统一清单。（🟡 2026-11-14：plugins.manifest 已按插件分组输出 Commands/PermissionSets，302 条内置命令全部显式安全姿态；前端 wrapper 全量生成未做）
 - [ ] `Application` 内部职责进一步拆分。（❌ 后续批次）
 - [ ] 源生成器、前端 runtime、安全拒绝路径和 IPC 全链路有测试覆盖。（❌ 后续批次）
 - [ ] 死代码与空壳项全部处置（§6.6）。（🟡 大部分 2026-08-15；`HttpTransport` 装配决策随 OPT-IPC-003）

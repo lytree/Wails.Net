@@ -1,5 +1,7 @@
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using TUnit.Core;
 using Wails.Net.Application.Commands;
 using Wails.Net.Application.Manifests;
@@ -88,9 +90,9 @@ public sealed class ManifestGeneratorTests
     [Test]
     public async Task FindUncoveredCapabilities_ReportsSensitiveCommandsWithoutCoverage()
     {
-        // 安排：匿名命令（跳过）、已覆盖敏感命令、未覆盖敏感命令
+        // 安排：显式公开命令（跳过）、已覆盖敏感命令、未覆盖敏感命令
         var registry = new CommandRegistry();
-        registry.MapCommand("app.greet", () => "Hello");
+        registry.MapCommand("app.greet", () => "Hello", CommandSecurity.Public());
         registry.MapCommand("fs.readFile", (string path) => { /* noop */ }, "fs:allow-read");
         registry.MapCommand("shell.open", (string url) => { /* noop */ }, "shell:allow-open");
 
@@ -133,7 +135,7 @@ public sealed class ManifestGeneratorTests
         // 安排
         var registry = new CommandRegistry();
         registry.MapCommand("fs.readFile", (string path) => { /* noop */ }, "fs:allow-read");
-        registry.MapCommand("app.greet", () => "Hello");
+        registry.MapCommand("app.greet", () => "Hello", CommandSecurity.Public());
 
         var capabilities = new List<Capability>
         {
@@ -143,8 +145,25 @@ public sealed class ManifestGeneratorTests
         // 操作
         var uncovered = ManifestGenerator.FindUncoveredCapabilities(registry, capabilities);
 
-        // 断言：全部覆盖（匿名命令不参与）
+        // 断言：全部覆盖（显式 Public 命令不参与）
         await Assert.That(uncovered).IsEmpty();
+    }
+
+    /// <summary>
+    /// B2 flip（2026-11-14）：未传 <see cref="CommandSecurity"/> 且无 RequiredCapabilities 的注册
+    /// 不再被豁免，必须显式 <c>Require(...)</c> 或 <c>Public()</c>。
+    /// </summary>
+    [Test]
+    public async Task FindUncoveredCapabilities_ReportsCommandWithoutSecurityDeclaration()
+    {
+        var registry = new CommandRegistry();
+        registry.MapCommand("app.greet", () => "Hello");
+
+        var uncovered = ManifestGenerator.FindUncoveredCapabilities(registry, []);
+
+        await Assert.That(uncovered).Count().IsEqualTo(1);
+        await Assert.That(uncovered[0]).Contains("app.greet");
+        await Assert.That(uncovered[0]).Contains("未显式声明安全姿态");
     }
 
     [Test]
@@ -227,6 +246,53 @@ public sealed class ManifestGeneratorTests
     }
 
     /// <summary>
+    /// 插件清单填充：Commands 与 PermissionSets 按插件注册作用域分组输出，
+    /// 而不是恒为空数组（SEC-H-003 收尾，2026-11-14）。
+    /// </summary>
+    [Test]
+    public async Task GeneratePluginsManifest_FillsCommandsAndPermissionSets_FromRegistrationScope()
+    {
+        var registry = new CommandRegistry();
+        var services = new ServiceCollection();
+        var permissionManager = new PermissionManager(
+            Microsoft.Extensions.Options.Options.Create(new PermissionOptions()),
+            NullLogger<PermissionManager>.Instance);
+        var context = new PluginContext(
+            services,
+            registry,
+            new ConfigurationBuilder().Build(),
+            NullLoggerFactory.Instance,
+            permissionManager);
+
+        var plugin = new ScopedTestPlugin();
+        context.BeginPlugin(plugin.Name);
+        plugin.Configure(context);
+        context.BeginPlugin(null);
+
+        var manifest = ManifestGenerator.GeneratePluginsManifest(
+            [plugin], registry, permissionManager.GetPermissionSets());
+
+        var entry = manifest.Plugins.Single(p => p.Name == "scoped-test");
+        await Assert.That(entry.Commands).Contains("scoped.do");
+        await Assert.That(entry.Commands).Contains("scoped.ping");
+        await Assert.That(entry.Commands).Count().IsEqualTo(2);
+        await Assert.That(entry.PermissionSets).Contains("scoped:default");
+    }
+
+    /// <summary>
+    /// 未提供 registry / permissionSets 时，清单条目保持空数组（向后兼容旧签名）。
+    /// </summary>
+    [Test]
+    public async Task GeneratePluginsManifest_WithoutRegistrationSources_KeepsEmptyLists()
+    {
+        var manifest = ManifestGenerator.GeneratePluginsManifest([new ScopedTestPlugin()]);
+
+        var entry = manifest.Plugins.Single();
+        await Assert.That(entry.Commands).IsEmpty();
+        await Assert.That(entry.PermissionSets).IsEmpty();
+    }
+
+    /// <summary>
     /// 测试用插件（名称 first-test），验证清单按名称排序。
     /// </summary>
     private sealed class FirstTestPlugin : IPlugin
@@ -254,5 +320,27 @@ public sealed class ManifestGeneratorTests
 
         /// <inheritdoc />
         public void Configure(IPluginContext context) { }
+    }
+
+    /// <summary>
+    /// 测试用插件（名称 scoped-test），注册命令与权限集以验证清单按插件分组。
+    /// </summary>
+    private sealed class ScopedTestPlugin : IPlugin
+    {
+        /// <inheritdoc />
+        public string Name => "scoped-test";
+
+        /// <inheritdoc />
+        public void ConfigureServices(IServiceCollection services) { }
+
+        /// <inheritdoc />
+        public void Configure(IPluginContext context)
+        {
+            context.Permissions.RegisterPermissionSet("scoped:default", "测试权限集", "scoped:allow-do");
+            context.Commands.MapCommand(
+                "scoped.do", (Action)(() => { }), CommandSecurity.Require("scoped:allow-do"));
+            context.Commands.MapCommand(
+                "scoped.ping", (Action)(() => { }), CommandSecurity.Public());
+        }
     }
 }

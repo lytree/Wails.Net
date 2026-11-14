@@ -25,6 +25,17 @@ public sealed class PermissionSet
     public List<string> Permissions { get; set; } = new();
 
     /// <summary>
+    /// 获取或设置声明该权限集的插件名（插件注册作用域内自动填充）。
+    /// <para>
+    /// 供 <see cref="Manifests.ManifestGenerator.GeneratePluginsManifest"/> 按插件分组输出
+    /// <c>PermissionSets</c>；非插件来源（应用自身或测试）为 <c>null</c>。
+    /// 插件名与权限前缀不总一致（如 <c>filesystem</c> 插件声明 <c>fs:default</c>），
+    /// 故不能用标识前缀推导，必须显式记录。
+    /// </para>
+    /// </summary>
+    public string? OwnerPlugin { get; set; }
+
+    /// <summary>
     /// 使用指定标识符构造权限集。
     /// </summary>
     /// <param name="identifier">权限集标识符。</param>

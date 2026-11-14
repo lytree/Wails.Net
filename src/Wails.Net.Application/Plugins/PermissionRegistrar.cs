@@ -33,6 +33,16 @@ internal sealed class PermissionRegistrar : IPermissionRegistrar
     }
 
     /// <summary>
+    /// 当前插件注册作用域，转发到 <see cref="PermissionManager.CurrentPluginScope"/>，
+    /// 使注册的权限集记录归属插件（plugins.manifest 分组用）。
+    /// </summary>
+    internal string? CurrentPluginScope
+    {
+        get => _permissionManager.CurrentPluginScope;
+        set => _permissionManager.CurrentPluginScope = value;
+    }
+
+    /// <summary>
     /// 注册插件权限集。
     /// 将权限集委托给 <see cref="PermissionManager.RegisterPermissionSet"/> 注册，
     /// 使能力声明中引用权限集标识后能展开为集内所有细粒度权限。

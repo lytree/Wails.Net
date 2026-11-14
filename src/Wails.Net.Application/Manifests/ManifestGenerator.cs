@@ -263,29 +263,111 @@ public static class ManifestGenerator
 
     /// <summary>
     /// 从已注册插件列表生成插件清单。
-    /// 插件按名称序排列；记录插件名称与类型全名（C-1 审计项：插件包元数据机器可读化）。
+    /// 插件按名称序排列；记录插件名称、类型全名、该插件注册的命令与声明的权限集
+    /// （C-1 审计项：插件包元数据机器可读化；SEC-H-003：插件级安全清单）。
     /// <para>
-    /// 命令归属（commands.manifest.json）与权限集归属（capabilities.manifest.json）已分别由
-    /// <see cref="GenerateCommandsManifest"/> 与 <see cref="GenerateCapabilitiesManifest"/> 承载，
-    /// 本清单聚焦插件包自身元数据，供 CLI <c>plugin inspect</c> 与文档命令表消费。
+    /// 命令与权限集的归属由注册作用域记录（<see cref="CommandRegistry.CommandEntry.PluginName"/> /
+    /// <see cref="PermissionSet.OwnerPlugin"/>），不使用命令名前缀推导——插件名与命令/权限前缀
+    /// 不总一致（如 <c>filesystem</c> 插件注册 <c>fs.*</c> 命令与 <c>fs:default</c> 权限集）。
+    /// </para>
+    /// <para>
+    /// 未传 <paramref name="commandRegistry"/> / <paramref name="permissionSets"/> 时，
+    /// 对应列表为空数组，行为与旧签名一致（向后兼容）。
     /// </para>
     /// </summary>
     /// <param name="plugins">已注册的插件实例列表（可由 <see cref="PluginManager.Plugins"/> 提供）。</param>
+    /// <param name="commandRegistry">命令注册表；提供时按插件分组输出 <c>Commands</c>。</param>
+    /// <param name="permissionSets">已注册权限集；提供时按插件分组输出 <c>PermissionSets</c>。</param>
     /// <returns>插件清单。</returns>
-    public static PluginsManifest GeneratePluginsManifest(IEnumerable<IPlugin> plugins)
+    public static PluginsManifest GeneratePluginsManifest(
+        IEnumerable<IPlugin> plugins,
+        CommandRegistry? commandRegistry = null,
+        IReadOnlyCollection<PermissionSet>? permissionSets = null)
     {
         ArgumentNullException.ThrowIfNull(plugins);
+
+        var commandsByPlugin = GroupCommandsByPlugin(commandRegistry);
+        var permissionSetsByPlugin = GroupPermissionSetsByPlugin(permissionSets);
 
         var entries = plugins
             .OrderBy(p => p.Name, StringComparer.Ordinal)
             .Select(p => new PluginManifestEntry(
                 p.Name,
                 p.GetType().FullName ?? p.GetType().Name,
-                Commands: [],
-                PermissionSets: []))
+                Commands: commandsByPlugin.TryGetValue(p.Name, out var commands) ? commands : [],
+                PermissionSets: permissionSetsByPlugin.TryGetValue(p.Name, out var sets) ? sets : []))
             .ToArray();
 
         return new PluginsManifest(ManifestVersion, DateTimeOffset.UtcNow, entries);
+    }
+
+    /// <summary>
+    /// 按归属插件分组命令名（插件名 → 排序后的命令名列表）。
+    /// 未记录归属的命令（应用自身注册）不进入任何插件分组。
+    /// </summary>
+    private static Dictionary<string, IReadOnlyList<string>> GroupCommandsByPlugin(CommandRegistry? registry)
+    {
+        var grouped = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        if (registry is null)
+        {
+            return new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        }
+
+        foreach (var name in registry.GetCommandNames())
+        {
+            if (registry.Find(name) is not { PluginName: { Length: > 0 } owner })
+            {
+                continue;
+            }
+
+            if (!grouped.TryGetValue(owner, out var list))
+            {
+                list = [];
+                grouped[owner] = list;
+            }
+
+            list.Add(name);
+        }
+
+        return grouped.ToDictionary(
+            pair => pair.Key,
+            pair => (IReadOnlyList<string>)pair.Value.OrderBy(n => n, StringComparer.Ordinal).ToArray(),
+            StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// 按归属插件分组权限集标识（插件名 → 排序后的权限集标识列表）。
+    /// 未记录归属的权限集（应用自身声明）不进入任何插件分组。
+    /// </summary>
+    private static Dictionary<string, IReadOnlyList<string>> GroupPermissionSetsByPlugin(
+        IReadOnlyCollection<PermissionSet>? permissionSets)
+    {
+        var grouped = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        if (permissionSets is null)
+        {
+            return new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        }
+
+        foreach (var set in permissionSets)
+        {
+            if (set.OwnerPlugin is not { Length: > 0 } owner)
+            {
+                continue;
+            }
+
+            if (!grouped.TryGetValue(owner, out var list))
+            {
+                list = [];
+                grouped[owner] = list;
+            }
+
+            list.Add(set.Identifier);
+        }
+
+        return grouped.ToDictionary(
+            pair => pair.Key,
+            pair => (IReadOnlyList<string>)pair.Value.OrderBy(n => n, StringComparer.Ordinal).ToArray(),
+            StringComparer.Ordinal);
     }
 
     /// <summary>
@@ -293,9 +375,16 @@ public static class ManifestGenerator
     /// 使用源生成序列化器（NativeAOT 兼容，P2-4）。
     /// </summary>
     /// <param name="plugins">已注册的插件实例列表。</param>
+    /// <param name="commandRegistry">命令注册表；提供时按插件分组输出 <c>Commands</c>。</param>
+    /// <param name="permissionSets">已注册权限集；提供时按插件分组输出 <c>PermissionSets</c>。</param>
     /// <returns>缩进格式的 JSON 字符串。</returns>
-    public static string GeneratePluginsManifestJson(IEnumerable<IPlugin> plugins)
-        => JsonSerializer.Serialize(GeneratePluginsManifest(plugins), ManifestsJsonSerializerContext.Default.PluginsManifest);
+    public static string GeneratePluginsManifestJson(
+        IEnumerable<IPlugin> plugins,
+        CommandRegistry? commandRegistry = null,
+        IReadOnlyCollection<PermissionSet>? permissionSets = null)
+        => JsonSerializer.Serialize(
+            GeneratePluginsManifest(plugins, commandRegistry, permissionSets),
+            ManifestsJsonSerializerContext.Default.PluginsManifest);
 
     /// <summary>
     /// 序列化已生成的插件清单为 JSON（plugins.manifest.json 格式，C-1 收尾）。
@@ -359,8 +448,9 @@ public static class ManifestGenerator
             // SEC-H-001 阶段一对"声明与执行两张皮"的修复（与 CommandDispatcher.CollectRequiredCapabilities 三来源合并一致）：
             //   1) Security.IsPublic=true  → 显式公开命令，跳过覆盖检查；
             //   2) Security 已声明但 RequiredCapabilities.Count==0 且 !IsPublic → 报告未覆盖（fail-closed for new paths）；
-            //   3) Security 为 null 且 entry.RequiredCapabilities.Count==0 → 保持旧行为（跳过），
-            //      这是为了不破坏存量 builtin 插件注册路径（B2 阶段统一迁移到 CommandSecurity 后再 flip）。
+            //   3) Security 为 null 且 entry.RequiredCapabilities.Count==0 → 已 flip 为报告未覆盖（B2，2026-11-14）：
+            //      内置插件 302 条命令已全部显式声明（301 条 CommandSecurity + http.fetch 补齐），
+            //      存量豁免不再需要；任何未声明安全姿态的命令都应被显式标记 Public() 或 Require(...)。
             if (entry.Security is { IsPublic: true })
             {
                 continue;
@@ -372,6 +462,12 @@ public static class ManifestGenerator
                 if (entry.Security is not null)
                 {
                     uncovered.Add($"命令 '{name}' 设置了命令安全声明但未声明所需 capability，请补充 Require(...) 或显式标记 Public()");
+                }
+                else
+                {
+                    // B2 flip（2026-11-14）：未传 CommandSecurity 且无 RequiredCapabilities 的注册不再豁免。
+                    // 迁移方式：CommandSecurity.Require("xxx:cap") 或 CommandSecurity.Public()。
+                    uncovered.Add($"命令 '{name}' 未显式声明安全姿态，请补充 CommandSecurity.Require(...) 或 CommandSecurity.Public()");
                 }
                 continue;
             }

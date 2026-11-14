@@ -18,9 +18,16 @@ namespace Wails.Net.Application.Plugins;
 /// </summary>
 internal sealed class DeferredPermissionRegistrar : IPermissionRegistrar
 {
-    private readonly List<(string Identifier, string Description, string[] Permissions)> _permissionSets = new();
+    private readonly List<(string Identifier, string Description, string[] Permissions, string? PluginName)> _permissionSets = new();
     private readonly List<(string PermissionId, IScope Scope)> _scopes = new();
     private readonly ConcurrentDictionary<string, string> _declaredPermissions = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 当前插件注册作用域（由 <see cref="PluginContext.BeginPlugin"/> 设置）。
+    /// 收集权限集时记录归属插件，<see cref="ReplayInto"/> 物化到真实
+    /// <see cref="PermissionManager"/> 时保留，供 plugins.manifest 分组。
+    /// </summary>
+    internal string? CurrentPluginScope { get; set; }
 
     /// <summary>
     /// 是否收集到任何声明（供构建器判断是否需要 materialize）。
@@ -39,7 +46,7 @@ internal sealed class DeferredPermissionRegistrar : IPermissionRegistrar
     public void RegisterPermissionSet(string identifier, string description, params string[] permissions)
     {
         ArgumentException.ThrowIfNullOrEmpty(identifier);
-        _permissionSets.Add((identifier, description, permissions ?? Array.Empty<string>()));
+        _permissionSets.Add((identifier, description, permissions ?? Array.Empty<string>(), CurrentPluginScope));
     }
 
     /// <inheritdoc />
@@ -67,12 +74,13 @@ internal sealed class DeferredPermissionRegistrar : IPermissionRegistrar
     {
         ArgumentNullException.ThrowIfNull(permissionManager);
 
-        foreach (var (identifier, description, permissions) in _permissionSets)
+        foreach (var (identifier, description, permissions, pluginName) in _permissionSets)
         {
             permissionManager.RegisterPermissionSet(new PermissionSet(identifier)
             {
                 Description = description,
                 Permissions = permissions.ToList(),
+                OwnerPlugin = pluginName,
             });
         }
 

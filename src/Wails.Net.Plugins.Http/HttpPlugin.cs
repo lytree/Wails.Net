@@ -41,14 +41,19 @@ public class HttpPlugin : IPlugin
         context.Permissions.DeclarePermission("http:allow-fetch", "允许发起 HTTP 请求");
         context.Permissions.DeclarePermission("http:allow-request", "允许发送自定义 HTTP 请求");
 
-        context.Commands.MapCommandAsync("http.fetch", (Func<HttpRequestOptions, Task<HttpResponseResult>>)(async options =>
-            await FetchAsync(options)));
+        // 能力声明与参数级 Scope 映射统一通过 CommandSecurity 显式传入（SEC-H-002）。
+        // 参数类型 HttpRequestOptions 为单参数扁平对象（{"url": ...}），WithScope("url", ...)
+        // 由 CommandDispatcher.ExtractScopeValues 按顶层 camelCase 属性取值。
+        var fetchScope = CommandSecurity.Require("http:allow-fetch").WithScope("url", "http:allow-fetch");
+
+        // http.fetch 曾以 lambda 形式注册且未传 CommandSecurity，是全仓库最后一个
+        // "命令未显式声明安全姿态"的逃逸通道（2026-11-14 审计：302 条内置命令中仅此 1 条）。
+        // 改为方法组注册 + 显式 CommandSecurity，WNET003 分析器从此可覆盖该注册点。
+        context.Commands.MapCommandAsync(
+            "http.fetch", (Func<HttpRequestOptions, Task<HttpResponseResult>>)FetchAsync, fetchScope);
 
         // http.get/post/put/delete 使用方法组注册，以便在参数上加 [ScopeParameter] 特性
         // 对应 Tauri v2 的 http scope：限定可访问的 URL 范围
-        // 能力声明与参数级 Scope 映射通过 CommandSecurity 显式传入（SEC-H-002）
-        var fetchScope = CommandSecurity.Require("http:allow-fetch").WithScope("url", "http:allow-fetch");
-
         context.Commands.MapCommandAsync("http.get", (Func<string, Task<HttpResponseResult>>)GetAsyncWithScope, fetchScope);
         context.Commands.MapCommandAsync("http.post", (Func<string, string?, Task<HttpResponseResult>>)PostAsyncWithScope, fetchScope);
         context.Commands.MapCommandAsync("http.put", (Func<string, string?, Task<HttpResponseResult>>)PutAsyncWithScope, fetchScope);
@@ -211,6 +216,14 @@ public sealed class HttpRequestOptions : IScopeParameter
     /// <summary>
     /// 获取需要 Scope 校验的 (权限标识, URL) 对。
     /// 对应 Tauri v2 的 http scope：限定可访问的 URL 范围。
+    /// <para>
+    /// <b>当前不被调度器消费</b>：<see cref="CommandDispatcher.ExtractScopeValues"/> 为私有实现，
+    /// 只读取 <see cref="CommandSecurity.ScopeMappings"/> 与源生成器 ScopeExtractor，
+    /// 不枚举 <see cref="IScopeParameter"/> 实现（零反射约束）。
+    /// 因此 <c>http.fetch</c> 的 URL scope 由注册时的
+    /// <c>CommandSecurity.Require("http:allow-fetch").WithScope("url", ...)</c> 承担；
+    /// 本方法保留为接口语义声明，避免后人误以为已自动生效。
+    /// </para>
     /// </summary>
     public IEnumerable<(string PermissionId, string Value)> GetScopeValues()
     {

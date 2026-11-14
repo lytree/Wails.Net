@@ -487,7 +487,16 @@ public sealed class DesktopApplicationBuilder
 
         foreach (var plugin in _plugins)
         {
-            plugin.Configure(context);
+            // 插件注册作用域：使该插件注册的命令与权限集带上归属插件名（plugins.manifest 分组）。
+            context.BeginPlugin(plugin.Name);
+            try
+            {
+                plugin.Configure(context);
+            }
+            finally
+            {
+                context.BeginPlugin(null);
+            }
         }
 
         _deferredPermissions = deferredPermissions;

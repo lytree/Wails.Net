@@ -109,6 +109,8 @@ public sealed class PluginManager
             try
             {
                 plugin.ConfigureServices(services);
+                // 插件注册作用域：使该插件注册的命令与权限集带上归属插件名（plugins.manifest 分组）。
+                context.BeginPlugin(plugin.Name);
                 plugin.Configure(context);
                 _logger?.LogInformation("插件已初始化: {Name}", plugin.Name);
             }
@@ -116,6 +118,10 @@ public sealed class PluginManager
             {
                 _logger?.LogError(ex, "插件初始化失败: {Name}", plugin.Name);
                 throw;
+            }
+            finally
+            {
+                context.BeginPlugin(null);
             }
         }
     }

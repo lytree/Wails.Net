@@ -60,12 +60,34 @@
 
 #### 2.1.2 剩余差距
 
+> **2026-11-14 复核：以下四项已全部收敛**（原结论基于 2026-08-16 基线，已严重滞后于代码）：
+>
+> | 原差距 | 复核结果 | 证据 |
+> |---|---|---|
+> | 接入率 6%（约 47 插件仅 3 个接 `CommandSecurity`） | ✅ 已全量迁移：内置插件 **302 条命令注册中 301 条**显式传 `CommandSecurity` | 全仓库 `MapCommand*` 调用审计（F# 括号平衡解析，2026-11-14） |
+> | lambda 注册盲区（`http.fetch` 等无法触发 WNET001/002） | ✅ 已收敛：`WNET003` 分析器已落地（重载声明了 `CommandSecurity?` 形参而未传即告警）；`http.fetch` 由 lambda 改为方法组并补 `Require("http:allow-fetch").WithScope("url", ...)` | `MapCommandSecurityDiagnosticAnalyzer.Wnet003`、`HttpPlugin.cs` |
+> | `[RequireCapability]` 零使用 | 🟡 特性轨仍空转，但**不再是缺口**：注册面已由 `WNET003` + 全量 `CommandSecurity` 覆盖，特性轨与 MapCommand 轨并存属设计冗余 | `MapCommandSecurityDiagnosticAnalyzer` |
+> | `GeneratePluginsManifest` 的 Commands/PermissionSets 恒为空 | ✅ 已填充：命令/权限集带注册作用域归属（`CommandEntry.PluginName` / `PermissionSet.OwnerPlugin`），按插件分组输出 | `ManifestGenerator.GeneratePluginsManifest` 三参重载、`DesktopApplication.GeneratePluginsManifest` |
+>
+> 下列原文保留原始分析供追溯，**实施前须以复核结论为准**（教训：照 08-16 的现状表直接开工会重复劳动）。
+
 1. **接入率 6%**：约 47 个插件中仅 3 个接 `CommandSecurity`（FileSystem 21/21、Shell 4/4、Http 4/5）；Store/Updater/Stronghold 等高敏插件只声明权限集、命令不绑定；约 20 个插件（Stronghold、Opener、Keychain、Tray、Log、Deeplink、FsWatch 等）**完全无权限声明**。
 2. **lambda 注册盲区**：分析器只解析方法组引用，lambda 注册（如 `HttpPlugin.cs:44` 的 `http.fetch`）无法触发 WNET001/002，成为声明缺失的逃逸通道。
 3. **`[RequireCapability]` 特性零使用**：特性、分析器、dispatcher 三方管线都已就绪，但没有任何插件真正用它（Wails.Net 双轨中"特性轨"实际空转）。
 4. **`ManifestGenerator.GeneratePluginsManifest` 的 Commands/PermissionSets 恒为空数组**（`ManifestGenerator.cs:284-285`），插件级安全清单不可用。
 
 #### 2.1.3 后续重构方案（SEC-H-003：插件安全声明全量迁移）
+
+> **状态（2026-11-14）：第 1–3 点已落地，第 4 点（B2 flip）本轮完成。**
+>
+> - 第 1 点（40 插件迁移）：302 条命令全部显式声明，仅 `http.fetch` 曾遗留（本轮补齐）→ **302/302**。
+> - 第 2 点（lambda → 方法组）：`WNET003` 已落地作长期守门；`http.fetch` 已方法组化。
+> - 第 3 点（补全 plugins.manifest）：`GeneratePluginsManifest` 新增 `commandRegistry` / `permissionSets` 可选参数，
+>   按注册作用域归属分组输出 `Commands` 与 `PermissionSets`；`DesktopApplication` 已传入真实注册结果。
+> - 第 4 点（B2 flip）：`FindUncoveredCapabilities` 已移除"未声明即跳过"的存量豁免 ——
+>   未传 `CommandSecurity` 且无 `RequiredCapabilities` 的命令现在报"未显式声明安全姿态"。
+>   守门测试：`tests/Wails.Net.Application.Tests/Security/PluginCommandSecurityPostureTests.cs`
+>   （全部已引用插件的命令姿态审计 + B2 flip 交叉验证）。
 
 1. **分批迁移 40 个插件**：每个 `MapCommand` 调用点补 `CommandSecurity.Require(...)`（或 `.Public()` 显式标注公开命令）；高敏插件优先（Stronghold、Store、Updater、Keychain、Shell、Process、Opener、Sql、Upload、Websocket、FsWatch、Deeplink）。
 2. **lambda 注册改方法组**：`http.fetch` 等改为私有方法 + 方法组注册，纳入分析器覆盖；分析器增加 WNET003（提案）：对无 CommandSecurity 参数的 `MapCommand` lambda 注册给出 Information/Warning，迫使显式 `.Public()`。
@@ -82,11 +104,14 @@
 2. `CommandSecurity.WithScope(...)` 显式 ScopeMapping 优先于源生成器 extractor；
 3. `CommandSecurity.Public()` 被 `ManifestGenerator` 识别为公开命令（不计入未覆盖清单）。
 
-**后续阶段（SEC-H-003 完成时）：**
+**后续阶段（SEC-H-003 完成时，2026-11-14 全部达成）：**
 
-4. 全部内置插件的 `MapCommand` 注册要么传 `CommandSecurity`，要么显式 `.Public()`，CI manifest 校验零未覆盖；
-5. `plugins.manifest.json` 的 Commands/PermissionSets 与实际注册一致（drift 测试守门）；
-6. WNET001/002 之外无 lambda 逃逸通道（WNET003 生效或全部方法组化）。
+4. ✅ 全部内置插件的 `MapCommand` 注册要么传 `CommandSecurity`，要么显式 `.Public()`，CI manifest 校验零未覆盖
+   （302/302；守门测试 `PluginCommandSecurityPostureTests.AllBuiltinPluginCommands_DeclareExplicitSecurityPosture`）；
+5. ✅ `plugins.manifest.json` 的 Commands/PermissionSets 按插件分组输出，与实际注册一致
+   （`ManifestGeneratorTests.GeneratePluginsManifest_FillsCommandsAndPermissionSets_FromRegistrationScope`；
+   全插件全量快照尚未固化，属可选加固）；
+6. ✅ WNET001/002 之外无 lambda 逃逸通道（`WNET003` 生效，且 `http.fetch` 已方法组化）。
 
 ### 2.2 Strict 默认化与 Compatibility 语义修正（SEC-H-004，含破坏性更改）
 
@@ -455,7 +480,7 @@ AGENTS.md 与 docs 多处称 macOS 为"骨架/ServerMode 降级"，实际 `#if M
 - [ ] `WebviewWindow` facade 在四平台端到端可用（RH-WIN-01/02）；
 - [x] 非 Windows 平台后端→前端事件下行有测试守门（无头层 `EventDownlinkHeadlessTests` 三条契约；各平台原生回调仍由 Windows 平台测试与 Android E2E 覆盖）；
 - [ ] Strict 为默认且语义自洽：capability 加载与检查生效条件一致，DenyByDefault 无失效组合；
-- [ ] 全部内置插件命令显式声明安全姿态，`wails-net check` 自动发现插件权限并生成 schema；
+- [ ] 全部内置插件命令显式声明安全姿态（✅ 2026-11-14：302/302 + 姿态 drift 测试守门），`wails-net check` 自动发现插件权限并生成 schema（未做）；
 - [ ] Strict 下无绕过权限链的消息路径（含 `window.*`）；
 - [ ] 四平台 IPC/资源/ready 逻辑单点实现，UI 线程无同步阻塞等待用户命令；
 - [ ] Channel 前后端协议可用，加密 opt-in；
@@ -463,7 +488,7 @@ AGENTS.md 与 docs 多处称 macOS 为"骨架/ServerMode 降级"，实际 `#if M
 - [ ] 兼容配置字段清零，drift 测试覆盖；
 - [ ] `Application` < 800 行且无新增静态定位器依赖；
 - [ ] NativeAOT CI 覆盖模板 App；Linux CI 必过；
-- [ ] 本文档 §2.1.4 全部条目可勾选（含 SEC-H-003 阶段三条）。
+- [x] 本文档 §2.1.4 全部条目可勾选（含 SEC-H-003 阶段三条；2026-11-14）；
 
 ---
 

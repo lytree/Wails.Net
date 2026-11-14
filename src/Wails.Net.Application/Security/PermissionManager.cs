@@ -147,6 +147,13 @@ public sealed class PermissionManager
     }
 
     /// <summary>
+    /// 当前插件注册作用域（由 <see cref="Plugins.PluginContext.BeginPlugin"/> 设置）。
+    /// 非 null 时，注册的 <see cref="PermissionSet"/> 自动记录 <see cref="PermissionSet.OwnerPlugin"/>，
+    /// 供插件清单按插件分组。
+    /// </summary>
+    internal string? CurrentPluginScope { get; set; }
+
+    /// <summary>
     /// 注册权限集。
     /// 权限集是命名权限组合（如 "core:default"），可在能力声明中引用。
     /// </summary>
@@ -154,6 +161,7 @@ public sealed class PermissionManager
     public void RegisterPermissionSet(PermissionSet permissionSet)
     {
         ArgumentException.ThrowIfNullOrEmpty(permissionSet.Identifier);
+        permissionSet.OwnerPlugin ??= CurrentPluginScope;
         _permissionSets[permissionSet.Identifier] = permissionSet;
         _logger?.LogDebug("已注册权限集: {Identifier}（{Count} 个权限）", permissionSet.Identifier, permissionSet.Permissions.Count);
     }

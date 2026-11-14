@@ -20,6 +20,17 @@ public sealed class CommandRegistry
     private readonly ConcurrentDictionary<string, CommandEntry> _commands = new();
 
     /// <summary>
+    /// 当前插件注册作用域。由 <see cref="Plugins.PluginManager"/> 在调用单个插件的
+    /// <c>Configure</c> 前后设置/清空，使该插件注册的命令自动带上归属插件名，
+    /// 供 <see cref="Manifests.ManifestGenerator.GeneratePluginsManifest"/> 按插件分组。
+    /// <para>
+    /// 注册是 Host 构建期的单线程顺序行为，故使用普通字段而非 <see cref="ThreadStaticAttribute"/>；
+    /// 多插件共享同一 <see cref="CommandRegistry"/> 实例，作用域只影响注册瞬间。
+    /// </para>
+    /// </summary>
+    internal string? CurrentPluginScope { get; set; }
+
+    /// <summary>
     /// 已注册的命令数量。
     /// </summary>
     public int Count => _commands.Count;
@@ -33,7 +44,7 @@ public sealed class CommandRegistry
     public CommandRegistry Register(string name, CompiledCommandInvoker invoker)
     {
         ArgumentNullException.ThrowIfNull(invoker);
-        _commands[name] = new CommandEntry(name, Instance: null, invoker, RequiredCapabilities: [], ParameterTypes: []);
+        _commands[name] = new CommandEntry(name, Instance: null, invoker, RequiredCapabilities: [], ParameterTypes: [], PluginName: CurrentPluginScope);
         return this;
     }
 
@@ -48,7 +59,7 @@ public sealed class CommandRegistry
     public CommandRegistry Register(string name, CompiledCommandInvoker invoker, params string[] requiredCapabilities)
     {
         ArgumentNullException.ThrowIfNull(invoker);
-        _commands[name] = new CommandEntry(name, Instance: null, invoker, requiredCapabilities, ParameterTypes: []);
+        _commands[name] = new CommandEntry(name, Instance: null, invoker, requiredCapabilities, ParameterTypes: [], PluginName: CurrentPluginScope);
         return this;
     }
 
@@ -74,7 +85,7 @@ public sealed class CommandRegistry
     {
         ArgumentNullException.ThrowIfNull(invoker);
         ArgumentNullException.ThrowIfNull(parameterTypes);
-        _commands[name] = new CommandEntry(name, Instance: null, invoker, requiredCapabilities, parameterTypes);
+        _commands[name] = new CommandEntry(name, Instance: null, invoker, requiredCapabilities, parameterTypes, PluginName: CurrentPluginScope);
         return this;
     }
 
@@ -106,7 +117,8 @@ public sealed class CommandRegistry
             invoker,
             mergedCaps,
             parameterTypes,
-            security);
+            security,
+            PluginName: CurrentPluginScope);
         return this;
     }
 
@@ -180,13 +192,16 @@ public sealed class CommandRegistry
     /// <param name="Invoker">编译期构建的强类型调用器委托。</param>
     /// <param name="RequiredCapabilities">所需能力标识列表（如 <c>fs:allow-read</c>），为空表示无特殊要求。</param>
     /// <param name="ParameterTypes">业务参数类型列表；为空表示无业务参数。</param>
+    /// <param name="Security">命令安全声明（capability 与 Scope 映射）；为 null 表示未显式声明。</param>
+    /// <param name="PluginName">注册该命令的插件名（插件注册作用域内自动填充）；非插件注册为 null。</param>
     public sealed record CommandEntry(
         string Name,
         object? Instance,
         CompiledCommandInvoker? Invoker,
         IReadOnlyList<string> RequiredCapabilities,
         IReadOnlyList<Type>? ParameterTypes = null,
-        CommandSecurity? Security = null)
+        CommandSecurity? Security = null,
+        string? PluginName = null)
     {
         /// <summary>
         /// 业务参数类型列表；<see cref="ParameterTypes"/> 为 null 时返回空列表。
