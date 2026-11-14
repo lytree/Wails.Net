@@ -118,8 +118,8 @@ public sealed class WindowsPlatformApp : IPlatformApp
 
     /// <summary>
     /// 窗口只读查询入口（RH-WIN-02 终态）。
-    /// 由 <see cref="WindowManager"/> 注入，替代此前的自持窗口字典；
-    /// 唯一事实源是 <see cref="WindowManager"/>。
+    /// 由 <see cref="Wails.Net.Application.Managers.WindowManager"/> 注入，替代此前的自持窗口字典；
+    /// 唯一事实源是 <see cref="Wails.Net.Application.Managers.WindowManager"/>。
     /// </summary>
     private IPlatformWindowAccessor? _windowAccessor;
 
@@ -127,7 +127,7 @@ public sealed class WindowsPlatformApp : IPlatformApp
     /// 枚举本平台创建的窗口（按窗口 ID 升序）。
     /// <para>
     /// RH-WIN-02 终态：不再持有 <c>Dictionary&lt;uint, Win32WebviewWindow&gt;</c>，
-    /// 改为查询 <see cref="WindowManager"/> 并做类型判断取回平台实现（零反射）。
+    /// 改为查询 <see cref="Wails.Net.Application.Managers.WindowManager"/> 并做类型判断取回平台实现（零反射）。
     /// 创建过程中的窗口 <see cref="WebviewWindow.Impl"/> 尚未回填，不会出现在结果中。
     /// </para>
     /// </summary>

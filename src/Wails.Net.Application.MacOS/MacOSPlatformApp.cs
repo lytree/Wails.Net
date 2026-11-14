@@ -34,13 +34,13 @@ public sealed class MacOSPlatformApp : IPlatformApp
 
     /// <summary>
     /// 窗口只读查询入口（RH-WIN-02 终态）。
-    /// 由 <see cref="WindowManager"/> 注入，替代此前的自持窗口字典。
+    /// 由 <see cref="Wails.Net.Application.Managers.WindowManager"/> 注入，替代此前的自持窗口字典。
     /// </summary>
     private IPlatformWindowAccessor? _windowAccessor;
 
     /// <summary>
     /// 枚举本平台创建的窗口（按窗口 ID 升序）。
-    /// RH-WIN-02 终态：窗口唯一事实源是 <see cref="WindowManager"/>，平台只做只读查询 + 类型判断。
+    /// RH-WIN-02 终态：窗口唯一事实源是 <see cref="Wails.Net.Application.Managers.WindowManager"/>，平台只做只读查询 + 类型判断。
     /// </summary>
     private IEnumerable<MacOSWebviewWindow> EnumerateWindows()
     {
