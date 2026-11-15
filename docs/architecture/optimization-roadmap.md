@@ -72,7 +72,7 @@ Wails.Net 当前已经具备完整的 .NET Host 宿主、平台抽象、窗口�
 - 多传输层选择和 fallback 逻辑较分散。
 - HTTP/WebSocket fallback 的默认安全策略需要进一步收紧。
 - Host 生命周期、窗口 ready、前端 runtime ready、IPC ready 四类状态需要更明确的事件模型。
-- `Application` 中的 service route、自定义 scheme、shutdown hooks 等职责可继续拆分。
+- `Application` 中的 service route、自定义 scheme、shutdown hooks 等职责可继续拆分。（✅ 2026-11-15：已下沉为 `CustomSchemeRegistry` / `ServiceRouteRegistry` / `ApplicationLifecycleHooks` / `ApplicationShutdownCoordinator` 等 9 个单元，`Application.cs` 2160 → 1731 行；剩余体积为 facade 文档，见 refactor-and-hardening-plan §4.2）
 
 ### 2.3 Plugin / Security / Capability
 

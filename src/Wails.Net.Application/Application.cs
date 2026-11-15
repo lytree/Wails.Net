@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -33,16 +32,11 @@ public class Application
     private readonly ServiceRegistry _serviceRegistry = new();
 
     /// <summary>
-    /// 配置驱动的窗口列表，由 DesktopApplicationBuilder.Build 传递。
-    /// 在 Run() 的 OnAfterStart 之前按需创建，避免主线程创建窗口导致 Win32 线程亲和性问题。
+    /// 配置驱动的窗口工厂（RH-HOST-02 抽出）。
+    /// 承载 <see cref="Hosting.DesktopApplicationBuilder.Build"/> 传入的窗口配置，
+    /// 在 <see cref="Run"/> 的 UI 线程上按需创建，避免主线程创建窗口导致 Win32 线程亲和性问题。
     /// </summary>
-    private List<WindowConfig>? _configuredWindows;
-
-    /// <summary>
-    /// 默认窗口配置，由 DesktopApplicationBuilder.Build 传递。
-    /// 当 _configuredWindows 为空且 OnAfterStart 未设置时使用。
-    /// </summary>
-    private DesktopHostOptions.WindowOptions? _defaultWindowConfig;
+    private readonly ConfiguredWindowFactory _windowFactory = new();
 
     /// <summary>
     /// 绑定管理器，负责注册和调用绑定方法。
@@ -118,23 +112,16 @@ public class Application
     private Webview.DevAssetProxy? _devAssetProxy;
 
     /// <summary>
-    /// 待挂载的服务路由列表（P1-6 新增）。
-    /// 当服务在 AssetServer 注入前注册且配置了 <see cref="Services.ServiceOptions.Route"/> 时，
-    /// 暂存到此处；待 <see cref="AssetServer"/> setter 触发时统一挂载。
+    /// 待挂载的服务路由暂存区（P1-6，RH-HOST-02 抽出）。
+    /// 服务在 AssetServer 注入前注册且配置了 <see cref="Services.ServiceOptions.Route"/> 时暂存于此。
     /// </summary>
-    private readonly List<(string Route, Wails.Net.AssetServer.IHttpServiceHandler Handler)> _pendingServiceRoutes = new();
+    private readonly ServiceRouteRegistry _serviceRoutes = new();
 
     /// <summary>
-    /// 自定义 URI scheme 到 AssetServer 的映射。
-    /// 通过 <see cref="RegisterScheme"/> 注册，平台 WebviewWindow 在创建时可查询此映射以拦截请求。
+    /// 自定义 URI scheme 注册表（RH-HOST-02 抽出）。
+    /// 存储与并发控制由 <see cref="Schemes.CustomSchemeRegistry"/> 独占，本类只保留 facade 方法。
     /// </summary>
-    private readonly Dictionary<string, Wails.Net.AssetServer.AssetServer> _customSchemes =
-        new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// 用于保护 <see cref="_customSchemes"/> 并发访问的同步对象。
-    /// </summary>
-    private readonly object _customSchemesLock = new();
+    private readonly Schemes.ICustomSchemeRegistry _schemes = new Schemes.CustomSchemeRegistry();
 
     /// <summary>
     /// 是否正在运行。
@@ -142,17 +129,14 @@ public class Application
     private volatile bool _isRunning;
 
     /// <summary>
-    /// Run 之前投递的主线程任务队列（Wails v3.1.0 #6287）。
-    /// 主循环尚未启动时先入队，由 <see cref="Run"/> 在进入主循环前按 FIFO 顺序执行，
-    /// 避免在错误线程立即执行或任务被静默丢弃。
+    /// Run 之前投递的主线程任务队列（Wails v3.1.0 #6287，RH-HOST-02 抽出）。
     /// </summary>
-    private readonly System.Collections.Concurrent.ConcurrentQueue<Action> _pendingMainThreadActions = new();
+    private readonly MainThreadTaskQueue _mainThreadQueue = new();
 
     /// <summary>
-    /// 默认信号处理器（P2-21）：SIGINT / SIGTERM → 经 ShouldQuit 判定后退出应用。
-    /// 仅在 <see cref="ApplicationOptions.DisableDefaultSignalHandler"/> 为 false 时安装。
+    /// 默认信号处理器协调器（P2-21，RH-HOST-02 抽出）。
     /// </summary>
-    private Hosting.DefaultSignalHandler? _signalHandler;
+    private readonly SignalHandlerCoordinator _signalHandlers = new();
 
     /// <summary>
     /// 平台启动就绪信号（OPT-RUNTIME-002，2026-08-15 新增）。
@@ -254,24 +238,20 @@ public class Application
     private PluginManager? _pluginManager;
 
     /// <summary>
-    /// 关闭任务列表，包含 <see cref="ApplicationOptions.ShutdownTasks"/> 和通过
-    /// <see cref="OnShutdown(Action)"/> 注册的任务。
-    /// 对应 Wails v3 Go 版本 application.go 中的 shutdownTasks 字段。
+    /// 用户生命周期钩子（关闭任务 + 启动前 hook，RH-HOST-02 抽出）。
+    /// 对应 Wails v3 Go 版本 application.go 中的 <c>shutdownTasks</c> / OnBeforeStart 机制。
     /// </summary>
-    private readonly List<Action> _shutdownTasks = new();
+    private readonly ApplicationLifecycleHooks _hooks = new();
 
     /// <summary>
-    /// 启动前 hook 列表，通过 <see cref="OnBeforeStart(Action{Application})"/> 注册。
-    /// 在 <see cref="Run"/> 方法中、实际启动服务之前遍历执行所有 hook。
-    /// 对应 Wails v3 Go 版本 application.go 中的 OnBeforeStart hook 机制。
+    /// 单实例协调器（RH-HOST-02 抽出）：持有 <c>IsFirstInstance</c> 与进程级唯一性检查。
     /// </summary>
-    private readonly List<Action<Application>> _onBeforeStartHooks = new();
+    private readonly SingleInstanceCoordinator _singleInstance;
 
     /// <summary>
-    /// 是否为首实例（单实例模式下）。
-    /// 对应 Wails v3 Go 版本 application.go 中的 isFirstInstance 字段。
+    /// 前端运行时注入协调器（RH-HOST-02 抽出）：生成 <c>window._wails</c> 标志片段。
     /// </summary>
-    private bool _isFirstInstance = true;
+    private readonly FrontendRuntimeCoordinator _frontendRuntime = new();
 
     /// <summary>
     /// 第二个实例启动时调用的回调列表。
@@ -507,14 +487,7 @@ public class Application
         set
         {
             _assetServer = value;
-            if (value is not null && _pendingServiceRoutes.Count > 0)
-            {
-                foreach (var (route, handler) in _pendingServiceRoutes)
-                {
-                    value.MountServiceRoute(route, handler);
-                }
-                _pendingServiceRoutes.Clear();
-            }
+            _serviceRoutes.FlushTo(value);
         }
     }
 
@@ -558,12 +531,11 @@ public class Application
     public void RegisterScheme(string scheme, Wails.Net.AssetServer.AssetServer? assetServer = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(scheme);
-        lock (_customSchemesLock)
-        {
-            _customSchemes[scheme] = assetServer ?? _assetServer
-                ?? throw new InvalidOperationException(
-                    "RegisterScheme 需要提供 assetServer，或在 Application.AssetServer 已设置后调用。");
-        }
+        _schemes.Register(
+            scheme,
+            assetServer ?? _assetServer
+            ?? throw new InvalidOperationException(
+                "RegisterScheme 需要提供 assetServer，或在 Application.AssetServer 已设置后调用。"));
     }
 
     /// <summary>
@@ -571,36 +543,14 @@ public class Application
     /// </summary>
     /// <param name="scheme">要取消注册的 scheme 名称。</param>
     /// <returns>是否成功移除；若 scheme 未注册则返回 false。</returns>
-    public bool UnregisterScheme(string scheme)
-    {
-        if (string.IsNullOrEmpty(scheme))
-        {
-            return false;
-        }
-
-        lock (_customSchemesLock)
-        {
-            return _customSchemes.Remove(scheme);
-        }
-    }
+    public bool UnregisterScheme(string scheme) => _schemes.Unregister(scheme);
 
     /// <summary>
     /// 查询指定 URI scheme 是否已注册。
     /// </summary>
     /// <param name="scheme">scheme 名称。</param>
     /// <returns>若已注册返回 true；否则返回 false。</returns>
-    public bool IsSchemeRegistered(string scheme)
-    {
-        if (string.IsNullOrEmpty(scheme))
-        {
-            return false;
-        }
-
-        lock (_customSchemesLock)
-        {
-            return _customSchemes.ContainsKey(scheme);
-        }
-    }
+    public bool IsSchemeRegistered(string scheme) => _schemes.IsRegistered(scheme);
 
     /// <summary>
     /// 尝试获取指定 URI scheme 关联的 <see cref="Wails.Net.AssetServer.AssetServer"/>。
@@ -610,32 +560,12 @@ public class Application
     /// <param name="assetServer">查找到的资源服务器；若未注册则为 null。</param>
     /// <returns>是否找到已注册的 scheme。</returns>
     public bool TryGetSchemeAssetServer(string scheme, out Wails.Net.AssetServer.AssetServer? assetServer)
-    {
-        if (string.IsNullOrEmpty(scheme))
-        {
-            assetServer = null;
-            return false;
-        }
-
-        lock (_customSchemesLock)
-        {
-            return _customSchemes.TryGetValue(scheme, out assetServer);
-        }
-    }
+        => _schemes.TryGetAssetServer(scheme, out assetServer);
 
     /// <summary>
     /// 获取所有已注册的自定义 URI scheme 名称的只读列表。
     /// </summary>
-    public IReadOnlyList<string> RegisteredSchemes
-    {
-        get
-        {
-            lock (_customSchemesLock)
-            {
-                return _customSchemes.Keys.ToList().AsReadOnly();
-            }
-        }
-    }
+    public IReadOnlyList<string> RegisteredSchemes => _schemes.RegisteredSchemes;
 
     /// <summary>
     /// 获取所有窗口的只读列表。
@@ -796,7 +726,7 @@ public class Application
     /// 获取当前进程是否为首实例。
     /// 仅在 <see cref="IsSingleInstance"/> 为 true 且 <see cref="SetupSingleInstance"/> 已调用时有意义。
     /// </summary>
-    public bool IsFirstInstance => _isFirstInstance;
+    public bool IsFirstInstance => _singleInstance.IsFirstInstance;
 
     /// <summary>
     /// 获取应用级取消令牌，在应用关闭时被取消。
@@ -864,7 +794,8 @@ public class Application
         Events = events;
         _serviceProvider = services;
         _globalApplication = this;
-        _shutdownTasks.AddRange(options.ShutdownTasks);
+        _hooks.AddShutdownTasks(options.ShutdownTasks);
+        _singleInstance = new SingleInstanceCoordinator(options);
         _runtimeServices = new RuntimeServicesCoordinator(_serviceRegistry);
 
         // Streams 管理器在构造期创建，随 Application 生命周期（ShutdownAsync）Dispose。
@@ -953,7 +884,7 @@ public class Application
             else
             {
                 // AssetServer 尚未注入，暂存待后续 setter 触发时应用
-                _pendingServiceRoutes.Add((opts.Route!, handler));
+                _serviceRoutes.Add(opts.Route!, handler);
             }
         }
     }
@@ -999,8 +930,7 @@ public class Application
         List<WindowConfig>? configuredWindows,
         DesktopHostOptions.WindowOptions? defaultWindow)
     {
-        _configuredWindows = configuredWindows;
-        _defaultWindowConfig = defaultWindow;
+        _windowFactory.SetConfigs(configuredWindows, defaultWindow);
     }
 
     /// <summary>
@@ -1008,39 +938,7 @@ public class Application
     /// 确保窗口由 STA UI 线程创建，可被该线程的 GetMessage 循环正确处理。
     /// 仅当 OnAfterStart 未设置时执行，避免与用户回调重复创建窗口。
     /// </summary>
-    private void CreateWindowsFromConfig()
-    {
-        if (_configuredWindows is { Count: > 0 } windows)
-        {
-            foreach (var cfg in windows)
-            {
-                CreateWebviewWindow(new WebviewWindowOptions
-                {
-                    Name = cfg.Name ?? string.Empty,
-                    Title = cfg.Title ?? "Wails.Net",
-                    Width = cfg.Width,
-                    Height = cfg.Height,
-                    Resizable = cfg.Resizable,
-                    Centered = cfg.Centered,
-                    Fullscreen = cfg.Fullscreen,
-                    Frameless = cfg.Frameless,
-                    AlwaysOnTop = cfg.AlwaysOnTop,
-                    URL = cfg.Url ?? string.Empty,
-                });
-            }
-        }
-        else if (_defaultWindowConfig is not null)
-        {
-            var window = _defaultWindowConfig;
-            CreateWebviewWindow(new WebviewWindowOptions
-            {
-                Title = window.Title,
-                Width = window.Width,
-                Height = window.Height,
-                Frameless = window.Frameless,
-            });
-        }
-    }
+    private void CreateWindowsFromConfig() => _windowFactory.CreateAll(CreateWebviewWindow);
 
     /// <summary>
     /// 创建 Webview 窗口，使用自动递增的 ID。
@@ -1078,7 +976,7 @@ public class Application
             return new NotchWindow(null);
         }
 
-        return new NotchWindow(CreateWebviewWindow(BuildNotchWindowOptions(options)));
+        return new NotchWindow(CreateWebviewWindow(NotchWindowOptionsBuilder.Build(options)));
     }
 
     /// <summary>
@@ -1089,63 +987,7 @@ public class Application
     /// <param name="options">notch 窗口配置。</param>
     /// <returns>标准窗口选项。</returns>
     internal static WebviewWindowOptions BuildNotchWindowOptions(NotchWindowOptions options)
-    {
-        // 默认值与 Wails v3 Go 版本 notch_window.go 保持一致。
-        var width = options.Width > 0 ? options.Width : 660;
-        var height = options.Height > 0 ? options.Height : 92;
-        var animationSpeed = options.AnimationSpeed > TimeSpan.Zero
-            ? options.AnimationSpeed
-            : TimeSpan.FromMilliseconds(420);
-
-        // 与 Go webviewOptionsForNotchWindow 一一对应：
-        // 原生形状边距 30pt（水平）/ 12pt（底部）。
-        const int horizontalInset = 30;
-        const int bottomInset = 12;
-
-        var windowOptions = options.WindowOptions;
-        windowOptions.Width = width + (2 * horizontalInset);
-        windowOptions.Height = height + bottomInset;
-        windowOptions.Frameless = true;
-        windowOptions.Resizable = false;
-        windowOptions.Minimisable = false;
-        windowOptions.Maximisable = false;
-        windowOptions.MinWidth = 0;
-        windowOptions.MinHeight = 0;
-        windowOptions.MaxWidth = 0;
-        windowOptions.MaxHeight = 0;
-        windowOptions.Hidden = false;
-        windowOptions.X = 0;
-        windowOptions.Y = 0;
-        windowOptions.BackgroundType = "transparent";
-        windowOptions.R = 0;
-        windowOptions.G = 0;
-        windowOptions.B = 0;
-        windowOptions.A = 0;
-
-        var mac = windowOptions.Mac ??= new WebviewWindowMacOptions();
-        mac.Backdrop = 1; // MacBackdropTransparent
-        mac.DisableShadow = true;
-        mac.CornerType = 1; // MacWindowCornerTypeSquare
-        mac.WindowClass = 1; // MacWindowClassPanel
-        mac.WindowLevel = 6; // MacWindowLevelPopUpMenu（本项目序号映射）
-        mac.PanelPreferences = new MacPanelPreferences
-        {
-            NonActivating = true,
-            FloatingPanel = true,
-        };
-        // CanJoinAllSpaces | FullScreenAuxiliary | Stationary | IgnoresCycle
-        mac.CollectionBehavior = 1 | 256 | 16 | 64;
-        mac.Notch = new NotchWindowInfo
-        {
-            ContentWidth = width,
-            ContentHeight = height,
-            Animated = options.Animated,
-            AnimationSpeedMilliseconds = (int)Math.Max(0, animationSpeed.TotalMilliseconds),
-            ScreenId = options.Screen?.Id,
-        };
-
-        return windowOptions;
-    }
+        => NotchWindowOptionsBuilder.Build(options);
 
     /// <summary>
     /// 根据 ID 获取窗口。
@@ -1185,24 +1027,7 @@ public class Application
     /// </summary>
     private void SetupSingleInstance()
     {
-        if (!_options.SingleInstance)
-        {
-            return;
-        }
-
-        var uniqueId = _options.SingleInstanceUniqueID ?? _options.Name;
-        if (_platformApp is not null)
-        {
-            _isFirstInstance = _platformApp.AcquireSingleInstanceLock(uniqueId);
-        }
-
-        if (!_isFirstInstance)
-        {
-            // 非首实例：通知已运行的前一个实例后退出
-            var args = Environment.GetCommandLineArgs();
-            _platformApp?.NotifySingleInstance(args);
-            Environment.Exit(_options.SingleInstanceExitCode);
-        }
+        _singleInstance.Acquire(_platformApp);
     }
 
     /// <summary>
@@ -1246,25 +1071,7 @@ public class Application
     /// </summary>
     private void SetupSignalHandler()
     {
-        if (_options.DisableDefaultSignalHandler)
-        {
-            return;
-        }
-
-        _signalHandler = new Hosting.DefaultSignalHandler(
-            cleanup: () =>
-            {
-                if (ShouldQuit())
-                {
-                    Quit();
-                }
-                else
-                {
-                    _logger?.LogInformation("收到退出信号，但 ShouldQuit 返回 false，应用继续运行。");
-                }
-            },
-            logger: _logger);
-        _signalHandler.Start();
+        _signalHandlers.Setup(_options, ShouldQuit, Quit, _logger);
     }
 
     /// <summary>
@@ -1275,7 +1082,7 @@ public class Application
     internal Hosting.DefaultSignalHandler? SetupSignalHandlerForTest()
     {
         SetupSignalHandler();
-        return _signalHandler;
+        return _signalHandlers.Current;
     }
 
     /// <summary>
@@ -1304,10 +1111,7 @@ public class Application
         _options.OnBeforeStart?.Invoke();
 
         // 执行所有通过 OnBeforeStart 注册的 hook，在启动服务之前运行。
-        foreach (var hook in _onBeforeStartHooks)
-        {
-            hook(this);
-        }
+        _hooks.RunBeforeStartHooks(this);
 
         // 按注册顺序启动服务（P1-1：委托给 RuntimeServicesCoordinator 管理顺序）
         _runtimeServices.StartAsync(_options, _cts.Token).GetAwaiter().GetResult();
@@ -1434,181 +1238,37 @@ public class Application
             return;
         }
 
-        LifecycleState = Hosting.ApplicationLifecycleState.Stopping;
-
-        // 触发 IHostApplicationLifetime.ApplicationStopping 事件。
-        // 对应 ASP.NET Core 的优雅关闭钩子，让用户代码可以注册 Stopping 回调。
-        _lifetime?.StopApplication();
-
-        // 取消应用级取消令牌
-        _cts.Cancel();
-
-        // P2-21：停止默认信号处理器，恢复 SIGINT / SIGTERM 的操作系统默认处置。
-        _signalHandler?.Dispose();
-        _signalHandler = null;
-
-        // R1-4：组合外部 CancellationToken 与 ApplicationOptions.ShutdownTimeout，
-        // 任一触发即取消后续清理路径，确保 ShutdownTimeout 真正贯穿整条关闭链。
-        using var shutdownCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        if (_options.ShutdownTimeout != System.Threading.Timeout.InfiniteTimeSpan)
+        // RH-HOST-02：关闭顺序整体下沉到 ApplicationShutdownCoordinator。
+        // 上下文在调用点按当前字段快照构建，协调器不反向依赖 Application 实例，关闭顺序可独立测试。
+        var shutdown = new ApplicationShutdownCoordinator(new ApplicationShutdownContext
         {
-            shutdownCts.CancelAfter(_options.ShutdownTimeout);
-        }
-        var ct = shutdownCts.Token;
+            Options = _options,
+            Lifetime = _lifetime,
+            ApplicationCancellation = _cts,
+            ReleaseSignalHandler = _signalHandlers.Dispose,
+            ReleaseDevAssetProxy = () =>
+            {
+                _devAssetProxy?.Dispose();
+                _devAssetProxy = null;
+            },
+            SetLifecycleState = state => LifecycleState = state,
+            MarkStopped = () =>
+            {
+                _isRunning = false;
+                LifecycleState = Hosting.ApplicationLifecycleState.Stopped;
+            },
+            Hooks = _hooks,
+            EventPayloads = EventPayloads,
+            Streams = Streams,
+            RuntimeServices = _runtimeServices,
+            Windows = _windowManager,
+            Transport = _transport,
+            AssetServer = _assetServer,
+            Plugins = _pluginManager,
+            PlatformApp = _platformApp,
+        });
 
-        // 执行关闭任务（包括 options 中的和 OnShutdown 注册的）
-        foreach (var task in _shutdownTasks)
-        {
-            try
-            {
-                task();
-            }
-            catch
-            {
-                // 关闭任务中的异常不应中断关闭流程
-            }
-        }
-
-        // 触发 OnShutdown 回调
-        _options.OnShutdown?.Invoke();
-
-        // 停止超大事件载荷存储的清扫器并释放停放条目。
-        // 对应 Wails v3 Go 版本 application.go 中 OnShutdown(a.eventPayloads.close)。
-        EventPayloads.Dispose();
-
-        // 关闭 Streams 管理器：拒绝后续预留、清空所有会话（关闭其连接，解除阻塞在 Receive/Send 的 handler）、
-        // 停止清扫器。对应 Wails v3 Go 版本 application.go 中 shutdown 对 a.streams.close() 的调用。
-        Streams.Dispose();
-
-        // 关闭所有窗口
-        // R1-2：委托给 WindowManager 单一注册表，避免重复维护 _windows。
-        var windowManager = _windowManager;
-        if (windowManager is not null)
-        {
-            foreach (var window in windowManager.AllWindows)
-            {
-                try
-                {
-                    window.Close();
-                }
-                catch
-                {
-                    // 关闭窗口时的异常不应中断关闭流程
-                }
-            }
-            windowManager.Clear();
-        }
-
-        // 停止传输层
-        if (_transport is not null)
-        {
-            try
-            {
-                await _transport.StopAsync(ct).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                // 超时取消时不阻塞关闭流程
-            }
-            catch
-            {
-                // 停止传输层的异常不应中断关闭流程
-            }
-        }
-
-        // 停止资源服务器（若实现了 IServiceShutdown）
-        if (_assetServer is IServiceShutdown assetShutdown)
-        {
-            try
-            {
-                await assetShutdown.ServiceShutdown(ct).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                // 超时取消时不阻塞关闭流程
-            }
-            catch
-            {
-                // 停止资源服务器的异常不应中断关闭流程
-            }
-        }
-
-        // 释放 dev 资产反向代理（P2-12；仅 dev 模式存在）。
-        _devAssetProxy?.Dispose();
-        _devAssetProxy = null;
-
-        // 关闭所有插件（调用 IPlugin.ShutdownAsync，按注册逆序）。
-        // 对应 Wails v3 的 Shutdown() 和 Tauri v2 的 on_drop 钩子。
-        // 在服务逆序关闭之前调用，确保插件能在服务仍然可用时释放资源。
-        if (_pluginManager is not null)
-        {
-            try
-            {
-                await _pluginManager.ShutdownPluginsAsync(ct).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                // 超时取消时不阻塞关闭流程
-            }
-            catch
-            {
-                // 关闭插件的异常不应中断关闭流程
-            }
-        }
-
-        // 逆序关闭服务（P1-1：委托给 RuntimeServicesCoordinator 管理顺序）
-        try
-        {
-            await _runtimeServices.StopAsync(ct).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            // 超时取消时不阻塞关闭流程
-        }
-        catch
-        {
-            // 停止服务的异常不应中断关闭流程
-        }
-
-        // R1-4：使用异步平台销毁（带取消令牌）替代原同步 Destroy。
-        if (_platformApp is not null)
-        {
-            try
-            {
-                await _platformApp.ShutdownAsync(ct).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                // 平台销毁超时时不阻塞关闭流程
-            }
-            catch
-            {
-                // 平台销毁异常不阻塞关闭流程
-            }
-        }
-
-        _isRunning = false;
-        LifecycleState = Hosting.ApplicationLifecycleState.Stopped;
-
-        // 注：IHostApplicationLifetime.ApplicationStopped 事件由 StopApplication() 内部触发，
-        // 此处不再手动调用。StopApplication() 会先触发 ApplicationStopping，
-        // 然后在所有 hosted service 停止后触发 ApplicationStopped。
-
-        // P1-7：在所有清理完成后触发 PostShutdown 回调。
-        // 对应 Wails v3 Go 版本 application.go 中 cleanup() 末尾的 PostShutdown 调用：
-        //   a.postQuit()
-        //   if a.options.PostShutdown != nil { a.options.PostShutdown() }
-        // 与 OnShutdown 的区别：此时所有资源（窗口/服务/传输/平台）均已释放，
-        // 适合执行刷新日志、释放外部资源、上报关闭指标等收尾工作。
-        // 异常被吞掉以避免影响已完成的关闭流程。
-        try
-        {
-            _options.PostShutdown?.Invoke();
-        }
-        catch
-        {
-            // PostShutdown 中的异常不应中断已完成的关闭流程
-        }
+        await shutdown.RunAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1655,7 +1315,7 @@ public class Application
     /// <param name="task">关闭时执行的操作。</param>
     public void OnShutdown(Action task)
     {
-        _shutdownTasks.Add(task);
+        _hooks.AddShutdownTask(task);
     }
 
     /// <summary>
@@ -1667,7 +1327,7 @@ public class Application
     /// <param name="hook">启动前执行的操作，参数为当前应用实例。</param>
     public void OnBeforeStart(Action<Application> hook)
     {
-        _onBeforeStartHooks.Add(hook);
+        _hooks.AddBeforeStartHook(hook);
     }
 
     /// <summary>
@@ -1849,7 +1509,7 @@ public class Application
         {
             // Wails v3.1.0 #6287：Run 之前的主线程任务先入队，
             // 由 Run 进入主循环前在当前（主）线程上按 FIFO 执行。
-            _pendingMainThreadActions.Enqueue(action);
+            _mainThreadQueue.Enqueue(action);
             return;
         }
 
@@ -1869,17 +1529,7 @@ public class Application
     /// </summary>
     private void FlushPendingMainThreadActions()
     {
-        while (_pendingMainThreadActions.TryDequeue(out var action))
-        {
-            try
-            {
-                action();
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError(ex, "执行 Run 之前排队的主线程任务失败");
-            }
-        }
+        _mainThreadQueue.Flush(_logger);
     }
 
     /// <summary>
@@ -1986,86 +1636,7 @@ public class Application
     /// <param name="isDebug">是否调试模式。</param>
     /// <returns>生成的 JS 运行时代码（含 window._wails 标志 + 一次性 console 提示）。</returns>
     public string GenerateRuntimeJs(bool isDebug = false)
-    {
-        var platform = _platformApp switch
-        {
-            null => "server",
-            _ when OperatingSystem.IsWindows() => "windows",
-            _ when OperatingSystem.IsLinux() => "linux",
-            _ => "unknown",
-        };
-
-        var isServerMode = _platformApp is null or Platform.ServerMode.ServerPlatformApp;
-
-        // P0-D：Server 模式事件 API 完善 — 将传输层 URL 注入标志对象，
-        // 使前端 @wails-net/runtime 的 Transport.init() 能连接到正确的端点。
-        // 对应 Wails v3 中通过 wails:// 将 transport 信息注入到前端 runtime 的机制。
-        // OPT-IPC-002：同时注入进程级 handshake token（ipcToken），
-        // 前端发起 HTTP/WebSocket IPC 请求时回传校验；token 不写入日志。
-        string webSocketUrl = string.Empty;
-        string assetServerUrl = string.Empty;
-        string ipcToken = string.Empty;
-        if (isServerMode)
-        {
-            if (_transport is WebSocketTransport wsTransport)
-            {
-                webSocketUrl = wsTransport.WebSocketUrl;
-                assetServerUrl = wsTransport.BaseUrl;
-                ipcToken = wsTransport.HandshakeToken ?? string.Empty;
-            }
-            else if (_transport is HttpTransport httpTransport)
-            {
-                assetServerUrl = httpTransport.BaseUrl;
-                ipcToken = httpTransport.HandshakeToken ?? string.Empty;
-            }
-        }
-
-        // JSON 序列化保证字符串安全转义（前端 wails 标志字段须为合法 JSON 值）。
-        var platformJson = JsonSerializer.Serialize(platform);
-        var isDebugJson = isDebug ? "true" : "false";
-        var isServerModeJson = isServerMode ? "true" : "false";
-        var webSocketUrlJson = JsonSerializer.Serialize(webSocketUrl);
-        var assetServerUrlJson = JsonSerializer.Serialize(assetServerUrl);
-        var ipcTokenJson = JsonSerializer.Serialize(ipcToken);
-
-        // P0-1 Streams：server 模式注入真 WebSocket factory，使前端 @wails-net/runtime 的
-        // Stream(name) 直接返回真实 WebSocket（而非走桌面 held-poll）。
-        // 对应 Wails v3 Go 版本 stream_prelude_server.go 的 streamPrelude()：在 runtime
-        // bundle 之前预置 window._wails.streamFactory，保证模块作用域的 Stream(...) 可用。
-        // 端点与桌面 poll 共用同一 asset server 主机，故按 location 推导 URL（与 Go 一致）。
-        var streamFactoryJs = isServerMode
-            ? "\n          // Streams（P0-1）：server 模式注入真 WebSocket factory（对应 Go stream_prelude_server.go）。\n"
-              + "          window._wails.streamFactory = function(name) {\n"
-              + "            var p = location.protocol === 'https:' ? 'wss:' : 'ws:';\n"
-              + "            var sock = new WebSocket(p + '//' + location.host + '/wails/stream/ws?name=' + encodeURIComponent(name));\n"
-              + "            sock.binaryType = 'arraybuffer';\n"
-              + "            return sock;\n"
-              + "          };"
-            : string.Empty;
-
-        return $$"""
-        // Wails.NET Runtime Flags - 由 Application.GenerateRuntimeJs() 自动生成，请勿手动修改。
-        // 前端运行时 JS（wails 对象、传输层、contextmenu 钩子等）已迁至 npm 包 @wails-net/runtime，
-        // 见 https://github.com/wails-net/wails-net/tree/main/packages/wails-net-runtime。
-        // 前端必须执行 import { wails } from "@wails-net/runtime"; 后才能调用后端。
-        (function() {
-          if (window.__wailsFlagsInjected) return;
-          window.__wailsFlagsInjected = true;
-          window._wails = {
-            platform: {{platformJson}},
-            isDebug: {{isDebugJson}},
-            isServerMode: {{isServerModeJson}},
-            webSocketUrl: {{webSocketUrlJson}},
-            assetServerUrl: {{assetServerUrlJson}},
-            ipcToken: {{ipcTokenJson}}
-          };{{streamFactoryJs}}
-          if (!window.__wailsRuntimeSkippedNotice && !window.__wailsRuntimeLoaded) {
-            window.__wailsRuntimeSkippedNotice = true;
-            console.info("[Wails.NET] window._wails 已注入。前端请 import { wails } from \"@wails-net/runtime\"; 加载完整运行时。");
-          }
-        })();
-        """;
-    }
+        => _frontendRuntime.GenerateRuntimeJs(_platformApp, _transport, isDebug);
 
     /// <summary>
     /// 向所有已连接的前端客户端广播事件（P0-D：Server 模式事件 API 完善）。

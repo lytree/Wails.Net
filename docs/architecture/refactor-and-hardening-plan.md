@@ -370,18 +370,38 @@
 
 ### 4.2 Application 协调器化收尾（RH-HOST-02，继承审计 P1-1）
 
-已落地 `RuntimeServicesCoordinator`（`Coordinators/`）；`IRuntimeCoordinator.cs:12-16` 注释规划的 `FrontendRuntimeCoordinator` / `PlatformLifecycleCoordinator` 未实现。仍内联在 `Application`（1716 行）的职责与去向：
+**2026-11-15 首批已落地**：`Application.cs` **2160 → 1731 行**，9 个关注点整体下沉为独立单元，`Application` 只保留同名 facade 与委托（public API 未变，无 `virtual` 语义变化）：
 
-| 内联职责 | 位置 | 去向 |
+| 原内联职责 | 现在 | 位置 |
 |---|---|---|
-| service route 暂存/挂载 | `Application.cs:446-454, 804-817` | `IServiceRouteRegistry`（挂 AssetServer） |
-| 自定义 scheme 表 + 锁 | `:483-563` | `ICustomSchemeRegistry` |
-| shutdown tasks / OnBeforeStart hooks | `:1140-1150, 1268` | `IApplicationLifecycleHooks` |
-| 单实例 | `:961-981` | `ISingleInstanceCoordinator` |
-| GenerateRuntimeJs / flags 注入 | `:1559-1624` | `FrontendRuntimeCoordinator`（含 HttpTransport 分支清理，见 3.4） |
-| 事件传输监听器装配 | `:336-359` | `IIpcTransportStrategy`（见 3.3-4） |
+| 自定义 scheme 表 + 锁 + 5 个查询 API | `ICustomSchemeRegistry` / `CustomSchemeRegistry` | `Schemes/` |
+| service route 暂存/挂载 | `ServiceRouteRegistry` | `Services/` |
+| shutdown tasks / OnBeforeStart hooks | `ApplicationLifecycleHooks` | `Hosting/` |
+| 单实例（锁 + 非首实例退出） | `SingleInstanceCoordinator` | `Hosting/` |
+| Run 前主线程任务队列 | `MainThreadTaskQueue` | `Hosting/` |
+| SIGINT/SIGTERM 处理器装配 | `SignalHandlerCoordinator` | `Hosting/` |
+| 关闭顺序（生命周期事件→令牌→钩子→载荷/Streams→窗口→传输→资源→dev 代理→插件→服务→平台→PostShutdown） | `ApplicationShutdownCoordinator` + `ApplicationShutdownContext` | `Coordinators/` |
+| GenerateRuntimeJs / flags 注入 | `FrontendRuntimeCoordinator` | `Coordinators/` |
+| 配置驱动窗口创建 / notch 选项映射 | `ConfiguredWindowFactory` / `NotchWindowOptionsBuilder` | `Windows/` |
 
-验收：`Application` 降到 <800 行、字段数显著下降，public facade API 不变。
+`RuntimeServicesCoordinator`（P1-1 已落地）继续承担服务生命周期顺序。
+
+**剩余体积分布（1731 行实测）**：
+
+| 区段 | 行数 | 性质 |
+|---|---|---|
+| 字段声明 + public 管理器属性（含 XML 文档） | 767 | facade 面，删除即破坏 API |
+| `InitializeFromServiceProvider` | 117 | DI 装配，可再迁 `Hosting/ServiceProviderBinder` |
+| `Run`（启动顺序 + 平台主循环） | 116 | 编排根，保留更易读 |
+| 其余 public facade 方法（平台转发、窗口/服务/事件 API） | ~730 | facade 面 |
+
+结论：**在当前 public API 下 `<800 行` 不可达**——仅需保留的管理器属性与 facade 文档就超过 800 行。达标只有两条路，均需决策：
+
+1. **按关注点拆 partial 文件**（`Application.Managers.cs` / `Application.Platform.cs` / `Application.Lifecycle.cs`）：public API 不变，但只是文件组织，类型规模不变；
+2. **破坏性收敛 public API**（管理器收为 `app.Managers.Clipboard`、平台转发收为 `app.Platform.Hide()`）：实测可降到 ~900 行，属 v4 破坏窗口，应与 §4.1 / §4.4 同批执行。
+
+验收（建议修订）：行为职责全部下沉 + 无新增静态定位器依赖 + 单文件规模可控；若坚持 800 行硬指标，须与 §4.1 破坏窗口合并走路线 2。
+
 
 ### 4.3 `Application.Get()` 静态定位器收敛（RH-HOST-03）
 
@@ -500,7 +520,7 @@ AGENTS.md 与 docs 多处称 macOS 为"骨架/ServerMode 降级"，实际 `#if M
 - [ ] Channel 前后端协议可用，加密 opt-in；
 - [ ] `wails dev` 经 AssetServer 反向代理闭环（HMR 可用）；
 - [ ] 兼容配置字段清零，drift 测试覆盖；
-- [ ] `Application` < 800 行且无新增静态定位器依赖；
+- [ ] `Application` < 800 行且无新增静态定位器依赖；（2026-11-15：2160 → 1731，行为职责已全部下沉；800 行需破坏性 API 收敛或 partial 拆文件，见 §4.2）
 - [ ] NativeAOT CI 覆盖模板 App；Linux CI 必过；
 - [x] 本文档 §2.1.4 全部条目可勾选（含 SEC-H-003 阶段三条；2026-11-14）；
 

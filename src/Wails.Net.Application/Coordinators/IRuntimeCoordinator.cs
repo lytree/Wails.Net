@@ -8,10 +8,11 @@ namespace Wails.Net.Application.Coordinators;
 /// 已落地的实现：
 /// <list type="bullet">
 /// <item><see cref="RuntimeServicesCoordinator"/>：注册服务生命周期顺序管理（IServiceStartup / IServiceShutdown）。</item>
+/// <item><see cref="FrontendRuntimeCoordinator"/>：前端运行时代码（<c>window._wails</c> 标志）生成。</item>
+/// <item><see cref="ApplicationShutdownCoordinator"/>：关闭顺序编排（RH-HOST-02）。</item>
 /// </list>
 /// 后续可扩展：
 /// <list type="bullet">
-/// <item>FrontendRuntimeCoordinator：runtime JS、AssetServer、IPC transport 绑定；</item>
 /// <item>PlatformLifecycleCoordinator：IPlatformApp、窗口主循环、Server 模式生命周期。</item>
 /// </list>
 /// </para>
