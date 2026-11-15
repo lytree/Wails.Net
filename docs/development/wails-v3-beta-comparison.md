@@ -210,7 +210,7 @@
 | 5 | macOS 媒体权限：WKUIDelegate media-capture 方法（beta.27），`PermissionAllow/Deny` 覆盖摄像头/麦克风 | ✅ **已实现（2026-10-18）**：`WebviewWindowOptions.Mac.CameraPermission/MicrophonePermission`（`Permission.Default/Allow/Deny`）+ `MacUiDelegate.RequestMediaCapturePermission` 覆写；相机/麦克风分别判定、取更严格者。macOS 原生代码未在本机编译验证（见 §9.10） |
 | 6 | macOS notch 通知窗口 + NSPanel 窗口类型（beta.12 #6010/#6008） | ❌ 未实现 |
 | 7 | Linux GTK application ID 覆盖（beta.23 #5972）+ single-instance 以应用自身 ID 占用 bus name（#5973） | ✅ **已实现（2026-10-18）**：`LinuxApplicationId` id 推导/校验/覆盖 + 程序名；`LinuxDbusSingleInstance` 以 `uniqueID+".SingleInstance"` 占 bus name；D-Bus 不可用降级锁文件 + socket。见 §9.13 |
-| 8 | 运行时请求 64 MiB 上限 → HTTP 413（beta.19 #6091） | ✅ **已实现（2026-10-18）**：`HttpTransport.MaxRuntimeBodyBytes = 64 MiB`，Content-Length 预判 + 边读边计数 → 413（文案 `runtime request body exceeds 64 MiB`）；分块路径单块 1 MiB → 422。见 §9.10 |
+| 8 | 运行时请求 64 MiB 上限 → HTTP 413（beta.19 #6091） | ✅ **已实现（2026-10-18；2026-11-15 迁移）**：`IpcProtocol.MaxRuntimeBodyBytes = 64 MiB`，由 `WebviewRequestPipeline` 进入 IPC 前校验 → 413（文案 `runtime request body exceeds 64 MiB`）。原实现所在 `HttpTransport` 已随 RH-IPC-04 删除。见 §9.10 |
 | 9 | 自定义 scheme 请求中止/取消：Windows（beta.20 #5963/#5969）、Linux（beta.23 #6126）、macOS/iOS 请求上下文转发 | ✅ **已实现（2026-10-22 复核）**：macOS 每 task 独立 CTS + `StopUrlSchemeTask` 取消；Windows `WindowsRequestCancellation` 经 CDP `Fetch`/`Network` 逐请求中止 + 窗口关闭取消；Linux WebKitGTK 无取消钩子（平台限制，保持原行为，代码已注释说明）；令牌已贯穿管线。见 §9.10 / §9.13 |
 | 10 | Windows 托盘 ICO 图标 + 任务栏主题跟随（beta.14 #6016） | ✅ **已实现（2026-10-18）**：`Win32SystemTray` 双图标（light/dark）+ 按 `Application.IsDarkMode()` 选择生效图标 + 订阅 `KnownEvents.ThemeChanged` 切换；**新增平台层顶层消息窗口 `PlatformMessageWindow`**，使无 webview 窗口时也能发出主题事件（限制已补全）。ICO 仍由 `IconCommand` 生成。见 §9.11 |
 
@@ -363,7 +363,7 @@
 | P1-5 macOS 媒体权限 | ✅ **已实现（2026-10-18）** | `MacOSWebviewWindow.cs` `MacUiDelegate.RequestMediaCapturePermission` + `ResolveMediaCapturePermission/CaptureDecisionFor/StrictestCaptureDecision`；`WebviewWindowMacOptions.CameraPermission/MicrophonePermission`（MACOS 原生未本机编译验证） |
 | P1-6 notch/NSPanel | ✅ **已实现（2026-10-22）** | `NotchWindowOptions`/`NotchWindow` + `Application.CreateNotchWindow`（映射见 `BuildNotchWindowOptions`）；`WebviewWindowMacOptions.WindowClass/PanelPreferences/CollectionBehavior`；macOS `MacOSWebviewWindow` 创建 `NSPanel`（非激活/浮动/工具窗口位）、`MacNotchBackgroundView` 贝塞尔刘海形状、相机刘海定位与滑入/滑出动画、悬停取焦；见 §10.9 |
 | P1-7 GTK app ID/single-instance | ✅ **已实现（2026-10-18）** | `LinuxApplicationId.cs`（id 推导/校验/覆盖 + 程序名）、`LinuxDbusSingleInstance.cs`/`LinuxSingleInstanceNames.cs`（经 `org.freedesktop.DBus.RequestName` 以 `uniqueID+".SingleInstance"` 占 bus name，`DO_NOT_QUEUE`）；`LinuxPlatformApp.AcquireSingleInstanceLock` 占位、`Run()` 经 `GLib.Functions.SetPrgname` 应用程序名；D-Bus 不可用降级锁文件+socket。见 §9.13 |
-| P1-8 64MiB→413 | ✅ **已实现（2026-10-18）** | `Transport/HttpTransport.cs` `MaxRuntimeBodyBytes = 64 MiB`；`HandleMessageAsync` Content-Length 预判 + 限量读取 → 413；分块单块 1 MiB → 422 |
+| P1-8 64MiB→413 | ✅ **已实现（2026-10-18；2026-11-15 迁移）** | `Transport/IpcProtocol.cs` `MaxRuntimeBodyBytes = 64 MiB`；`WebView/WebviewRequestPipeline.HandleIpcAsync` 校验请求体 → 413（原实现随 `HttpTransport` 删除而迁移） |
 | P1-9 scheme 取消 | ✅ **已实现（2026-10-22 复核确认）** | macOS：每 task CTS + `MarkStopped` 取消且不再回调；Windows：`WindowsRequestCancellation.cs`（CDP `Fetch`/`Network` 逐请求中止，`X-Wails-Request-Id` 桥接头）+ 窗口关闭取消；Linux：WebKitGTK 无钩子（平台限制，已注释）；管线令牌已透传。见 §9.13 |
 | P1-10 托盘主题 | ✅ **已实现（2026-10-18）** | `Win32SystemTray.cs`：`_lightModeIcon`/`_darkModeIcon`(+Owned)、`GetEffectiveIcon`、`ApplyEffectiveIcon`、`SubscribeThemeChanged`/`UnsubscribeThemeChanged`、`ReleaseIcon`；新增 `PlatformMessageWindow.cs`（平台层顶层消息窗口）在无窗口时也发主题事件 |
 | P2-11 前端就绪 | ✅ **已实现（2026-10-18）** | `src/Wails.Net.Cli/Build/FrontendDevServerReadiness.cs`；`DevCommand.cs` L263-313 启动前探测、L401-422 `ResolveFrontendDevServerUrl`；测试 10 项 |
@@ -490,15 +490,18 @@ Go `SignalHandler.Start()` 在首个信号分支 `break` 出监听循环，使 `
 
 ### 9.10.1 P1-8 运行时请求 64 MiB 上限 → HTTP 413
 
+> **2026-11-15 迁移说明（RH-IPC-04）**：该上限原实现在 `HttpTransport`（独立 HTTP 监听传输），
+> 而该类**生产零装配**——限制实际从未在可达路径上生效。独立传输删除后，校验迁入
+> `WebviewRequestPipeline.HandleIpcAsync`（桌面/移动模式真正可达的 IPC 入口）。
+
 | 内容 | 位置 |
 |------|------|
-| `HttpTransport.MaxRuntimeBodyBytes = 64 MiB`；`HandleMessageAsync` 先按 `ContentLength64` 预判、再边读边计数（覆盖 chunked 无长度场景），超限返回 **413** | [Transport/HttpTransport.cs](../../src/Wails.Net.Application/Transport/HttpTransport.cs) |
+| `IpcProtocol.MaxRuntimeBodyBytes = 64 MiB`；进入 IPC 处理前校验 `RequestBodyBytes` 长度，超限返回 **413** | [Transport/IpcProtocol.cs](../../src/Wails.Net.Application/Transport/IpcProtocol.cs)、[WebView/WebviewRequestPipeline.cs](../../src/Wails.Net.Application/WebView/WebviewRequestPipeline.cs) |
 | 413 响应体文案 `runtime request body exceeds 64 MiB`（对齐 Go `http.Error`），`text/plain; charset=utf-8` | 同上 |
-| 分块上传路径单块上限 1 MiB（`maxChunkBodyBytes`）→ **422**（对齐 Go） | 同上 |
 | 未超限请求解码语义不变（保留 UTF-8 / BOM 行为） | 同上 |
 
-测试：`tests/Wails.Net.Application.Tests/Transport/HttpTransportRequestBodyLimitTests.cs`（**5 项全部通过**）：超限 `Content-Length` → 413（不发实体，避免 64 MiB 分配）、未超限正常 IPC 成功、`ReadBodyWithLimitAsync` 以小上限验证「等于放行 / 超 1 字节拒绝」、常量值断言。
-未覆盖：未端到端发送真实 64 MiB 实体；`WebSocketTransport` 的 IPC 走 WS 帧，Go 侧无对应 runtime body 上限，未改动。
+测试：`tests/Wails.Net.Application.Tests/WebView/IpcBodyLimitTests.cs`（**2 项**）：64 MiB + 1 字节 → 413 且业务处理器不被调用、正常体量请求照旧进入处理器。
+未覆盖 / 已知边界：平台层在进入管线前已把 body 物化，因此这是**协议策略上限**而非内存保护（真正省内存需平台读取时按上限截断）；`WebSocketTransport` 的 IPC 走 WS 帧，Go 侧无对应 runtime body 上限，未改动。原 `x-wails-chunk-*` 分块协议（单块 1 MiB → 422）随 HttpTransport 一并删除。
 
 ### 9.10.2 P1-9 自定义 scheme 请求取消 / 上下文转发
 
@@ -931,7 +934,7 @@ Wails.Net `HelperProcess.cs` 对齐：
 
 | # | 变更（版本 / PR） | Wails v3 内容 | Wails.Net 现状 | 建议 |
 |---|------------------|---------------|----------------|------|
-| 1 | Server 模式 IPC 收紧（beta.31 安全） | `/wails/runtime` 仅接受 **POST**，且仅服务自身 origin 或 `WebSocketOriginPatterns` 白名单内的 origin；其他方法 405、其他浏览器来源 403 | ✅ 已实现：新增 `IpcRequestGuard`（[IpcRequestGuard.cs](../../src/Wails.Net.Application/Security/IpcRequestGuard.cs)），Server 模式在 [IpcTransportStrategy.cs](../../src/Wails.Net.Application/Transport/IpcTransportStrategy.cs) / [ServerModeTransportExtensions.cs](../../src/Wails.Net.Application/Hosting/ServerModeTransportExtensions.cs) 装配；`/wails/message` 非 POST → 405 + `Allow: POST`，Origin 非同源/非白名单 → 403，无 Origin 时按 `Sec-Fetch-Site` 判定（[HttpTransport.cs](../../src/Wails.Net.Application/Transport/HttpTransport.cs)） | 已完成（2026-10-31） |
+| 1 | Server 模式 IPC 收紧（beta.31 安全） | `/wails/runtime` 仅接受 **POST**，且仅服务自身 origin 或 `WebSocketOriginPatterns` 白名单内的 origin；其他方法 405、其他浏览器来源 403 | ✅ 已实现：新增 `IpcRequestGuard`（[IpcRequestGuard.cs](../../src/Wails.Net.Application/Security/IpcRequestGuard.cs)），Server 模式在 [IpcTransportStrategy.cs](../../src/Wails.Net.Application/Transport/IpcTransportStrategy.cs) / [ServerModeTransportExtensions.cs](../../src/Wails.Net.Application/Hosting/ServerModeTransportExtensions.cs) 装配；WebSocket 端点的非升级请求 → 405 + `Allow: GET`，升级请求 Origin 非同源/非白名单 → 403（[WebSocketTransport.cs](../../src/Wails.Net.Application/Transport/WebSocketTransport.cs)）。<br>**RH-IPC-04（2026-11-15）**：`/wails/message` 的 HTTP 监听端点（原 `HttpTransport`）已删除，Server 模式不再暴露该端点；同源/`Sec-Fetch-Site`/Host 判定仍由 `IpcRequestGuard` 单测覆盖 | 已完成（2026-10-31，2026-11-15 随传输删除收敛） |
 | 2 | Server 模式 DNS rebinding 防护（beta.31 安全） | 绑定 loopback 时，`Host` 头非 localhost/IP/绑定主机/白名单 → 403 | ✅ 已实现：`IpcRequestGuard.IsHostAllowed` 对齐 Go `serverHostAllowed`（仅 loopback 绑定启用，放行空 Host / localhost / 任意 IP 字面量 / 绑定主机 / 白名单模式；端口不参与判定），HTTP 与 WebSocket 传输层入口均校验（403）。规则细节见 §11.5 | 已完成（2026-10-31） |
 | 3 | Linux 跨源子帧 `wails:` 消息拦截（v3.0.0 安全，缓解 GHSA-2p5f-2gx8-mh8m） | GTK3/GTK4 向所有帧注入 guard 脚本 | ✅ 已实现（2026-11-01）：[LinuxFrameGuard.cs](../../src/Wails.Net.Application.Linux/LinuxFrameGuard.cs) 守卫脚本经 `UserContentManager.AddScript(AllFrames, DocumentStart)` **先于**运行时标志注入——顶层帧/同源子帧标记 `__wailsFrameTrusted=true`，其余帧标记 false 并拦截 `_wails` 写入与 `fetch`/`XHR`/`sendBeacon` 到 `wails:` 端点；运行时标志脚本由 `WrapRuntimeScript` 包裹，不可信帧不注入。原生侧 [LinuxIpcOriginGuard.cs](../../src/Wails.Net.Application.Linux/LinuxIpcOriginGuard.cs) 在 `OnWailsSchemeRequest` 校验 IPC（`POST /wails/*`）的 `Origin` 与窗口同源（默认端口归一、`Origin: null` 仅在 wails 页面且非跨源上下文时容忍、无 Origin 时按 `Sec-Fetch-Site` 拒绝 cross-site），不通过返回 403。**平台限制**：WebKitGTK 的 `URISchemeRequest` 不暴露发起帧，且旧版本可能不透传 `Origin`（此时放行并由脚本守卫兜底）；同源子帧无法（也无需）区分——与上游结论一致 | 已完成（2026-11-01） |
 | 4 | Windows 问题对话框自定义按钮 + 回调（beta.33/beta.34 #5794） | 自定义按钮走 TaskDialog，comctl32 v6 不可用时回退 MessageBox + 位置映射回调 | ✅ 已实现（2026-11-01）：新增 [MessageDialogOptions.cs](../../src/Wails.Net.Application/Dialogs/MessageDialogOptions.cs)（`MessageDialogButton.Label/IsDefault/IsCancel/Callback`），`IPlatformApp` / `IDialogManager` 以接口默认方法提供 options 重载（非 Windows 平台自动获得「标签透传 + 回调」）；Windows 由 [Win32TaskDialog.cs](../../src/Wails.Net.Application.Windows/Win32TaskDialog.cs) 调用 `TaskDialogIndirect`（按钮 ID 1000+i、`TDF_ALLOW_DIALOG_CANCELLATION`、TDN_CREATED 置顶），失败回退 MessageBox 并按 Go `messageBoxButtonFor` 的标签匹配 + Yes/No/Cancel 位置回退；[DialogPlugin.cs](../../src/Wails.Net.Plugins.Dialog/DialogPlugin.cs) 的 `dialog.question` 支持可选 `buttons`（默认 `["Yes","No"]，末按钮视为取消），[index.ts](../../packages/wails-net-plugin-dialog/src/index.ts) 同步签名 | 已完成（2026-11-01） |
@@ -970,7 +973,7 @@ Wails.Net `HelperProcess.cs` 对齐：
 
 ### 11.4 后续待办（按优先级）
 
-1. ✅ **P0 安全（已完成 2026-10-31）**：Server 模式 `/wails/message` 强制 POST + 同源/白名单校验、loopback 绑定 `Host` 白名单（防 DNS rebinding），实现于 `IpcRequestGuard` 并在 `HttpTransport` / `WebSocketTransport` 入口生效；单测 `IpcRequestGuardTests`（15 个）与端到端 `ServerModeRequestHardeningTests`（13 个）全部通过。
+1. ✅ **P0 安全（已完成 2026-10-31）**：Server 模式 `/wails/message` 强制 POST + 同源/白名单校验、loopback 绑定 `Host` 白名单（防 DNS rebinding），实现于 `IpcRequestGuard` 并在 `WebSocketTransport` 入口生效（`HttpTransport` 已于 RH-IPC-04 删除，HTTP 端点的 7 个端到端用例随之移除）；单测 `IpcRequestGuardTests`（15 个）与端到端 `ServerModeWebSocketHardeningTests`（6 个）全部通过。
 2. ✅ **P1（已完成 2026-10-31）**：`FrontendDevServerReadiness` 改为 TCP 探测（对齐 beta.33 #6209）——`TryCreateTarget` 解析 `host:port`（http/https、无片段、缺省 80/443）+ `ProbeTcpOnceAsync` 连接成功即就绪，修正 Vite 404 导致 `wails dev` 等满 60s 的缺陷；`DevCommand` 同步改用 TCP 等待。测试 `FrontendDevServerReadinessTests` **15 项**（含真实 `TcpListener` 连接用例）通过。
 3. ✅ **P1（已完成 2026-11-01）**：Windows 问题对话框支持自定义按钮标签与回调——新增 `MessageDialogOptions` / `MessageDialogButton` 与 `IPlatformApp` / `IDialogManager` 的 options 重载（接口默认实现回退到 `string[]` 并触发回调），Windows 优先 `TaskDialogIndirect`（`Win32TaskDialog`），comctl32 v6 不可用或调用失败时回退 MessageBox 并按 Go `messageBoxButtonFor` 的标签匹配 + Yes/No/Cancel 位置回退；`DialogPlugin` 的 `dialog.question` 新增可选 `buttons` 参数（默认 `["Yes","No"]`）。测试 `Win32TaskDialogTests`（14 项）、`MessageDialogOptionsTests`（8 项）、`DialogManagerTests` 新增 2 项全部通过。
 4. ✅ **P1（已完成 2026-11-01）**：Linux 子帧 `wails:` 消息来源校验——双层防护：(1) 脚本守卫 `LinuxFrameGuard`（所有帧注入，非顶层/非同源帧禁用 IPC 入口并跳过运行时标志注入）；(2) 原生 `LinuxIpcOriginGuard` 校验 IPC 请求 `Origin` 与窗口当前页面同源（`Origin: null` 仅在 wails 页面且非跨源上下文时容忍，无 Origin 时按 `Sec-Fetch-Site` 兜底），不合规返回 403。**平台限制**：WebKitGTK 不暴露发起帧且旧版本可能不透传 `Origin`，此时退化为脚本守卫；同源子帧无法区分（上游同样未解决）。测试 `LinuxIpcOriginGuardTests`（21 项）与 `LinuxFrameGuardTests`（9 项）在 Windows 上通过（纯逻辑，无 GTK 依赖）；真实 WebKitGTK 行为建议在 WSL/Linux 桌面会话中手动验证。
@@ -980,7 +983,7 @@ Wails.Net `HelperProcess.cs` 对齐：
 
 ### 11.5 Host 校验（DNS rebinding 防护）实现说明
 
-对应 Wails v3 `v3.0.0` 的 `v3/pkg/application/host_guard_server.go`（`isLoopbackBindHost` / `serverHostAllowed`），Wails.Net 实现为 [`IpcRequestGuard`](../../src/Wails.Net.Application/Security/IpcRequestGuard.cs)，由 `DefaultIpcTransportStrategy`（[IpcTransportStrategy.cs](../../src/Wails.Net.Application/Transport/IpcTransportStrategy.cs)）与 `UseServerModeTransport`（[ServerModeTransportExtensions.cs](../../src/Wails.Net.Application/Hosting/ServerModeTransportExtensions.cs)）在 **Server 模式**装配到 [`HttpTransport`](../../src/Wails.Net.Application/Transport/HttpTransport.cs) 与 [`WebSocketTransport`](../../src/Wails.Net.Application/Transport/WebSocketTransport.cs)，在路由与 CORS 之前校验，不通过返回 `403 Forbidden: Host not allowed`。
+对应 Wails v3 `v3.0.0` 的 `v3/pkg/application/host_guard_server.go`（`isLoopbackBindHost` / `serverHostAllowed`），Wails.Net 实现为 [`IpcRequestGuard`](../../src/Wails.Net.Application/Security/IpcRequestGuard.cs)，由 `DefaultIpcTransportStrategy`（[IpcTransportStrategy.cs](../../src/Wails.Net.Application/Transport/IpcTransportStrategy.cs)）与 `UseServerModeTransport`（[ServerModeTransportExtensions.cs](../../src/Wails.Net.Application/Hosting/ServerModeTransportExtensions.cs)）在 **Server 模式**装配到 [`WebSocketTransport`](../../src/Wails.Net.Application/Transport/WebSocketTransport.cs)（RH-IPC-04 后 Server 模式唯一宿主级传输；原 `HttpTransport` 已删除），在路由与 CORS 之前校验，不通过返回 `403 Forbidden: Host not allowed`。
 
 **启用条件**
 

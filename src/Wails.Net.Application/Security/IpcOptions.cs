@@ -6,28 +6,22 @@ namespace Wails.Net.Application.Security;
 /// <para>
 /// 安全默认值遵循最小权限原则：
 /// <list type="bullet">
-/// <item>HTTP/WebSocket fallback 默认只监听 loopback 地址。</item>
+/// <item>宿主级传输默认只监听 loopback 地址。</item>
 /// <item>请求必须携带进程级随机 handshake token（由框架在装配时注入，不写入日志）。</item>
 /// <item>Origin 校验默认开启：本地 WebView 源与白名单远程源允许，其余拒绝。</item>
 /// <item>CORS 默认白名单回显，不再使用通配符 <c>*</c>。</item>
 /// </list>
 /// </para>
+/// <para>
 /// 对应优化路线图 OPT-IPC-001（新增 IpcOptions）与 OPT-IPC-002（fallback handshake token）。
+/// RH-IPC-04（2026-11-15）：移除装饰性开关 <c>AllowHttpFallback</c> /
+/// <c>AllowWebSocketFallback</c>——前者对应的独立 HTTP 监听传输已删除，
+/// 后者从未被任何装配点读取；传输选择统一由
+/// <see cref="Wails.Net.Application.Transport.IIpcTransportStrategy"/> 决定。
+/// </para>
 /// </summary>
 public sealed class IpcOptions
 {
-    /// <summary>
-    /// 获取或设置是否允许 HTTP fallback 传输（默认 true）。
-    /// 禁用后 <see cref="Wails.Net.Application.Transport.HttpTransport"/> 将不会被装配为 IPC 通道。
-    /// </summary>
-    public bool AllowHttpFallback { get; set; } = true;
-
-    /// <summary>
-    /// 获取或设置是否允许 WebSocket fallback 传输（默认 true）。
-    /// 禁用后 <see cref="Wails.Net.Application.Transport.WebSocketTransport"/> 将不会被装配为 IPC 通道。
-    /// </summary>
-    public bool AllowWebSocketFallback { get; set; } = true;
-
     /// <summary>
     /// 获取或设置是否要求 Origin 校验（默认 true）。
     /// 开启后，非本地源且不在 <see cref="AllowedOrigins"/> 白名单中的 IPC 请求将被拒绝。
@@ -37,8 +31,8 @@ public sealed class IpcOptions
     /// <summary>
     /// 获取或设置是否要求 handshake token（默认 true）。
     /// <para>
-    /// 开启后，HTTP/WebSocket fallback 通道的每个请求必须携带进程级随机 token
-    /// （HTTP 头 <c>x-wails-token</c>，WebSocket 使用查询参数 <c>?token=</c>）。
+    /// 开启后，宿主级 IPC 通道的每个请求必须携带进程级随机 token
+    /// （请求头 <c>x-wails-token</c>，WebSocket 使用查询参数 <c>?token=</c>）。
     /// token 由框架在装配传输层时自动生成并注入前端 runtime（<c>window._wails.ipcToken</c>），
     /// 不写入日志。裸构造传输层且未注入 token 时不强制校验，以保持测试与低层 API 兼容。
     /// </para>

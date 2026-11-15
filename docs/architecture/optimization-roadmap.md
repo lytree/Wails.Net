@@ -157,12 +157,13 @@ P0 批次已随提交 `6ad3d2d`（2026-08-10）落地，状态如下：
 - ✅ OPT-RUNTIME-002（核心）：`ApplicationLifecycleState` + `PlatformStarted` 就绪信号 + `WaitUntilPlatformStartedAsync`；`DesktopHostedService.StartAsync` 等待就绪（移除从未 await 的 `_startedTcs`）；Linux `WindowRuntimeReady` 补齐。
 - ✅ OPT-IPC-003（核心）：`IIpcTransportStrategy` + `DefaultIpcTransportStrategy` + `IpcTransportContext`，Server 模式装配改走统一策略。
 - ✅ OPT-IPC-003（桌面推广，2026-11-15）：原生通道判定、事件监听器装配、主传输与 fallback 链全部收敛进策略；平台只暴露 `HasNativeMessageChannel`。
-- ✅ OPT-CLEANUP-001（大部分）：`EnableDragAndDrop` 死选项移除、`wails-net-plugin-log` TS 补齐、`_startedTcs` 语义修正、`HttpTransport` 生产装配决策记录、`Routes/` 空目录处置记录。
+- ✅ RH-IPC-04（2026-11-15，终局 a）：删除独立 HTTP 监听传输 `HttpTransport`（831 行）与 `ChunkStore`（约 200 行）、`ITransportHttpHandler` 接口、前端分块协议与 `x-wails-chunk-*` 头；协议常量收敛到 `Transport/IpcProtocol.cs`；64 MiB → 413 的 P1-8 行为迁到真正可达的 `WebviewRequestPipeline`。
+- ✅ OPT-CLEANUP-001（大部分）：`EnableDragAndDrop` 死选项移除、`wails-net-plugin-log` TS 补齐、`_startedTcs` 语义修正、`HttpTransport` 已彻底移除（RH-IPC-04）、`Routes/` 空目录处置记录。
 
 **本轮部分完成 / 遗留（需后续批次）：**
 
 - ⚠️ OPT-RUNTIME-002 剩余：Android `WindowRuntimeReady` 派发（Android 无页面级 runtime 注入点，需在页面加载完成回调补派发）。
-- ⚠️ OPT-IPC-003 剩余：`HttpTransport` 接入生产 fallback 链需同步扩展前端 runtime flags（注入 HTTP 端点 URL）；策略产出 fallback 的通道已打通（`Run` 启动 / 关闭逆序停止），但默认策略仍返回空列表（避免装饰性装配）。
+- ✅ OPT-IPC-003 剩余项已关闭：`HttpTransport` 不再"待接入 fallback 链"，而是按决策 (a) 删除；默认策略 `CreateFallbackTransports` 保留为空列表，链路本身（Run 启动 / 关闭逆序停止）仍供自定义策略使用。
 - ❌ OPT-RUNTIME-001 `Application` 职责拆分、OPT-PLUGIN-001~003 插件资产/清单、OPT-SEC-005 asset protocol scope、OPT-RUNTIME-003 Channels 对称加密、OPT-TEST-001~003 测试补齐：未动，列入后续批次。
 
 ---
@@ -477,14 +478,14 @@ Native IPC、HTTP fallback、WebSocket fallback、AssetServer transport、EventI
 
 2026-08-15 核实的具体分布：
 
-- **前端**：`packages/wails-net-runtime/src/internal/transport.ts` 三态策略（WS → 原生 postMessage ≤512KB → HTTP 分块）。
+- **前端**：`packages/wails-net-runtime/src/internal/transport.ts` 二态策略（Server WS → 桌面原生 postMessage ≤512KB，超出改单次 scheme POST；分块协议已随 RH-IPC-04 删除）。
 - **Windows**：三级链分散在 `Win32WebviewWindow.cs:749-910`（`OnWebMessageReceived` 消息分流 + `OnWebResourceRequested` 的 `POST /wails/*` → IPC → AssetServer → SPA 回退），是唯一注册 `NativeIpcTransport` 的平台（`WindowsPlatformApp.cs:497-501`）。
 - **Linux**：`LinuxWebviewWindow.cs:409-529` 独立实现 `wails://` scheme + IPC + 资源 + SPA 回退，**无原生 postMessage 通道、无 NativeIpcTransport**。
 - **Android**：`WailsWebMessageListener.cs:43-67` 走 JS 同步桥，直接 `HandleMessageFromFrontend`。
 - **macOS**：`MacOSWebviewWindow.cs:1267-1362` 又一套 scheme + IPC 分流。
 - **Server 模式**：`Hosting/ServerModeTransportExtensions.cs:52-118` 是唯一集中装配点，但仅覆盖 Server 模式。
 - **事件下行**：原 `Application.InitializeFromServiceProvider` 硬编码"永远追加 EventIPCTransport 兜底 + NativeIpcTransport 抢占"；2026-11-15 起由 `IIpcTransportStrategy.CreateEventListeners` / `UseNativeIpcTransport` 决定。
-- ⚠️ **`HttpTransport.cs` 生产路径无人装配**：全库仅测试（`tests/.../IpcTransportTokenValidationTests.cs`）实例化过它。token 校验逻辑已实现但实际未接通，属死代码风险，落地本项时需一并决策：接入生产 fallback 链或显式移除。
+- ✅ **`HttpTransport.cs` 生产路径无人装配 → 已删除（RH-IPC-04，2026-11-15）**：该类安全逻辑完整但从未被装配，前端也无端点 URL 指向它；决策为"删除独立 HTTP 传输 + 前端分块协议"，桌面大载荷改走平台 scheme 单次 POST，Server 模式统一 WS。协议常量与 64 MiB 上限已迁移（`Transport/IpcProtocol.cs`、`WebviewRequestPipeline`）。
 
 #### 修改建议
 
@@ -820,7 +821,7 @@ capability 文件仅启动期加载（`CapabilityFileLoader.cs:36-69` 目录扫�
 
 | 项 | 位置 | 问题 |
 |---|---|---|
-| `HttpTransport` 生产装配 | `src/Wails.Net.Application/Transport/HttpTransport.cs` | 生产路径无人装配，仅测试实例化；与 §5.2 OPT-IPC-003 一并决策接入或移除 |
+| `HttpTransport` 生产装配 | ~~`src/Wails.Net.Application/Transport/HttpTransport.cs`~~ | ✅ 已处置（RH-IPC-04，2026-11-15）：连同 `ChunkStore`、`ITransportHttpHandler`、前端分块协议一并删除 |
 | `EnableDragAndDrop` 死选项 | `src/Wails.Net.Application/Windows/IWebviewWindowImpl.cs`（`WebviewWindowOptions.cs:149`） | 平台层无消费者；实际拖放由 `ApplicationOptions.DragAndDrop`（`:151`）驱动 |
 | log 插件 TS 空壳 | `packages/wails-net-plugin-log/src/index.ts` | 仅 4 行 import，无实际 API；后端 `log.*` 命令已完整 |
 | `_startedTcs` 语义错位 | `Hosting/DesktopHostedService.cs:17` | 从未被 await 的"退出信号"，随 §5.3 OPT-RUNTIME-002 一并处理 |
@@ -946,7 +947,7 @@ capability 文件仅启动期加载（`CapabilityFileLoader.cs:36-69` 目录扫�
 - [ ] 插件命令、权限和前端 API 有统一清单。（🟡 2026-11-14：plugins.manifest 已按插件分组输出 Commands/PermissionSets，302 条内置命令全部显式安全姿态；前端 wrapper 全量生成未做）
 - [ ] `Application` 内部职责进一步拆分。（❌ 后续批次）
 - [ ] 源生成器、前端 runtime、安全拒绝路径和 IPC 全链路有测试覆盖。（❌ 后续批次）
-- [ ] 死代码与空壳项全部处置（§6.6）。（🟡 大部分 2026-08-15；`HttpTransport` 装配决策随 OPT-IPC-003）
+- [ ] 死代码与空壳项全部处置（§6.6）。（🟡 大部分 2026-08-15；`HttpTransport` 已于 2026-11-15 删除，`Routes/` 空目录仍待插件资产路由一起落地）
 
 ---
 
@@ -959,7 +960,7 @@ capability 文件仅启动期加载（`CapabilityFileLoader.cs:36-69` 目录扫�
 | OPT-CONFIG-002 | 增加 Options validators（✅ 2026-08-10） |
 | OPT-IPC-001 | 新增 `IpcOptions`（✅ 2026-08-10） |
 | OPT-IPC-002 | IPC fallback handshake token（✅ 2026-08-10） |
-| OPT-IPC-003 | 统一 IPC strategy（核心已落地 2026-08-15；平台窗口迁移 + `HttpTransport` 前端 URL 注入协议扩展待后续批次） |
+| OPT-IPC-003 | 统一 IPC strategy（✅ 核心 2026-08-15 + 桌面推广 2026-11-15；`HttpTransport` 处置已收尾 → 删除，见 RH-IPC-04） |
 | OPT-SEC-001 | 权限 strict 模式（R3-E ✅ 2026-08-20：库默认 Strict + CompatibilityByDefault 临时回退入口） |
 | OPT-SEC-002 | `Capability.platforms`（✅ 2026-08-10） |
 | OPT-SEC-003 | 安全模板与迁移指南（✅ 2026-08-15，见 §4.6 清单全部完成） |

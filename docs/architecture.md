@@ -198,12 +198,12 @@ public interface IPlugin
 | 传输方式 | 用途 | 实现 | 备注 |
 |----------|------|------|------|
 | 原生 IPC | WebView ↔ C#（首选项） | WebView2 `PostWebMessageAsJson` / WebKitGTK `run_javascript` / Android `WebMessageListener` | 零 HTTP 开销，支持 `CancellablePromise` + `CancelCall` |
-| HTTP | 兜底通道 / Server 模式 | `AssetServerTransport` / `HttpTransport` | 通过 `POST /wails/<method>` 调用 |
-| `EventIPCTransport` | 事件回退通道 | 嵌入式 WebSocket 端点 | 当原生 IPC 不可用时自动启用 |
-| WebSocket | 多窗口广播 | `WebSocketTransport` / `WebSocketBroadcaster` | 跨窗口事件路由 + `senderWindowId` 传播 |
+| scheme POST | 兜底通道 / 桌面大消息（>512KB） | 平台请求拦截（`WebResourceRequested` / `wails://` scheme / `ShouldInterceptRequest`）+ `WebviewRequestPipeline` | `POST /wails/message` 单次发送，无分块协议；64 MiB 上限 → 413 |
+| `EventIPCTransport` | 事件回退通道 | ExecJS 逐窗口注入 | 宿主级通道不可用时的事件下行兜底 |
+| WebSocket | Server 模式唯一通道 / 多窗口广播 | `WebSocketTransport` / `WebSocketBroadcaster` | 跨窗口事件路由 + `senderWindowId` 传播 |
 | Service Route | HTTP 路由挂载 | `IHttpServiceHandler` + `app.RegisterService` | 后端服务直挂 AssetServer 路由 |
 
-**降级策略**：`Win32WebviewWindow` / `LinuxWebviewWindow` / `AndroidWebviewWindow` 在启动时探测原生 IPC 可用性，不可用则降级为 HTTP 传输。Server 模式（`ServerPlatformApp`）始终使用 HTTP + EventIPCTransport。
+**降级策略**：原生 IPC 不可用时，前端降级到 scheme `POST /wails/message`（桌面/移动）或 WebSocket（Server 模式）。独立 HTTP 监听传输（`HttpTransport`）已于 RH-IPC-04（2026-11-15）删除——它生产零装配且前端不可达。
 
 ### 8. 资源服务器
 

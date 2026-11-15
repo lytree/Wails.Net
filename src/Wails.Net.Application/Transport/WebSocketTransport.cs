@@ -320,10 +320,10 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
             }
             catch (ObjectDisposedException)
             {
-                // 与 HttpTransport 相同：Linux 上 Stop()/Close() 会让挂起的
-                // GetContextAsync 以 ObjectDisposedException 结束（Windows 抛
-                // HttpListenerException）。这是正常关闭路径，向上冒泡会让 StopAsync
-                // 抛异常，调用方误判为停止失败。本类的监听器只在停止/释放时关闭。
+                // Linux 上 Stop()/Close() 会让挂起的 GetContextAsync 以
+                // ObjectDisposedException 结束（Windows 抛 HttpListenerException）。
+                // 这是正常关闭路径，向上冒泡会让 StopAsync 抛异常，调用方误判为停止失败。
+                // 本类的监听器只在停止/释放时关闭。
                 break;
             }
             catch (InvalidOperationException) when (cancellationToken.IsCancellationRequested)
@@ -400,7 +400,7 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
             // 连接必须携带匹配的 token（查询参数 ?token= 或 x-wails-token 头），否则拒绝。
             if (RequireHandshakeToken && !string.IsNullOrEmpty(HandshakeToken))
             {
-                var suppliedToken = request.QueryString[HandshakeTokenQuery] ?? request.Headers[HttpTransport.HandshakeTokenHeader];
+                var suppliedToken = request.QueryString[HandshakeTokenQuery] ?? request.Headers[IpcProtocol.HandshakeTokenHeader];
                 if (!string.Equals(suppliedToken, HandshakeToken, StringComparison.Ordinal))
                 {
                     response.StatusCode = 403;

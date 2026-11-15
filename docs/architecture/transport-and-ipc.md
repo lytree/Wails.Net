@@ -8,40 +8,47 @@ Wails.Net 的传输层是连接前端 WebView 与后端 .NET 运行时的**唯�
 2. **回送响应与事件**——把绑定调用的返回值、`EventProcessor` 广播的事件推送给前端；
 3. **承载静态资源**——为 WebView 提供 HTML/CSS/JS 等静态资源服务，避免使用 `file://` 协议。
 
-为了同时覆盖桌面 WebView 场景与 Server 模式（容器化部署、远程调试），项目实现了三种可插拔的传输方式：
+为了同时覆盖桌面 WebView 场景与 Server 模式（容器化部署、远程调试），项目实现了两类可插拔的传输方式（另有平台拦截层）：
 
 | 传输方式 | 实现类 | 适用场景 | 双向通道 |
 |---------|--------|---------|---------|
-| **IPC 传输** | WebView2 `WebResourceRequested` + `WebMessageReceived` 事件 | 桌面模式（Windows/Linux） | HTTP 拦截 + postMessage |
-| **HTTP 传输** | [`HttpTransport`](../../src/Wails.Net.Application/Transport/HttpTransport.cs) | Server 模式（无 GUI、容器化） | HTTP POST 轮询端点 |
+| **平台 IPC 传输** | WebView2 `WebResourceRequested` + `WebMessageReceived` 事件（Linux/macOS 为 `wails://` scheme，Android 为 `ShouldInterceptRequest` + `JavascriptInterface`） | 桌面 / 移动模式 | scheme HTTP 拦截 + postMessage |
 | **WebSocket 传输** | [`WebSocketTransport`](../../src/Wails.Net.Application/Transport/WebSocketTransport.cs) + [`WebSocketBroadcaster`](../../src/Wails.Net.Application/Transport/WebSocketBroadcaster.cs) | Server 模式、远程调试 | 全双工 WebSocket |
 
-三者都遵循同一份 [`ITransport`](../../src/Wails.Net.Application/Transport/ITransport.cs) 契约，由 [`MessageProcessor`](../../src/Wails.Net.Application/Transport/MessageProcessor.cs) 统一处理消息，由 [`AssetServer`](../../src/Wails.Net.AssetServer/AssetServer.cs) 统一服务静态资源，从而把"传输介质差异"与"业务处理逻辑"完全解耦。
+> **RH-IPC-04（2026-11-15）：独立 HTTP 监听传输 `HttpTransport` 已删除**。
+> 它实现了完整的 `POST /wails/message` + 分块上传 + token 校验，但**生产路径零装配**
+> （`DefaultIpcTransportStrategy.CreateFallbackTransports` 恒返回空列表），
+> 前端也从未收到指向它的端点 URL——即该端点在任何模式下都不可达。
+> 桌面大载荷现在走平台 scheme `POST /wails/message`（单次发送，无分块协议），
+> Server 模式统一走 WebSocket（WS 帧本身无 512KB 限制）。
+> 决策与实现见 [`refactor-and-hardening-plan.md`](refactor-and-hardening-plan.md) §3.4。
 
-### 1.1 Transport 选择矩阵（B-3 审计项）
+两者都遵循同一份 [`ITransport`](../../src/Wails.Net.Application/Transport/ITransport.cs) 契约（平台 IPC 由平台窗口实现承载，不在 `ITransport` 列表中），由 [`MessageProcessor`](../../src/Wails.Net.Application/Transport/MessageProcessor.cs) 统一处理消息，由 [`AssetServer`](../../src/Wails.Net.AssetServer/AssetServer.cs) 统一服务静态资源，从而把"传输介质差异"与"业务处理逻辑"完全解耦。
+
+### 1.1 Transport 选择矩阵（B-3 审计项，RH-IPC-04 复核）
 
 不同运行场景应选择不同的传输方式。下表固化"首选 / 回退 / 取消调用 / 多窗口广播"四个决策维度，供用户与维护者快速定位：
 
 | 场景 | 首选 | 回退 | 取消调用 | 多窗口广播 |
 |------|------|------|----------|------------|
-| Windows WebView2 桌面 | Native IPC（`WebResourceRequested` 拦截 + postMessage） | HTTP / EventIPC | 支持（超时/取消令牌） | WebSocket / EventIPC |
-| Linux WebKitGTK 桌面 | Native IPC（`wails://` 自定义协议） | HTTP / EventIPC | 支持（超时/取消令牌） | WebSocket / EventIPC |
-| Android WebView | WebMessageListener（`window.__wailsNative.onMessage`） | HTTP | 支持（超时/取消令牌） | Event bridge |
-| Server 模式（无 GUI / 容器化） | HTTP（`HttpTransport` 轮询） | WebSocket | 部分支持（HTTP 无服务端取消，WebSocket 可取消） | WebSocket（`WebSocketBroadcaster`） |
+| Windows WebView2 桌面 | Native IPC（`WebResourceRequested` 拦截 + postMessage） | scheme POST / EventIPC | 支持（超时/取消令牌） | EventIPC / Native IPC |
+| Linux WebKitGTK 桌面 | Native IPC（`wails://` 自定义协议） | scheme POST / EventIPC | 支持（超时/取消令牌） | EventIPC |
+| Android WebView | WebMessageListener（`window.__wailsNative.onMessage`） | scheme POST（`ShouldInterceptRequest`） | 支持（超时/取消令牌） | Event bridge |
+| Server 模式（无 GUI / 容器化） | WebSocket（`WebSocketTransport`） | 无（WS 断开时前端 HTTP 兜底请求会失败并重连） | 支持（WS 可取消） | WebSocket（`WebSocketBroadcaster`） |
 
-**Fallback 顺序约定**（由 [`Application`](../../src/Wails.Net.Application/Application.cs) 装配）：
+**Fallback 顺序约定**（由 [`IIpcTransportStrategy`](../../src/Wails.Net.Application/Transport/IpcTransportStrategy.cs) 决定，`Application` 只负责调用）：
 
 ```text
-桌面模式：Native IPC →（失败）HTTP / EventIPC
-Server 模式：HTTP →（升级）WebSocket（全双工 / 多窗口广播）
+桌面模式：原生通道（NativeIpcTransport，窗口级注册）→［消息 >512KB］scheme POST → EventIPC（事件下行兜底）
+Server 模式：WebSocket（唯一宿主级 ITransport）→ EventIPC（事件下行兜底）
 ```
 
 **决策要点**：
 
-1. **桌面模式优先 Native IPC**：与 WebView 生命周期绑定、延迟最低、无需端口监听；`EventIPCTransport` 仅在原生通道不可用时作为事件桥回退。
-2. **Server 模式默认 HTTP 轮询**：`HttpTransport` 占用端口最少、穿透性最好；需要双向实时推送（多浏览器会话、远程调试）时切换 `WebSocketTransport`。
-3. **取消调用差异**：HTTP 轮询请求发出后无法服务端取消（只能丢弃响应）；WebSocket 与 Native IPC 支持取消令牌传播，超时命令可被真正中止（见 [`CommandDispatcher`](../../src/Wails.Net.Application/Commands/CommandDispatcher.cs) 的 `_defaultTimeout` 机制）。
-4. **多窗口广播**：所有桌面/Server 场景的跨窗口事件广播统一由 `WebSocketBroadcaster` 或 `EventIPCTransport` 承担；单窗口应用无需关注。
+1. **桌面模式优先 Native IPC**：与 WebView 生命周期绑定、延迟最低、无需端口监听；`EventIPCTransport` 仅作为事件下行兜底（原生通道可用时仍并行注册，见策略 `CreateEventListeners`）。
+2. **Server 模式只有 WebSocket**：`AllowHttpFallback` / `AllowWebSocketFallback` 两个装饰性开关已随 RH-IPC-04 删除——它们从未被任何装配点读取。
+3. **取消调用差异**：scheme POST 请求发出后无法服务端取消（只能丢弃响应）；WebSocket 与 Native IPC 支持取消令牌传播，超时命令可被真正中止（见 [`CommandDispatcher`](../../src/Wails.Net.Application/Commands/CommandDispatcher.cs) 的 `_defaultTimeout` 机制）。
+4. **多窗口广播**：桌面场景的跨窗口事件广播由 `EventIPCTransport`（ExecJS 逐窗口注入）承担，Server 模式由 `WebSocketBroadcaster` 承担。
 
 ## 2. 传输接口 — ITransport 契约
 
@@ -56,13 +63,14 @@ public interface ITransport
 }
 ```
 
-围绕 `ITransport` 还有三个细分接口，分别声明传输层在能力上的可选项：
+围绕 `ITransport` 还有两个细分接口，分别声明传输层在能力上的可选项：
 
 | 接口 | 用途 | 实现者 |
 |------|------|--------|
-| [`IWailsEventListener`](../../src/Wails.Net.Application/Transport/ITransport.cs) | 接收 `EventProcessor` 推送的事件并广播到前端 | `HttpTransport`、`WebSocketTransport`、Windows 平台 WebView |
-| [`ITransportHttpHandler`](../../src/Wails.Net.Application/Transport/ITransport.cs) | 暴露当前 `HttpListenerContext`，供资源服务器中间件读取请求头/查询参数 | `HttpTransport` |
-| [`IAssetServerTransport`](../../src/Wails.Net.Application/Transport/ITransport.cs) | 绑定 `AssetServer`，传输层在收到资源请求时转发 | `HttpTransport`、`WebSocketTransport` |
+| [`IWailsEventListener`](../../src/Wails.Net.Application/Transport/ITransport.cs) | 接收 `EventProcessor` 推送的事件并广播到前端 | `WebSocketTransport`、`EventIPCTransport`、`NativeIpcTransport`、平台 WebView |
+| [`IAssetServerTransport`](../../src/Wails.Net.Application/Transport/ITransport.cs) | 绑定 `AssetServer`，传输层在收到资源请求时转发 | `WebSocketTransport` |
+
+> 原 `ITransportHttpHandler`（`AsyncLocal<HttpListenerContext>` 请求上下文访问器）唯一实现者是已删除的 `HttpTransport`，无其他调用方，随 RH-IPC-04 一并移除。
 
 这种细粒度接口组合（而非单一大接口）借鉴自 ASP.NET Core 的 marker interface 风格——`MessageProcessor` 只依赖它真正需要的能力，避免强制所有传输层实现无关方法。
 
@@ -174,34 +182,71 @@ public static void BindToTransport(IAssetServerTransport transport, AssetServer 
 
 `WebSocketTransport.NotifyEvent` 直接委托给 `_broadcaster.BroadcastEvent`，从而使后端 `EventProcessor.Emit(...)` 能通过实现 `IWailsEventListener` 接口的传输层广播到所有连接的浏览器/WebView 客户端。**适用场景**：Server 模式下的多浏览器会话、远程调试、容器化部署中通过端口映射访问应用。
 
-## 5. HTTP 传输（HttpTransport）
+## 5. 桌面 scheme POST 与已删除的 HttpTransport
 
-[`HttpTransport`](../../src/Wails.Net.Application/Transport/HttpTransport.cs) 是 Server 模式的"轮询式"实现，从端口 `34115` 开始自动查找可用端口，并定义两个端点：
+### 5.1 现状：消息端点由平台拦截承载
+
+桌面/移动模式下，前端 runtime 在**原生通道不可用**或**消息体 > 512KB** 时，会向相对路径
+`POST /wails/message` 发一次请求（`packages/wails-net-runtime/src/internal/transport.ts`）。
+该请求由页面源（`https://wails.localhost` / `wails://wails`）解析后进入平台拦截层：
+
+| 平台 | 拦截点 | 请求体读取 |
+|------|--------|------------|
+| Windows | `Win32WebviewWindow.OnWebResourceRequested` + `AddWebResourceRequestedFilter` | `ReadRequestBodySync` → `WebviewRequest.RequestBodyBytes` |
+| Linux | `WebContext.RegisterUriScheme("wails", …)` → `URISchemeRequest` | `ReadRequestBodyBytes` |
+| macOS | `WKURLSchemeHandler`（`MacUrlSchemeHandler`） | 同上，经 `WebviewRequest` |
+| Android | `WebViewClient.ShouldInterceptRequest` | `WebResourceResponse` 前置读取 |
+
+拦截层构造平台无关的 [`WebviewRequest`](../../src/Wails.Net.Application/WebView/WebviewRequest.cs)
+后统一交给 [`WebviewRequestPipeline`](../../src/Wails.Net.Application/WebView/WebviewRequestPipeline.cs)：
+`IsIpcRequest`（`POST` + `/wails/` 前缀）→ `Application.HandleMessageFromFrontend` → JSON 响应；
+其余路径 → `AssetServer.ServeAsync` + MIME 推断 + SPA 回退（`api/` 前缀不参与回退）。
+
+端点与协议常量收敛在 [`IpcProtocol`](../../src/Wails.Net.Application/Transport/IpcProtocol.cs)：
 
 ```csharp
-public const string MessageEndpoint   = "/wails/message"; // POST IPC 消息
-public const string WebSocketEndpoint = "/wails/ws";       // WebSocket 升级（占位，实际由 WebSocketTransport 处理）
+public const string MessageEndpoint      = "/wails/message"; // 前端单次 POST 端点
+public const string HandshakeTokenHeader = "x-wails-token";  // OPT-IPC-002
+public const long  MaxRuntimeBodyBytes   = 64 * 1024 * 1024; // 64 MiB → 413（P1-8）
 ```
 
-`HandleRequestAsync` 的分流逻辑与 Windows WebView 拦截高度一致：
+**请求体上限（P1-8 对齐 Wails v3）**：`WebviewRequestPipeline.HandleIpcAsync` 在进入 IPC 处理前
+校验 `RequestBodyBytes` 长度，超过 64 MiB 直接返回 **413 Payload Too Large**
+（文案 `runtime request body exceeds 64 MiB`），并跳过业务处理。
+注意这是**协议策略上限**而非内存保护——平台层此时已完成 body 物化。
 
-1. **OPTIONS 预检**——直接返回 204，并写入 CORS 头（配置了 `CorsOptions` 时白名单回显 Origin；否则回退 `*`）；
-2. **`POST /wails/message`**——同步读取请求体，调用 `_processor.ParseMessage(body)` + `ProcessAsync(message)`，把 `ResponseMessage` 序列化为 JSON 返回；若结果为 null 则返回 204；
-3. **其他路径**——转发给 `_assetServer.ServeHttpAsync(context, ct)`；
-4. **未绑定 AssetServer**——返回 404 文本。
+### 5.2 为什么删除独立 HTTP 监听传输（RH-IPC-04 决策记录）
 
-### 5.1 IPC 安全校验（OPT-IPC-002）
+`HttpTransport`（831 行）+ `ChunkStore`（约 200 行）实现了完整的
+`POST /wails/message` + `x-wails-chunk-*` 分块上传 + token/Origin/CORS 校验，但存在三个事实：
 
-HTTP/WebSocket fallback 通道默认执行两道安全校验（配置见 `Wails:Ipc` 节的 [`IpcOptions`](../../src/Wails.Net.Application/Security/IpcOptions.cs)）：
+1. **生产零装配**：`DefaultIpcTransportStrategy.CreateFallbackTransports` 恒返回空列表，
+   `Application` 也不会构造它；全库仅测试实例化过。
+2. **前端不可达**：`FrontendRuntimeCoordinator` 只在"传输是 HttpTransport"时注入
+   `assetServerUrl`，而该分支在生产中永不命中；桌面模式的 `assetServerUrl` 为空，
+   请求落到平台拦截；Server 模式的 `webSocketUrl` 优先，`transport.ts` 只在 WS 未连上时
+   才发 HTTP——而 `WebSocketTransport` 没有 `/wails/message` POST 分支。
+3. **分块协议在任何路径上都不可用**：桌面平台拦截读的是**完整 body**，
+   逐个 chunk POST 会让每个请求都成为非法 JSON；Server 模式 WS 本身不限制 512KB。
+
+因此选择**删除**而非"接入生产"（接入需新增端点 URL 注入协议 + WS 侧 POST 分支，
+等于为一个无诉求的部署形态新增一套协议面）。前端通道策略同时从三态收敛为二态，
+`x-wails-chunk-*` 与 `randomId` 一并移除。
+
+### 5.3 IPC 安全校验（OPT-IPC-002）
+
+宿主级 IPC 通道校验两道安全边界（配置见 `Wails:Ipc` 节的 [`IpcOptions`](../../src/Wails.Net.Application/Security/IpcOptions.cs)）：
 
 1. **Origin 校验**（`RequireOriginValidation=true` 默认开启）：`IpcOriginValidator` 只放行本地源（`wails://` / `localhost` / `127.0.0.1`）与 `AllowedOrigins` 白名单；非白名单远程源返回 403。
 2. **Handshake Token 校验**（`RequireHandshakeToken=true` 默认开启）：框架装配时注入进程级随机 token（[`IpcHandshakeToken.Current`](../../src/Wails.Net.Application/Security/IpcHandshakeToken.cs)，32 字节 CSPRNG，不写入日志），并注入前端 `window._wails.ipcToken`：
-   - HTTP 请求必须携带 `x-wails-token` 头；
-   - WebSocket 升级请求必须携带 `?token=` 查询参数或同名头；
+   - 携带请求头的通道（前端 scheme POST）必须回传 `x-wails-token`；
+   - WebSocket 升级请求必须携带 `?token=` 查询参数，或同名请求头（非浏览器客户端）；
    - 缺失或不匹配返回 403。
    - 裸构造传输层且未注入 token 时不强制校验，保持低层 API 与测试兼容；通过 `DesktopApplicationBuilder` / `UseServerModeTransport()` 装配时默认启用。
 
-`HttpTransport` 通过 `AsyncLocal<HttpListenerContext?>` 实现 [`ITransportHttpHandler.GetCurrentContext`](../../src/Wails.Net.Application/Transport/ITransport.cs)，让资源服务器中间件无需额外参数即可读取当前请求上下文，借鉴 ASP.NET Core 的 `HttpContextAccessor` 模式。`NotifyEvent` 委托给 `_broadcaster.BroadcastEvent`，与 WebSocket 传输共用同一广播器实例。
+Server 模式另由 `IpcRequestGuard` 做 Host（DNS rebinding）+ Origin + `Sec-Fetch-Site` 闸门，
+在 WebSocket 升级前生效；桌面模式由各平台 scheme 拦截的 `Origin` 头与 `LinuxIpcOriginGuard`
+等平台专用守卫承担。
 
 ## 6. 消息处理器（MessageProcessor）
 

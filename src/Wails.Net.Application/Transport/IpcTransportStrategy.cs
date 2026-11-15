@@ -133,11 +133,9 @@ public interface IIpcTransportStrategy
 /// <item>Native IPC（桌面平台由 <see cref="NativeIpcTransport"/> 窗口级注册承载，
 /// 非 <see cref="ITransport"/>，不在此列表；策略通过 <see cref="IpcTransportContext.IsServerMode"/>
 /// 感知其可用性）。</item>
-/// <item>WebSocket transport（Server 模式首选；桌面模式可作 fallback）。</item>
-/// <item>HTTP transport（大消息 / WS 不可用时的 HTTP POST /wails/message 端点）。
-/// <b>注意</b>：HTTP fallback 端点的前端 URL 注入协议尚未扩展，桌面/Server 模式下
-/// 当前由 WebView 拦截（Windows）或 WS 通道（Server）承载消息路径；接入独立 HTTP
-/// 端点需与前端 runtime flags 扩展一并落地（见 optimization-roadmap §5.2 后续批次）。</item>
+/// <item>WebSocket transport（Server 模式首选，也是唯一的宿主级传输）。</item>
+/// <item>自定义 fallback 传输（<see cref="CreateFallbackTransports"/> 默认返回空列表；
+/// RH-IPC-04 已删除独立 HTTP 监听传输，桌面大载荷走平台 scheme <c>POST /wails/message</c>）。</item>
 /// <item>EventIPC fallback（由 <see cref="CreateEventListeners"/> 装配，不在传输列表）。</item>
 /// </list>
 /// </para>
@@ -197,11 +195,11 @@ public sealed class DefaultIpcTransportStrategy : IIpcTransportStrategy
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        // 本轮仅返回 WebSocket 主传输之外的 HTTP fallback 候选。
-        // 注意：HttpTransport 独立监听端口，其前端 URL 注入协议尚未扩展，
-        // 接入生产 fallback 链需与前端 runtime flags 扩展一并落地（见路线图 §5.2）。
-        // 为避免"装饰性装配"（创建了但前端不可达），此处暂不返回 HttpTransport，
-        // 其生产装配决策记录在 optimization-roadmap.md OPT-IPC-003。
+        // RH-IPC-04：fallback 链当前为空。
+        // 独立 HTTP 监听传输（原 HttpTransport）已删除——它需要额外的端口 + 一套前端 URL 注入协议，
+        // 而桌面大载荷本就由平台 scheme POST（单次发送）承载，Server 模式由 WS 长连接承载。
+        // 保留本方法与装配链路：自定义策略（如企业内网新增局域网通道）仍可在此返回额外传输，
+        // 启动/关闭由 Application 与 ShutdownCoordinator 按顺序处理。
         return [];
     }
 
@@ -230,8 +228,8 @@ public sealed class DefaultIpcTransportStrategy : IIpcTransportStrategy
     /// <remarks>
     /// 沿用历史硬编码语义：DI 提供的监听器先注册，<see cref="EventIPCTransport"/>
     /// 兜底始终追加（Wails v3 仅在主传输未实现 <see cref="IWailsEventListener"/> 时追加；
-    /// Wails.Net 更激进，因为 HttpTransport 虽实现监听接口但内部依赖 WebSocketBroadcaster，
-    /// 无 WS 客户端时事件会丢失，ExecJS 兜底可弥补该缺口且与主传输并行不冲突）。
+    /// Wails.Net 更激进：WS 通道无客户端连接时事件会丢失，ExecJS 兜底可弥补该缺口
+    /// 且与主传输并行不冲突）。
     /// </remarks>
     public IReadOnlyList<IWailsEventListener> CreateEventListeners(IpcTransportContext context)
     {

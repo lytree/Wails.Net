@@ -39,7 +39,7 @@ public class EventProcessor
     /// 用于事件广播到传输层的监听器列表（如 IPC、WebSocket、EventIPC 兜底）。
     /// 对应 Wails v3 Go 版本 application.go 中的 <c>wailsEventListeners []WailsEventListener</c> 字段。
     /// <para>
-    /// 列表设计支持多种传输层并行广播事件：例如 HttpTransport 推送给 WebSocket 客户端的同时，
+    /// 列表设计支持多种传输层并行广播事件：例如 WebSocketTransport 推送给浏览器客户端的同时，
     /// EventIPCTransport 通过 ExecJS 注入到桌面端 webview。
     /// </para>
     /// </summary>
@@ -159,7 +159,7 @@ public class EventProcessor
     /// 追加传输层事件监听器，支持多传输层并行广播事件。
     /// 对应 Wails v3 Go 版本中 <c>App.wailsEventListeners = append(..., listener)</c> 的追加语义。
     /// <para>
-    /// 典型用法：主 Transport（HttpTransport/WebSocketTransport）+ EventIPCTransport 兜底同时追加，
+    /// 典型用法：主 Transport（Server 模式 <see cref="Transport.WebSocketTransport"/>）+ EventIPCTransport 兜底同时追加，
     /// 确保事件可通过 WebSocket 推送到远程客户端的同时，也通过 ExecJS 注入到桌面端 webview。
     /// </para>
     /// </summary>

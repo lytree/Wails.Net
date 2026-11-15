@@ -14,7 +14,7 @@ namespace Wails.Net.Application.Transport;
 /// <list type="bullet">
 /// <item>常规小消息调用（&lt; 512KB）：走原生 postMessage，避免 HTTP 头解析开销。</item>
 /// <item>后端 → 前端事件推送：替代 ExecJS 注入，由前端 <c>message</c> 事件监听器接收。</item>
-/// <item>大消息（&gt; 512KB）：仍走 HTTP 分块上传（<see cref="HttpTransport"/>），原生通道不支持二进制。</item>
+/// <item>大消息（&gt; 512KB）：前端回退到 scheme <c>POST /wails/message</c>（单次发送，不分块），原生通道不承载。</item>
 /// </list>
 /// </para>
 /// </summary>

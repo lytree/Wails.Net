@@ -109,6 +109,28 @@ public sealed class WebviewRequestPipeline
     /// </summary>
     private async Task<WebviewResponse> HandleIpcAsync(WebviewRequest request, CancellationToken cancellationToken)
     {
+        // P1-8（对齐 Wails v3）：运行时请求体上限 64 MiB → 413。
+        // RH-IPC-04 之前该上限实现在 HttpTransport 里，而 HttpTransport 生产零装配，
+        // 即限制形同不存在。独立 HTTP 传输删除后把校验迁到本管线——这是桌面模式
+        // 真正可达的 IPC 入口（Windows WebResourceRequested / Linux·macOS scheme /
+        // Android ShouldInterceptRequest 都汇入此处）。
+        // 注意：平台层已完成 body 物化，本校验是「协议策略上限」，用于拒绝超大消息，
+        // 不是内存保护（防内存滥用需平台在读取时按上限截断）。
+        var bodyLength = request.RequestBodyBytes?.LongLength ?? request.RequestBody?.Length ?? 0;
+        if (bodyLength > Transport.IpcProtocol.MaxRuntimeBodyBytes)
+        {
+            _logger?.LogWarning(
+                "拒绝超限 IPC 请求体：{Length} 字节 > {Limit} 字节 path={Path} window={WindowId}",
+                bodyLength,
+                Transport.IpcProtocol.MaxRuntimeBodyBytes,
+                request.Path,
+                request.WindowId);
+            return WebviewResponse.Text(
+                Transport.IpcProtocol.PayloadTooLargeStatusCode,
+                "413 Payload Too Large",
+                "runtime request body exceeds 64 MiB");
+        }
+
         var body = request.RequestBody ?? "{}";
         var response = await _ipcHandler(body, request.WindowId, request.Origin, cancellationToken).ConfigureAwait(false);
         if (response is null)

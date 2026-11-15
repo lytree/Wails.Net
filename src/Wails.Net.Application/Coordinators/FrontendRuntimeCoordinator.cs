@@ -45,19 +45,14 @@ public sealed class FrontendRuntimeCoordinator
         string webSocketUrl = string.Empty;
         string assetServerUrl = string.Empty;
         string ipcToken = string.Empty;
-        if (isServerMode)
+        if (isServerMode && transport is WebSocketTransport wsTransport)
         {
-            if (transport is WebSocketTransport wsTransport)
-            {
-                webSocketUrl = wsTransport.WebSocketUrl;
-                assetServerUrl = wsTransport.BaseUrl;
-                ipcToken = wsTransport.HandshakeToken ?? string.Empty;
-            }
-            else if (transport is HttpTransport httpTransport)
-            {
-                assetServerUrl = httpTransport.BaseUrl;
-                ipcToken = httpTransport.HandshakeToken ?? string.Empty;
-            }
+            // RH-IPC-04：独立 HTTP 监听传输（原 HttpTransport）已移除，
+            // Server 模式唯一的宿主级传输就是 WebSocketTransport，
+            // 因此这里不再保留"传输是 HttpTransport 时只注入 assetServerUrl"的分支。
+            webSocketUrl = wsTransport.WebSocketUrl;
+            assetServerUrl = wsTransport.BaseUrl;
+            ipcToken = wsTransport.HandshakeToken ?? string.Empty;
         }
 
         // JSON 序列化保证字符串安全转义（前端 wails 标志字段须为合法 JSON 值）。

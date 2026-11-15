@@ -10,15 +10,15 @@ namespace Wails.Net.Application.Transport;
 /// 事件 IPC 兜底传输层。
 /// 对应 Wails v3 Go 版本 <c>EventIPCTransport</c>（<c>transport_event_ipc.go</c>）。
 /// <para>
-/// 当主 Transport（如 <see cref="HttpTransport"/>）未实现 <see cref="IWailsEventListener"/>，
+/// 当主 Transport（如 <see cref="WebSocketTransport"/>）未实现 <see cref="IWailsEventListener"/>，
 /// 或虽然实现但需要确保桌面端 webview 一定能收到事件时，由 <see cref="Application"/>
 /// 自动追加此监听器作为兜底，通过 <see cref="WebviewWindow.ExecJS"/> 直接把事件 JSON
-/// 注入到每个窗口的 webview 中，绕过 HTTP/WebSocket 通道。
+/// 注入到每个窗口的 webview 中，绕过宿主级 IPC 通道。
 /// </para>
 /// <para>
 /// <b>设计目的</b>：
 /// <list type="bullet">
-/// <item>HTTP 单独使用时（无 WebSocket 客户端连接）事件仍能推送到前端 webview。</item>
+/// <item>宿主级传输无客户端连接（如 Server 模式 WS 尚未连上）时事件仍能推送到前端 webview。</item>
 /// <item>事件推送不依赖传输层连接状态，确保桌面端关键事件（如窗口关闭、应用退出）必达。</item>
 /// <item>对应 Wails v3 中 <c>EventIPCTransport.DispatchWailsEvent</c> 调用
 /// <c>window.DispatchWailsEvent(event)</c> 的 ExecJS 注入机制。</item>

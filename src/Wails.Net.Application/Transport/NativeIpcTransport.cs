@@ -10,10 +10,10 @@ namespace Wails.Net.Application.Transport;
 /// 原生 IPC 传输层默认实现（P0-C2）。
 /// 通过 WebView 原生 postMessage 通道收发消息，避免 HTTP 协议栈开销。
 /// <para>
-/// 与 <see cref="HttpTransport"/> 并存：
+/// 与平台 scheme 请求路径并存：
 /// <list type="bullet">
 /// <item>小消息（&lt; 512KB）：走原生 postMessage，低延迟。</item>
-/// <item>大消息（&gt;= 512KB）：前端自动回退到 HTTP 分块上传（<see cref="HttpTransport"/>）。</item>
+/// <item>大消息（&gt;= 512KB）：前端回退到 scheme <c>POST /wails/message</c>（单次发送，RH-IPC-04 已取消分块协议）。</item>
 /// </list>
 /// </para>
 /// <para>

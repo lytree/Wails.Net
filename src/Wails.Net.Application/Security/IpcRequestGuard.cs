@@ -47,7 +47,7 @@ public sealed class IpcRequestGuard
     /// Wails.Net 中来自 <see cref="IpcOptions.AllowedOrigins"/>）。空/空白项忽略。
     /// </param>
     /// <param name="bindHost">
-    /// 服务器绑定主机（默认 <c>localhost</c>，与 <c>HttpTransport</c>/<c>WebSocketTransport</c>
+    /// 服务器绑定主机（默认 <c>localhost</c>，与 <see cref="Wails.Net.Application.Transport.WebSocketTransport"/>
     /// 的 <c>http://localhost:{Port}</c> 前缀一致）。非 loopback 绑定时 Host 校验自动关闭。
     /// </param>
     public IpcRequestGuard(IEnumerable<string>? allowedPatterns = null, string? bindHost = null)

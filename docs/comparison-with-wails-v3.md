@@ -103,7 +103,7 @@
 
 ### 关键差异
 
-- **Wails.Net** 的 [EventProcessor](../src/Wails.Net.Application/Events/EventProcessor.cs) 同时支持 Pre-emit 钩子（对齐 Wails v3）和**多传输层并行广播**（独有）：一次 `Emit` 会同时通过 HttpTransport + WebSocketBroadcaster + EventIPCTransport + AssetServerTransport + NativeIpcTransport 广播，确保所有连接的前端都能收到。
+- **Wails.Net** 的 [EventProcessor](../src/Wails.Net.Application/Events/EventProcessor.cs) 同时支持 Pre-emit 钩子（对齐 Wails v3）和**多传输层并行广播**（独有）：一次 `Emit` 会同时通过 WebSocketBroadcaster + EventIPCTransport + NativeIpcTransport + AssetServerTransport 广播，确保所有连接的前端都能收到。
 - **Wails.Net** 自 P1-2 起在 EventProcessor 与 Transport 层全链路传播 `senderWindowId`，前端可按 `windowId` 过滤事件来源（[EventSenderWindowPropagationTests](../tests/Wails.Net.Application.Tests/Transport/EventSenderWindowPropagationTests.cs) 验证），这是两者中**唯一**支持事件来源窗口标识的方案。
 - **Wails.Net** 自 P1-7 起补齐 [PostShutdown / ShouldQuit](../src/Wails.Net.Application/Application.cs) 事件钩子，对齐 Wails v3 的 `cleanup()` 末尾调用与平台信号处理器 `shouldQuit()` 拦截机制。
 - **Wails.Net** 自 P2 起新增 3 个公共事件（[ApplicationEventType](../src/Wails.Net.Events/ApplicationEventType.cs) 扩展至 30 个枚举值），对齐 Wails v3 `Common.LowMemory/ScreenLocked/ScreenUnlocked`：
@@ -120,14 +120,14 @@
 | 维度 | Wails.Net | Wails v3 |
 |------|-----------|---------|
 | **传输抽象** | `ITransport` 接口 | `ITransport` 接口 |
-| **默认传输** | NativeIpcTransport（默认）+ HttpTransport + WebSocketTransport | in-memory bridge（前端 postMessage） |
-| **HTTP 端点** | `/wails/message` (POST) + `/wails/ws` (WS) | N/A |
-| **默认端口** | 34115（HTTP） / 34116（WebSocket）起递增 | N/A |
+| **默认传输** | 桌面：NativeIpcTransport + 平台 scheme POST；Server：WebSocketTransport | in-memory bridge（前端 postMessage） |
+| **HTTP 端点** | `/wails/message`（scheme POST，由平台拦截承载）+ `/wails/ws`（WS） | N/A |
+| **默认端口** | 34116（WebSocket）起递增 | N/A |
 | **WebSocket 传输** | ✅ `WebSocketTransport`（独立 34116 端口） | ❌ |
 | **原生 IPC** | ✅ `NativeIpcTransport`（P0-C2，默认启用，`UseNativeIpc=true`） | ✅ 默认 |
 | **Event IPC 回退** | ✅ `EventIPCTransport`（P0-C3，始终追加为兜底监听器） | ❌ |
 | **AssetServer 传输** | ✅ `AssetServerTransport` | ❌ |
-| **分块上传** | ✅ `x-wails-chunk-id/index/total` 协议（单 chunk ≤1MB，总 ≤64MB，会话 TTL 30s） | ❌ |
+| **分块上传** | ❌（RH-IPC-04 已删除：桌面大消息改单次 scheme POST，Server 模式 WS 无 512KB 限制） | ❌ |
 | **消息类型常量** | `MessageTypes`：Call/Event/Window/Query/Response/Error/Drag/ContextMenu/System/**Cancel** | Call/Event/Window/Query/Response/Error/Drag/ContextMenu/System |
 | **异步队列** | ✅ `Channel`-based 异步处理 | ✅ goroutine |
 | **CancellablePromise** | ✅ `_runningCalls` 表 + 前端 `cancel` 消息 | ✅ `CancelCall` |
@@ -140,8 +140,8 @@
 
 ### 关键差异
 
-- **Wails.Net** 是两者中**唯一**支持多传输层并行广播的方案（见 [HttpTransport.cs](../src/Wails.Net.Application/Transport/HttpTransport.cs)），适用于容器化部署和调试场景。
-- **Wails.Net** 的 [NativeIpcTransport](../src/Wails.Net.Application/Transport/NativeIpcTransport.cs) 采用**混合策略**：小消息 (<512KB) 走原生 postMessage 通道，大消息自动回退 HTTP 分块，平衡延迟与容量。
+- **Wails.Net** 是两者中**唯一**支持多传输层并行广播的方案（见 [EventProcessor.cs](../src/Wails.Net.Application/Events/EventProcessor.cs) 的监听器列表），适用于容器化部署和调试场景。
+- **Wails.Net** 的 [NativeIpcTransport](../src/Wails.Net.Application/Transport/NativeIpcTransport.cs) 采用**混合策略**：小消息 (<512KB) 走原生 postMessage 通道，大消息改走单次 scheme `POST /wails/message`（RH-IPC-04 已取消分块协议），平衡延迟与容量。
 - **Wails.Net** 的 [MessageProcessor](../src/Wails.Net.Application/Transport/MessageProcessor.cs) 新增 `MessageTypes.Cancel` 消息类型，与 Wails v3 的 `CancelCall` 对齐；并采用「核心即插件」的插件化设计，未识别命名空间通过 `ProcessCommandFallbackAsync` 作为命令名派发到 CommandDispatcher。
 
 ---
@@ -622,7 +622,7 @@
 完整的无 GUI 降级方案，支持容器化部署和自动化测试。
 
 ### 17.2 多传输层并行广播
-[EventProcessor](../src/Wails.Net.Application/Events/EventProcessor.cs) 同时通过 HttpTransport + WebSocketBroadcaster + EventIPCTransport + AssetServerTransport + NativeIpcTransport 广播事件，确保所有连接的前端都能收到。
+[EventProcessor](../src/Wails.Net.Application/Events/EventProcessor.cs) 同时通过 WebSocketBroadcaster + EventIPCTransport + AssetServerTransport + NativeIpcTransport 广播事件，确保所有连接的前端都能收到。
 
 ### 17.3 CommandDispatcher 中间件管道
 [CommandDispatcher](../src/Wails.Net.Application/Commands/CommandDispatcher.cs) 支持 `ICommandMiddleware` 管道和命令超时，提供类似 ASP.NET Core 中间件的扩展点。
@@ -673,11 +673,11 @@ IBrowserManager 接口在 Windows / Linux / Android 三平台均有实现，支�
 ### 17.17 窗口级 CSP（P0-4）
 [AssetServer.SetCspHeaderForWindow](../src/Wails.Net.AssetServer/AssetServer.cs) 支持 per-window CSP 配置，不同窗口可配置不同 CSP 策略。
 
-### 17.18 分块上传协议
-[HttpTransport](../src/Wails.Net.Application/Transport/HttpTransport.cs) 支持 `x-wails-chunk-id/index/total` 协议，单 chunk ≤1MB、总 ≤64MB、会话 TTL 30s，绕过 HTTP 请求体大小限制。
+### 17.18 分块上传协议（已移除）
+原 `x-wails-chunk-id/index/total` 协议随 `HttpTransport` 在 RH-IPC-04（2026-11-15）删除：它只在独立 HTTP 监听传输中实现，而该传输生产零装配、前端无端点 URL 指向它；桌面平台拦截读的是完整 body，逐 chunk POST 必然解析失败。桌面大消息现在单次 scheme POST，Server 模式走 WS。
 
 ### 17.19 NativeIpcTransport 混合策略
-[NativeIpcTransport](../src/Wails.Net.Application/Transport/NativeIpcTransport.cs) 小消息 (<512KB) 走原生 postMessage 通道，大消息自动回退 HTTP 分块，平衡延迟与容量。
+[NativeIpcTransport](../src/Wails.Net.Application/Transport/NativeIpcTransport.cs) 小消息 (<512KB) 走原生 postMessage 通道，大消息改走单次 scheme `POST /wails/message`（无分块），平衡延迟与容量。
 
 ### 17.20 Deploy CLI 子命令
 [Wails.Net.Cli](../src/Wails.Net.Cli/Program.cs) 提供 16 个子命令，包含两者中**唯一**的 `Deploy` 子命令。
@@ -751,10 +751,10 @@ IBrowserManager 接口在 Windows / Linux / Android 三平台均有实现，支�
 #### P0 阶段（已完成）
 - ✅ CancellablePromise + CancelCall 全链路测试（`_runningCalls` + 前端 `cancel` 消息）
 - ✅ EventIPCTransport 回退机制完善（始终追加为兜底监听器）
-- ✅ 原生 IPC（NativeIpcTransport）作为默认传输（混合策略：<512KB 原生 / 大消息 HTTP 分块）
+- ✅ 原生 IPC（NativeIpcTransport）作为桌面默认传输（混合策略：<512KB 原生 / 大消息单次 scheme POST）
 - ✅ Server 模式事件 API 完善
 - ✅ P0-4 窗口级 CSP（per-window）
-- ✅ P0-C1 分块上传协议
+- ~~P0-C1 分块上传协议~~（RH-IPC-04 已随 `HttpTransport` 删除，见 §17.18）
 
 #### P1 阶段（已完成）
 - ✅ P1-1：BrowserManager 三平台实现（Windows / Linux / Android / Server）
@@ -805,7 +805,7 @@ IBrowserManager 接口在 Windows / Linux / Android 三平台均有实现，支�
 
 | 项目 | 定位 | 优势 | 劣势 |
 |------|------|------|------|
-| **Wails.Net** | Wails v3 的 .NET 10 移植，参考 ASP.NET Core 的 Host/DI 与 Wails v3 的 Runtime/IPC，插件与权限能力为自研设计 | .NET 全栈集成 / Server 模式 / 多传输层 / 43 个插件（含 SQL/Stronghold/DeepLink/Biometric/BarcodeScanner/Keychain 等已实现，4 个移动端插件已有 Android 平台实现）/ 源生成器零反射绑定 / 完整 ACL / Authenticode 自动签名 / Logger 双向桥接 / 多 Provider Updater / senderWindowId 传播 / AssetServer Service Route / Helper Process / 窗口级 CSP / 分块上传 / Deploy CLI / MenuRole 系统完整实现 / AndroidRuntimePlugin / AndroidPlatformEvents / 平台能力探测 / 拖放目标元素详情 / OriginInfo 三字段消息来源 / Linux D-Bus 系统主题监听 | 无 macOS/iOS / 移动端插件数量有限 / 无 AppImage / 无 MSI |
+| **Wails.Net** | Wails v3 的 .NET 10 移植，参考 ASP.NET Core 的 Host/DI 与 Wails v3 的 Runtime/IPC，插件与权限能力为自研设计 | .NET 全栈集成 / Server 模式 / 多传输层 / 43 个插件（含 SQL/Stronghold/DeepLink/Biometric/BarcodeScanner/Keychain 等已实现，4 个移动端插件已有 Android 平台实现）/ 源生成器零反射绑定 / 完整 ACL / Authenticode 自动签名 / Logger 双向桥接 / 多 Provider Updater / senderWindowId 传播 / AssetServer Service Route / Helper Process / 窗口级 CSP / Deploy CLI / MenuRole 系统完整实现 / AndroidRuntimePlugin / AndroidPlatformEvents / 平台能力探测 / 拖放目标元素详情 / OriginInfo 三字段消息来源 / Linux D-Bus 系统主题监听 | 无 macOS/iOS / 移动端插件数量有限 / 无 AppImage / 无 MSI |
 | **Wails v3** | Go 桌面/移动框架，简洁实用 | 全平台 / Go 语言易上手 / 多 Provider Updater / Helper Process / Event Hooks | 无 ACL / 无中间件管道 / 插件生态弱 / 无 Authenticode / 无日志双向桥接 / 无 senderWindowId / 无 MenuRole 工厂方法与跨平台辅助工具 |
 
 ### 19.2 Wails.Net 的核心价值

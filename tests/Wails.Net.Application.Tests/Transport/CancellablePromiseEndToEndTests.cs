@@ -117,12 +117,13 @@ public sealed class CancellablePromiseEndToEndTests
     }
 
     // ============================================================
-    // 端到端场景 1：HTTP 路径取消（HttpTransport 路径模拟）
+    // 端到端场景 1：无长连接通道时的取消（scheme POST / 平台拦截路径模拟；
+    // RH-IPC-04 起独立 HTTP 监听传输已删除，取消消息仍以 cancel 类型消息进入 MessageProcessor）
     // ============================================================
 
     [Test]
     [Timeout(15000)]
-    public async Task EndToEnd_HttpPath_CancelCall_TriggersCancellationTokenAndReturnsError(
+    public async Task EndToEnd_NoPersistentChannel_CancelCall_TriggersCancellationTokenAndReturnsError(
         CancellationToken testCancellationToken)
     {
         var (processor, bindings, service) = SetupWithService();

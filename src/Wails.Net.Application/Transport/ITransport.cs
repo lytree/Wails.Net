@@ -1,5 +1,3 @@
-using System.Net;
-
 namespace Wails.Net.Application.Transport;
 
 /// <summary>
@@ -50,22 +48,6 @@ public interface IWailsEventListener
     /// 非 null 时事件仅派发到该窗口；null 表示广播到所有窗口。
     /// 默认 null 保持与既有调用方的兼容。</param>
     void NotifyEvent(string eventName, object? data, uint? senderWindowId = null, uint? targetWindowId = null);
-}
-
-/// <summary>
-/// HTTP 处理器接口，用于基于 HTTP 的传输层提供请求上下文。
-/// 对应 Wails v3 Go 版本中的 TransportHTTPHandler 接口。
-/// AssetServer 中间件可通过此接口获取当前 HTTP 请求上下文，
-/// 以便对 webview 发往 wails:// 的请求进行处理。
-/// </summary>
-public interface ITransportHttpHandler
-{
-    /// <summary>
-    /// 获取当前正在处理的 HTTP 请求上下文。
-    /// 用于资源服务器中间件访问当前请求的头部、查询参数等。
-    /// </summary>
-    /// <returns>当前 HTTP 上下文；若无正在处理的请求则返回 null。</returns>
-    HttpListenerContext? GetCurrentContext();
 }
 
 /// <summary>

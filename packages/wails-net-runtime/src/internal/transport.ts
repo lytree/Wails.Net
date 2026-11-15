@@ -2,14 +2,19 @@
  * Wails.Net 自包含前端传输层。
  *
  * 设计目标：前端不再依赖 C# 端注入的 `window.wails` / `window._wailsInvoke`，
- * 由本包自行完成通道选择、序列化、分块、取消与响应解包。仅读取 C# 注入的
+ * 由本包自行完成通道选择、序列化、取消与响应解包。仅读取 C# 注入的
  * 小型 `window._wails` 标志对象（platform / isServerMode / 各 URL）作为配置。
  *
- * 三态通道策略：
+ * 二态通道策略（RH-IPC-04，2026-11-15 收敛）：
  *  1. Server 模式（isServerMode 或配置了 webSocketUrl）→ WebSocket（`ws://localhost:34116/wails/ws`）
- *  2. 原生 postMessage（WebView2 / WebKitGTK / Android），且消息 ≤ 512KB → 低延迟副通道
- *  3. 其余 → HTTP `POST /wails/message`（超过 512KB 自动分块上传）
- * 取消消息始终走可靠通道（Server 模式走 WS，否则走 HTTP）。
+ *  2. 桌面模式 → 原生 postMessage（WebView2 / WebKitGTK / macOS / Android），
+ *     消息体超过 512KB 时改为单次 scheme `POST /wails/message`
+ *     （由平台请求拦截承载，不再有分块上传协议）。
+ * 取消消息始终走可靠通道（Server 模式走 WS，否则走 scheme POST）。
+ *
+ * 为什么去掉第三态（HTTP 分块）：分块端点 `POST /wails/message` 从未被独立 HTTP
+ * 监听传输服务（该传输生产零装配），桌面模式下分块请求会落到平台拦截上并因
+ * 单个 chunk 不是完整 JSON 而失败——即分块协议在任何路径上都不可用。
  */
 
 import { toCallError } from "./call-error.js";
@@ -41,25 +46,9 @@ type EventCallback = (data: unknown, senderWindowId?: number | null, targetWindo
 /** 事件回调集合：精确事件名 / 通配符模式（`*` 后缀）→ 回调集合。 */
 type EventCallbackMap = Map<string, Set<EventCallback>>;
 
-const CHUNK_THRESHOLD = 512 * 1024; // 512KB：原生/HTTP 分界（按 JSON 字符串长度）
-const CHUNK_SIZE = 1_000_000; // 1MB：单 chunk 字节上限（后端限制 ≤ 1MB）
+/** 原生 postMessage 通道的单条消息上限（按 JSON 字符串长度）；超过则改走 scheme POST。 */
+const NATIVE_MAX_LENGTH = 512 * 1024; // 512KB
 const DEFAULT_WS_URL = "ws://localhost:34116/wails/ws";
-
-function randomId(len = 21): string {
-  const alphabet = "useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict";
-  const arr = new Uint8Array(len);
-  const cryptoObj = (globalThis as { crypto?: Crypto }).crypto;
-  if (cryptoObj?.getRandomValues) {
-    cryptoObj.getRandomValues(arr);
-  } else {
-    for (let i = 0; i < len; i++) arr[i] = Math.floor(Math.random() * 256);
-  }
-  let id = "";
-  for (let i = 0; i < len; i++) {
-    id += alphabet[arr[i] % alphabet.length];
-  }
-  return id;
-}
 
 /** 传输层实现。 */
 export class Transport {
@@ -245,7 +234,7 @@ export class Transport {
     if (this.serverMode && this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
     } else {
-      void this.sendCancelHttp(msg);
+      void this.sendCancelPost(msg);
     }
   }
 
@@ -328,51 +317,27 @@ export class Transport {
     const native = this.nativePost;
     if (native) {
       const s = JSON.stringify(msg);
-      if (s.length <= CHUNK_THRESHOLD) {
+      if (s.length <= NATIVE_MAX_LENGTH) {
         native(s);
         return;
       }
     }
-    await this.sendHttp(msg);
+    await this.sendSchemePost(msg);
   }
 
-  private async sendHttp(msg: WailsMessage): Promise<void> {
+  /**
+   * 通过 `POST /wails/message` 单次发送（不分块）。
+   * 桌面模式由平台请求拦截（WebResourceRequested / wails:// scheme /
+   * ShouldInterceptRequest）承载，Server 模式是 WS 断开时的兜底。
+   */
+  private async sendSchemePost(msg: WailsMessage): Promise<void> {
     const body = JSON.stringify(msg);
-    const byteLen = new TextEncoder().encode(body).length;
-    if (byteLen <= CHUNK_THRESHOLD) {
-      const resp = await fetch(this.messageUrl, {
-        method: "POST",
-        headers: this.buildHeaders(),
-        body,
-      });
-      await this.handleHttpResponse(resp);
-      return;
-    }
-    // 分块上传
-    const bytes = new TextEncoder().encode(body);
-    const total = Math.max(1, Math.ceil(bytes.length / CHUNK_SIZE));
-    const chunkId = randomId(21);
-    for (let i = 0; i < total; i++) {
-      const slice = bytes.subarray(i * CHUNK_SIZE, Math.min((i + 1) * CHUNK_SIZE, bytes.length));
-      const headers: Record<string, string> = {
-        ...this.buildHeaders(),
-        "x-wails-chunk-id": chunkId,
-        "x-wails-chunk-index": String(i),
-        "x-wails-chunk-total": String(total),
-      };
-      const resp = await fetch(this.messageUrl, {
-        method: "POST",
-        headers,
-        body: slice,
-      });
-      if (i < total - 1) {
-        if (!resp.ok) {
-          console?.error?.(`[wails] chunk ${i}/${total} upload failed: ${resp.status}`);
-        }
-        continue;
-      }
-      await this.handleHttpResponse(resp);
-    }
+    const resp = await fetch(this.messageUrl, {
+      method: "POST",
+      headers: this.buildHeaders(),
+      body,
+    });
+    await this.handleHttpResponse(resp);
   }
 
   /**
@@ -387,7 +352,7 @@ export class Transport {
     return headers;
   }
 
-  private async sendCancelHttp(msg: WailsMessage): Promise<void> {
+  private async sendCancelPost(msg: WailsMessage): Promise<void> {
     try {
       await fetch(this.messageUrl, {
         method: "POST",

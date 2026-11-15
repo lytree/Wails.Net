@@ -340,21 +340,21 @@
 |--------|-----------|---------|
 | **传输抽象** | `ITransport` 接口 | `ITransport` 接口 |
 | **默认传输** | NativeIpcTransport（默认启用） | in-memory bridge |
-| **HTTP 传输** | ✅ `HttpTransport`（端口 34115） | ❌ |
+| **scheme POST 传输** | ✅ 平台拦截 `POST /wails/message`（`WebviewRequestPipeline`，无独立监听端口；原 `HttpTransport` 已于 RH-IPC-04 删除） | ❌ |
 | **WebSocket 传输** | ✅ `WebSocketTransport`（端口 34116） | ❌ |
 | **原生 IPC 传输** | ✅ `NativeIpcTransport`（512KB 阈值混合策略） | ✅ 默认 |
 | **Event IPC 兜底** | ✅ `EventIPCTransport`（始终追加为兜底） | ❌ |
 | **AssetServer 传输** | ✅ `AssetServerTransport` | ❌ |
-| **分块上传** | ✅ `x-wails-chunk-id/index/total` 协议（≤1MB/chunk，≤64MB 总，30s TTL） | ❌ |
+| **分块上传** | ❌（RH-IPC-04 已删除：桌面大消息单次 scheme POST，Server 模式 WS） | ❌ |
 | **CORS 配置** | ✅ `CorsOptions` + `IpcOriginValidator`（白名单回显，非 `*`） | N/A |
-| **Handshake Token** | ✅（OPT-IPC-002：`IpcOptions.RequireHandshakeToken`，进程级随机 token，HTTP 头 `x-wails-token` / WS 查询参数，缺失或错误 403） | ❌ |
+| **Handshake Token** | ✅（OPT-IPC-002：`IpcOptions.RequireHandshakeToken`，进程级随机 token，请求头 `x-wails-token` / WS 查询参数，缺失或错误 403） | ❌ |
 | **CancellablePromise** | ✅ `_runningCalls` + `cancel` 消息类型 | ✅ `CancelCall` |
 | **多传输层并行广播** | ✅ `IWailsEventListener` 列表 | ❌ |
 | **senderWindowId 传播** | ✅ 全链路携带 | ❌ |
 
 **Wails.Net 关键实现**：
-- [NativeIpcTransport](../src/Wails.Net.Application/Transport/NativeIpcTransport.cs)：使用原生 `postMessage` 通道，**512KB 阈值**：超过则降级到 HTTP。`RegisterWindow` 安装 `SetNativeMessageHandler` 回调接收前端消息。
-- [HttpTransport](../src/Wails.Net.Application/Transport/HttpTransport.cs)：基于 `HttpListener`，支持 `ChunkStore` 分块上传 + `CorsOptions` + `IpcOriginValidator`。
+- [NativeIpcTransport](../src/Wails.Net.Application/Transport/NativeIpcTransport.cs)：使用原生 `postMessage` 通道，**512KB 阈值**：超过则降级到单次 scheme `POST /wails/message`。`RegisterWindow` 安装 `SetNativeMessageHandler` 回调接收前端消息。
+- [IpcProtocol](../src/Wails.Net.Application/Transport/IpcProtocol.cs) + [WebviewRequestPipeline](../src/Wails.Net.Application/WebView/WebviewRequestPipeline.cs)：协议常量与桌面 IPC 入口（含 64 MiB → 413 上限）；原独立 HTTP 监听传输 `HttpTransport` 已于 RH-IPC-04 删除。
 - [EventIPCTransport](../src/Wails.Net.Application/Transport/EventIPCTransport.cs)：兜底通过 `ExecJS` 注入 `window._wailsEmitEvent`，与 `NativeIpcTransport` 协作避免重复派发。
 
 
@@ -446,7 +446,7 @@
 - `OnApplicationEvent` 订阅应用级事件。
 
 **差异分析**：
-- Wails.Net 同时支持 Pre-emit 钩子（参考 Wails v3）和**多传输层并行广播**（独有）：一次 `Emit` 会同时通过 HttpTransport + WebSocketBroadcaster + EventIPCTransport + AssetServerTransport + NativeIpcTransport 广播，确保所有连接的前端都能收到。
+- Wails.Net 同时支持 Pre-emit 钩子（参考 Wails v3）和**多传输层并行广播**（独有）：一次 `Emit` 会同时通过 WebSocketBroadcaster + EventIPCTransport + AssetServerTransport + NativeIpcTransport 广播，确保所有连接的前端都能收到。
 - `senderWindowId` 全链路传播是 Wails.Net 独有，Wails v3 无来源标识。
 - Wails.Net 自 P2 起新增 3 个公共事件（LowMemory/ScreenLocked/ScreenUnlocked），完整对齐 Wails v3 `Common.*` 事件。
 

@@ -322,7 +322,37 @@
 - UI 线程不再同步等待用户命令完成（除 Android 同步桥，需文档说明）；
 - `Application` 中事件传输装配代码删除，策略服务可单测。
 
-### 3.4 HttpTransport 终局决策（RH-IPC-04）
+### 3.4 HttpTransport 终局决策（RH-IPC-04）✅ 已完成（2026-11-15，选 a：删除）
+
+#### 实施记录（2026-11-15，决策 a）
+
+删除独立 HTTP 监听传输与其协议面，**未接入生产**。删除清单：
+
+| 项 | 处理 |
+|---|---|
+| `Transport/HttpTransport.cs`（831 行） | 删除 |
+| `Transport/ChunkStore.cs`（`ChunkStore` + `PendingChunks`，约 330 行） | 删除（唯一消费者是 HttpTransport） |
+| `ITransport.cs` 中的 `ITransportHttpHandler` | 删除（唯一实现者是 HttpTransport，无其他调用方） |
+| `IpcOptions.AllowHttpFallback` / `AllowWebSocketFallback` | 删除（前者主体已消失，后者从未被任何装配点读取；与 §6.6 死选项处置同批） |
+| 前端 `transport.ts` 分块上传（`CHUNK_SIZE` / `randomId` / `x-wails-chunk-*`） | 删除；通道策略三态 → 二态（Server WS / 桌面原生 post + 超大消息单次 scheme POST） |
+| `CorsOptions.AllowedHeaders` 中的 `x-wails-chunk-*` | 删除 |
+
+保留/迁移：
+
+| 项 | 去向 |
+|---|---|
+| `/wails/message`、`x-wails-token`、64 MiB 上限常量 | 新增 `Transport/IpcProtocol.cs`（`MessageEndpoint` / `HandshakeTokenHeader` / `MaxRuntimeBodyBytes` / `PayloadTooLargeStatusCode`），`WebSocketTransport` 与管线共用 |
+| P1-8「运行时请求 64 MiB → 413」 | 迁入 `WebviewRequestPipeline.HandleIpcAsync`——这是桌面模式**真正可达**的 IPC 入口（此前实现在死代码里，限制形同不存在）；新增 `WebView/IpcBodyLimitTests`（2 项） |
+| `FrontendRuntimeCoordinator` 的 Server 模式 URL 注入 | 只保留 `WebSocketTransport` 分支（Server 模式唯一宿主级传输） |
+| `CreateFallbackTransports` | 保留为空列表：装配链路（启动 / 关闭逆序停止）仍供自定义策略使用，但不再有"待接入的候选" |
+
+测试面变化（诚实记录覆盖面缩减）：
+
+- 删除 `HttpTransportRequestBodyLimitTests`（5 项）、`ChunkStoreTests`、`IpcTransportTokenValidationTests` 中的 4 个 HTTP 用例、`ServerModeRequestHardeningTests` 中的 7 个 HTTP 用例——**这些用例校验的类已不存在**。
+- 保留并重命名：`WebSocketHandshakeTokenTests`（4 项，含新增 `x-wails-token` 头回退用例）、`ServerModeWebSocketHardeningTests`（6 项）。
+- `IpcRequestGuard` 的同源 / `Sec-Fetch-Site` / Host 判定仍由 `Security/IpcRequestGuardTests` 覆盖，未因删除 e2e 用例而失去覆盖。
+
+#### 原始分析（2026-08-16 基线，保留备查）
 
 现状：`HttpTransport` 安全逻辑完整（token/Origin/分块/CORS）但生产零装配（`IpcTransportStrategy.cs:104-114` 注释：HTTP 端点 URL 注入协议未扩展，前端不可达）；前端 `transport.ts:86` 的 `messageUrl = flags.assetServerUrl + "/wails/message"` 在桌面模式落到平台拦截（不经过 HttpTransport），Server 模式落到的 `WebSocketTransport` 无 `/wails/message` POST 分支——**该端点两种模式下实际都不可达**。
 
@@ -499,7 +529,7 @@ AGENTS.md 与 docs 多处称 macOS 为"骨架/ServerMode 降级"，实际 `#if M
 | BK-01 | 移除 `PermissionOptions.Enabled`（或语义重定义）+ Strict 默认 | 手写配置的存量项目 | 低（启动日志 + 迁移指南） |
 | BK-02 | `Application.CreateWebviewWindow` 内部化，窗口注册表统一 | 直接调用该 API 的代码 | 极低（现路径本就断链） |
 | BK-03 | 平台窗口基类/管线重构 | 平台包内部 + 自定义平台实现者 | 中（平台实现者需适配基类） |
-| BK-04 | 删除 `HttpTransport` + 前端 HTTP 分块协议（若选 3.4a） | 无生产用户（死代码） | 无 |
+| BK-04 | 删除 `HttpTransport` + 前端 HTTP 分块协议（若选 3.4a） | 无生产用户（死代码） | ✅ 已执行（2026-11-15，见 §3.4 实施记录）；附带删除 `ITransportHttpHandler` 与 `IpcOptions.AllowHttpFallback/AllowWebSocketFallback` |
 | BK-05 | `ChannelManager` 静态 → DI | 直接用静态类的代码 | 低 |
 | BK-06 | 移除 `AssetsDirectory`/`Permissions`/`CapabilitiesDir` 兼容字段 | 旧配置键 | 低（一键替换表） |
 | BK-07 | Strict 下 `window.*` 硬编码 switch 拒绝 | 未注册 WindowPlugin 又用 window 消息的项目 | 低（模板已带 WindowPlugin） |

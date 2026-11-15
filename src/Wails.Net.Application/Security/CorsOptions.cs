@@ -27,10 +27,11 @@ public sealed class CorsOptions
 
     /// <summary>
     /// 获取或设置允许的请求头（默认 Content-Type, Authorization, x-wails-token）。
-    /// 包含 <c>x-wails-token</c>（OPT-IPC-002 handshake token）与分块上传头，
+    /// 包含 <c>x-wails-token</c>（OPT-IPC-002 handshake token）与窗口标识头，
     /// 使 CORS 预检请求放行 IPC 相关自定义头。
+    /// RH-IPC-04 已移除 <c>x-wails-chunk-*</c>（分块上传协议随 HttpTransport 一并删除）。
     /// </summary>
-    public string AllowedHeaders { get; set; } = "Content-Type, Authorization, x-wails-token, x-wails-window-id, x-wails-window-name, x-wails-chunk-id, x-wails-chunk-index, x-wails-chunk-total";
+    public string AllowedHeaders { get; set; } = "Content-Type, Authorization, x-wails-token, x-wails-window-id, x-wails-window-name";
 
     /// <summary>
     /// 获取或设置是否允许携带凭证（默认 false）。
