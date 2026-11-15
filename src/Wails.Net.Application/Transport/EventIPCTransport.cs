@@ -71,8 +71,8 @@ public sealed class EventIPCTransport : IWailsEventListener
     /// <summary>
     /// 构造带日志记录器的 EventIPCTransport 实例。
     /// </summary>
-    /// <param name="logger">日志记录器实例。</param>
-    public EventIPCTransport(ILogger<EventIPCTransport> logger)
+    /// <param name="logger">日志记录器实例，可为 null（实现内部按"无日志"处理）。</param>
+    public EventIPCTransport(ILogger<EventIPCTransport>? logger)
         : this(logger, PerWindowEventQueue.DefaultCapacity)
     {
     }

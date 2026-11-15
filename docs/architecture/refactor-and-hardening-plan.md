@@ -255,7 +255,7 @@
 | 保留项 | `IPlatformApp.OnWindowDestroyed` 保留给需要平台侧资源清理的实现（Mock / 后续原生资源回收），不再是"缓存一致性"补丁 |
 | 测试 | 新增 `WindowPlatformAccessorTests`（4 项）：构造注入、后置注入、生命周期快照、空集合语义 |
 
-剩余（未做）：`IIpcTransportStrategy` 在桌面四平台仍未推广（RH-IPC-02 §3.3 第 4 点）；RH-IPC-02 进展见 §3.3。
+剩余（未做）：`IIpcTransportStrategy` 已完成桌面模式推广（2026-11-15，RH-IPC-02 §3.3 第 4 点）；RH-IPC-02 进展见 §3.3。
 
 
 ### 3.3 [破坏性] 四平台 IPC/资源/ready 管线统一（RH-IPC-02，继承 OPT-IPC-003 剩余）
@@ -277,7 +277,19 @@
 - **Linux 的 ready 时机后移**：此前在注入完成（导航尚未完成）时就派发，现在等 `LoadEvent.Finished`；订阅方拿到 ready 时页面才真正就绪。
 - **macOS 的 ready 增加注入前置条件**：此前 `OnNavigationFinished` 无条件派发，现在注入失败则不派发（可由后续导航重试）。
 
-剩余（未做）：frameless 拖拽脚本与 DropTargetDetails 仍各平台本地实现（仅 Windows/Linux 各一份，逻辑相同但注入 API 不同）；`IIpcTransportStrategy` 推广（方案第 4 点）未动。
+**方案第 4 点（`IIpcTransportStrategy` 推广）已于 2026-11-15 落地**：
+
+| 项 | 落地方式 |
+|---|---|
+| 能力暴露 | `IpcTransportContext` 新增 `HasNativeMessageChannel` / `UseNativeIpc`，平台只报告能力，不再自行判断该用哪条通道 |
+| 原生通道判定 | `IIpcTransportStrategy.UseNativeIpcTransport`：用户启用 + 平台具备原生 postMessage + 非 Server 模式，三者同时成立才构造 `NativeIpcTransport`（此前只看 `UseNativeIpc`，Linux/macOS/Android 与 Server 模式都会构造一个永不注册窗口的空传输并重复挂监听器） |
+| 事件下行装配 | `IIpcTransportStrategy.CreateEventListeners`：DI 提供的监听器 + `EventIPCTransport` 兜底（顺序即注册顺序），`Application` 中"硬编码追加"删除 |
+| 主传输 / fallback | `Application.InitializeIpcTransport` 统一调用策略；`CreateFallbackTransports` 此前**无任何调用方**（死方法），现由 `Run` 启动、关闭协调器逆序停止 |
+| DI 注册 | `DesktopApplicationBuilder` 缺省注册 `DefaultIpcTransportStrategy`（可被用户注册覆盖）；`UseServerModeTransport` 的原注册保留为幂等 |
+| 快速失败 | Server 模式缺 `MessageProcessor` / `WebSocketBroadcaster` 时抛 `InvalidOperationException`，不再构造不可用传输 |
+| 测试 | 新增 `IpcTransportStrategyTests`（11 项）：Server 配置注入、缺处理器快速失败、桌面 null 主传输、原生通道 4 种组合、监听器顺序、DI 策略采用、装配链端到端 |
+
+剩余（未做）：frameless 拖拽脚本与 DropTargetDetails 仍各平台本地实现（仅 Windows/Linux 各一份，逻辑相同但注入 API 不同）。
 
 #### 现状（平台层重复度实测）
 
@@ -370,7 +382,7 @@
 
 ### 4.2 Application 协调器化收尾（RH-HOST-02，继承审计 P1-1）
 
-**2026-11-15 首批已落地**：`Application.cs` **2160 → 1731 行**，9 个关注点整体下沉为独立单元，`Application` 只保留同名 facade 与委托（public API 未变，无 `virtual` 语义变化）：
+**2026-11-15 两批已落地**：`Application.cs` **2160 → 1738 行**，10 个关注点整体下沉为独立单元，`Application` 只保留同名 facade 与委托（public API 未变，无 `virtual` 语义变化）：
 
 | 原内联职责 | 现在 | 位置 |
 |---|---|---|
@@ -383,17 +395,19 @@
 | 关闭顺序（生命周期事件→令牌→钩子→载荷/Streams→窗口→传输→资源→dev 代理→插件→服务→平台→PostShutdown） | `ApplicationShutdownCoordinator` + `ApplicationShutdownContext` | `Coordinators/` |
 | GenerateRuntimeJs / flags 注入 | `FrontendRuntimeCoordinator` | `Coordinators/` |
 | 配置驱动窗口创建 / notch 选项映射 | `ConfiguredWindowFactory` / `NotchWindowOptionsBuilder` | `Windows/` |
+| DI 服务绑定（110 行的 `InitializeFromServiceProvider` 装配） | `ServiceProviderBinder` | `Hosting/` |
 
 `RuntimeServicesCoordinator`（P1-1 已落地）继续承担服务生命周期顺序。
 
-**剩余体积分布（1731 行实测）**：
+**剩余体积分布（1738 行实测）**：
 
 | 区段 | 行数 | 性质 |
 |---|---|---|
-| 字段声明 + public 管理器属性（含 XML 文档） | 767 | facade 面，删除即破坏 API |
-| `InitializeFromServiceProvider` | 117 | DI 装配，可再迁 `Hosting/ServiceProviderBinder` |
-| `Run`（启动顺序 + 平台主循环） | 116 | 编排根，保留更易读 |
+| 字段声明 + public 管理器属性（含 XML 文档） | ~770 | facade 面，删除即破坏 API |
+| `Run`（启动顺序 + 平台主循环） | 110 | 编排根，保留更易读 |
 | 其余 public facade 方法（平台转发、窗口/服务/事件 API） | ~730 | facade 面 |
+| IPC 装配（`BuildIpcContext` / `WireIpcEventListeners` / `InitializeIpcTransport`） | 55+40 | 调用策略的接线，逻辑本体在 `Transport/IpcTransportStrategy.cs` |
+| `ServiceProviderBinder` 服务槽（6 个 internal 属性） | 12 | 迁移代价，读点多故不换槽对象 |
 
 结论：**在当前 public API 下 `<800 行` 不可达**——仅需保留的管理器属性与 facade 文档就超过 800 行。达标只有两条路，均需决策：
 
@@ -516,11 +530,11 @@ AGENTS.md 与 docs 多处称 macOS 为"骨架/ServerMode 降级"，实际 `#if M
 - [ ] Strict 为默认且语义自洽：capability 加载与检查生效条件一致，DenyByDefault 无失效组合；
 - [ ] 全部内置插件命令显式声明安全姿态（✅ 2026-11-14：302/302 + 姿态 drift 测试守门），`wails-net check` 自动发现插件权限并生成 schema（未做）；
 - [ ] Strict 下无绕过权限链的消息路径（含 `window.*`）；
-- [ ] 四平台 IPC/资源/ready 逻辑单点实现，UI 线程无同步阻塞等待用户命令；
+- [ ] 四平台 IPC/资源/ready 逻辑单点实现，UI 线程无同步阻塞等待用户命令；（2026-11-15 复核：`WebviewRequestPipeline` 单点已落地 R2-4、传输装配已收敛进 `IIpcTransportStrategy`；但 `Win32WebviewWindow.cs:1122` 与 Linux 对话框路径仍 `GetAwaiter().GetResult()`，方案第 3 点异步化未完）
 - [ ] Channel 前后端协议可用，加密 opt-in；
 - [ ] `wails dev` 经 AssetServer 反向代理闭环（HMR 可用）；
 - [ ] 兼容配置字段清零，drift 测试覆盖；
-- [ ] `Application` < 800 行且无新增静态定位器依赖；（2026-11-15：2160 → 1731，行为职责已全部下沉；800 行需破坏性 API 收敛或 partial 拆文件，见 §4.2）
+- [ ] `Application` < 800 行且无新增静态定位器依赖；（2026-11-15：2160 → 1738，行为职责已全部下沉，含 DI 装配迁出；800 行需破坏性 API 收敛或 partial 拆文件，见 §4.2）
 - [ ] NativeAOT CI 覆盖模板 App；Linux CI 必过；
 - [x] 本文档 §2.1.4 全部条目可勾选（含 SEC-H-003 阶段三条；2026-11-14）；
 

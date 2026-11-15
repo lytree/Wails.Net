@@ -156,12 +156,13 @@ P0 批次已随提交 `6ad3d2d`（2026-08-10）落地，状态如下：
 - ✅ OPT-EVENT-002 跨窗口定向事件：`CustomEvent.TargetWindowID`、`EventProcessor.EmitTo`、`Application.EmitTo`、`WebviewWindow.DispatchWailsEvent`、前端 `events.emitTo`，传输层（NativeIpc/EventIPC/WebSocket）按目标过滤。
 - ✅ OPT-RUNTIME-002（核心）：`ApplicationLifecycleState` + `PlatformStarted` 就绪信号 + `WaitUntilPlatformStartedAsync`；`DesktopHostedService.StartAsync` 等待就绪（移除从未 await 的 `_startedTcs`）；Linux `WindowRuntimeReady` 补齐。
 - ✅ OPT-IPC-003（核心）：`IIpcTransportStrategy` + `DefaultIpcTransportStrategy` + `IpcTransportContext`，Server 模式装配改走统一策略。
+- ✅ OPT-IPC-003（桌面推广，2026-11-15）：原生通道判定、事件监听器装配、主传输与 fallback 链全部收敛进策略；平台只暴露 `HasNativeMessageChannel`。
 - ✅ OPT-CLEANUP-001（大部分）：`EnableDragAndDrop` 死选项移除、`wails-net-plugin-log` TS 补齐、`_startedTcs` 语义修正、`HttpTransport` 生产装配决策记录、`Routes/` 空目录处置记录。
 
 **本轮部分完成 / 遗留（需后续批次）：**
 
 - ⚠️ OPT-RUNTIME-002 剩余：Android `WindowRuntimeReady` 派发（Android 无页面级 runtime 注入点，需在页面加载完成回调补派发）。
-- ⚠️ OPT-IPC-003 剩余：平台窗口（Win32/Linux/macOS）fallback 链集中化；`HttpTransport` 接入生产 fallback 链需同步扩展前端 runtime flags（注入 HTTP 端点 URL）。
+- ⚠️ OPT-IPC-003 剩余：`HttpTransport` 接入生产 fallback 链需同步扩展前端 runtime flags（注入 HTTP 端点 URL）；策略产出 fallback 的通道已打通（`Run` 启动 / 关闭逆序停止），但默认策略仍返回空列表（避免装饰性装配）。
 - ❌ OPT-RUNTIME-001 `Application` 职责拆分、OPT-PLUGIN-001~003 插件资产/清单、OPT-SEC-005 asset protocol scope、OPT-RUNTIME-003 Channels 对称加密、OPT-TEST-001~003 测试补齐：未动，列入后续批次。
 
 ---
@@ -482,18 +483,26 @@ Native IPC、HTTP fallback、WebSocket fallback、AssetServer transport、EventI
 - **Android**：`WailsWebMessageListener.cs:43-67` 走 JS 同步桥，直接 `HandleMessageFromFrontend`。
 - **macOS**：`MacOSWebviewWindow.cs:1267-1362` 又一套 scheme + IPC 分流。
 - **Server 模式**：`Hosting/ServerModeTransportExtensions.cs:52-118` 是唯一集中装配点，但仅覆盖 Server 模式。
-- **事件下行**：`Application.cs:336-359` 硬编码"永远追加 EventIPCTransport 兜底 + NativeIpcTransport 抢占"。
+- **事件下行**：原 `Application.InitializeFromServiceProvider` 硬编码"永远追加 EventIPCTransport 兜底 + NativeIpcTransport 抢占"；2026-11-15 起由 `IIpcTransportStrategy.CreateEventListeners` / `UseNativeIpcTransport` 决定。
 - ⚠️ **`HttpTransport.cs` 生产路径无人装配**：全库仅测试（`tests/.../IpcTransportTokenValidationTests.cs`）实例化过它。token 校验逻辑已实现但实际未接通，属死代码风险，落地本项时需一并决策：接入生产 fallback 链或显式移除。
 
 #### 修改建议
 
 新增：
 
+> **2026-11-15 更新**：本节已落地并推广到桌面模式。实际接口在最小形态上增加了两个成员
+> （`UseNativeIpcTransport` 原生通道判定、`CreateEventListeners` 事件下行装配，均带默认实现，
+> 源兼容）。`Application` 中"永远追加 EventIPCTransport"的硬编码已删除，改由策略决定；
+> `CreateFallbackTransports` 从"无调用方"变为真实的启动/停止链路。详见
+> `refactor-and-hardening-plan.md` §3.3 方案第 4 点。
+
 ```csharp
 public interface IIpcTransportStrategy
 {
-    ITransport CreatePrimaryTransport(IpcTransportContext context);
+    ITransport? CreatePrimaryTransport(IpcTransportContext context);
     IReadOnlyList<ITransport> CreateFallbackTransports(IpcTransportContext context);
+    bool UseNativeIpcTransport(IpcTransportContext context);
+    IReadOnlyList<IWailsEventListener> CreateEventListeners(IpcTransportContext context);
 }
 ```
 

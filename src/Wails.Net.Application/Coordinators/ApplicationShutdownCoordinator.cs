@@ -60,6 +60,12 @@ internal sealed class ApplicationShutdownContext
     /// <summary>传输层；为 null 时跳过。</summary>
     public ITransport? Transport { get; init; }
 
+    /// <summary>
+    /// fallback 传输链；主传输之后、资源服务器之前停止（RH-IPC-02 第 4 点）。
+    /// 为空表示策略未产出 fallback（默认策略即如此）。
+    /// </summary>
+    public IReadOnlyList<ITransport> FallbackTransports { get; init; } = [];
+
     /// <summary>资源服务器；为 null 或未实现 <see cref="IServiceShutdown"/> 时跳过。</summary>
     public Wails.Net.AssetServer.AssetServer? AssetServer { get; init; }
 
@@ -188,14 +194,26 @@ internal sealed class ApplicationShutdownCoordinator
 
     private async Task StopTransportAsync(CancellationToken ct)
     {
+        // 先停 fallback 再停主传输：fallback 依赖主传输的处理器/广播器，
+        // 反向顺序会让 fallback 在停机瞬间仍尝试向已关闭的主通道投递。
+        foreach (var fallback in _ctx.FallbackTransports)
+        {
+            await StopTransportCoreAsync(fallback, ct).ConfigureAwait(false);
+        }
+
         if (_ctx.Transport is null)
         {
             return;
         }
 
+        await StopTransportCoreAsync(_ctx.Transport, ct).ConfigureAwait(false);
+    }
+
+    private static async Task StopTransportCoreAsync(ITransport transport, CancellationToken ct)
+    {
         try
         {
-            await _ctx.Transport.StopAsync(ct).ConfigureAwait(false);
+            await transport.StopAsync(ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

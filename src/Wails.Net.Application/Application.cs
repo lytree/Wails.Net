@@ -75,6 +75,19 @@ public class Application
     private ITransport? _transport;
 
     /// <summary>
+    /// IPC 传输策略（RH-IPC-02 第 4 点）：DI 可覆盖，缺省 <see cref="DefaultIpcTransportStrategy"/>。
+    /// 原生通道启用判定、主传输与 fallback 链、事件监听器装配三件事统一由它决定。
+    /// </summary>
+    private IIpcTransportStrategy _ipcStrategy = new DefaultIpcTransportStrategy();
+
+    /// <summary>
+    /// fallback 传输链（由策略产出）。主传输启动后依次启动，关闭时先于主传输停止。
+    /// 此前 <see cref="IIpcTransportStrategy.CreateFallbackTransports"/> 无任何调用方，
+    /// 本字段让它成为真实的装配面而不是接口注释。
+    /// </summary>
+    private ITransport[] _fallbackTransports = [];
+
+    /// <summary>
     /// 消息处理器实例，懒加载。
     /// 用于 <see cref="HandleMessageFromFrontend"/> 解析和处理前端消息。
     /// </summary>
@@ -307,118 +320,85 @@ public class Application
     /// </summary>
     /// <param name="serviceProvider">DI 容器。</param>
     internal void InitializeFromServiceProvider(IServiceProvider serviceProvider)
+        => Hosting.ServiceProviderBinder.Bind(this, serviceProvider);
+
+    // ── RH-HOST-02：供 Hosting.ServiceProviderBinder 写入的服务槽（同程序集可见） ──
+    // 保留字段而非改成"槽对象"，因为 Application 内部有百余处直接使用这些字段，
+    // 换成槽对象只会把读取点全部改写，行数与耦合都不会下降。Logger 已有公共 Setter，不设槽。
+
+    /// <summary>DI 容器槽。</summary>
+    internal IServiceProvider? ServiceProviderSlot { get => _serviceProvider; set => _serviceProvider = value; }
+
+    /// <summary>Host 生命周期槽。</summary>
+    internal IHostApplicationLifetime? LifetimeSlot { get => _lifetime; set => _lifetime = value; }
+
+    /// <summary>窗口管理器槽。</summary>
+    internal WindowManager? WindowManagerSlot { get => _windowManager; set => _windowManager = value; }
+
+    /// <summary>对话框管理器槽。</summary>
+    internal DialogManager? DialogManagerSlot { get => _dialogManager; set => _dialogManager = value; }
+
+    /// <summary>屏幕管理器槽。</summary>
+    internal ScreenManager? ScreenManagerSlot { get => _screenManager; set => _screenManager = value; }
+
+    /// <summary>插件管理器槽。</summary>
+    internal PluginManager? PluginManagerSlot { get => _pluginManager; set => _pluginManager = value; }
+
+    /// <summary>IPC 传输策略槽（null 忽略，缺省策略保持不变）。</summary>
+    internal IIpcTransportStrategy? IpcStrategySlot
     {
-        // 保存 DI 容器引用，供 MessageProcessor 创建带 WindowId 的命令上下文
-        _serviceProvider = serviceProvider;
-
-        // 自动从 DI 容器获取 ILogger<Application>，若用户未显式设置则使用 DI 注册的实例。
-        // 对应 AGENTS.md §1.1.1 技术选型：日志统一使用 Microsoft.Extensions.Logging 抽象。
-        if (_logger is null)
+        get => _ipcStrategy;
+        set
         {
-            _logger = serviceProvider.GetService<ILogger<Application>>();
+            if (value is not null)
+            {
+                _ipcStrategy = value;
+            }
         }
+    }
 
-        // 自动从 DI 容器获取 IHostApplicationLifetime，用于在 Run/Shutdown 中触发标准生命周期事件。
-        _lifetime = serviceProvider.GetService<IHostApplicationLifetime>();
+    /// <summary>
+    /// 按策略装配 IPC 事件下行监听器（RH-IPC-02 第 4 点）。
+    /// <para>
+    /// 历史实现把"DI 提供的监听器 + EventIPCTransport 兜底"硬编码在此处，
+    /// 现由 <see cref="IIpcTransportStrategy.CreateEventListeners"/> 决定装配内容与顺序，
+    /// 保证 Server 模式与桌面模式走同一条判定路径。
+    /// </para>
+    /// </summary>
+    /// <param name="serviceProvider">DI 容器，用于取出已注册的监听器与日志器。</param>
+    internal void WireIpcEventListeners(IServiceProvider serviceProvider)
+    {
+        var context = BuildIpcContext(
+            serviceProvider.GetService<IWailsEventListener>(),
+            serviceProvider.GetService<ILogger<EventIPCTransport>>());
 
-        // 平台依赖的管理器（非只读字段，可从 DI 替换）
-        var windowManager = serviceProvider.GetService<WindowManager>();
-        if (windowManager is not null)
-        {
-            _windowManager = windowManager;
-            // R1-3：DI 注入的 WindowManager 已存在，需同步注入 Application 引用，
-            // 避免其内部回退到 Application.Get() 静态访问。
-            _windowManager.SetApplication(this);
-        }
-
-        var dialogManager = serviceProvider.GetService<DialogManager>();
-        if (dialogManager is not null)
-        {
-            // DI 工厂无法感知 Application 运行状态，这里补挂运行前拦截判定（v3.1.0 #6390）。
-            dialogManager.AttachRunningState(() => IsRunning);
-            _dialogManager = dialogManager;
-        }
-
-        var screenManager = serviceProvider.GetService<ScreenManager>();
-        if (screenManager is not null)
-        {
-            _screenManager = screenManager;
-        }
-
-        // 通过公共 Setter 注入的管理器（由平台特定代码注册到 DI）
-        var clipboardManager = serviceProvider.GetService<IClipboardManager>();
-        if (clipboardManager is not null)
-        {
-            ClipboardManager = clipboardManager;
-        }
-
-        var menuManager = serviceProvider.GetService<IMenuManager>();
-        if (menuManager is not null)
-        {
-            MenuManager = menuManager;
-        }
-
-        var systemTrayManager = serviceProvider.GetService<ISystemTrayManager>();
-        if (systemTrayManager is not null)
-        {
-            SystemTrayManager = systemTrayManager;
-        }
-
-        var keyBindingManager = serviceProvider.GetService<IKeyBindingManager>();
-        if (keyBindingManager is not null)
-        {
-            KeyBindingManager = keyBindingManager;
-        }
-
-        var browserManager = serviceProvider.GetService<IBrowserManager>();
-        if (browserManager is not null)
-        {
-            BrowserManager = browserManager;
-        }
-
-        var autostartManager = serviceProvider.GetService<IAutostartManager>();
-        if (autostartManager is not null)
-        {
-            AutostartManager = autostartManager;
-        }
-
-        var environmentManager = serviceProvider.GetService<IEnvironmentManager>();
-        if (environmentManager is not null)
-        {
-            EnvironmentManager = environmentManager;
-        }
-
-        // 连接传输层事件监听器到事件处理器。
-        // 对应 Wails v3 Go 版本 application.go 中的 wailsEventListeners 列表追加机制：
-        //   - 若主 Transport 实现了 IWailsEventListener（如 HttpTransport/WebSocketTransport），追加到列表。
-        //   - **永远追加 EventIPCTransport 作为兜底**，确保桌面端 webview 通过 ExecJS 直接收到事件，
-        //     即使主 Transport 的 WebSocket 通道无客户端连接。
-        //   - 这对应 Wails v3 中 EventIPCTransport 的自动追加逻辑：
-        //     if _, ok := transport.(WailsEventListener); !ok {
-        //         result.wailsEventListeners = append(result.wailsEventListeners, &EventIPCTransport{app: result})
-        //     }
-        //   - Wails.Net 更激进：永远追加，因为 HttpTransport 实现了 IWailsEventListener
-        //     但其内部依赖 WebSocketBroadcaster，无 WS 客户端时事件丢失。EventIPCTransport 通过
-        //     ExecJS 注入可弥补此缺陷，与主 Transport 同时工作不冲突。
-        var listener = serviceProvider.GetService<IWailsEventListener>();
-        if (listener is not null)
+        foreach (var listener in _ipcStrategy.CreateEventListeners(context))
         {
             Events.AddWailsEventListener(listener);
         }
-
-        // 始终追加 EventIPCTransport 作为兜底，确保桌面端事件必达。
-        // P0-A1：EventIPCTransport 兜底机制对齐 Wails v3。
-        // P0-D：注入 ILogger<EventIPCTransport> 以便记录事件派发失败日志，
-        // 支持结构化日志诊断。NativeIpcTransport 协作由 NotifyEvent 内部完成。
-        var eventIpcLogger = serviceProvider.GetService<ILogger<EventIPCTransport>>();
-        Events.AddWailsEventListener(new EventIPCTransport(eventIpcLogger!));
-
-        // 从 DI 容器获取 PluginManager 并收集已注册的插件实例。
-        // 对应主题 B：插件生命周期对齐。PluginManager 由 UsePlugin 注册为单例，
-        // RegisterFromServices 从 IEnumerable<IPlugin> 收集所有插件实例。
-        _pluginManager = serviceProvider.GetService<PluginManager>();
-        _pluginManager?.RegisterFromServices();
     }
+
+    /// <summary>
+    /// 构建 IPC 传输策略上下文（平台能力 + 安全配置 + 诊断日志）。
+    /// 桌面模式无宿主级 <see cref="ITransport"/>，因此 Processor/Broadcaster 允许为 null。
+    /// </summary>
+    private IpcTransportContext BuildIpcContext(
+        IWailsEventListener? providedEventListener = null,
+        ILogger<EventIPCTransport>? eventIpcLogger = null)
+        => new()
+        {
+            Processor = _messageProcessor,
+            Broadcaster = _serviceProvider?.GetService<WebSocketBroadcaster>(),
+            IpcOptions = _serviceProvider?
+                .GetService<Microsoft.Extensions.Options.IOptions<Security.IpcOptions>>()?.Value,
+            HandshakeToken = Security.IpcHandshakeToken.Current,
+            IsServerMode = _platformApp is null or Platform.ServerMode.ServerPlatformApp,
+            HasNativeMessageChannel = _platformApp?.SupportsNativeMessageChannel == true,
+            UseNativeIpc = UseNativeIpc,
+            ProvidedEventListener = providedEventListener,
+            EventIpcLogger = eventIpcLogger,
+            DiagnosticsLogger = _logger,
+        };
 
     /// <summary>
     /// 获取服务注册表。
@@ -1031,32 +1011,64 @@ public class Application
     }
 
     /// <summary>
-    /// 初始化原生 IPC 传输层（P0-C2）。
+    /// 装配并启动 IPC 传输层（P0-C2 / RH-IPC-02 第 4 点）。
     /// <para>
-    /// 仅当 <see cref="UseNativeIpc"/> 为 <c>true</c> 时执行：
+    /// 顺序与语义（全部由 <see cref="IIpcTransportStrategy"/> 判定）：
     /// <list type="number">
-    /// <item>确保 <see cref="MessageProcessor"/> 已构造（懒初始化）。</item>
-    /// <item>构造 <see cref="NativeIpcTransport"/> 实例并保存到 <see cref="NativeIpcTransport"/> 属性。</item>
-    /// <item>注册为事件监听器，替代 <see cref="EventIPCTransport"/> 作为事件广播通道。</item>
+    /// <item>主传输：<see cref="Transport"/> 已被用户或 DI 初始化器设置时保持不动，
+    /// 否则由策略创建（桌面模式返回 null，消息走平台拦截）；</item>
+    /// <item>fallback 链：由策略按统一顺序产出，主传输启动后依次启动；</item>
+    /// <item>原生 IPC 通道：仅当平台具备原生 postMessage 能力且未禁用时构造
+    /// <see cref="NativeIpcTransport"/>，并注册为事件监听器。</item>
     /// </list>
     /// </para>
     /// <para>
-    /// 之后平台 <c>IPlatformApp.CreateWebviewWindow</c> 在创建窗口后会调用
-    /// <see cref="INativeIpcTransport.RegisterWindow"/> 完成窗口级回调注册。
+    /// 必须在窗口创建前完成，以便平台 <c>CreateWebviewWindow</c> 能注册窗口到原生通道。
     /// </para>
     /// </summary>
-    private void InitializeNativeIpcTransport()
+    private void InitializeIpcTransport()
     {
-        if (!UseNativeIpc)
+        var context = BuildIpcContext();
+
+        // 主传输：仅在 DI 宿主下由策略补建。非 DI 构造（单测 / 嵌入场景）没有
+        // MessageProcessor 与 Broadcaster，策略无从构造 Server 传输——保持"无宿主级传输"的旧行为。
+        // Server 模式下 Transport 通常已由 ServerModeTransportInitializer 提前装配，此处不覆盖。
+        if (_transport is null && _serviceProvider is not null)
         {
-            return;
+            _transport = _ipcStrategy.CreatePrimaryTransport(context);
         }
 
-        // 确保 MessageProcessor 已构造（NativeIpcTransport 需要它来路由消息）
-        _messageProcessor ??= new MessageProcessor(Bindings, Events, id => GetWindow(id), _commandDispatcher, _serviceProvider, InvocationGateway);
+        if (_transport is not null)
+        {
+            _transport.StartAsync(_cts.Token).GetAwaiter().GetResult();
+        }
 
-        NativeIpcTransport = new NativeIpcTransport(_messageProcessor);
-        Events.AddWailsEventListener(NativeIpcTransport);
+        // fallback 链：主传输起不来时仍有兜底路径（默认为空，仅自定义策略会返回）。
+        var fallbacks = _ipcStrategy.CreateFallbackTransports(context);
+        if (fallbacks.Count > 0)
+        {
+            var started = new List<ITransport>(fallbacks.Count);
+            foreach (var fallback in fallbacks)
+            {
+                fallback.StartAsync(_cts.Token).GetAwaiter().GetResult();
+                started.Add(fallback);
+            }
+
+            _fallbackTransports = started.ToArray();
+            _logger?.LogInformation("IPC fallback 传输链已启动：{Count} 条", started.Count);
+        }
+
+        // 原生 IPC 通道（P0-C2）：判定集中在策略，避免"只看 UseNativeIpc 就构造"的旧逻辑
+        // 在 Linux/macOS/Android 与 Server 模式下产生永不注册窗口的空传输。
+        if (_ipcStrategy.UseNativeIpcTransport(context))
+        {
+            // 确保 MessageProcessor 已构造（NativeIpcTransport 需要它来路由消息）
+            _messageProcessor ??= new MessageProcessor(
+                Bindings, Events, id => GetWindow(id), _commandDispatcher, _serviceProvider, InvocationGateway);
+
+            NativeIpcTransport = new NativeIpcTransport(_messageProcessor);
+            Events.AddWailsEventListener(NativeIpcTransport);
+        }
     }
 
     /// <summary>
@@ -1122,15 +1134,9 @@ public class Application
             assetStartup.ServiceStartup(_options, _cts.Token).GetAwaiter().GetResult();
         }
 
-        // 启动传输层
-        if (_transport is not null)
-        {
-            _transport.StartAsync(_cts.Token).GetAwaiter().GetResult();
-        }
-
-        // P0-C2：初始化原生 IPC 传输层（若启用）。
-        // 必须在传输层启动后、窗口创建前完成，以便平台 CreateWebviewWindow 能注册窗口。
-        InitializeNativeIpcTransport();
+        // IPC 传输层装配（RH-IPC-02 第 4 点）：原生通道判定、主传输、fallback 链
+        // 全部由 IIpcTransportStrategy 集中决定，Application 不再硬编码平台差异。
+        InitializeIpcTransport();
 
         // 触发 OnStartup 回调
         _options.OnStartup?.Invoke();
@@ -1263,6 +1269,7 @@ public class Application
             RuntimeServices = _runtimeServices,
             Windows = _windowManager,
             Transport = _transport,
+            FallbackTransports = _fallbackTransports,
             AssetServer = _assetServer,
             Plugins = _pluginManager,
             PlatformApp = _platformApp,

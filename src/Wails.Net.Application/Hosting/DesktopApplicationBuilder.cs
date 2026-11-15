@@ -10,6 +10,7 @@ using Wails.Net.Application.Plugins;
 using Wails.Net.Application.Security;
 using Wails.Net.Application.Bindings;
 using Wails.Net.Application.Events;
+using Wails.Net.Application.Transport;
 using Wails.Net.Application.Webview;
 using Wails.Net.AssetServer;
 
@@ -120,6 +121,15 @@ public sealed class DesktopApplicationBuilder
             var events = sp.GetRequiredService<EventProcessor>();
             return new Application(options, bindings, events, sp);
         });
+
+        // 注册统一 IPC 传输策略（OPT-IPC-003 / RH-IPC-02 第 4 点）。
+        // 桌面模式与 Server 模式走同一策略：原生通道判定、主传输与 fallback 链、
+        // 事件监听器装配全部集中于此，Application 不再硬编码平台差异。
+        // 用户可在 Build 前注册自定义 IIpcTransportStrategy 覆盖（幂等）。
+        if (!Services.Any(d => d.ServiceType == typeof(IIpcTransportStrategy)))
+        {
+            Services.AddSingleton<IIpcTransportStrategy, DefaultIpcTransportStrategy>();
+        }
 
         // 注册 DesktopHostedService，将 Application 生命周期适配为 IHostedService
         Services.AddHostedService<DesktopHostedService>();
