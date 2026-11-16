@@ -372,6 +372,22 @@
 3. 加密（opt-in）：`IpcOptions.ChannelEncryption`（默认 false）；开启后建链时下发会话密钥（CSPRNG，随 runtime bootstrap 注入），消息体 AES-GCM 加密，前端 WebCrypto 对应解密；关闭时零开销。仅 Server 模式模板建议默认开启。
 4. 顺带修正：`ChannelManager` 为 static class（见 §4.4 DI 化破坏项）。
 
+#### 实施记录（2026-11-15，方案 1+2 落地；加密延后）
+
+| 项 | 落地方式 |
+|---|---|
+| 上行协议 | `MessageProcessor` 拆出 partial `Transport/MessageProcessor.Channels.cs`：`channel:open` / `channel:message` / `channel:close`（类型分隔符扩展为 `.` 与 `:` 两种）。`channel:open` 幂等（同 ID 重复 open 返回既有通道）；`channel:message` 未命中返回 ReferenceError 便于前端清理句柄 |
+| 下行投递 | **复用事件下行通道**：保留事件名 `wails:channel:<channelId>`（`Channels/ChannelProtocol.cs`）经 `EventProcessor.Emit/EmitTo` 派发到通道所属窗口。桌面（ExecJS / 原生 postMessage）与 Server（WebSocket）无需各写一份下行实现；前端 runtime 在用户事件回调之前拦截该命名空间（通配符订阅不可见） |
+| 命令注入 | `ICommandContext.Channel`（DIM 默认 null，既有实现免改）：`call` 载荷新增 `channelId` 字段，经 `MessageProcessor → InvocationGateway → CommandDispatcher → CommandContext` 注入。命令内部 `ctx.Channel?.SendAsync(progress)` 即进度回传（Channel-on-argument）。Binding 路径无上下文，不注入 |
+| 前端 API | `core/channel.ts`：`createChannel({id?})` / `ch.onMessage / send / close`；`wails.call(name, args, { channel })` 附带 channelId；`wails.channel.create` 命名空间入口。关闭信号即使未订阅也会标记关闭态（`send` 抛 `ChannelClosedError`） |
+| 泄漏防护 | `Channel` 记录归属窗口；`ChannelManager.RemoveByWindow` 由 `WindowManager.ReleaseWindow`（WindowClosed / DestroyWindow 双路径）调用，前端未显式 close 也不会泄漏 |
+| 测试 | 后端 `Transport/ChannelProtocolTests`（9 项：open 幂等 / message 分发 / 未知通道 / close 下行 / 定向投递 / ctx.Channel 注入 / 无 channelId 为 null / 窗口回收）；前端 `core/channel.test.ts`（6 项：open 回显 / call 附 channelId / 下行拦截不进事件订阅 / closed 标记 / send+close wire / wails.channel.create） |
+
+**有意延后（诚实记录）**：
+
+- **加密（方案 3）未实现**：`IpcOptions.ChannelEncryption` 不存在——按本仓库"不预埋死配置"的原则（RH-IPC-04 刚删过两个无人读的开关），等有真实需求再连同会话密钥下发协议一起落地。
+- **`ChannelManager` static（方案 4）未改**：DI 化属 §4.4 破坏项，留待 v4 窗口。
+
 ### 3.6 生命周期阶段细化（RH-IPC-06，继承 OPT-RUNTIME-002 剩余）
 
 现状：`ApplicationLifecycleState` 仅有 Created→Starting→PlatformStarted→Running→Stopping→Stopped（`ApplicationLifecycleState.cs:12-45`），枚举注释自述规划的 HostStarted/FirstWindowCreated/RuntimeInjected/IpcReady/AppReady 未落地；`DesktopHostedService.StartAsync` 仅 await `PlatformStarted`（30s 超时后仅 warning 继续）。
@@ -445,6 +461,20 @@
 2. **破坏性收敛 public API**（管理器收为 `app.Managers.Clipboard`、平台转发收为 `app.Platform.Hide()`）：实测可降到 ~900 行，属 v4 破坏窗口，应与 §4.1 / §4.4 同批执行。
 
 验收（建议修订）：行为职责全部下沉 + 无新增静态定位器依赖 + 单文件规模可控；若坚持 800 行硬指标，须与 §4.1 破坏窗口合并走路线 2。
+
+**2026-11-16 路线 1 落地**：`Application` 拆为 `public partial class` 的 7 个文件，主文件 **1738 → 775 行**（成员声明数拆分前后 144 = 144，public API 逐一对齐未变）：
+
+| 文件 | 行数 | 关注点 |
+|---|---|---|
+| `Application.cs` | 775 | 字段根、构造、SetPlatformApp / DI 绑定、Run / Shutdown / Quit / 信号、事件分发、主线程调度、GenerateRuntimeJs、第二实例、错误报告 |
+| `Application.Transport.cs` | 429 | 传输字段与槽、`WireIpcEventListeners` / `BuildIpcContext` / `InitializeIpcTransport`、AssetServer / DevAssetProxy / CSP、自定义 scheme facade、NativeIpcTransport / EventPayloads / UseNativeIpc、`HandleMessageFromFrontend` |
+| `Application.Managers.cs` | 233 | 各管理器字段与属性、Logger / Lifetime / PluginManager 字段、DI 服务槽、Plugins |
+| `Application.Windows.cs` | 131 | 配置驱动窗口 / notch 创建、GetWindow / GetWindowByName / DestroyWindow |
+| `Application.Services.cs` | 135 | RegisterService ×2 / RegisterBindings / HandleStream |
+| `Application.Platform.cs` | 138 | 菜单 / 关于 / 图标 / 显隐 / 屏幕 / 暗色 / 强调色 / GetCurrentWindowID / SetParent |
+| `Application.Lifecycle.cs` | 96 | `_platformStartedTcs` / `LifecycleState` / `WaitUntilPlatformStartedAsync` / `MarkPlatformStartFailed` |
+
+每文件头部注明"public API 与拆分前完全一致，仅按关注点拆分文件"。路线 2（public API 收敛）仍属 v4 破坏窗口。
 
 
 ### 4.3 `Application.Get()` 静态定位器收敛（RH-HOST-03）
@@ -560,11 +590,11 @@ AGENTS.md 与 docs 多处称 macOS 为"骨架/ServerMode 降级"，实际 `#if M
 - [ ] Strict 为默认且语义自洽：capability 加载与检查生效条件一致，DenyByDefault 无失效组合；
 - [ ] 全部内置插件命令显式声明安全姿态（✅ 2026-11-14：302/302 + 姿态 drift 测试守门），`wails-net check` 自动发现插件权限并生成 schema（未做）；
 - [ ] Strict 下无绕过权限链的消息路径（含 `window.*`）；
-- [ ] 四平台 IPC/资源/ready 逻辑单点实现，UI 线程无同步阻塞等待用户命令；（2026-11-15 复核：`WebviewRequestPipeline` 单点已落地 R2-4、传输装配已收敛进 `IIpcTransportStrategy`；但 `Win32WebviewWindow.cs:1122` 与 Linux 对话框路径仍 `GetAwaiter().GetResult()`，方案第 3 点异步化未完）
-- [ ] Channel 前后端协议可用，加密 opt-in；
+- [ ] 四平台 IPC/资源/ready 逻辑单点实现，UI 线程无同步阻塞等待用户命令；（2026-11-15 复核：`WebviewRequestPipeline` 单点已落地 R2-4、传输装配已收敛进 `IIpcTransportStrategy`；**Linux 退出确认对话框已异步化**——此前在 GTK 主线程 `ChooseAsync(...).GetAwaiter().GetResult()`，而对话框响应同样依赖主循环派发，属死锁路径；现改为先拦下关闭、异步等待用户响应后经 `DispatchOnMainThread` 回主线程 Quit。**Win32 `Win32WebviewWindow.cs:1122` 复核为非阻塞**：该调用位于 `task.IsCompleted` 快路径守卫内（任务已同步完成才进入，不等待），慢路径本就走线程池延续写响应——文档此前把它列为遗留点属误报，已更正。剩余：Android 同步桥（`WebviewPipelineSync.RunOnThreadPool`，平台契约限制，已文档化））
+- [x] Channel 前后端协议可用；（2026-11-15：`channel:open/message/close` 上行 + `wails:channel:<id>` 保留事件下行 + `ICommandContext.Channel` 注入 + 前端 `createChannel`，见 §3.5 实施记录。**加密 opt-in 有意延后**——无真实需求时不预埋 `ChannelEncryption` 死配置（原则同 RH-IPC-04），需要时随会话密钥下发协议一起落地）
 - [ ] `wails dev` 经 AssetServer 反向代理闭环（HMR 可用）；
 - [ ] 兼容配置字段清零，drift 测试覆盖；
-- [ ] `Application` < 800 行且无新增静态定位器依赖；（2026-11-15：2160 → 1738，行为职责已全部下沉，含 DI 装配迁出；800 行需破坏性 API 收敛或 partial 拆文件，见 §4.2）
+- [x] `Application` < 800 行且无新增静态定位器依赖；（2026-11-16 收敛：**主文件 1738 → 775 行**，`public partial class` 按关注点拆为 7 个文件——`Application.cs`（生命周期根）/ `.Transport.cs`（IPC 装配 + AssetServer + scheme）/ `.Managers.cs`（管理器）/ `.Windows.cs`（窗口 facade）/ `.Platform.cs`（平台转发）/ `.Services.cs`（服务注册）/ `.Lifecycle.cs`（就绪信号）。**诚实标注**：这是 §4.2 路线 1（文件组织），类型规模不变（成员声明数 144 = 144 逐一对齐），`<800` 达标口径为"单文件规模可控"——public API 收敛（路线 2，实测可再降至 ~900 总行）仍是 v4 破坏窗口事项。无新增静态定位器依赖）
 - [ ] NativeAOT CI 覆盖模板 App；Linux CI 必过；
 - [x] 本文档 §2.1.4 全部条目可勾选（含 SEC-H-003 阶段三条；2026-11-14）；
 

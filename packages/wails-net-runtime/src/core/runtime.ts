@@ -6,6 +6,7 @@
  */
 
 import { bindingId, transport, type CancellablePromise } from "../internal/transport.js";
+import { createChannel } from "./channel.js";
 
 /** 事件订阅回调。 */
 export type EventCallback<D = unknown> = (
@@ -43,14 +44,30 @@ export interface WailsBindings {
   id(fullName: string): number;
 }
 
+/** 通道子系统（RH-IPC-05）。 */
+export interface WailsChannels {
+  /** 创建与后端绑定的双向通道（详见 core/channel.ts）。 */
+  create(options?: { id?: string }): Promise<import("./channel.js").WailsChannel>;
+}
+
+/** call 的可选参数。 */
+export interface CallOptions {
+  /**
+   * 绑定通道（RH-IPC-05）：传通道句柄或通道 ID，payload 附带 `channelId`，
+   * 后端命令可通过 `ICommandContext.Channel` 取得通道实例回传进度。
+   */
+  channel?: import("./channel.js").WailsChannel | string;
+}
+
 /** 运行时核心对象。 */
 export interface WailsRuntime {
   /**
    * 按名称调用绑定方法或插件命令（对应 `type: "call"`，payload `{ name, args }`）。
    * @param name 形如 `"GreetingService.Greet"` 或 `"clipboard.getText"`。
    * @param args 位置参数数组（多参数必须为数组，单参数直接透传）。
+   * @param opts 可选；`channel` 绑定双向通道（RH-IPC-05）。
    */
-  call<T = unknown>(name: string, args?: unknown[]): CancellablePromise<T>;
+  call<T = unknown>(name: string, args?: unknown[], opts?: CallOptions): CancellablePromise<T>;
   /** 绑定子系统。 */
   readonly bindings: WailsBindings;
   /** 事件子系统。 */
@@ -59,15 +76,27 @@ export interface WailsRuntime {
    * 查询后端元数据。常见：`bindings`（已注册方法名）、`events`。
    */
   query<T = unknown>(query: "bindings" | "events" | string): CancellablePromise<T>;
-  /** 底层调用：发送任意 `type` 并等待响应（如 `call`、`query`）。 */
-  invoke<T = unknown>(type: string, payload: unknown): CancellablePromise<T>;
+  /** 底层调用：发送任意 `type` 并等待响应（如 `call`、`query`、`channel:open`）。 */
+  invoke<T = unknown>(type: string, payload: unknown, opts?: CallOptions): CancellablePromise<T>;
   /** 取消一个进行中的调用。 */
   cancel(callId: string): void;
+  /** 双向通道子系统（RH-IPC-05）。 */
+  readonly channel: WailsChannels;
 }
 
 /** 通用调用入口。 */
-export function call<T = unknown>(name: string, args: unknown[] = []): CancellablePromise<T> {
-  return transport.invoke<T>("call", { name, args });
+export function call<T = unknown>(name: string, args: unknown[] = [], opts?: CallOptions): CancellablePromise<T> {
+  return transport.invoke<T>("call", { name, args }, normalizeCallOptions(opts));
+}
+
+/**
+ * 归一化 call 选项：通道句柄 → 通道 ID。
+ */
+function normalizeCallOptions(opts?: CallOptions): { channel?: string } | undefined {
+  if (!opts) return undefined;
+  const ch = opts.channel;
+  if (ch == null) return undefined;
+  return { channel: typeof ch === "string" ? ch : ch.id };
 }
 
 /** 按 ID 调用绑定方法。 */
@@ -81,8 +110,8 @@ export function query<T = unknown>(q: "bindings" | "events" | string): Cancellab
 }
 
 /** 底层调用。 */
-export function invoke<T = unknown>(type: string, payload: unknown): CancellablePromise<T> {
-  return transport.invoke<T>(type, payload);
+export function invoke<T = unknown>(type: string, payload: unknown, opts?: CallOptions): CancellablePromise<T> {
+  return transport.invoke<T>(type, payload, normalizeCallOptions(opts));
 }
 
 /** 取消调用。 */
@@ -113,4 +142,7 @@ export const wails: WailsRuntime = {
   query,
   invoke,
   cancel,
+  channel: {
+    create: (options) => createChannel(options),
+  },
 };

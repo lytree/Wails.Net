@@ -164,7 +164,7 @@ P0 批次已随提交 `6ad3d2d`（2026-08-10）落地，状态如下：
 
 - ⚠️ OPT-RUNTIME-002 剩余：Android `WindowRuntimeReady` 派发（Android 无页面级 runtime 注入点，需在页面加载完成回调补派发）。
 - ✅ OPT-IPC-003 剩余项已关闭：`HttpTransport` 不再"待接入 fallback 链"，而是按决策 (a) 删除；默认策略 `CreateFallbackTransports` 保留为空列表，链路本身（Run 启动 / 关闭逆序停止）仍供自定义策略使用。
-- ❌ OPT-RUNTIME-001 `Application` 职责拆分、OPT-PLUGIN-001~003 插件资产/清单、OPT-SEC-005 asset protocol scope、OPT-RUNTIME-003 Channels 对称加密、OPT-TEST-001~003 测试补齐：未动，列入后续批次。
+- ⚠️ OPT-RUNTIME-001 `Application` 职责拆分（2026-11-16：协调器化 + partial 拆分落地，主文件 1738 → 775 行，见加固计划 §4.2）、OPT-PLUGIN-001~003 插件资产/清单、OPT-SEC-005 asset protocol scope、OPT-RUNTIME-003 Channels 加密层（协议层已落地，加密有意延后）、OPT-TEST-001~003 测试补齐：部分落地，列入后续批次。
 
 ---
 
@@ -794,9 +794,11 @@ capability 文件仅启动期加载（`CapabilityFileLoader.cs:36-69` 目录扫�
 
 ### 6.5 Channels 对称加密（OPT-RUNTIME-003，2026-08-15 新增）
 
-#### 现状
+#### 现状（2026-11-16 更新）
 
-对标 Wails v3：`ChannelManager`/`Channel`/`IChannel` 与 channel:open/message/close 协议已完整，但 Wails v3 的 **symmetric crypto（对称加密）层未实现**——全库（含 `Channels/` 目录）无 symmetric/AES/ChaCha 命中，加密相关实现仅有 Minisign（非对称签名）与 IpcHandshakeToken。
+**协议层已落地（RH-IPC-05，见 refactor-and-hardening-plan §3.5 实施记录）**：`channel:open/message/close` 进入 `MessageProcessor`（此前该协议只存在于注释——`ChannelManager.DispatchMessage` 无任何调用方，"协议已完整"是当时文档的误报）；下行经保留事件名 `wails:channel:<id>` 复用事件通道；`ICommandContext.Channel` 注入打通命令侧进度回传；前端 `createChannel` API。
+
+**加密层仍未实现**：全库（含 `Channels/` 目录）无 symmetric/AES/ChaCha 命中，加密相关实现仅有 Minisign（非对称签名）与 IpcHandshakeToken。**有意延后**：本地 WebView 场景 channel 走 Native IPC/loopback，加密收益主要在 Server 模式（WS 跨网络）；无真实需求时不预埋 `IpcOptions.ChannelEncryption` 死开关（原则同 RH-IPC-04 删除的两个无人读的选项），需要时随会话密钥下发协议一起落地。
 
 #### 修改建议
 
@@ -974,7 +976,7 @@ capability 文件仅启动期加载（`CapabilityFileLoader.cs:36-69` 目录扫�
 | OPT-PLUGIN-003 | 插件命令权限清单生成（✅ 2026-08-19：R3-C 生成器 + 注册表；R3-D.A CLI 自动加载） |
 | OPT-RUNTIME-001 | `Application` 职责拆分（未动，后续批次） |
 | OPT-RUNTIME-002 | 生命周期 ready 状态建模（核心 ✅ 2026-08-15：`ApplicationLifecycleState` + `PlatformStarted` + `_startedTcs` 移除 + Linux `WindowRuntimeReady`；Android `WindowRuntimeReady` 待补） |
-| OPT-RUNTIME-003 | Channels 对称加密（未动，后续批次，opt-in） |
+| OPT-RUNTIME-003 | Channels 加密层（协议层 2026-11-16 已落地；加密有意延后，见 §6.5） |
 | OPT-CLEANUP-001 | 死代码与空壳清理（大部分 ✅ 2026-08-15：`EnableDragAndDrop` 移除、log 插件 TS 补齐、`_startedTcs` 修正、`HttpTransport` 决策记录、`Routes/` 空目录记录） |
 | OPT-TEST-001 | 源生成器测试补齐（含 EventMetadata/ScopeParameter 生成器） |
 | OPT-TEST-002 | 前端 runtime 测试补齐（invoke/cancel/events/channels/fallback） |

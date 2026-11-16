@@ -78,6 +78,9 @@ export const wails: WailsSdk = {
 export { call, bindings, events, query, invoke, cancel };
 export { defineCommand } from "./core/commands.js";
 export type { PackMode } from "./core/commands.js";
+// 双向通道（RH-IPC-05）
+export { createChannel, ChannelClosedError } from "./core/channel.js";
+export type { WailsChannel, CreateChannelOptions } from "./core/channel.js";
 export { CallError, toCallError };
 export { transport, unpack, bindingId, fnv1a };
 export { installContextMenu, openContextMenu };

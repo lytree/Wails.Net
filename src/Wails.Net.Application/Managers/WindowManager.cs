@@ -291,6 +291,16 @@ public class WindowManager : IWindowManager, IPlatformWindowAccessor
         {
             // 平台缓存清理失败不应中断窗口移除流程
         }
+
+        // RH-IPC-05：回收该窗口拥有的 Channel，防止前端未显式 channel:close 时泄漏。
+        try
+        {
+            Channels.ChannelManager.RemoveByWindow(id);
+        }
+        catch
+        {
+            // 通道清理失败不应中断窗口移除流程
+        }
     }
 
     /// <summary>

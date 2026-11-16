@@ -28,14 +28,24 @@ internal sealed class Channel : IChannel
     /// </summary>
     /// <param name="id">通道唯一标识。</param>
     /// <param name="sender">发送委托。</param>
-    internal Channel(string id, Func<string, object?, CancellationToken, Task> sender)
+    /// <param name="windowId">通道所属窗口 ID，可为 null（RH-IPC-05，随窗口销毁统一回收）。</param>
+    internal Channel(string id, Func<string, object?, CancellationToken, Task> sender, uint? windowId = null)
     {
         Id = id ?? throw new ArgumentNullException(nameof(id));
         _sender = sender ?? throw new ArgumentNullException(nameof(sender));
+        WindowId = windowId;
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// 通道唯一标识。
+    /// </summary>
     public string Id { get; }
+
+    /// <summary>
+    /// 通道所属窗口 ID；null 表示无窗口归属。
+    /// 由 <see cref="ChannelManager.RemoveByWindow"/> 在窗口销毁时用于批量回收。
+    /// </summary>
+    internal uint? WindowId { get; }
 
     /// <inheritdoc />
     public bool IsClosed => Interlocked.CompareExchange(ref _closed, 0, 0) == 1;

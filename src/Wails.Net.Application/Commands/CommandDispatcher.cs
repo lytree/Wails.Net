@@ -117,11 +117,11 @@ public sealed class CommandDispatcher
 
         var ctx = context ?? new CommandContext(_services, null, effectiveToken, null);
         // 若传入 context 的取消令牌不是 effectiveToken，需要重建上下文以传播超时。
-        // 同时保留 WindowName 和 Origin 以确保权限校验信息完整。
+        // 同时保留 WindowName / Origin / Channel（RH-IPC-05）以确保权限校验与通道注入信息完整。
         if (context is not null && context.CancellationToken != effectiveToken)
         {
             ctx = new CommandContext(
-                context.Services, context.WindowId, effectiveToken, context.WindowName, context.Origin);
+                context.Services, context.WindowId, effectiveToken, context.WindowName, context.Origin, context.Channel);
         }
 
         try

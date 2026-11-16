@@ -43,14 +43,19 @@ public static class ChannelManager
     /// <param name="sender">
     /// 发送委托，将消息投递到底层传输层。若为 null 则使用默认 no-op 委托。
     /// </param>
+    /// <param name="windowId">
+    /// 通道所属窗口 ID（RH-IPC-05）。为 null 表示无窗口归属（测试或应用级通道）；
+    /// 非 null 时随窗口销毁由 <see cref="RemoveByWindow"/> 统一回收。
+    /// </param>
     /// <returns>新创建的通道实例。</returns>
     /// <exception cref="ArgumentException">当 <paramref name="id"/> 与已注册通道重复时抛出。</exception>
     public static IChannel Create(
         string? id = null,
-        Func<string, object?, CancellationToken, Task>? sender = null)
+        Func<string, object?, CancellationToken, Task>? sender = null,
+        uint? windowId = null)
     {
         var channelId = id ?? Guid.NewGuid().ToString("N");
-        var channel = new Channel(channelId, sender ?? DefaultSender);
+        var channel = new Channel(channelId, sender ?? DefaultSender, windowId);
 
         if (!Channels.TryAdd(channelId, channel))
         {
@@ -80,6 +85,27 @@ public static class ChannelManager
     public static bool Remove(string id)
     {
         return Channels.TryRemove(id, out _);
+    }
+
+    /// <summary>
+    /// 移除指定窗口拥有的全部通道（RH-IPC-05）。
+    /// 由 <c>WindowManager.ReleaseWindow</c> 在窗口销毁时调用，防止前端未显式
+    /// <c>channel:close</c> 时通道与其下行事件订阅永久泄漏。
+    /// </summary>
+    /// <param name="windowId">窗口 ID。</param>
+    /// <returns>移除的通道数量。</returns>
+    public static int RemoveByWindow(uint windowId)
+    {
+        var removed = 0;
+        foreach (var (id, channel) in Channels)
+        {
+            if (channel.WindowId == windowId && Channels.TryRemove(id, out _))
+            {
+                removed++;
+            }
+        }
+
+        return removed;
     }
 
     /// <summary>

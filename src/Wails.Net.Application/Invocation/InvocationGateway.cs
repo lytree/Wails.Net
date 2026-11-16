@@ -84,7 +84,8 @@ public sealed class InvocationGateway
         JsonElement[] args,
         uint? windowId,
         string? origin,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? channelId = null)
     {
         ArgumentNullException.ThrowIfNull(fullName);
         ArgumentNullException.ThrowIfNull(args);
@@ -103,7 +104,7 @@ public sealed class InvocationGateway
             return bindingResult;
         }
 
-        var commandResult = await TryDispatchCommandAsync(fullName, args, windowId, origin, cancellationToken).ConfigureAwait(false);
+        var commandResult = await TryDispatchCommandAsync(fullName, args, windowId, origin, cancellationToken, channelId).ConfigureAwait(false);
         if (commandResult is null)
         {
             // Command 路径也未找到：返回 Binding 的 ReferenceError，保持"未找到绑定方法"语义。
@@ -128,7 +129,8 @@ public sealed class InvocationGateway
         JsonElement[] args,
         uint? windowId,
         string? origin,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? channelId = null)
     {
         ArgumentNullException.ThrowIfNull(args);
 
@@ -144,7 +146,7 @@ public sealed class InvocationGateway
             };
         }
 
-        return await InvokeAsync(methodName, args, windowId, origin, cancellationToken).ConfigureAwait(false);
+        return await InvokeAsync(methodName, args, windowId, origin, cancellationToken, channelId).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -213,7 +215,8 @@ public sealed class InvocationGateway
         JsonElement[] args,
         uint? windowId,
         string? origin,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? channelId = null)
     {
         try
         {
@@ -234,8 +237,11 @@ public sealed class InvocationGateway
 
             var request = new InvokeRequest(Guid.NewGuid(), commandName, parametersElement);
 
+            // RH-IPC-05：channelId 非 null 时解析对应通道注入 ICommandContext.Channel，
+            // 使命令可通过 ctx.Channel.SendAsync 向前端回传进度。解析不到（已关闭）时注入 null。
+            var channel = channelId is null ? null : Channels.ChannelManager.Get(channelId);
             var ctx = _services is not null
-                ? new CommandContext(_services, windowId, cancellationToken, ResolveWindowName(windowId), origin)
+                ? new CommandContext(_services, windowId, cancellationToken, ResolveWindowName(windowId), origin, channel)
                 : null;
             var response = await _commands!.DispatchAsync(request, ctx).ConfigureAwait(false);
 

@@ -637,7 +637,7 @@
 最完整的插件生命周期：`ConfigureServices` → `Configure` → `StartupAsync` → `ShutdownAsync`。
 
 ### 17.7 Channel API
-[IChannel](../src/Wails.Net.Application/Channels/Channel.cs) + `ChannelManager` + `Interlocked` 线程安全，提供前后端双向流式通信。
+[IChannel](../src/Wails.Net.Application/Channels/Channel.cs) + `ChannelManager` + `Interlocked` 线程安全，提供前后端双向流式通信。2026-11-16 前后端协议已打通（RH-IPC-05）：`channel:open/message/close` 上行、`wails:channel:<id>` 保留事件下行、`ICommandContext.Channel` 注入、前端 `createChannel` / `wails.call(name, args, { channel })`。加密层对标 Wails v3 的对称加密为 opt-in，有意延后（见加固计划 §3.5 / 路线图 §6.5）。
 
 ### 17.8 Microsoft.Extensions.* 全栈集成
 对 .NET 开发者最友好：Host / DI / Config / Options / Logging 全栈集成。

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Wails.Net.Application.Bindings;
+using Wails.Net.Application.Channels;
 using Wails.Net.Application.Commands;
 using Wails.Net.Application.Events;
 using Wails.Net.Application.Invocation;
@@ -15,7 +16,7 @@ namespace Wails.Net.Application.Transport;
 /// 消息处理器，负责解析前端传入的 JSON 消息并分发到对应的处理逻辑。
 /// 对应 Wails v3 Go 版本 internal/runtime/messageprocessor.go。
 /// </summary>
-public class MessageProcessor
+public partial class MessageProcessor
 {
     /// <summary>
     /// 消息类型常量，与 Wails v3 前端协议一致。
@@ -57,6 +58,13 @@ public class MessageProcessor
         /// 前端通过此消息类型请求后端取消指定 callId 对应的运行中绑定调用。
         /// </summary>
         public const string Cancel = "cancel";
+
+        /// <summary>
+        /// 双向通道（RH-IPC-05，对齐 Tauri v2 Channel / Wails v3 Channel 原语）。
+        /// 具体动作为 <c>channel:open</c> / <c>channel:message</c> / <c>channel:close</c>，
+        /// 处理逻辑在 <c>MessageProcessor.Channels.cs</c>。
+        /// </summary>
+        public const string Channel = "channel";
     }
 
     /// <summary>
@@ -299,13 +307,14 @@ public class MessageProcessor
     /// <returns>响应消息，若无需响应则返回 null。</returns>
     public async Task<ResponseMessage?> ProcessAsync(Message message)
     {
-        // 支持 "namespace.action" 格式的消息类型（如 "window.setTitle"、"event.emit"）。
+        // 支持 "namespace.action" 格式的消息类型（如 "window.setTitle"、"event.emit"、
+        // RH-IPC-05 的 "channel:open"——分隔符支持 '.' 与 ':' 两种）。
         // 提取基础命名空间进行路由，具体动作由对应的处理方法解析。
         var baseType = message.Type;
-        var dotIndex = message.Type.IndexOf('.');
-        if (dotIndex > 0)
+        var sepIndex = message.Type.IndexOfAny(['.', ':']);
+        if (sepIndex > 0)
         {
-            baseType = message.Type[..dotIndex];
+            baseType = message.Type[..sepIndex];
         }
 
         return baseType switch
@@ -320,6 +329,8 @@ public class MessageProcessor
             MessageTypes.Window => await ProcessWindowAsync(message),
             // 取消运行中调用（P0-B1）：前端通过 "cancel" 消息按 callId 取消未完成的绑定调用。
             MessageTypes.Cancel => ProcessCancel(message),
+            // 双向通道（RH-IPC-05）：channel:open / channel:message / channel:close。
+            MessageTypes.Channel => await ProcessChannelAsync(message),
             // 未识别的命名空间（如 "notification.show"、"application.hide"、"tray.setIcon"）
             // 回退到 CommandDispatcher 查找命令，借鉴 Tauri v2 的 "核心即插件" 哲学：
             // 所有系统操作都以插件命令形式注册，前端 wails.<namespace>.<method>() 调用
@@ -382,12 +393,12 @@ public class MessageProcessor
                 {
                     // 按 ID 调用：网关内部通过 GeneratedBindingsMetadata 解析 ID → 方法全名，
                     // 再走与按名称调用一致的 Binding → Command 回退路径。
-                    result = await _gateway.InvokeByIdAsync(callPayload.Id.Value, args, message.WindowId, message.Origin, callCts.Token);
+                    result = await _gateway.InvokeByIdAsync(callPayload.Id.Value, args, message.WindowId, message.Origin, callCts.Token, callPayload.ChannelId);
                 }
                 else if (!string.IsNullOrEmpty(callPayload.Name))
                 {
                     // 按名称调用：网关内部处理 Binding → Command 回退。
-                    result = await _gateway.InvokeAsync(callPayload.Name!, args, message.WindowId, message.Origin, callCts.Token);
+                    result = await _gateway.InvokeAsync(callPayload.Name!, args, message.WindowId, message.Origin, callCts.Token, callPayload.ChannelId);
                 }
                 else
                 {
@@ -418,7 +429,7 @@ public class MessageProcessor
                     // 尝试回退到 CommandDispatcher 查找命令（如 "counter.increment"、"notification.show"）
                     if (IsNotFoundResult(result, callPayload.Name!) && _commands is not null)
                     {
-                        var commandResult = await TryDispatchCommandAsync(callPayload.Name!, args, message.WindowId, message.Origin, callCts.Token);
+                        var commandResult = await TryDispatchCommandAsync(callPayload.Name!, args, message.WindowId, message.Origin, callCts.Token, callPayload.ChannelId);
                         if (commandResult is not null)
                         {
                             result = commandResult;
@@ -663,7 +674,8 @@ public class MessageProcessor
         JsonElement[] args,
         uint? windowId,
         string? origin,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? channelId = null)
     {
         try
         {
@@ -695,8 +707,10 @@ public class MessageProcessor
             // 同时传入 WindowName 支持窗口级 Capability 运行时隔离。
             // 同时传入 Origin 支持 Capability.remote 远程 URL 校验。
             // P0-B1：使用调用级 cancellationToken 替代全局 _cts.Token，使前端可取消运行中命令。
+            // RH-IPC-05：channelId 非 null 时解析对应通道注入 ICommandContext.Channel。
+            IChannel? channel = channelId is null ? null : Channels.ChannelManager.Get(channelId);
             var ctx = _services is not null
-                ? new CommandContext(_services, windowId, cancellationToken, ResolveWindowName(windowId), origin)
+                ? new CommandContext(_services, windowId, cancellationToken, ResolveWindowName(windowId), origin, channel)
                 : null;
             var response = await _commands!.DispatchAsync(request, ctx);
 
@@ -1363,6 +1377,15 @@ public class CallPayload
     /// </summary>
     [JsonPropertyName("args")]
     public JsonElement[]? Args { get; set; }
+
+    /// <summary>
+    /// 调用绑定的通道 ID（RH-IPC-05，可为 null）。
+    /// 前端 <c>wails.call(name, args, { channel })</c> 携带；后端命令可通过
+    /// <see cref="Commands.ICommandContext.Channel"/> 取得对应通道实例，
+    /// 用于长耗时任务进度回传（Channel-on-argument 模式）。
+    /// </summary>
+    [JsonPropertyName("channelId")]
+    public string? ChannelId { get; set; }
 }
 
 /// <summary>

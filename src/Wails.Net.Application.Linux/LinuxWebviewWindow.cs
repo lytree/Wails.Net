@@ -792,8 +792,16 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     /// 3. 用户选择"确定"则调用 <see cref="Application.Quit"/> 触发 Shutdown 退出应用
     /// </para>
     /// <para>
-    /// 注意：AlertDialog.ChooseAsync 在 GTK 主线程上运行模态对话框，
-    /// 会阻塞 close-request 信号处理直到用户响应，这是 GTK 推荐的同步确认模式。
+    /// <b>异步确认（2026-11-15）</b>：此前此处对 <c>AlertDialog.ChooseAsync</c> 使用
+    /// <c>GetAwaiter().GetResult()</c> 在 GTK 主线程上同步等待——对话框的响应回调同样
+    /// 需要主循环派发，阻塞主线程等于把响应永久挂起（未配置 <see cref="System.Threading.SynchronizationContext"/>
+    /// 时也没有"跑嵌套循环"的兜底），属于死锁路径。现在改为：
+    /// <list type="number">
+    /// <item>本次关闭先返回 <c>true</c> 直接拦下（窗口不动）；</item>
+    /// <item>异步等待用户响应，期间 GTK 主循环照常运转；</item>
+    /// <item>用户确认后经 <see cref="Application.DispatchOnMainThread"/> 回主线程调用
+    /// <see cref="Application.Quit"/>；取消则什么都不做，窗口保持打开。</item>
+    /// </list>
     /// </para>
     /// </summary>
     /// <param name="sender">触发事件的 GTK 窗口。</param>
@@ -817,21 +825,10 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
             // 最后一个窗口关闭时，检查是否需要弹出退出确认对话框。
             if (app.Options.ShowExitConfirmationDialog)
             {
-                // 弹出 GTK 原生确认对话框（模态，阻塞当前信号处理直到用户响应）。
-                // ChooseAsync 在 GTK 主线程运行，返回按钮索引（0=第一个按钮，1=第二个按钮）。
-                var dialog = AlertDialog.NewWithProperties([]);
-                dialog.SetMessage(app.Options.ExitDialogTitle);
-                dialog.SetDetail(app.Options.ExitDialogMessage);
-                dialog.SetButtons(["取消", "确定退出"]);
-
-                // ConfigureAwait(true) 保持 GTK 同步上下文，确保对话框在 UI 线程运行。
-                var result = dialog.ChooseAsync(null!).ConfigureAwait(true).GetAwaiter().GetResult();
-
-                // 用户选择"取消"（索引 0）：阻止窗口关闭，应用继续运行。
-                if (result == 0)
-                {
-                    return true;
-                }
+                // 先拦下本次关闭，由异步确认流程决定后续：确认 → Quit，取消 → 什么都不做。
+                // 不在此处同步等待对话框，避免阻塞 GTK 主循环导致响应永远无法派发。
+                _ = ConfirmExitThenQuitAsync(app);
+                return true;
             }
 
             // 最后一个窗口关闭时，通过 Application.Quit() 触发 Shutdown，
@@ -840,6 +837,46 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// 异步等待退出确认对话框，用户确认后回主线程退出应用。
+    /// <para>
+    /// 异常一律吞掉并记录日志：确认流程失败时保持窗口打开（用户可再次点击关闭），
+    /// 好过把异常从 GTK 信号回调里抛进主循环。
+    /// </para>
+    /// </summary>
+    /// <param name="app">当前应用实例。</param>
+    private async System.Threading.Tasks.Task ConfirmExitThenQuitAsync(Application app)
+    {
+        bool confirmed;
+        try
+        {
+            // GTK 对象只在主线程创建/调用；await 之后的延续可能在线程池，
+            // 因此这里只在 await 之前碰 GTK 对象，之后只做布尔判断。
+            var dialog = AlertDialog.NewWithProperties([]);
+            dialog.SetMessage(app.Options.ExitDialogTitle);
+            dialog.SetDetail(app.Options.ExitDialogMessage);
+            dialog.SetButtons(["取消", "确定退出"]);
+
+            // 返回被点击按钮的索引（0=取消，1=确定退出）。未配置 SynchronizationContext 时
+            // 延续走线程池——正因如此，后续不得再触碰 GTK 对象，只能回主线程调度。
+            var index = await dialog.ChooseAsync(null!).ConfigureAwait(false);
+            confirmed = index != 0;
+        }
+        catch (Exception ex)
+        {
+            app.Logger?.LogWarning(ex, "退出确认对话框失败，保持窗口打开");
+            return;
+        }
+
+        if (!confirmed)
+        {
+            return;
+        }
+
+        // 回 GTK 主线程执行 Quit（Shutdown 链路涉及平台对象与主循环退出）。
+        app.DispatchOnMainThread(() => app.Quit());
     }
 
     /// <summary>

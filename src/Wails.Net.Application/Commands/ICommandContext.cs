@@ -35,4 +35,19 @@ public interface ICommandContext
     /// 取消令牌，用于传播取消请求。
     /// </summary>
     CancellationToken CancellationToken { get; }
+
+    /// <summary>
+    /// 本次调用绑定的双向通道（RH-IPC-05，可为 null）。
+    /// <para>
+    /// 前端通过 <c>wails.call(name, args, { channel })</c> 携带 channelId 时，调度器
+    /// 从 <see cref="Wails.Net.Application.Channels.ChannelManager"/> 解析出对应通道实例注入此属性。
+    /// 命令内部可用 <c>ctx.Channel?.SendAsync(progress)</c> 向前端回传进度——
+    /// 即 Channel-on-argument 模式（Updater 下载进度等长耗时任务的关键原语）。
+    /// </para>
+    /// <para>
+    /// 默认接口实现返回 null（DIM），因此既有 <see cref="ICommandContext"/> 自定义实现
+    /// 无需修改即可继续编译。
+    /// </para>
+    /// </summary>
+    Wails.Net.Application.Channels.IChannel? Channel => null;
 }

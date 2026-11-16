@@ -426,12 +426,24 @@ _ = _webview.AddScriptToExecuteOnDocumentCreatedAsync(js);
 
 | type | Payload 类 | 关键字段 |
 |------|-----------|---------|
-| `call` | `CallPayload` | `id?`（uint?）、`name?`（string）、`args?`（JsonElement[]） |
+| `call` | `CallPayload` | `id?`（uint?）、`name?`（string）、`args?`（JsonElement[]）、`channelId?`（RH-IPC-05，注入 `ICommandContext.Channel`） |
 | `event` | `EventPayload` | `name`、`data`、`senderWindowId?` |
 | `window` | `WindowPayload` | `action`、`windowId?`、`data?` |
 | `query` | `QueryPayload` | `query`（如 `"bindings"`、`"events"`） |
 | `drag` | `DragPayload` | `files?`、`data?`、`x`、`y`、`windowId?` |
 | `contextmenu` | `ContextMenuPayload` | `x`、`y`、`contextId?`、`windowId?` |
+| `channel:open` / `channel:message` / `channel:close` | `ChannelOpenPayload` / `ChannelInboundPayload` / `ChannelClosePayload`（RH-IPC-05） | `id?` / `channelId` + `event?` + `data` / `channelId` |
+
+### 9.x Channel 双向通道协议（RH-IPC-05）
+
+对齐 Tauri v2 Channel / Wails v3 Channel 原语，实现位于 [`Channels/ChannelProtocol.cs`](../../src/Wails.Net.Application/Channels/ChannelProtocol.cs) 与 [`Transport/MessageProcessor.Channels.cs`](../../src/Wails.Net.Application/Transport/MessageProcessor.Channels.cs)：
+
+- **上行**：`channel:open`（返回 `{ channelId }`，同 ID 幂等）→ `channel:message`（分发到后端 `IChannel.OnMessage` 订阅者）→ `channel:close`（下行关闭信号 + 注册表移除）。
+- **下行**：复用事件通道，保留事件名 `wails:channel:<channelId>`，载荷 `{ event, payload, closed }`，经 `EventProcessor.EmitTo` 定向到通道所属窗口——桌面（ExecJS / 原生 postMessage）与 Server（WebSocket）共用，无需按传输各写一份。
+- **命令注入**：`call` 载荷携带 `channelId` 时，命令通过 `ICommandContext.Channel` 拿到通道实例，`ctx.Channel?.SendAsync(progress)` 即进度回传。
+- **前端 API**：`import { createChannel } from "@wails-net/runtime"`；`wails.call(name, args, { channel })` 自动附带 channelId。
+- **泄漏防护**：通道记录归属窗口，`WindowManager.ReleaseWindow` 时经 `ChannelManager.RemoveByWindow` 统一回收。
+- `wails:channel:` 前缀为框架保留命名空间，用户事件不应使用。
 
 ### 9.2 InvokeResponse（后端 → 前端）
 

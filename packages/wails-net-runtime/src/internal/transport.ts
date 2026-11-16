@@ -46,14 +46,26 @@ type EventCallback = (data: unknown, senderWindowId?: number | null, targetWindo
 /** 事件回调集合：精确事件名 / 通配符模式（`*` 后缀）→ 回调集合。 */
 type EventCallbackMap = Map<string, Set<EventCallback>>;
 
+/** 通道下行回调（RH-IPC-05）：payload / event / closed。 */
+export type ChannelDownlinkCallback = (payload: unknown, event: string | null, closed: boolean) => void;
+
 /** 原生 postMessage 通道的单条消息上限（按 JSON 字符串长度）；超过则改走 scheme POST。 */
 const NATIVE_MAX_LENGTH = 512 * 1024; // 512KB
 const DEFAULT_WS_URL = "ws://localhost:34116/wails/ws";
+
+/**
+ * 通道下行事件名保留前缀（RH-IPC-05）。
+ * 后端以 `wails:channel:<channelId>` 事件名经事件下行通道投递 Channel 消息，
+ * 前端在派发用户事件回调之前拦截该命名空间。与后端 `ChannelProtocol.EventPrefix` 对齐。
+ */
+const CHANNEL_EVENT_PREFIX = "wails:channel:";
 
 /** 传输层实现。 */
 export class Transport {
   private pending = new Map<string, Pending>();
   private eventCallbacks: EventCallbackMap = new Map();
+  /** 通道下行回调注册表（RH-IPC-05）：channelId → 回调集合。 */
+  private channelCallbacks = new Map<string, Set<ChannelDownlinkCallback>>();
   private counter = 0;
   private nativePost: ((s: string) => void) | undefined;
   private ws: WebSocket | undefined;
@@ -102,6 +114,7 @@ export class Transport {
     }
     this.pending.clear();
     this.eventCallbacks.clear();
+    this.channelCallbacks.clear();
     this.initialized = false;
   }
 
@@ -202,8 +215,12 @@ export class Transport {
 
   // ----- 公共调用 API -----
 
-  /** 发起一次需要响应的调用（call / query 等）。 */
-  invoke<T>(type: string, payload: unknown): CancellablePromise<T> {
+  /**
+   * 发起一次需要响应的调用（call / query 等）。
+   * @param opts 可选参数。`channel`：绑定通道 ID（RH-IPC-05），payload 会附带
+   *   `channelId` 字段，后端命令可通过 `ICommandContext.Channel` 取得通道实例。
+   */
+  invoke<T>(type: string, payload: unknown, opts?: { channel?: string }): CancellablePromise<T> {
     this.ensureInit();
     const id = this.nextId();
     const promise = new Promise<T>((resolve, reject) => {
@@ -211,7 +228,11 @@ export class Transport {
     }) as CancellablePromise<T>;
     promise.callId = id;
     promise.cancel = () => this.cancel(id);
-    void this.dispatch({ id, type, payload });
+    const body =
+      opts?.channel != null && payload !== null && typeof payload === "object"
+        ? { ...(payload as Record<string, unknown>), channelId: opts.channel }
+        : payload;
+    void this.dispatch({ id, type, payload: body });
     return promise;
   }
 
@@ -288,8 +309,15 @@ export class Transport {
   /**
    * 派发下行事件到本地订阅者（OPT-EVENT-001/002）。
    * 支持通配符模式匹配（`*` 后缀前缀匹配）与定向事件标识透传。
+   * RH-IPC-05：`wails:channel:*` 保留命名空间在进入用户回调前被拦截并路由到通道订阅者。
    */
   private _emitEvent(name: string, data: unknown, senderWindowId: number | null = null, targetWindowId: number | null = null): void {
+    // 通道下行（RH-IPC-05）：事件名 `wails:channel:<id>`，载荷 `{ event, payload, closed }`。
+    // 在用户事件回调之前路由，通配符订阅（如 `wails:*`）不会看到通道消息。
+    if (name.startsWith(CHANNEL_EVENT_PREFIX)) {
+      this._emitChannelMessage(name.slice(CHANNEL_EVENT_PREFIX.length), data);
+      return;
+    }
     const callbacks: EventCallback[] = [];
     for (const [pattern, set] of this.eventCallbacks) {
       if (!Transport.matchesPattern(name, pattern)) continue;
@@ -303,6 +331,38 @@ export class Transport {
       } catch (err) {
         // 单个订阅者异常不应影响其他订阅者
         console?.error?.(`[wails] event "${name}" callback threw:`, err);
+      }
+    }
+  }
+
+  // ----- 通道订阅（RH-IPC-05） -----
+
+  /** 订阅通道下行消息，返回取消订阅函数。 */
+  onChannelMessage(id: string, cb: ChannelDownlinkCallback): () => void {
+    let set = this.channelCallbacks.get(id);
+    if (!set) {
+      set = new Set();
+      this.channelCallbacks.set(id, set);
+    }
+    set.add(cb);
+    return () => {
+      const cur = this.channelCallbacks.get(id);
+      if (!cur) return;
+      cur.delete(cb);
+      if (cur.size === 0) this.channelCallbacks.delete(id);
+    };
+  }
+
+  /** 派发通道下行消息到订阅者。载荷形如 `{ event, payload, closed }`。 */
+  private _emitChannelMessage(id: string, data: unknown): void {
+    const d = (data ?? {}) as { event?: string | null; payload?: unknown; closed?: boolean };
+    const set = this.channelCallbacks.get(id);
+    if (!set) return;
+    for (const cb of [...set]) {
+      try {
+        cb(d.payload, d.event ?? null, d.closed === true);
+      } catch (err) {
+        console?.error?.(`[wails] channel "${id}" callback threw:`, err);
       }
     }
   }

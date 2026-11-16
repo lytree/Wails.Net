@@ -35,6 +35,11 @@ internal sealed class CommandContext : ICommandContext
     public CancellationToken CancellationToken { get; }
 
     /// <summary>
+    /// 本次调用绑定的双向通道（RH-IPC-05，可为 null）。
+    /// </summary>
+    public Channels.IChannel? Channel { get; }
+
+    /// <summary>
     /// 构造命令上下文。
     /// </summary>
     /// <param name="services">DI 服务容器。</param>
@@ -42,17 +47,20 @@ internal sealed class CommandContext : ICommandContext
     /// <param name="cancellationToken">取消令牌。</param>
     /// <param name="windowName">当前窗口名，可为 null；建议与 <paramref name="windowId"/> 同时提供以便窗口级权限校验。</param>
     /// <param name="origin">调用来源 URL，可为 null；非空时用于 Capability.remote 远程 URL 校验。</param>
+    /// <param name="channel">调用绑定的通道实例，可为 null（RH-IPC-05）。</param>
     public CommandContext(
         IServiceProvider services,
         uint? windowId,
         CancellationToken cancellationToken,
         string? windowName = null,
-        string? origin = null)
+        string? origin = null,
+        Channels.IChannel? channel = null)
     {
         Services = services;
         WindowId = windowId;
         CancellationToken = cancellationToken;
         WindowName = windowName;
         Origin = origin;
+        Channel = channel;
     }
 }
