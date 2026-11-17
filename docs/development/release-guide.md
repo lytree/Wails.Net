@@ -108,6 +108,12 @@ node scripts/verify-versions.mjs --fix  # 校验并自动把前端包版本对�
 build → test → pack → dist → publish
 ```
 
+> **触发分级（非 tag 只构建与测试）**：任意分支 push 与 Pull Request 只运行 `build` 与 `test`；
+> `pack` / `dist-windows` / `dist-linux` / `dist-android` / `publish-nuget` / `publish-npm` /
+> `publish-github-release` 一律以 `if: startsWith(github.ref, 'refs/tags/v')` 限定，只有推送
+> `v*.*.*` 标签时才执行。例外是 `test-android-e2e`（模拟器 + KVM 成本高），只在 `main` 与 tag 上运行。
+> 本地 `pnpm publish:npm` 亦受同一约束：HEAD 不位于 `v<WailsNetVersion>` 标签时拒绝发布。
+
 | Job | 名称 | Runner | 说明 |
 |-----|------|--------|------|
 | build | 构建 | windows-latest | 还原 + 构建全部项目（包括 Linux 平台项目） |

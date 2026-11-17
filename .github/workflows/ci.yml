@@ -9,9 +9,12 @@
 #   - ubuntu-latest：前端 pnpm 工作区构建与单元测试；Linux 平台测试（需 GTK4 原生库，允许失败）
 #
 # 触发条件：
-#   - push 到任意分支：运行 build → test → pack（仅 main 分支）→ dist
-#   - Pull Request：运行 build → test
-#   - tag（v*.*.*）：运行完整流水线，包括 publish 到 NuGet.org
+#   - push 到任意分支 / Pull Request：只运行 build → test（不打包、不产出发布产物）
+#   - tag（v*.*.*）：运行完整流水线 pack → dist → publish（NuGet / npm / GitHub Release）
+#
+# 原则：**除 tag 外的任何提交只做“构建 + 测试”**。pack / dist / publish 三类作业
+# 一律以 `if: startsWith(github.ref,'refs/tags/v')` 限定，避免在非发布分支上产出
+# 无法追溯的包，也避免消耗三平台自包含构建的 runner 时间。
 #
 # 版本号管理（GitVersion 自动计算）：
 #   - 非 tag 构建：gitversion 作业读取仓库根目录 GitVersion.yml，按 Git 历史/分支算出版本号；
@@ -428,6 +431,8 @@ jobs:
     needs: build
     # E2E 已在模拟器上连续多轮全绿（启动判据改用 pidof、IPC 桥补 [Export]、
     # 无障碍树轮询加固），撤掉 continue-on-error，避免"红作业显示为绿"。
+    # 属于“测试”范畴但成本高（模拟器 + KVM）：只在 main / tag 上跑，
+    # 普通分支与 PR 仍只做 build + 单元测试，符合“非 tag 只构建与测试”的分级策略。
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     # 兜底上限：脚本内每个子进程已有独立超时，这里防的是"整步在 action 内部挂住"
     # （模拟器 adb offline / emulator 卡死）。留足 boot + 构建 + 四步校验的余量，
@@ -492,13 +497,13 @@ jobs:
           retention-days: 7
 
   # ============================================================================
-  # Job 3：打包 NuGet 包（仅 main 分支或 tag 触发）
+  # Job 3：打包 NuGet 包（仅 tag 触发；非 tag 提交不打包，否则会产出无法追溯的版本）
   # ============================================================================
   pack:
     name: 打包 NuGet
     runs-on: windows-latest
     needs: [build, gitversion]
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v')
     env:
       WAILS_NET_VERSION: ${{ needs.gitversion.outputs.semVer }}
     steps:
@@ -648,7 +653,7 @@ jobs:
           retention-days: 7
 
   # ============================================================================
-  # Job 4：三平台自包含构建（Windows / Linux / Android）
+  # Job 4：三平台自包含构建（Windows / Linux / Android，仅 tag 触发）
   # ============================================================================
   # 调用 cake.cs（Cake 构建脚本）统一构建，通过 --rid all 一键构建该平台全部架构。
   # 生成自包含可执行文件，无需终端用户安装 .NET 运行时。
@@ -659,7 +664,7 @@ jobs:
     name: 自包含构建 (Windows)
     runs-on: windows-latest
     needs: [pack, gitversion]
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v')
     env:
       WAILS_NET_VERSION: ${{ needs.gitversion.outputs.semVer }}
     steps:
@@ -708,7 +713,7 @@ jobs:
     name: 自包含构建 (Linux)
     runs-on: ubuntu-latest
     needs: [pack, gitversion]
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v')
     env:
       WAILS_NET_VERSION: ${{ needs.gitversion.outputs.semVer }}
     steps:
@@ -762,7 +767,7 @@ jobs:
     name: 自包含构建 (Android)
     runs-on: windows-latest
     needs: [pack, gitversion]
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v')
     # 与 Windows/Linux 一致：构建失败就是失败，不再容忍。
     env:
       WAILS_NET_VERSION: ${{ needs.gitversion.outputs.semVer }}
