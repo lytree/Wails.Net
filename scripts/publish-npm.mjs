@@ -8,6 +8,9 @@
 //   node scripts/publish-npm.mjs --publish --otp=123456  # 需要 2FA 时传一次性密码
 //   node scripts/publish-npm.mjs --publish --tag=beta    # 强制指定 dist-tag
 //
+// 发布闸门：--publish 只在「HEAD 正好位于 v<WailsNetVersion> 标签」时放行（与 CI 的 tag 触发
+// 规则一致）；--dry-run 演练不受限，--force 可显式绕过（不建议）。
+//
 // dist-tag 规则：预发布版本（0.1.0-alpha.1）自动打 `alpha`，避免顶掉 `latest`；
 // 正式版本（0.1.0）打 `latest`。
 //
@@ -65,6 +68,55 @@ function collectPackages() {
 }
 
 const packages = collectPackages();
+
+/**
+ * 发布闸门：只允许在「当前 HEAD 正好等于 v<版本号> 标签」时真正发布。
+ *
+ * 理由：CI 侧 publish-npm / publish-nuget 均以 `if: startsWith(github.ref,'refs/tags/v')`
+ * 限定为 tag 触发，本地脚本如果能在任意提交上发布，就会绕过这条约束、产出无法追溯的版本。
+ * 闸门放在打包之前（fail fast）：不满足条件时连 tarball 都不生成。
+ * --dry-run 演练不触发闸门；确需紧急发布可用 --force 显式越过（不推荐）。
+ */
+function currentVersion() {
+  const props = fs.readFileSync(path.join(root, "Directory.Build.props"), "utf8");
+  const m = props.match(/<WailsNetVersion>([^<]+)<\/WailsNetVersion>/);
+  if (!m) throw new Error("Directory.Build.props 中未找到 WailsNetVersion");
+  return m[1];
+}
+
+if (doPublish && !dryRun && !argv.includes("--force")) {
+  const version = currentVersion();
+  const expectedTag = `v${version}`;
+  let exactTag = "";
+  try {
+    exactTag = execFileSync("git", ["describe", "--exact-match", "--tags", "HEAD"], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    exactTag = "";
+  }
+  if (exactTag !== expectedTag) {
+    console.error(
+      [
+        "",
+        "!! 拒绝发布：当前 HEAD 不在发布标签上。",
+        `   期望标签：${expectedTag}（来自 Directory.Build.props 的 WailsNetVersion）`,
+        `   实际标签：${exactTag || "（HEAD 没有任何 tag）"}`,
+        "",
+        "   发布流程（与 CI 一致，仅 tag 可发布）：",
+        '     git commit -am "chore(release): ..."',
+        `     git tag -a ${expectedTag} -m "Wails.Net ${version}"`,
+        `     git push origin main ${expectedTag}`,
+        "",
+        "   仅想演练打包/上传流程请加 --dry-run；确需绕过请加 --force。",
+      ].join("\n"),
+    );
+    process.exit(1);
+  }
+  console.log(`发布闸门通过：HEAD 位于标签 ${exactTag}`);
+}
 
 // 构建产物预检：dist 缺失说明没构建，打包出来会是空壳
 const missing = packages.filter((p) => !fs.existsSync(path.join(p.dir, "dist", "index.js")));
