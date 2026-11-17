@@ -1,5 +1,5 @@
 import { computed, ref } from 'vue'
-import { wails } from '@wails-net/runtime'
+import { wails } from '@wailsnet/runtime'
 import { describeError } from './useBackend'
 import type { TodoItem, TodoStats } from '../types'
 

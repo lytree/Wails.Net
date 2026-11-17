@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { wails } from '@wails-net/runtime'
+import { wails } from '@wailsnet/runtime'
 import { useEventStream } from '../composables/useEventStream'
 import ResultBanner from './ResultBanner.vue'
 import type { PongPayload, TickPayload } from '../types'

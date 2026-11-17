@@ -1,13 +1,13 @@
 import { wails } from "./wails-runtime/index.js";
 
-// Wails.Net 前端运行时：从本地 wails-runtime 目录导入（@wails-net/runtime 构建产物）。
+// Wails.Net 前端运行时：从本地 wails-runtime 目录导入（@wailsnet/runtime 构建产物）。
 // 调用绑定方法：wails.call(method, args)
 // 触发命令：wails.call('window.minimize', []) —— 命令名即 `<命名空间>.<动作>`，
 //          窗口命令由后端 WindowPlugin 提供（本模板 Program.cs 已注册）
 // 监听事件：wails.events.on(name, callback)
 //
 // 注意：运行时自 M3 起只保留核心 API（call / bindings / events / query / invoke / cancel），
-// 窗口、剪贴板等命名空间已拆分为 @wails-net/plugin-* 包，不再挂载到 wails 对象上。
+// 窗口、剪贴板等命名空间已拆分为 @wailsnet/plugin-* 包，不再挂载到 wails 对象上。
 
 const nameInput = document.getElementById('nameInput');
 const greetBtn = document.getElementById('greetBtn');

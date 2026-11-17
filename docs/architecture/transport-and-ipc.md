@@ -368,11 +368,11 @@ public class AssetsOptions
 
 ## 8. 运行时 JS 注入
 
-前端能调用 `window.wails.*` API 的前提是 [`@wails-net/runtime`](../../packages/wails-net-runtime/src/core/runtime.ts) 生成的运行时 JS 已注入到 WebView。
+前端能调用 `window.wails.*` API 的前提是 [`@wailsnet/runtime`](../../packages/wails-net-runtime/src/core/runtime.ts) 生成的运行时 JS 已注入到 WebView。
 
 ### 8.1 Generate(options) — 生成 window.wails API
 
-`@wails-net/runtime.Generate(`Application.GenerateRuntimeJs`)` 由四部分拼接而成：
+`@wailsnet/runtime.Generate(`Application.GenerateRuntimeJs`)` 由四部分拼接而成：
 
 ```csharp
 var flags          = GenerateFlags(options);          // window._wails 标志对象
@@ -441,7 +441,7 @@ _ = _webview.AddScriptToExecuteOnDocumentCreatedAsync(js);
 - **上行**：`channel:open`（返回 `{ channelId }`，同 ID 幂等）→ `channel:message`（分发到后端 `IChannel.OnMessage` 订阅者）→ `channel:close`（下行关闭信号 + 注册表移除）。
 - **下行**：复用事件通道，保留事件名 `wails:channel:<channelId>`，载荷 `{ event, payload, closed }`，经 `EventProcessor.EmitTo` 定向到通道所属窗口——桌面（ExecJS / 原生 postMessage）与 Server（WebSocket）共用，无需按传输各写一份。
 - **命令注入**：`call` 载荷携带 `channelId` 时，命令通过 `ICommandContext.Channel` 拿到通道实例，`ctx.Channel?.SendAsync(progress)` 即进度回传。
-- **前端 API**：`import { createChannel } from "@wails-net/runtime"`；`wails.call(name, args, { channel })` 自动附带 channelId。
+- **前端 API**：`import { createChannel } from "@wailsnet/runtime"`；`wails.call(name, args, { channel })` 自动附带 channelId。
 - **泄漏防护**：通道记录归属窗口，`WindowManager.ReleaseWindow` 时经 `ChannelManager.RemoveByWindow` 统一回收。
 - `wails:channel:` 前缀为框架保留命名空间，用户事件不应使用。
 

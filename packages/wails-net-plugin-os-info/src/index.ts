@@ -1,9 +1,9 @@
 /**
- * @wails-net/plugin-os-info — os-info 插件前端封装。
- * 命令前缀 `os.*` 与 `system.*`（M3 runtime 变薄：从 @wails-net/runtime 迁移至此，按需安装）。
+ * @wailsnet/plugin-os-info — os-info 插件前端封装。
+ * 命令前缀 `os.*` 与 `system.*`（M3 runtime 变薄：从 @wailsnet/runtime 迁移至此，按需安装）。
  * @platform windows,linux,macos,android  全平台通用插件。
  */
-import { call } from "@wails-net/runtime";
+import { call } from "@wailsnet/runtime";
 
 /**
  * OS 信息插件（`os.*` 命令集，历史名，保留向后兼容）。

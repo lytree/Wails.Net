@@ -1,10 +1,10 @@
 /**
- * @wails-net/plugin-window — window 插件前端封装。
- * 命令前缀 `window.*`（M3 runtime 变薄：从 @wails-net/runtime 迁移至此，按需安装）。
+ * @wailsnet/plugin-window — window 插件前端封装。
+ * 命令前缀 `window.*`（M3 runtime 变薄：从 @wailsnet/runtime 迁移至此，按需安装）。
  * @platform windows,linux,macos  桌面通用插件。
  */
-import { call } from "@wails-net/runtime";
-import type { Point, Size } from "@wails-net/runtime";
+import { call } from "@wailsnet/runtime";
+import type { Point, Size } from "@wailsnet/runtime";
 
 /** 单个窗口控制（命令前缀 `window.*`）。 */
 export const window = {

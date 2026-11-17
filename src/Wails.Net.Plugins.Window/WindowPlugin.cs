@@ -37,7 +37,7 @@ public class WindowPlugin : IPlugin
     /// <summary>
     /// 配置插件，注册所有窗口操作命令。
     /// 命令名采用 <c>window.&lt;action&gt;</c> 格式，前端通过 <c>wails.call('window.&lt;action&gt;', [options])</c> 或
-    /// <c>@wails-net/plugin-window</c> 的类型化封装调用。
+    /// <c>@wailsnet/plugin-window</c> 的类型化封装调用。
     /// </summary>
     /// <param name="context">插件上下文。</param>
     public void Configure(IPluginContext context)

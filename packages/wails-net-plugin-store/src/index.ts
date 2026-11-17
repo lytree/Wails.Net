@@ -1,5 +1,5 @@
-/** M3 runtime 变薄：从 @wails-net/runtime 迁移，按需安装 */
-import { call } from "@wails-net/runtime";
+/** M3 runtime 变薄：从 @wailsnet/runtime 迁移，按需安装 */
+import { call } from "@wailsnet/runtime";
 
 export const store = {
   /** 读取指定键的值；键不存在时返回 null。 */

@@ -364,20 +364,20 @@ public async Task Src_MustNotUseRuntimeReflection()
 
 ---
 
-### 4.4 前端测试（`@wails-net/runtime` 1141 行零测试）
+### 4.4 前端测试（`@wailsnet/runtime` 1141 行零测试）
 
-为 `@wails-net/runtime` 增加 `/mocks` 子路径导出：
+为 `@wailsnet/runtime` 增加 `/mocks` 子路径导出：
 
 ```js
-// @wails-net/runtime/mocks
+// @wailsnet/runtime/mocks
 export function mockIPC(handler, { shouldMockEvents = false } = {});
 export function mockWindows(current, ...others);
 export function clearMocks();       // 每个测试后必调
 ```
 
 ```js
-import { mockIPC, clearMocks } from '@wails-net/runtime/mocks'
-import { Call } from '@wails-net/runtime'
+import { mockIPC, clearMocks } from '@wailsnet/runtime/mocks'
+import { Call } from '@wailsnet/runtime'
 import { afterEach, expect, test, vi } from 'vitest'
 
 afterEach(clearMocks)
@@ -523,7 +523,7 @@ public async Task ContractTestCount_MustMatchAcrossPlatforms()
 | 模块 | 规模 | 风险 |
 |------|------|------|
 | `Wails.Net.SourceGenerators` | 3 文件 / **1402 行** | 🔴 极高——禁反射架构基石 |
-| `@wails-net/runtime` | 4 文件 / 1141 行 | 🔴 高——前端唯一入口 |
+| `@wailsnet/runtime` | 4 文件 / 1141 行 | 🔴 高——前端唯一入口 |
 | `Wails.Net.Events` | 5 / 588 | 🟡 中 |
 | `Wails.Net.Application.MacOS` | 4 / 341 | 🟢 低——骨架实现 |
 | `Wails.Net.Errors` | 3 / 256 | 🟡 中 |
@@ -548,7 +548,7 @@ public async Task ContractTestCount_MustMatchAcrossPlatforms()
 | 无头跑 IPC | `WailsTestHost.InvokeAsync` |
 | 无头建窗口 | `MockWebviewWindow` |
 | Mock 行为一致性保证 | ✅ **GuiContract 约束** |
-| 前端 IPC 拦截 | `@wails-net/runtime/mocks` |
+| 前端 IPC 拦截 | `@wailsnet/runtime/mocks` |
 | 真实二进制 E2E | CDP / WebKitWD / adb |
 | 平台原生分级契约 | ✅ L1/L2/L3 × 4 实现 |
 | 竞态检测 | 压测 + Coyote（可选） |

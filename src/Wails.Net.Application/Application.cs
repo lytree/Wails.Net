@@ -716,11 +716,11 @@ public partial class Application
     /// <summary>
     /// 生成 JavaScript 运行时代码并注入到资源服务器。
     /// <para>
-    /// 重构（2026-08-02）：前端运行时 JS 已全量迁往 <c>@wails-net/runtime</c>（npm 包，
+    /// 重构（2026-08-02）：前端运行时 JS 已全量迁往 <c>@wailsnet/runtime</c>（npm 包，
     /// 见 <c>packages/wails-net-runtime/</c>），本方法仅负责注入后端 → 前端的最小配置
     /// —— <c>window._wails</c> 标志对象（platform / isDebug / isServerMode / 各 URL），
-    /// 供 <c>@wails-net/runtime/src/internal/types.ts#readRuntimeFlags()</c> 在初始化时读取。
-    /// 前端业务 API（call / bindings / events / 46 个命名空间）由前端 <c>import { wails } from "@wails-net/runtime"</c> 加载。
+    /// 供 <c>@wailsnet/runtime/src/internal/types.ts#readRuntimeFlags()</c> 在初始化时读取。
+    /// 前端业务 API（call / bindings / events / 46 个命名空间）由前端 <c>import { wails } from "@wailsnet/runtime"</c> 加载。
     /// </para>
     /// <para>
     /// 同时向 <c>console.info</c> 输出一次性加载提示，便于诊断「前端未引 npm 包 → 调用全 404」问题：

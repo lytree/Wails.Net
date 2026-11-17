@@ -1,5 +1,5 @@
 /**
- * @wails-net/plugin-mobile — 移动端插件聚合封装（M3 双包模型）。
+ * @wailsnet/plugin-mobile — 移动端插件聚合封装（M3 双包模型）。
  * 条码扫描/生物识别/相机/定位/触感/NFC/权限/设备（AndroidRuntimePlugin）。
  */
 /**
@@ -9,7 +9,7 @@
  * 说明：`camera.capture` / `nfc.read` / `barcode-scanner.scan` 等命令的取消由后端
  * `ICommandContext.CancellationToken` 提供，**不接受前端传参**（见 AGENTS.md §3.4.6）。
  */
-import { call } from "@wails-net/runtime";
+import { call } from "@wailsnet/runtime";
 import type {
   CameraCaptureResult,
   DeviceInfo,
@@ -17,7 +17,7 @@ import type {
   GeoWatchHandle,
   HapticsNotificationType,
   PermissionStatus,
-} from "@wails-net/runtime";
+} from "@wailsnet/runtime";
 
 /**
  * 硬件能力可用性。

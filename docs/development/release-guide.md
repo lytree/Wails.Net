@@ -9,16 +9,16 @@
 版本号集中在 [Directory.Build.props](../../Directory.Build.props) 的 `WailsNetVersion` 属性中维护：
 
 ```xml
-<WailsNetVersion>0.1.0-alpha.1</WailsNetVersion>
+<WailsNetVersion>1.0.0-alpha.1</WailsNetVersion>
 ```
 
 所有 `src/` 下的程序集与 NuGet 包将自动派生以下属性：
 
 | 属性 | 说明 | 示例 |
 |------|------|------|
-| `Version` | NuGet 包版本，含预发布标签 | `0.1.0-alpha.1` |
-| `PackageVersion` | NuGet 包版本（与 Version 同步） | `0.1.0-alpha.1` |
-| `InformationalVersion` | 显示用版本，含预发布标签 | `0.1.0-alpha.1` |
+| `Version` | NuGet 包版本，含预发布标签 | `1.0.0-alpha.1` |
+| `PackageVersion` | NuGet 包版本（与 Version 同步） | `1.0.0-alpha.1` |
+| `InformationalVersion` | 显示用版本，含预发布标签 | `1.0.0-alpha.1` |
 | `AssemblyVersion` | CLR 程序集版本，4 段数字 | `0.1.0.0` |
 | `FileVersion` | Windows 文件版本，4 段数字 | `0.1.0.0` |
 
@@ -79,7 +79,7 @@ git push origin main --tags
 推送 tag 后，GitHub Actions 将自动触发发布流水线：
 
 - `publish-nuget`：推送 NuGet 包到 nuget.org（Trusted Publishing OIDC）
-- `publish-npm`：推送前端双包到 npmjs.org——`@wails-net/runtime` + 全部 `@wails-net/plugin-*`（M4 闭环）
+- `publish-npm`：推送前端双包到 npmjs.org——`@wailsnet/runtime` + 全部 `@wailsnet/plugin-*`（M4 闭环）
 - `publish-github-release`：创建 GitHub Release 并上传三平台构建产物
 
 发布前 CI 执行版本一致性校验（`scripts/verify-versions.mjs`）：`Directory.Build.props` 的 `WailsNetVersion` 必须等于所有 `packages/*/package.json` 的 `version`，不一致即失败——保证 NuGet 与 npm 同版本发布。
@@ -97,8 +97,8 @@ node scripts/verify-versions.mjs --fix  # 校验并自动把前端包版本对�
 
 - 在 [nuget.org](https://www.nuget.org/packages/Wails.Net.Application) 查看包是否上传成功
 - 使用 `dotnet add package Wails.Net.Application --version 0.2.0` 验证可安装
-- 在 [npmjs.com](https://www.npmjs.com/package/@wails-net/runtime) 查看前端包是否上传成功
-- 使用 `npm view @wails-net/plugin-window version` 验证版本一致
+- 在 [npmjs.com](https://www.npmjs.com/package/@wailsnet/runtime) 查看前端包是否上传成功
+- 使用 `npm view @wailsnet/plugin-window version` 验证版本一致
 
 ## GitHub Actions CI/CD 流水线
 
@@ -119,7 +119,7 @@ build → test → pack → dist → publish
 | dist | dist-linux | ubuntu-latest | Linux 自包含构建（linux-x64/arm64，含 .deb/.rpm 原生包打包） |
 | dist | dist-android | windows-latest | Android APK 构建（android-arm64/x64/arm，允许失败） |
 | publish | publish-nuget | windows-latest | 通过 Trusted Publishing(OIDC) 推送全部 nupkg（含 CLI/SDK/Templates）到 nuget.org（仅 tag 触发，无需 API Key） |
-| publish | publish-npm | ubuntu-latest | 通过 `NPM_TOKEN` 推送前端双包 `@wails-net/runtime` + 全部 `@wails-net/plugin-*`（39 个）到 npmjs.com（仅 tag 触发，需前置版本一致性校验） |
+| publish | publish-npm | ubuntu-latest | 通过 Trusted Publishing(OIDC) 推送前端双包 `@wailsnet/runtime` + 全部 `@wailsnet/plugin-*`（40 个）到 npmjs.com 的 **wailsnet** 组织（仅 tag 触发，需前置版本一致性校验，无需 token） |
 | publish | publish-github-release | ubuntu-latest | 创建 GitHub Release 并上传 nupkg + 三平台 dist 产物（仅 tag 触发） |
 
 ### 触发条件
@@ -149,22 +149,23 @@ build → test → pack → dist → publish
 
 ### 必需的 Secrets
 
-本项目使用 **NuGet Trusted Publishing**（基于 GitHub OIDC）发布到 nuget.org，无需长期 API Key。需要两个 Secret：
+本项目 NuGet 与 npm 两侧都走 **Trusted Publishing**（基于 GitHub OIDC），无需长期 token / API Key。仅需一个 Secret：
 
 | Secret | 说明 | 配置位置 |
 |--------|------|--------|
 | `NUGET_USER` | nuget.org 用户名（profile name，非邮箱），用于 Trusted Publishing 换取临时 API key | GitHub → Settings → Secrets and variables → Actions → Repository secrets |
-| `NPM_TOKEN` | npmjs.com 自动化 token（Automation 或 Classic），对 `@wails-net` 作用域有 publish 权限 | 同上 |
 
 > 不再需要 `NUGET_API_KEY`。Trusted Publishing 通过 `NuGet/login@v1` 用 GitHub OIDC token 换取一次性临时 key（约 1 小时过期），详见下方 [Trusted Publishing 配置](#trusted-publishing-配置) 章节。
+>
+> npm 侧不需要任何 secret：`publish-npm` 作业声明 `id-token: write`，绑定 trusted publisher 后由 `npm publish` 自行换一次性凭证，详见 [npm 发布](#npm-发布org-wailsnet--trusted-publishing)。
 
 ### 发布失败排查（已知报错）
 
-两个发布作业都带「secret 预检」步骤，缺配置时会在作业开头直接失败并给出中文提示，而不是等到构建完才报底层错误。若无预检，历史报错签名如下：
+两个发布作业都带「前置预检」步骤，缺配置时会在作业开头直接失败并给出中文提示，而不是等到构建完才报底层错误。若无预检，历史报错签名如下：
 
 | 作业 | 原始报错 | 真实原因 | 处理 |
 |------|---------|---------|------|
-| `发布到 npmjs.org` | `npm error code ENEEDAUTH` | `secrets.NPM_TOKEN` 为空（token 错误会是 `E401`/`E403`，二者含义不同） | 配置 `NPM_TOKEN` 后对该 run **重跑失败作业**，不必重新打 tag |
+| `发布到 npmjs.org` | `npm error code ENEEDAUTH` / `E404` | 该包在 npm 侧尚未绑定 trusted publisher（OIDC 换不到凭证）；`E403` 表示绑定存在但 allowed action 不含 `npm publish` | 用 `pnpm trust:publisher -- --dry-run` 核对 41 个包，再 `pnpm trust:publisher` 批量绑定后重跑失败作业 |
 | `发布到 NuGet.org` | `##[error]Input required and not supplied: user` | `secrets.NUGET_USER` 未配置 | 配置 `NUGET_USER`；若已配置仍失败，检查 nuget.org 侧 Trusted Publishing policy 的 Repository / Workflow / Environment 是否与 ci.yml 一致 |
 
 > 已发布的正式版本无法"补成"预发布之外的另一种形态：如果 tag 建错了 Release 属性，用 `PATCH /repos/{owner}/{repo}/releases/{id}` 改 `prerelease` / `make_latest` 即可，无需重建 tag。
@@ -228,6 +229,202 @@ GitHub Actions (tag 触发)
 
 > 私有仓库的 policy 初始 7 天活跃；首次成功 `NuGet/login`（OIDC 换 key）后永久激活并绑定不可变 GitHub ID。如错过 7 天窗口，可在 Trusted Publishing 页面手动重新激活。
 
+## npm 发布：org `wailsnet` + Trusted Publishing
+
+前端 41 个包全部发布到 npm 组织 **wailsnet** 下，因此包作用域必须是 `@wailsnet/*`
+（npm 的 org 名即作用域名，`@wails-net/*` 无法发布进 `wailsnet` 组织）。
+
+### 约定
+
+| 项目 | 值 |
+|------|-----|
+| npm org / 作用域 | `wailsnet` / `@wailsnet` |
+| 包名 | `@wailsnet/runtime` + 40 个 `@wailsnet/plugin-*` |
+| 包源目录 | `packages/wails-net-*`（目录名保留历史命名，与包名解耦） |
+| 发布目标 | `https://registry.npmjs.org`（由各 `package.json` 的 `publishConfig.registry` 指定，本地 `.npmrc` 指向镜像不影响） |
+| 可见性 | `publishConfig.access = public` |
+
+### 发布流程（人工 bootstrap）
+
+CI 的 OIDC 免 token 发布要求 npm 侧已存在包并绑定 trusted publisher，所以**首次发布必须人工完成**。
+npm 没有「网页端上传 tarball」入口（网页端只能审批 staged 包、管理 token），发布一律走 CLI。
+
+**Step 1｜认证（三选一，任选其一即可长期复用）**
+
+| 方式 | 命令 / 操作 | 适用 |
+|------|-------------|------|
+| A. 交互登录 | `npm login --registry https://registry.npmjs.org`（浏览器 + 2FA） | 本机手动发 |
+| B. Granular Token（推荐自动化） | 见下方「Token 方式」 | 脚本 / CI 之外的半自动发布 |
+| C. 直接复用 CI 的 OIDC | 不需要本地认证，推 tag 让 CI 发 | 已绑定 trusted publisher 之后 |
+
+**Token 方式**：npmjs.com → 头像 → Access Tokens → Generate New Token → **Granular Access Token**
+- Packages and scopes：`Read and write`
+- Organizations：勾选 `wailsnet`
+- 必须勾选 **Bypass two-factor authentication for automation**（否则每次发布都要 OTP）
+- 写进**仓库外**的配置文件，避免误提交：
+
+```bash
+printf 'registry=https://registry.npmjs.org/\n//registry.npmjs.org/:_authToken=<token>\n' \
+  > ~/.npmrc-npmjs-wailsnet && chmod 600 ~/.npmrc-npmjs-wailsnet
+
+# 后续命令统一带上该配置
+export NPM_CONFIG_USERCONFIG=~/.npmrc-npmjs-wailsnet
+npm whoami                      # 应输出账号名
+npm org ls wailsnet             # 应显示 <账号> - owner/developer
+```
+
+**Step 2｜构建 + 打包**（脚本自带 dist 预检与 `@wailsnet/` 作用域校验）
+
+```bash
+pnpm install
+pnpm -r build
+pnpm pack:npm        # → artifacts/npm/*.tgz，41 个
+```
+
+**Step 3｜发布（两种模式）**
+
+```bash
+# 模式一：直接发布（需要 2FA 已通过 / token 带 bypass 2FA）
+pnpm publish:npm
+
+# 模式二：staged 暂存 + 人工审批（npm CLI >= 11.15）
+pnpm publish:npm:staged
+npm stage list                # 查看待审条目与 id
+npm stage approve <id>        # 2FA 确认后才真正上线
+# 或 npmjs.com → Staged Packages → Approve
+```
+
+**Step 4｜校验**
+
+```bash
+npm view @wailsnet/runtime version dist-tags --registry https://registry.npmjs.org
+npm view @wailsnet/plugin-dialog dependencies --registry https://registry.npmjs.org
+# 依赖应显示 "@wailsnet/runtime": "1.0.0-alpha.1"，而不是 workspace:*
+```
+
+### dist-tag 规则（重要）
+
+`1.0.0-alpha.1` 这类预发布版本**必须带 `--tag alpha`**，否则会顶掉 `latest`，
+让 `pnpm add @wailsnet/runtime` 装到 alpha。脚本与 CI 都已自动处理：
+
+| 版本 | dist-tag |
+|------|----------|
+| `1.0.0-alpha.1` | `alpha` |
+| `1.2.0-beta.3` | `beta` |
+| `0.1.0` | `latest` |
+
+手动补救：`npm dist-tag add @wailsnet/runtime@0.1.0 --tag latest`。
+
+> 注意：**首次发布**（包在 registry 上还不存在）时，npm 会无条件把 `latest` 指向这第一个版本，
+> 即使传了 `--tag alpha`。所以 alpha 首发阶段 `latest` 与 `alpha` 会同时指向 `1.0.0-alpha.1`；
+> 等首个正式版发布后 `latest` 才会自然归位。
+
+### 暂存模式（staged）踩坑记录
+
+| 现象 | 原因 / 处理 |
+|------|-------------|
+| `npm stage publish` 成功但 `npm publish` 报 `E409 Cannot publish over previously staged version` | 同一版本已入暂存队列，必须先审批或拒绝该暂存条目 |
+| `npm stage approve` 报 `EOTP` | staged 审批**不接受** bypass-2FA token 豁免，必须真人 2FA；网页端 Staged Packages 点 Approve 同理 |
+| `npm stage list` 报 401 | granular access token 无该只读端点权限；脚本改为把 stage id 记到 `artifacts/npm/staged-ids.json` |
+| `npm publish` 返回 `202 Accepted` 但立刻 `npm view` 是 404 | registry 异步落地，等 1–5 分钟；`npm access list packages @wailsnet` 能立刻看到包已存在 |
+
+### 打包机制说明
+
+脚本先 `pnpm pack` 再 `npm publish <tgz>`：插件包依赖 `"@wailsnet/runtime": "workspace:*"`，
+npm 不认 `workspace:` 协议，`pnpm pack` 会在打包时改写成真实版本号；同时 pnpm pack 的产物
+就是最终上传内容，便于先在本地检验 tarball 再发。
+
+
+### 配置 npm Trusted Publisher
+
+首次发布完成后，把 41 个包绑定到本仓库的 GitHub Actions，CI 才能免 token 发布。
+
+#### 前置条件（npm 硬性要求）
+
+| 项 | 要求 / 说明 |
+|----|-------------|
+| npm CLI | **≥ 11.15.0**（`npm trust` 子命令）；仅发布本身 ≥ 11.5.1 即可 |
+| Node | ≥ 22.14.0 |
+| Runner | **仅云托管**（GitHub-hosted / GitLab.com shared / CircleCI cloud），自托管 runner 不支持 |
+| 账号 | 必须启用 2FA；`npm trust` **不接受 bypass-2FA 的 granular token**，只能交互 2FA |
+| 包状态 | 必须已在 registry 存在（本项目 41 个包已于 2026-11-17 首发） |
+| package.json | `repository.url` 必须与 GitHub 仓库**完全一致**，否则发布时校验失败。<br>本项目 41 个包已补 `repository`（`git+https://github.com/lytree/Wails.Net.git` + `directory`） |
+| 数量 | 每个包只允许 1 条 trust 配置（改字段只能 revoke 后重建） |
+
+#### 方式 A：网页配置（逐包）
+
+`npmjs.com → Packages → 该包 → Settings → Trusted publishing → GitHub Actions`，填：
+
+| 字段 | 值 |
+|------|-----|
+| Organization or user | `lytree` |
+| Repository | `Wails.Net` |
+| Workflow filename | `ci.yml`（**只填文件名**，区分大小写，不带 `.github/workflows/` 路径） |
+| Environment name | 留空（CI 的 publish-npm job 未声明 environment） |
+| Allowed actions | 勾 `npm publish`（或只勾 staged，见下） |
+
+> npm 保存时**不做任何校验**，字段拼错只会在真正发布时以 `ENEEDAUTH` 暴露。
+
+#### 方式 B：CLI 批量（推荐，41 个包一次配完）
+
+```bash
+# 先演练，确认命令与包列表
+node scripts/trust-publisher.mjs --dry-run
+
+# 真正配置（默认 --allow-publish）
+pnpm trust:publisher
+
+# 只允许暂存发布（最高安全姿态，每次发版需你 2FA 审批）
+pnpm trust:publisher -- --action=stage
+```
+
+脚本按官方建议每次调用间隔 2 秒。**第一次请求会打开浏览器要求 2FA**，在页面上勾选
+「Skip two-factor authentication for the next 5 minutes」后，其余 40 个包可在窗口内无感配完
+（官方口径约 80 个包 / 5 分钟）。
+
+#### 两种授权模式怎么选
+
+| 配置 | CI 行为 | 适用 |
+|------|---------|------|
+| `--allow-publish` | tag 触发后 `npm publish` 直接上线 | 日常最省事（本项目默认） |
+| `--allow-stage-publish` | 只能 `npm stage publish` 入队，你每次用 2FA 审批 | 防供应链投毒的最高安全姿态 |
+| 两者都给 | 两条路都通 | 过渡期 |
+
+> npm 正在收紧 bypass-2FA token 的直接发布权限，长期建议 CI 走 `stage` + 人工审批。
+
+#### 激活、验证、改配置
+
+```bash
+npm trust list @wailsnet/runtime           # 查看已有配置与 id
+npm trust revoke --id <id> @wailsnet/runtime   # 删除（要改字段必须先删）
+```
+
+- 配置创建后必须在 **2 天内成功发布一次**才会激活，逾期作废需重建。
+- OIDC 可用于 `npm publish` / `npm stage publish` / `npm dist-tag`；
+  **不能**用于 `npm stage list/approve/reject`、`install`、`view`、`npm access`（这些仍需传统认证）。
+- `npm whoami` **不能**用来验证 trusted publishing 权限。
+
+#### CI 侧配套（已完成）
+
+```
+GitHub Actions (tag 触发)
+  └─ publish-npm job
+       ├─ permissions: id-token: write      ← 启用 OIDC token 颁发
+       ├─ pnpm pack                         ← workspace:* 改写 + 产出 tarball
+       └─ npm publish <tgz> --tag <tag>     ← OIDC 换一次性凭证；公开仓库+公开包自动带 provenance
+```
+
+> `setup-node` **不要**设 `registry-url`：它会写入 `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`
+> 占位，而 trusted publishing 不需要也没有该变量，反而导致认证失败。
+
+#### 收尾（绑定验证通过后）
+
+1. 删除仓库的 `NPM_TOKEN` secret（已不再使用）
+2. 每个包 Settings → **Publishing access** → 选「Require two-factor authentication and disallow tokens」
+   （只禁传统 token，不影响 OIDC）
+3. 吊销本地那枚 bypass-2FA 的 granular token
+
+
 ## 本地验证
 
 发布前可在本地验证：
@@ -248,7 +445,7 @@ dotnet pack Wails.Net.slnx -c Release -o artifacts/packages -p:SkipFrontendBuild
 dotnet pack src/Wails.Net.Templates/Wails.Net.Templates.csproj -c Release -o artifacts/packages
 
 # 5. 验证包内容
-dotnet nuget push --dry-run artifacts/packages/Wails.Net.Application.0.1.0-alpha.1.nupkg
+dotnet nuget push --dry-run artifacts/packages/Wails.Net.Application.1.0.0-alpha.1.nupkg
 ```
 
 ### 一键打包与冒烟测试（推荐）
@@ -295,7 +492,7 @@ bash scripts/pack-and-test.sh --keep-temp
 | `Wails.Net.Application.Windows` | Windows 平台实现 |
 | `Wails.Net.Application.Linux` | Linux 平台实现 |
 | `Wails.Net.AssetServer` | 资源服务器 |
-| `@wails-net/runtime` | 前端运行时 JS 生成器 |
+| `@wailsnet/runtime` | 前端运行时 JS 生成器 |
 | `Wails.Net.Errors` | 错误类型 |
 | `Wails.Net.Events` | 事件类型 |
 | `Wails.Net.Generator` | 代码生成器 |

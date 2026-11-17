@@ -6,7 +6,7 @@
  *
  * 用法：
  * ```ts
- * import { createChannel, wails } from "@wails-net/runtime";
+ * import { createChannel, wails } from "@wailsnet/runtime";
  *
  * const ch = await createChannel();
  * ch.onMessage((progress) => console.log("progress:", progress));

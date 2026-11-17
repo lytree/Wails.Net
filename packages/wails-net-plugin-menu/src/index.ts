@@ -1,6 +1,6 @@
-/** M3 runtime 变薄：从 @wails-net/runtime 迁移，按需安装 */
-import { call } from "@wails-net/runtime";
-import type { AboutMetadata, Menu, MenuRole } from "@wails-net/runtime";
+/** M3 runtime 变薄：从 @wailsnet/runtime 迁移，按需安装 */
+import { call } from "@wailsnet/runtime";
+import type { AboutMetadata, Menu, MenuRole } from "@wailsnet/runtime";
 
 /** menu.setApplicationMenu 命令参数。 */
 export interface MenuApplicationMenuOptions {

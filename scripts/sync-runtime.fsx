@@ -1,6 +1,6 @@
-// sync-runtime.fsx — 同步 @wails-net/runtime 构建产物到所有静态 demo 与模板
+// sync-runtime.fsx — 同步 @wailsnet/runtime 构建产物到所有静态 demo 与模板
 // -------------------------------------------------------------------------
-// 背景：前端运行时迁往 npm 包 @wails-net/runtime 后，无构建链的静态 demo / 模板
+// 背景：前端运行时迁往 npm 包 @wailsnet/runtime 后，无构建链的静态 demo / 模板
 //       通过 ES module 相对路径引用运行时产物（import { wails } from "./wails-runtime/index.js"）。
 //       本脚本把 packages/wails-net-runtime/dist/ 下全部 .js 文件（保持 core/api/internal
 //       相对结构，跳过 .d.ts / .map）同步到每个目标 frontend/wails-runtime/。
@@ -44,7 +44,7 @@ let targets =
     ]
 
 if not (Directory.Exists sourceDir) then
-    failwithf "dist 目录不存在: %s（请先执行 pnpm --filter @wails-net/runtime build）" sourceDir
+    failwithf "dist 目录不存在: %s（请先执行 pnpm --filter @wailsnet/runtime build）" sourceDir
 
 // 源目录下全部 .js 文件（含子目录，相对路径）
 let jsFiles =

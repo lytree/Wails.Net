@@ -12,7 +12,7 @@ Wails.Net 采用**两套互补**的代码生成系统以消除运行时反射、
 |------|--------|----------|----------|
 | **编译期源生成器** | `Wails.Net.SourceGenerators` | 编译期（Roslyn 增量生成器） | 强类型调用器委托、绑定元数据 |
 | **运行时代码生成器** | `Wails.Net.Generator` | CLI 命令 `wails.net generate` | TypeScript 类型定义、调用封装、事件常量 |
-| **运行时 JS 生成器** | `@wails-net/runtime` | 应用启动期 | 注入 Webview 的 `window.wails` API |
+| **运行时 JS 生成器** | `@wailsnet/runtime` | 应用启动期 | 注入 Webview 的 `window.wails` API |
 | **命令调用器闭包** | `Wails.Net.Application.Commands` | 命令注册点（`MapCommand` 调用时） | `CompiledCommandInvoker` 委托 |
 
 设计原则：
@@ -490,11 +490,11 @@ export const KnownEvents = {
 
 ---
 
-## 5. 运行时 JS 生成器（@wails-net/runtime）
+## 5. 运行时 JS 生成器（@wailsnet/runtime）
 
 ### 5.1 Generate(options) 主入口
 
-[@wails-net/runtime.cs](../../packages/wails-net-runtime/src/core/runtime.ts) 在应用启动时生成注入 Webview 的 JavaScript 运行时：
+[@wailsnet/runtime.cs](../../packages/wails-net-runtime/src/core/runtime.ts) 在应用启动时生成注入 Webview 的 JavaScript 运行时：
 
 ```csharp
 public static string Generate(`Application.GenerateRuntimeJs` options)
@@ -552,7 +552,7 @@ window._wails = {
 ```csharp
 internal static string LoadTemplate(string templateFileName, `Application.GenerateRuntimeJs` options)
 {
-    var assembly = typeof(@wails-net/runtime).Assembly;
+    var assembly = typeof(@wailsnet/runtime).Assembly;
     var resourceName = assembly.GetManifestResourceNames()
         .FirstOrDefault(n => n.EndsWith(templateFileName, StringComparison.Ordinal));
 
@@ -670,7 +670,7 @@ if (GeneratedBindingRegistry.TryGetInvoker(fullName, out var invoker) && invoker
 
 | 文件 | 职责 |
 |------|------|
-| [@wails-net/runtime.cs](../../packages/wails-net-runtime/src/core/runtime.ts) | `window.wails` API 与模板生成 |
+| [@wailsnet/runtime.cs](../../packages/wails-net-runtime/src/core/runtime.ts) | `window.wails` API 与模板生成 |
 
 ---
 

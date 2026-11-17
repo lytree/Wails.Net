@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { wails } from '@wails-net/runtime'
+import { wails } from '@wailsnet/runtime'
 
 /** 把任意抛出物归一化为可读文本（后端 CallError 也带 message）。 */
 export function describeError(error: unknown): string {

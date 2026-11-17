@@ -1,5 +1,5 @@
 import { onUnmounted, ref, shallowRef } from 'vue'
-import { wails } from '@wails-net/runtime'
+import { wails } from '@wailsnet/runtime'
 
 /**
  * 事件订阅组合式函数：订阅后端广播的事件并保留最近 `limit` 条记录。

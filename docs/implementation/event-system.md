@@ -416,7 +416,7 @@ AndroidPlatformApp.On(uint androidEventId)
 
 ## 4. 前端事件 API
 
-前端运行时由 [@wails-net/runtime.cs](../../packages/wails-net-runtime/src/core/runtime.ts) 生成并注入到 Webview，事件相关 API 暴露在 `window.wails.events` 命名空间。
+前端运行时由 [@wailsnet/runtime.cs](../../packages/wails-net-runtime/src/core/runtime.ts) 生成并注入到 Webview，事件相关 API 暴露在 `window.wails.events` 命名空间。
 
 ### 4.1 wails.events.on — 订阅事件
 

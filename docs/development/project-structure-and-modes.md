@@ -115,14 +115,14 @@ Wails.Net 仓库本身采用 monorepo 布局（`examples/*/frontend` 复用 `pac
 
 ```
 Wails.Net/                               # 仓库根（monorepo）
-├── packages/                            # 可发布的公共包（@wails-net/runtime 等）
+├── packages/                            # 可发布的公共包（@wailsnet/runtime 等）
 │   └── wails-net-runtime/
 │       ├── package.json
 │       └── src/
 ├── examples/                            # 演示应用（每个 Demo 是独立 .NET 项目）
 │   ├── Wails.Net.Demo.React/
 │   │   ├── frontend/                    # ←── pnpm workspace 子包
-│   │   │   ├── package.json             #     "dependencies": { "@wails-net/runtime": "workspace:*" }
+│   │   │   ├── package.json             #     "dependencies": { "@wailsnet/runtime": "workspace:*" }
 │   │   │   └── ...
 │   │   ├── Program.cs
 │   │   └── Wails.Net.Demo.React.csproj

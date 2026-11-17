@@ -54,7 +54,7 @@ public sealed class CommandTypeScriptGeneratorTests
         var ts = new CommandTypeScriptGenerator().Generate(manifest);
 
         // 断言：保留 import 与"未发现命令"提示
-        await Assert.That(ts).Contains("@wails-net/runtime");
+        await Assert.That(ts).Contains("@wailsnet/runtime");
         await Assert.That(ts).Contains("未发现命令");
     }
 

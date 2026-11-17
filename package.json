@@ -2,7 +2,7 @@
   "name": "wails-net-monorepo",
   "version": "0.0.0",
   "private": true,
-  "description": "Wails.Net 前端工作区根：托管 @wails-net/runtime 与全部示例前端工程。",
+  "description": "Wails.Net 前端工作区根：托管 @wailsnet/runtime 与全部示例前端工程。",
   "type": "module",
   "packageManager": "pnpm@9.15.0",
   "engines": {
@@ -14,6 +14,11 @@
     "build:examples": "pnpm -r --filter \"./examples/**\" run build",
     "typecheck": "pnpm -r run typecheck",
     "test": "pnpm -r run test",
+    "pack:npm": "node scripts/publish-npm.mjs",
+    "publish:npm": "node scripts/publish-npm.mjs --publish",
+    "publish:npm:staged": "node scripts/publish-npm.mjs --publish --staged",
+    "trust:publisher": "node scripts/trust-publisher.mjs",
+    "verify:versions": "node scripts/verify-versions.mjs",
     "clean": "pnpm -r exec node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "license": "MIT"

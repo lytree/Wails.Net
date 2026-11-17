@@ -226,7 +226,7 @@ HTTP 请求 (http://wails.localhost/*)
 运行时 JS 注入（不经过 HTTP）：
     Win32WebviewWindow.InjectRuntimeJs()
         └── Application.GenerateRuntimeJs()
-            └── @wails-net/runtime.Generate(options)
+            └── @wailsnet/runtime.Generate(options)
                 └── AddScriptToExecuteOnDocumentCreatedAsync(js)
                     （在页面任何脚本执行前注入 window.wails API）
 ```
@@ -302,7 +302,7 @@ Wails.Net.Application.Windows       # Windows 平台实现（WebView2 + CsWin32�
 Wails.Net.Application.Linux         # Linux 平台实现（GTK4 + WebKitGTK via GirCore 0.8.1）
 Wails.Net.Application.Android       # Android 平台实现（.NET Android + WebKit.WebView + WebMessageListener）
 Wails.Net.AssetServer              # 资源服务器（静态文件 + IHttpServiceHandler 路由挂载）
-@wails-net/runtime               # JS 运行时（@wails-net/runtime + transport.template.js）
+@wailsnet/runtime               # JS 运行时（@wailsnet/runtime + transport.template.js）
 Wails.Net.Generator                # 代码生成器（BindingSourceGenerator / TypeScriptGenerator）
 Wails.Net.Cli                      # CLI 工具（wails.net new/build/run/package）
 Wails.Net.Events                   # 事件类型定义

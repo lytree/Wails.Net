@@ -58,10 +58,10 @@ public sealed class PluginBuildPublishTests
         try
         {
             File.WriteAllText(Path.Combine(dir, "package.json"),
-                """{ "name": "@wails-net/plugin-updater", "version": "0.1.0-alpha.1" }""");
+                """{ "name": "@wailsnet/plugin-updater", "version": "0.1.0-alpha.1" }""");
 
             await Assert.That(PluginBuilder.ReadPackageJsonField(dir, "name"))
-                .IsEqualTo("@wails-net/plugin-updater");
+                .IsEqualTo("@wailsnet/plugin-updater");
             await Assert.That(PluginBuilder.ReadPackageJsonField(dir, "version"))
                 .IsEqualTo("0.1.0-alpha.1");
         }
@@ -126,7 +126,7 @@ public sealed class PluginBuildPublishTests
             var frontendDir = Path.Combine(repo, "packages", "wails-net-plugin-updater");
             Directory.CreateDirectory(frontendDir);
             File.WriteAllText(Path.Combine(frontendDir, "package.json"),
-                """{ "name": "@wails-net/plugin-updater", "version": "0.1.0-alpha.1" }""");
+                """{ "name": "@wailsnet/plugin-updater", "version": "0.1.0-alpha.1" }""");
 
             var plugins = PluginBuilder.DiscoverPlugins(startDir: repo);
 
@@ -136,7 +136,7 @@ public sealed class PluginBuildPublishTests
             await Assert.That(plugin.BackendPackageId).IsEqualTo("Wails.Net.Plugins.Updater");
             await Assert.That(plugin.BackendProjectPath).IsNotNull();
             await Assert.That(plugin.FrontendDir).IsNotNull();
-            await Assert.That(plugin.FrontendPackageName).IsEqualTo("@wails-net/plugin-updater");
+            await Assert.That(plugin.FrontendPackageName).IsEqualTo("@wailsnet/plugin-updater");
         }
         finally
         {
@@ -336,7 +336,7 @@ public sealed class PluginBuildPublishTests
         var frontendDir = Path.Combine(repo, "packages", "wails-net-plugin-updater");
         Directory.CreateDirectory(frontendDir);
         File.WriteAllText(Path.Combine(frontendDir, "package.json"),
-            $$"""{ "name": "@wails-net/plugin-updater", "version": "{{frontendVersion}}" }""");
+            $$"""{ "name": "@wailsnet/plugin-updater", "version": "{{frontendVersion}}" }""");
 
         return PluginBuilder.DiscoverPlugins(startDir: repo).Single();
     }

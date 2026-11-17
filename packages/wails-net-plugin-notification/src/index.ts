@@ -1,6 +1,6 @@
-/** M3 runtime 变薄：从 @wails-net/runtime 迁移，按需安装 */
-import { call } from "@wails-net/runtime";
-import type { NotificationOptions } from "@wails-net/runtime";
+/** M3 runtime 变薄：从 @wailsnet/runtime 迁移，按需安装 */
+import { call } from "@wailsnet/runtime";
+import type { NotificationOptions } from "@wailsnet/runtime";
 
 export const notification = {
   show: (options: NotificationOptions) => call<void>("notification.show", [options]),

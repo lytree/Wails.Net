@@ -219,7 +219,7 @@ public sealed class PluginPublisher
         if (dryRun)
         {
             var packageName = string.IsNullOrEmpty(plugin.FrontendPackageName)
-                ? $"@wails-net/plugin-{plugin.Name}"
+                ? $"@wailsnet/plugin-{plugin.Name}"
                 : plugin.FrontendPackageName;
             Console.WriteLine($"[插件 {plugin.Name}] 演练：pnpm publish（npm 包 {packageName}，目录 {plugin.FrontendDir}）");
             return 0;

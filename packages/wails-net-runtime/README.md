@@ -1,4 +1,4 @@
-# @wails-net/runtime
+# @wailsnet/runtime
 
 Wails.Net（Wails v3 的 .NET 10 移植版）前端运行时 SDK，使用 **TypeScript** 编写、**pnpm** 管理。
 
@@ -8,12 +8,12 @@ Wails.Net（Wails v3 的 .NET 10 移植版）前端运行时 SDK，使用 **Type
 - **全部核心命名空间** 与 **全部 46 个插件命令** 的强类型封装（window / dialog / clipboard / fs / http / notification / store / camera / geolocation / permissions …）。
 - 与 Wails.Net 后端 `MessageProcessor` / `ResponseMessage` 协议严格一致，包括 **双层响应解包** 与 **FNV-1a 绑定 ID**。
 
-> 与 C# 端 `Wails.Net.Generator` 的兼容：`wails.bindings.call(id, [args])` 由本包的 `wails.bindings.call` 与 `wails.bindings.id(fullName)` 提供支持。将 `TypeScriptGenerator.cs` 中的 `import { wails } from '@wails/runtime'` 改为 `@wails-net/runtime` 即可直接复用其生成产物。
+> 与 C# 端 `Wails.Net.Generator` 的兼容：`wails.bindings.call(id, [args])` 由本包的 `wails.bindings.call` 与 `wails.bindings.id(fullName)` 提供支持。将 `TypeScriptGenerator.cs` 中的 `import { wails } from '@wails/runtime'` 改为 `@wailsnet/runtime` 即可直接复用其生成产物。
 
 ## 安装
 
 ```bash
-pnpm add @wails-net/runtime
+pnpm add @wailsnet/runtime
 # 开发
 pnpm install
 pnpm build      # tsc -> dist/ (ESM + .d.ts)
@@ -26,7 +26,7 @@ pnpm typecheck  # tsc --noEmit
 ## 快速开始
 
 ```ts
-import { wails } from "@wails-net/runtime";
+import { wails } from "@wailsnet/runtime";
 
 // 调用后端绑定方法或插件命令（位置参数数组）
 const greet = await wails.call<string>("GreetingService.Greet", ["World"]);
@@ -91,7 +91,7 @@ window._wails = { platform: "windows", isDebug: true, isServerMode: false,
                   assetServerUrl: "...", webSocketUrl: "..." };
 ```
 
-保持该标志注入即可；前端改为 `import { wails } from "@wails-net/runtime"`，无需再加载运行时 JS。
+保持该标志注入即可；前端改为 `import { wails } from "@wailsnet/runtime"`，无需再加载运行时 JS。
 
 ## 目录结构
 

@@ -50,7 +50,7 @@ async function pickFile(): Promise<void> {
 }
 
 async function setTitle(): Promise<void> {
-  // 窗口控制走 window.* 命令（对应 @wails-net/plugin-window 的类型化封装）
+  // 窗口控制走 window.* 命令（对应 @wailsnet/plugin-window 的类型化封装）
   const ok = await call<void>('window.setTitle', [{ title: '新标题 - 来自 Vue 3 SFC' }])
   if (ok !== null) windowMessage.value = '窗口标题已更新'
 }

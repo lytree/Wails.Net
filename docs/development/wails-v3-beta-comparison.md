@@ -15,7 +15,7 @@
 | 里程碑 | 2026-08-02 alpha → beta；**2026-10-26 v3.0.0 GA（此后周更 minor + nightly）** | 8 阶段实现完成（含 Android） |
 | 核心架构 | Go Services + 静态分析生成 TS 绑定；可安装插件（打包前端资源）；多窗口一等公民 | [Binding] 源生成器强类型调用器；IPlugin 插件体系（45+ BuiltIn）；多窗口支持 |
 | 构建 | Taskfile + `wails3 build` + server 构建 | MSBuild/dotnet + `wails build` + Server 模式（WebSocketTransport） |
-| 前端运行时 | @wailsio/runtime **3.1.0**（版本号与 Wails 发布一致） | @wails-net/runtime（自研，已迁 npm 包） |
+| 前端运行时 | @wailsio/runtime **3.1.0**（版本号与 Wails 发布一致） | @wailsnet/runtime（自研，已迁 npm 包） |
 | 平台 | macOS / Linux（GTK4）/ Windows / iOS / Android（实验性） | Windows / Linux（GirCore GTK4）/ Android；macOS 骨架 |
 
 **结论**：方向高度一致（编译期生成绑定、插件化、多窗口、Server 模式均已对齐），差距集中在 beta 期间新增的机制性功能与平台细节修复。
@@ -1152,7 +1152,7 @@ Wails.Net `HelperProcess.cs` 对齐：
    - 精确 index：`GetDirectoryIndexPath` 仅对 `/` 结尾路径追加精确 `index.html`。
    - 回退资源：`CreateResult(isFallback:true)` 忽略 Range，返回完整 200 与正确 `Content-Type`/长度。
    - 测试：`AssetServerTests` 新增 12 项（HEAD、404、归一化、精确 index、回退 Range），资源服务器测试项目共 305 项全部通过。
-   - ⛔ 不适用：`#6425` 中 `/wails/runtime.js` 专属路由——本移植前端运行时由 `@wails-net/runtime` npm 包提供，无该内置路由（维持不适用结论，不做硬凑）。
+   - ⛔ 不适用：`#6425` 中 `/wails/runtime.js` 专属路由——本移植前端运行时由 `@wailsnet/runtime` npm 包提供，无该内置路由（维持不适用结论，不做硬凑）。
 
 8. **资源服务器 MIME 内容嗅探（`#6398` 余项，2026-11-04 按 Go 源码重写）**
    - `ContentTypeSniffer`（internal 纯静态）逐条对齐 Go `net/http/sniff.go`（Go 1.24.0 源码）：前 512 字节、签名表顺序（HTML → XML → PDF/PS → BOM → 图像 → 音视频 → 字体 → 归档 → WASM → 文本）；`htmlSig` 使用 `firstNonWS` 且要求标签终止符（空格/`>`）；`maskedSig` 对 WebP/AIFF/ID3/Ogg/MThd/AVI/WAVE/EOT 按掩码比较（RIFF 子类型不再统一判为 `audio/wave`）；MP4 按大端盒长度校验并 4 字节步进扫描 `mp4`（跳过 offset 12）；文本嗅探仅排除 Go 控制字符集合（0x09/0x0A/0x0C/0x0D/0x1B/0x7F 允许，不校验 UTF-8），文本类返回带 `; charset=utf-8`（BOM 返回 utf-16be/utf-16le）。

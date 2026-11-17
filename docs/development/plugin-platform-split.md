@@ -144,7 +144,7 @@ src/
 
 > **目录位置硬约束**：插件包必须直接位于 `src/Wails.Net.Plugins.{Name}/`（不要套 `src/plugins/` 子目录）——`PluginBuilder.DiscoverPlugins` 按 `src/Wails.Net.Plugins.*` 模式扫描，`wails plugin build/publish` 依赖此规则自动发现插件。
 
-> **决策点（移动端聚合 vs 逐插件拆分）**：移动端 8 插件共用同一套 Android 平台实现（`Wails.Net.Application.Android/Mobile`）、同一 `net10.0-android36.0` TFM、同一 Activity 委托注入管道，**推荐聚合为 `Wails.Net.Plugins.Mobile` 单包**（对齐 Android 工程整体发布形态），npm 侧可对应 `@wails-net/plugin-mobile` 一个包 + 命名空间导出。若生态需要逐插件安装，再拆分为 `Wails.Net.Plugins.Biometric` 等独立包——拆分成本低（类无交叉依赖）。
+> **决策点（移动端聚合 vs 逐插件拆分）**：移动端 8 插件共用同一套 Android 平台实现（`Wails.Net.Application.Android/Mobile`）、同一 `net10.0-android36.0` TFM、同一 Activity 委托注入管道，**推荐聚合为 `Wails.Net.Plugins.Mobile` 单包**（对齐 Android 工程整体发布形态），npm 侧可对应 `@wailsnet/plugin-mobile` 一个包 + 命名空间导出。若生态需要逐插件安装，再拆分为 `Wails.Net.Plugins.Biometric` 等独立包——拆分成本低（类无交叉依赖）。
 
 ### 3.2 移动端包的 TFM 双目标
 
@@ -201,7 +201,7 @@ public static class KeychainExtensions
 packages/
 ├── wails-net-runtime/                     # 基座（保留）：wails.call / events / window.* / defineCommand
 └── wails-net-plugin-{name}/               # 每插件薄壳
-    ├── package.json                       # @wails-net/plugin-{name}，version == WailsNetVersion
+    ├── package.json                       # @wailsnet/plugin-{name}，version == WailsNetVersion
     ├── src/index.ts                       # defineCommand 强类型封装
     └── dist/                              # 构建产物（index.js + index.d.ts）
 ```
@@ -210,15 +210,15 @@ packages/
 
 | 后端（NuGet） | 前端（npm） | 命令前缀 |
 |--------------|------------|---------|
-| `Wails.Net.Plugins.Updater` | `@wails-net/plugin-updater` | `updater.*` |
-| `Wails.Net.Plugins.Keychain` | `@wails-net/plugin-keychain` | `keychain.*` |
-| `Wails.Net.Plugins.Mobile`（聚合） | `@wails-net/plugin-mobile` | `biometric.*` `nfc.*` `haptics.*` 等 |
+| `Wails.Net.Plugins.Updater` | `@wailsnet/plugin-updater` | `updater.*` |
+| `Wails.Net.Plugins.Keychain` | `@wailsnet/plugin-keychain` | `keychain.*` |
+| `Wails.Net.Plugins.Mobile`（聚合） | `@wailsnet/plugin-mobile` | `biometric.*` `nfc.*` `haptics.*` 等 |
 
 ### 4.3 平台特有插件的 TS 侧标注
 
 ```ts
 // packages/wails-net-plugin-keychain/src/index.ts
-import { defineCommand } from "@wails-net/runtime";
+import { defineCommand } from "@wailsnet/runtime";
 
 /**
  * 读取密码。
@@ -235,7 +235,7 @@ export * from "./biometric";
 export * from "./nfc";
 export * from "./haptics";
 // …
-// 调用方按需 import：import { authenticate } from "@wails-net/plugin-mobile";
+// 调用方按需 import：import { authenticate } from "@wailsnet/plugin-mobile";
 ```
 
 ---
@@ -287,7 +287,7 @@ wails plugin new Mobile   --prefix mobile   --platform mobile
 
 ```bash
 # 前端：workspace 引用
-# demo/package.json:  "@wails-net/plugin-{name}": "workspace:*"
+# demo/package.json:  "@wailsnet/plugin-{name}": "workspace:*"
 
 # 后端：demo csproj 二选一
 #   A. ProjectReference（开发期，最快）：<ProjectReference Include="..\..\src\plugins\Wails.Net.Plugins.{Name}\…" />
@@ -325,9 +325,9 @@ flowchart LR
 
 | 阶段 | 内容 | 交付标准 |
 |------|------|---------|
-| **M1 分层落地 + 脚手架** ✅ | 插件包目录统一到 `src/Wails.Net.Plugins.{Name}/`；`wails plugin new` 脚手架已实现；**Updater 示范插件拆分已完成**（2026-08-07：13 个源码文件迁入 `Wails.Net.Plugins.Updater`，基座默认注册移除，前端 `@wails-net/plugin-updater` 封装落地，demo 与测试迁移重定向） | `wails plugin new Updater --platform desktop` 生成即编译通过；`wails plugin build --plugin updater` 产出 nupkg；Updater 测试 67/67 通过 |
-| **M2 联调验证** ✅ | vite demo（React）接入 `@wails-net/plugin-updater`：package.json 声明 `workspace:*`、新增 `UpdaterPanel` 组件（import 插件包）、App 注册 tab（2026-08-07 完成） | `tsc --noEmit` 0 错误（类型提示完整）；`vite build` 通过（52 modules，插件包 dist 进入产物）；`wails dev` GUI 冒烟留待交互环境 |
-| **M3 批量拆分** 🔄 | **全部插件拆分完成**（2026-08-08）：后端 33 插件独立包（L1 13 + L2 19 + L3 Keychain，BuiltIn 清空）+ **Mobile 聚合包**（`Wails.Net.Plugins.Mobile`：7 移动插件 + Null 降级实现；SPI 接口与 GeolocationModels 留基座——被 Android 平台层引用；基座/Android 层编译 0 错误）；前端 **runtime 变薄完成**：30 桌面命名空间迁入 30 插件包 + **`@wails-net/plugin-mobile` 聚合包**（8 移动命名空间），runtime 仅剩核心（wails/call/events/defineCommand）+ common 类型，**全部 39 插件包 + runtime tsc 0 失败**；runtime 版本已对齐（0.1.0-alpha.1）。**M4 发布闭环（进行中）**：CI 补 publish-npm job（版本一致性校验 scripts/verify-versions.mjs + pnpm -r publish）、release-guide.md 补 npm 步骤；剩余静态 demo 的 wails-runtime 拷贝重新同步（sync-runtime.fsx） | 全部 demo 构建通过，0 回归；静态 demo 的 `wails.d.ts` 汇总同步 |
+| **M1 分层落地 + 脚手架** ✅ | 插件包目录统一到 `src/Wails.Net.Plugins.{Name}/`；`wails plugin new` 脚手架已实现；**Updater 示范插件拆分已完成**（2026-08-07：13 个源码文件迁入 `Wails.Net.Plugins.Updater`，基座默认注册移除，前端 `@wailsnet/plugin-updater` 封装落地，demo 与测试迁移重定向） | `wails plugin new Updater --platform desktop` 生成即编译通过；`wails plugin build --plugin updater` 产出 nupkg；Updater 测试 67/67 通过 |
+| **M2 联调验证** ✅ | vite demo（React）接入 `@wailsnet/plugin-updater`：package.json 声明 `workspace:*`、新增 `UpdaterPanel` 组件（import 插件包）、App 注册 tab（2026-08-07 完成） | `tsc --noEmit` 0 错误（类型提示完整）；`vite build` 通过（52 modules，插件包 dist 进入产物）；`wails dev` GUI 冒烟留待交互环境 |
+| **M3 批量拆分** 🔄 | **全部插件拆分完成**（2026-08-08）：后端 33 插件独立包（L1 13 + L2 19 + L3 Keychain，BuiltIn 清空）+ **Mobile 聚合包**（`Wails.Net.Plugins.Mobile`：7 移动插件 + Null 降级实现；SPI 接口与 GeolocationModels 留基座——被 Android 平台层引用；基座/Android 层编译 0 错误）；前端 **runtime 变薄完成**：30 桌面命名空间迁入 30 插件包 + **`@wailsnet/plugin-mobile` 聚合包**（8 移动命名空间），runtime 仅剩核心（wails/call/events/defineCommand）+ common 类型，**全部 39 插件包 + runtime tsc 0 失败**；runtime 版本已对齐（0.1.0-alpha.1）。**M4 发布闭环（进行中）**：CI 补 publish-npm job（版本一致性校验 scripts/verify-versions.mjs + pnpm -r publish）、release-guide.md 补 npm 步骤；剩余静态 demo 的 wails-runtime 拷贝重新同步（sync-runtime.fsx） | 全部 demo 构建通过，0 回归；静态 demo 的 `wails.d.ts` 汇总同步 |
 | **M4 发布闭环** | CI 双包发布 + 版本一致性断言 + 平台矩阵构建 + 文档更新（plugins.md / plugin-packaging.md 同步） | 发版后从 nuget.org / npm registry 安装验证 |
 
 **拆分顺序理由**：L1 纯托管插件无平台依赖，拆出即独立可用、测试零成本，先拆建立信心与包规范；L2 依赖基座接口，基座不动、只搬类，回归面小；L3 涉及平台注入，最后单独处理。
@@ -345,7 +345,7 @@ flowchart LR
 **向后兼容**：
 
 - 拆分期间 `Wails.Net.Application` 继续提供 `re-export` 类型别名（如 `public using` / 类型转发），demo 不强制改 import 即不破坏
-- 前端 `@wails-net/runtime` 在 M3 完成前保留各插件命令的 re-export（`export { checkForUpdate } from "@wails-net/plugin-updater"`），旧代码无需迁移
+- 前端 `@wailsnet/runtime` 在 M3 完成前保留各插件命令的 re-export（`export { checkForUpdate } from "@wailsnet/plugin-updater"`），旧代码无需迁移
 - 双名命令（`fs.*` / `filesystem.*`）随包迁移时两套都搬
 
 ---

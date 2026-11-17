@@ -336,7 +336,7 @@ public sealed class SystemEventsAndFsWatchTests
     }
 
     // ---------------------------------------------------------------------
-    // RuntimeGenerator JS API 补全测试（P0-D：前端运行时已迁往 npm 包 @wails-net/runtime，
+    // RuntimeGenerator JS API 补全测试（P0-D：前端运行时已迁往 npm 包 @wailsnet/runtime，
     // 故此处的 window.wails 字符串断言失去意义，相关测试已移除。
     // 等价覆盖见 packages/wails-net-runtime/src/api/*.ts 单测与 vitest 套件。）
     // ---------------------------------------------------------------------

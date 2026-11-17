@@ -17,7 +17,7 @@
 | 命令总数 | ≈300（桌面 282 + 移动端 19 + Android 专属 2） |
 | 代码位置 | `src/Wails.Net.Plugins.*`（桌面 39 个项目）、`src/Wails.Net.Plugins.Mobile`（移动端 7 个）、`src/Wails.Net.Application.Android`（Android 专属） |
 | 启用方式 | 按需 `builder.UsePlugin<T>()`，**无默认全量注册** |
-| 前端访问 | `wails.call('<plugin>.<action>', [args])`（vite 项目经 `@wails-net/runtime` 类型化封装） |
+| 前端访问 | `wails.call('<plugin>.<action>', [args])`（vite 项目经 `@wailsnet/runtime` 类型化封装） |
 | 插件契约 | `IPlugin`：`Name` + `ConfigureServices`（注册 DI）+ `Configure`（注册命令） |
 
 ### 平台支持总览
@@ -156,7 +156,7 @@ builder.UsePluginsFromAssembly();
 ### 5.2 前端调用（vite 项目）
 
 ```typescript
-import { wails } from "@wails-net/runtime";
+import { wails } from "@wailsnet/runtime";
 
 // 剪贴板
 await wails.call('clipboard.setText', ['Hello']);          // 复制文本
@@ -217,5 +217,5 @@ builder.UsePlugin<UpdaterPlugin>();
 3. **移动端插件平台限制**：7 个移动端插件在 Windows/Linux 上调用抛 `PlatformNotSupportedException`；Android 上桌面插件不可用。
 4. **安全设计**：`FileSystemPlugin`（沙箱）、`OpenerPlugin`（URL 白名单）、`ShellPlugin`（命令白名单）、`PersistedScopePlugin`（路径作用域）是权限控制的关键插件，生产环境务必配置。
 5. **菜单角色**：`MenuPlugin` 的 macOS 专属角色（Hide/Quit/About 等）在其他平台静默 no-op；Android 无 `IMenuImpl`。
-6. **双包发布未落地**：插件双包（NuGet `Wails.Net.Plugins.*` + npm `@wails-net/plugin-*`）模型已决策（2026-08-07），当前插件仍为框架内置，尚未拆分为独立可安装包（M1 Updater 示范插件待做）。
+6. **双包发布未落地**：插件双包（NuGet `Wails.Net.Plugins.*` + npm `@wailsnet/plugin-*`）模型已决策（2026-08-07），当前插件仍为框架内置，尚未拆分为独立可安装包（M1 Updater 示范插件待做）。
 7. **命令别名**：部分插件注册双名（`fs.*` / `filesystem.*`、`os.*` / `system.*`、`notification.isPermissionGranted` / `hasPermission`），旧前端代码无需迁移。

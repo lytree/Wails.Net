@@ -1,6 +1,6 @@
 import { useState } from 'react'
 // 从独立插件包导入（workspace:* 解析，类型随包走）：包导出的是 updater 对象
-import { updater, type UpdateCheckResult } from '@wails-net/plugin-updater'
+import { updater, type UpdateCheckResult } from '@wailsnet/plugin-updater'
 
 interface LogEntry {
   time: string
@@ -44,8 +44,8 @@ export default function UpdaterPanel() {
 
   return (
     <div className="panel">
-      <h2>更新检查插件（@wails-net/plugin-updater）</h2>
-      <p className="hint">演示从独立 npm 插件包（@wails-net/plugin-updater）导入类型化封装</p>
+      <h2>更新检查插件（@wailsnet/plugin-updater）</h2>
+      <p className="hint">演示从独立 npm 插件包（@wailsnet/plugin-updater）导入类型化封装</p>
 
       <div className="row">
         <button onClick={onCheck}>检查更新</button>

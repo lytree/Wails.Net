@@ -10,8 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@wails-net/runtime": "workspace:*",
-    "@wails-net/plugin-updater": "workspace:*",
+    "@wailsnet/runtime": "workspace:*",
+    "@wailsnet/plugin-updater": "workspace:*",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

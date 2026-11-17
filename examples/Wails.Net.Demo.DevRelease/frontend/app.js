@@ -2,7 +2,7 @@ import { wails } from "./wails-runtime/index.js";
 
 // Wails.Net 前端：DevRelease 演示
 // -------------------------------------------------------------------------
-// wails 对象由 @wails-net/runtime 提供（从本地 wails-runtime 目录导入）。
+// wails 对象由 @wailsnet/runtime 提供（从本地 wails-runtime 目录导入）。
 // 绑定方法通过 wails.call('Service.Method', args) 调用；
 // 命令（window.* 等）同样走 wails.call('window.minimize', [])，由后端 WindowPlugin 提供。
 // -------------------------------------------------------------------------

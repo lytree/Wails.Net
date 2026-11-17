@@ -14,11 +14,11 @@
 
 ### 1.1 现状问题
 
-当前插件体系只有**后端命令注册**（`IPlugin` / `PluginManager`，45+ BuiltIn 插件），前端封装全部聚合在 `@wails-net/runtime` 单包内（`src/api/*.ts`）：
+当前插件体系只有**后端命令注册**（`IPlugin` / `PluginManager`，45+ BuiltIn 插件），前端封装全部聚合在 `@wailsnet/runtime` 单包内（`src/api/*.ts`）：
 
 | 现状 | 问题 |
 |------|------|
-| 前端类型集中在 `@wails-net/runtime` | 包体积随插件数增长，无法按需安装 |
+| 前端类型集中在 `@wailsnet/runtime` | 包体积随插件数增长，无法按需安装 |
 | 插件无前端资产承载 | 第三方无法分发「UI + 逻辑」一体功能包 |
 | 插件 API 变更无类型约束 | 前端拼错命令名/参数只能运行时才发现 |
 
@@ -29,7 +29,7 @@
 ```
 插件源码（单一版本号）
 ├── src/Wails.Net.Plugins.{Name}/      → NuGet 包  Wails.Net.Plugins.{Name}
-└── packages/wails-net-plugin-{name}/  → npm 包    @wails-net/plugin-{name}
+└── packages/wails-net-plugin-{name}/  → npm 包    @wailsnet/plugin-{name}
 ```
 
 - **NuGet 包**：后端命令注册 + 权限声明 + 内嵌前端资源（可选）
@@ -38,7 +38,7 @@
 vite 项目用法：
 
 ```ts
-import { checkForUpdate } from "@wails-net/plugin-updater";  // 类型全自动
+import { checkForUpdate } from "@wailsnet/plugin-updater";  // 类型全自动
 ```
 
 ---
@@ -48,7 +48,7 @@ import { checkForUpdate } from "@wails-net/plugin-updater";  // 类型全自动
 ```
 ┌─────────────────────── 插件源码（单一仓库 / 单一版本号）───────────────────────┐
 │                                                                             │
-│  Wails.Net.Plugins.Updater (C#)          @wails-net/plugin-updater (TS)     │
+│  Wails.Net.Plugins.Updater (C#)          @wailsnet/plugin-updater (TS)     │
 │  ├─ 命令注册 + 权限声明                    ├─ 强类型封装（调 wails.call）       │
 │  └─ 内嵌前端资源 (EmbeddedResource)        └─ dist/index.d.ts（类型自动随包）  │
 └──────────────┬──────────────────────────────────┬───────────────────────────┘
@@ -60,8 +60,8 @@ import { checkForUpdate } from "@wails-net/plugin-updater";  // 类型全自动
                │                                      │
 ┌──────────────┴──────────────────────────────────┴───────────────────────────┐
 │  vite 项目（React/Vue）                                                      │
-│  ├─ package.json: "@wails-net/plugin-updater": "workspace:*" | "1.x.y"      │
-│  └─ App.tsx: import { checkForUpdate } from "@wails-net/plugin-updater"     │
+│  ├─ package.json: "@wailsnet/plugin-updater": "workspace:*" | "1.x.y"      │
+│  └─ App.tsx: import { checkForUpdate } from "@wailsnet/plugin-updater"     │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -70,7 +70,7 @@ import { checkForUpdate } from "@wails-net/plugin-updater";  // 类型全自动
 1. **同仓库**：插件前后端代码在同一仓库、同一 PR 中维护，保证 API 一致
 2. **同版本**：NuGet 版本（`WailsNetVersion`）与 npm 版本（package.json）必须一致，发布脚本同时 bump
 3. **npm 包是薄壳**：前端封装只做类型化调用转发，不含业务逻辑，逻辑在后端
-4. **runtime 是核心**：`@wails-net/runtime` 保留核心命名空间（window/clipboard/events/dialog/fs 等）+ 插件包的公共基座，插件包依赖它
+4. **runtime 是核心**：`@wailsnet/runtime` 保留核心命名空间（window/clipboard/events/dialog/fs 等）+ 插件包的公共基座，插件包依赖它
 
 ---
 
@@ -81,10 +81,10 @@ import { checkForUpdate } from "@wails-net/plugin-updater";  // 类型全自动
 | 位置 | 内容 | 发布产物 |
 |------|------|---------|
 | `src/Wails.Net.Plugins.{Name}/` | 后端插件实现（IPlugin 子类 + 命令） | NuGet `Wails.Net.Plugins.{Name}` |
-| `packages/wails-net-plugin-{name}/` | 前端封装（TS 源码 + 构建配置） | npm `@wails-net/plugin-{name}` |
-| `packages/wails-net-runtime/` | 核心运行时（已有，保留） | npm `@wails-net/runtime` |
+| `packages/wails-net-plugin-{name}/` | 前端封装（TS 源码 + 构建配置） | npm `@wailsnet/plugin-{name}` |
+| `packages/wails-net-runtime/` | 核心运行时（已有，保留） | npm `@wailsnet/runtime` |
 
-命名映射：后端 `Wails.Net.Plugins.Updater` ↔ 前端 `@wails-net/plugin-updater`（PascalCase → kebab-case）。
+命名映射：后端 `Wails.Net.Plugins.Updater` ↔ 前端 `@wailsnet/plugin-updater`（PascalCase → kebab-case）。
 
 ### 3.2 后端项目规范（NuGet 包）
 
@@ -114,7 +114,7 @@ import { checkForUpdate } from "@wails-net/plugin-updater";  // 类型全自动
 
 ```
 packages/wails-net-plugin-updater/
-├── package.json          # name: @wails-net/plugin-updater
+├── package.json          # name: @wailsnet/plugin-updater
 ├── tsconfig.json         # 构建配置（对齐 runtime 包）
 ├── src/
 │   └── index.ts          # 强类型封装（唯一入口）
@@ -125,7 +125,7 @@ packages/wails-net-plugin-updater/
 
 ```jsonc
 {
-  "name": "@wails-net/plugin-updater",
+  "name": "@wailsnet/plugin-updater",
   "version": "0.1.0",                      // 必须与 WailsNetVersion 一致
   "type": "module",
   "main": "./dist/index.js",
@@ -135,7 +135,7 @@ packages/wails-net-plugin-updater/
     "./package.json": "./package.json"
   },
   "files": ["dist"],
-  "dependencies": { "@wails-net/runtime": "workspace:*" }  // 依赖核心运行时
+  "dependencies": { "@wailsnet/runtime": "workspace:*" }  // 依赖核心运行时
 }
 ```
 
@@ -143,10 +143,10 @@ packages/wails-net-plugin-updater/
 
 ```ts
 /**
- * @wails-net/plugin-updater — Updater 插件前端封装。
+ * @wailsnet/plugin-updater — Updater 插件前端封装。
  * 命令前缀 `updater.*`，后端经 L2 抽象层 `defineCommand` 转发（强类型化）。
  */
-import { defineCommand } from "@wails-net/runtime";
+import { defineCommand } from "@wailsnet/runtime";
 
 /** 更新通道。对应后端 enum UpdateChannel。 */
 export type UpdateChannel = "stable" | "beta";
@@ -177,7 +177,7 @@ const manifest = await checkForUpdate("stable");
 
 插件封装底层是 `wails.call(name, args)`，线协议约定：`args.length === 1` 取整体反序列化、`> 1` 按位置、`0` 用 default。若每个插件手写，每命令要重复 5 件套（命令名拼接、参数打包、返回泛型、可选参数 null 填充、线协议映射）。
 
-**`@wails-net/runtime` 的 L2 抽象层**（`src/core/commands.ts`）把这 5 件套收进公共设施：
+**`@wailsnet/runtime` 的 L2 抽象层**（`src/core/commands.ts`）把这 5 件套收进公共设施：
 
 ```ts
 /** 参数打包模式，对应线协议约定。 */
@@ -224,20 +224,20 @@ export function defineCommand<A extends unknown[], R>(
 
 ```bash
 # 正式发布后：npm registry
-pnpm add @wails-net/plugin-updater @wails-net/runtime
+pnpm add @wailsnet/plugin-updater @wailsnet/runtime
 
 # 本地联调：pnpm workspace（仓库 pnpm-workspace.yaml 已含 packages/*）
 # package.json 中声明：
-#   "@wails-net/plugin-updater": "workspace:*"
-#   "@wails-net/runtime": "workspace:*"
+#   "@wailsnet/plugin-updater": "workspace:*"
+#   "@wailsnet/runtime": "workspace:*"
 ```
 
 ### 4.2 代码调用
 
 ```tsx
 // App.tsx（React demo 为例）
-import { checkForUpdate, getCurrentVersion } from "@wails-net/plugin-updater";
-import { wails } from "@wails-net/runtime";
+import { checkForUpdate, getCurrentVersion } from "@wailsnet/plugin-updater";
+import { wails } from "@wailsnet/runtime";
 
 function UpdaterPanel() {
   const [version, setVersion] = useState<string>("");
@@ -254,7 +254,7 @@ function UpdaterPanel() {
 
 ### 4.3 类型提示与 tsconfig
 
-- vite 项目 `moduleResolution: "bundler"` + `import` 方式：类型自动来自 `node_modules/@wails-net/plugin-updater/dist/index.d.ts`
+- vite 项目 `moduleResolution: "bundler"` + `import` 方式：类型自动来自 `node_modules/@wailsnet/plugin-updater/dist/index.d.ts`
 - **零配置**：无需 `wails.d.ts` 全局声明、无需 tsconfig include 技巧（区别于方式 A）
 - 校验命令：`npx tsc --noEmit`（React）/ `npx vue-tsc --noEmit`（Vue）
 
@@ -266,7 +266,7 @@ function UpdaterPanel() {
 | 无构建链静态 demo（21 个） | .d.ts 汇总（`src/wails.d.ts`） | 无 node_modules，编辑器类型提示靠 tsconfig include |
 | 全局 `window.wails.plugins.*` 形态 | .d.ts 汇总 | 运行时注入管道（`GenerateRuntimeJs`）配合 |
 
-两条线**互补不冲突**，均以 `@wails-net/runtime` 的类型为公共基座。
+两条线**互补不冲突**，均以 `@wailsnet/runtime` 的类型为公共基座。
 
 ---
 
@@ -293,11 +293,11 @@ flowchart LR
 | 环节 | 做法 |
 |------|------|
 | NuGet 发布 | `dotnet pack` + `dotnet nuget push`（CI `publish-nuget` job，Trusted Publishing OIDC，见 [release-guide.md](release-guide.md)） |
-| npm 发布 | `pnpm -r publish --access public`（CI `publish-npm` job，`NPM_TOKEN` secret；OIDC Trusted Publisher 对齐 LY.Tool release-frontend.yml 模式） |
+| npm 发布 | `pnpm pack:npm` + `npm publish <tgz>`（CI `publish-npm` job，Trusted Publishing / OIDC 免 token） |
 | 版本一致性校验 | `scripts/verify-versions.mjs`：断言 `WailsNetVersion` == 各插件 package.json version（含 runtime 与 mobile 聚合包），不一致即失败；本地可 `--fix` 自动对齐 |
 | 前端产物完整性 | `dist/` 必须先构建（`pnpm -r build`），禁止发布未构建源码 |
 
-> **M4 落地（2026-08-08）**：CI 已补 `publish-npm` job（checkout → setup-node → corepack pnpm → `verify-versions.mjs` → `pnpm -r build` → `pnpm -r publish`），与 `publish-nuget` 并行触发（Git 标签 `v*`）；`@wails-net/runtime` 与 39 个插件包同版本发布。
+> **M4 落地（2026-08-08）**：CI 已补 `publish-npm` job（checkout → setup-node → corepack pnpm → `verify-versions.mjs` → `pnpm -r build` → `pnpm -r publish`），与 `publish-nuget` 并行触发（Git 标签 `v*`）；`@wailsnet/runtime` 与 39 个插件包同版本发布。
 
 ### 5.3 本地联调（无发布）
 

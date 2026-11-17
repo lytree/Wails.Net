@@ -55,7 +55,7 @@ async function onCancelFromFrontend() {
     }
     log(`前端发起取消：callId=${currentCallId}`);
     try {
-        // 取消：通过 wails.cancel(callId) 发送取消消息（@wails-net/runtime 标准 API）
+        // 取消：通过 wails.cancel(callId) 发送取消消息（@wailsnet/runtime 标准 API）
         if (typeof wails.cancel === 'function') {
             wails.cancel(currentCallId);
             log('已发送取消请求（wails.cancel）');

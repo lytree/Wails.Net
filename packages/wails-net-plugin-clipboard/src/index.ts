@@ -1,9 +1,9 @@
 /**
- * @wails-net/plugin-clipboard — clipboard 插件前端封装。
- * 命令前缀 `clipboard.*`（M3 runtime 变薄：从 @wails-net/runtime 迁移至此，按需安装）。
+ * @wailsnet/plugin-clipboard — clipboard 插件前端封装。
+ * 命令前缀 `clipboard.*`（M3 runtime 变薄：从 @wailsnet/runtime 迁移至此，按需安装）。
  * @platform windows,linux,macos,android  全平台通用插件。
  */
-import { call } from "@wails-net/runtime";
+import { call } from "@wailsnet/runtime";
 
 /**
  * clipboard 插件前端 API（命令前缀 `clipboard.*`）。

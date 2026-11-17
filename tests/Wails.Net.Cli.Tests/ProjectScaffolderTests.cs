@@ -205,7 +205,7 @@ public sealed class ProjectScaffolderTests
             // 验证 Vite 插件
             await Assert.That(content).Contains("\"@vitejs/plugin-vue\":");
             // 验证 Wails 运行时
-            await Assert.That(content).Contains("\"@wails-net/runtime\":");
+            await Assert.That(content).Contains("\"@wailsnet/runtime\":");
         }
         finally
         {
@@ -233,7 +233,7 @@ public sealed class ProjectScaffolderTests
             await Assert.That(content).Contains("\"@types/react\":");
             await Assert.That(content).Contains("\"@types/react-dom\":");
             // 验证 Wails 运行时
-            await Assert.That(content).Contains("\"@wails-net/runtime\":");
+            await Assert.That(content).Contains("\"@wailsnet/runtime\":");
         }
         finally
         {
@@ -259,7 +259,7 @@ public sealed class ProjectScaffolderTests
             await Assert.That(content).Contains("\"@sveltejs/vite-plugin-svelte\":");
             await Assert.That(content).Contains("\"svelte-check\":");
             // 验证 Wails 运行时
-            await Assert.That(content).Contains("\"@wails-net/runtime\":");
+            await Assert.That(content).Contains("\"@wailsnet/runtime\":");
         }
         finally
         {
@@ -284,7 +284,7 @@ public sealed class ProjectScaffolderTests
             await Assert.That(content).DoesNotContain("\"react\":");
             await Assert.That(content).DoesNotContain("\"svelte\":");
             // vanilla 仍应包含 Wails 运行时
-            await Assert.That(content).Contains("\"@wails-net/runtime\":");
+            await Assert.That(content).Contains("\"@wailsnet/runtime\":");
         }
         finally
         {
@@ -331,7 +331,7 @@ public sealed class ProjectScaffolderTests
 
             await Assert.That(content).Contains("createRoot");
             await Assert.That(content).Contains("from 'react-dom/client'");
-            await Assert.That(content).Contains("@wails-net/runtime");
+            await Assert.That(content).Contains("@wailsnet/runtime");
         }
         finally
         {
@@ -516,7 +516,7 @@ public sealed class ProjectScaffolderTests
 
             await Assert.That(root.GetProperty("name").GetString()).IsEqualTo("my.app-frontend");
             await Assert.That(root.GetProperty("dependencies")
-                .TryGetProperty("@wails-net/runtime", out _)).IsTrue();
+                .TryGetProperty("@wailsnet/runtime", out _)).IsTrue();
             await Assert.That(root.GetProperty("dependencies")
                 .TryGetProperty("vue", out _)).IsTrue();
             await Assert.That(root.GetProperty("devDependencies")

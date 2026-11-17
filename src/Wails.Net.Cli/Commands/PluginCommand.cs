@@ -394,7 +394,7 @@ internal sealed class PluginCommand : CliCommandBase
         Info($"  dotnet sln Wails.Net.slnx add tests/Wails.Net.Plugins.{PluginBuilder.ToPascalCase(name)}.Tests/Wails.Net.Plugins.{PluginBuilder.ToPascalCase(name)}.Tests.csproj");
         Info($"  cd packages/wails-net-plugin-{commandPrefix} && pnpm install && pnpm build");
         Info($"  wails plugin build --plugin {commandPrefix}");
-        Info("然后：在 Program.cs 中注册插件（后端 UsePlugin，前端 import @wails-net/plugin-{name}）");
+        Info("然后：在 Program.cs 中注册插件（后端 UsePlugin，前端 import @wailsnet/plugin-{name}）");
 
         return 0;
     }

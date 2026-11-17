@@ -51,7 +51,7 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 
 | 文档 | 内容 |
 |------|------|
-| [前端 JavaScript API 参考](api/frontend-api.md) | `@wails-net/runtime` 命名导出（`import { wails }`）、44 个命名空间、`call`/`events`/`window`/`app` 等模块 |
+| [前端 JavaScript API 参考](api/frontend-api.md) | `@wailsnet/runtime` 命名导出（`import { wails }`）、44 个命名空间、`call`/`events`/`window`/`app` 等模块 |
 
 ### 开发指南（`development/`）
 

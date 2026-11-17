@@ -1,15 +1,15 @@
 /**
- * @wails-net/runtime — Wails.Net 前端运行时 SDK（TypeScript）。
+ * @wailsnet/runtime — Wails.Net 前端运行时 SDK（TypeScript）。
  *
  * 自包含 IPC 传输 + 核心 API（wails/call/events/defineCommand）+ 共享类型。
  * 桌面插件封装（window/windows/screen/…/log/store/net/fs 等）与移动端插件
- * （barcodeScanner/biometric/…）已随 M3 迁移至各自 `@wails-net/plugin-*` 包
+ * （barcodeScanner/biometric/…）已随 M3 迁移至各自 `@wailsnet/plugin-*` 包
  * （按需安装），本包仅保留核心运行时与 re-export 类型。
  *
  * 用法：
  * ```ts
- * import { wails } from "@wails-net/runtime";
- * import { window } from "@wails-net/plugin-window";
+ * import { wails } from "@wailsnet/runtime";
+ * import { window } from "@wailsnet/plugin-window";
  *
  * const res = await wails.call("GreetingService.Greet", ["World"]);
  * await window.setTitle("hi");
@@ -32,7 +32,7 @@ export const wails = {
     ...coreWails,
     ...namespaces,
 };
-// ---- 具名导出（兼容 `import { wails } from "@wails-net/runtime"` 与高级用法）----
+// ---- 具名导出（兼容 `import { wails } from "@wailsnet/runtime"` 与高级用法）----
 export { call, bindings, events, query, invoke, cancel };
 export { defineCommand } from "./core/commands.js";
 export { CallError, toCallError };

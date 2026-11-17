@@ -21,7 +21,7 @@ public sealed class ScaffoldResult
 /// 项目脚手架器，根据模板生成 Wails.Net 项目骨架。
 /// 对应 Wails v3 Go 版本 internal/project/project.go。
 /// <para>
-/// 前端约定：vite + pnpm + <c>@wails-net/runtime</c>。
+/// 前端约定：vite + pnpm + <c>@wailsnet/runtime</c>。
 /// <list type="bullet">
 /// <item>依赖安装 / 构建由 <c>wails3</c> CLI 自动探测包管理器（pnpm 优先，npm 回退），
 /// 因此 <c>wails.json</c> 中的 <c>installCommand</c> / <c>buildCommand</c> 默认留空。</item>
@@ -32,7 +32,7 @@ public sealed class ScaffoldResult
 public sealed class ProjectScaffolder
 {
     /// <summary>
-    /// 脚手架生成的 <c>@wails-net/runtime</c> 依赖版本范围。
+    /// 脚手架生成的 <c>@wailsnet/runtime</c> 依赖版本范围。
     /// </summary>
     private const string RuntimePackageVersion = "^0.1.0";
 
@@ -388,7 +388,7 @@ public sealed class ProjectScaffolder
         基于 [Wails.Net](https://github.com/wailsapp/wails) 的桌面应用（模板：`{{template}}`）。
 
         - 后端：.NET 10 + `Wails.Net.Application`
-        - 前端：Vite + TypeScript + [`@wails-net/runtime`](https://www.npmjs.com/package/@wails-net/runtime)
+        - 前端：Vite + TypeScript + [`@wailsnet/runtime`](https://www.npmjs.com/package/@wailsnet/runtime)
         - 包管理：pnpm（CLI 会自动探测，缺失时回退 npm）
 
         ## 快速开始
@@ -410,10 +410,10 @@ public sealed class ProjectScaffolder
         ## 前端调用后端
 
         后端 `GreetingService.Hello` 已在 `src/{{projectName}}/Bindings.cs` 中注册，
-        前端通过 `@wails-net/runtime` 调用：
+        前端通过 `@wailsnet/runtime` 调用：
 
         ```ts
-        import { wails } from '@wails-net/runtime';
+        import { wails } from '@wailsnet/runtime';
 
         const message = await wails.call('GreetingService.Hello', ['Wails.Net']);
         ```
@@ -445,7 +445,7 @@ public sealed class ProjectScaffolder
         // 运行时依赖：Wails.Net 前端 SDK + 框架运行时
         var dependencies = new List<(string Name, string Version)>
         {
-            ("@wails-net/runtime", RuntimePackageVersion),
+            ("@wailsnet/runtime", RuntimePackageVersion),
         };
 
         // 开发依赖：TypeScript + Vite + 框架插件
@@ -634,7 +634,7 @@ public sealed class ProjectScaffolder
     {
         "vue-ts" => """
         import { createApp } from 'vue';
-        import { wails } from '@wails-net/runtime';
+        import { wails } from '@wailsnet/runtime';
 
         const app = createApp({
           template: '<div><h1>Wails.Net + Vue</h1><p>{{ message }}</p></div>',
@@ -655,7 +655,7 @@ public sealed class ProjectScaffolder
         "react-ts" => """
         import React, { useEffect, useState } from 'react';
         import { createRoot } from 'react-dom/client';
-        import { wails } from '@wails-net/runtime';
+        import { wails } from '@wailsnet/runtime';
 
         function App() {
           const [message, setMessage] = useState('正在调用后端…');
@@ -681,7 +681,7 @@ public sealed class ProjectScaffolder
         "svelte-ts" => """
         // Wails.Net + Svelte 应用入口
         // 提示：需要 .svelte 组件时，新建 src/App.svelte 后在此处 import 并挂载
-        import { wails } from '@wails-net/runtime';
+        import { wails } from '@wailsnet/runtime';
 
         const app = document.getElementById('app');
         if (app) {
@@ -695,7 +695,7 @@ public sealed class ProjectScaffolder
         """,
         _ => """
         // Wails.Net 前端入口（vanilla + TypeScript）
-        import { wails } from '@wails-net/runtime';
+        import { wails } from '@wailsnet/runtime';
 
         const app = document.getElementById('app');
         if (app) {

@@ -11,7 +11,7 @@ namespace Wails.Net.Generator;
 /// <see cref="Wails.Net.Application.Commands.CommandRegistry"/> 生成），输出前端调用封装
 /// <c>commands.ts</c>：
 /// <list type="bullet">
-/// <item>每个命令生成一个强类型调用函数（基于 <c>@wails-net/runtime</c> 的 <c>wails.call</c>）；</item>
+/// <item>每个命令生成一个强类型调用函数（基于 <c>@wailsnet/runtime</c> 的 <c>wails.call</c>）；</item>
 /// <item>参数类型取自 manifest 的 <c>parameters</c>（TS 类型声明，由命令签名元数据 P2-1 映射）；</item>
 /// <item>返回值统一 <c>Promise&lt;unknown&gt;</c>（命令返回值类型暂不在 manifest 中，后续可扩展）。</item>
 /// </list>
@@ -37,7 +37,7 @@ public class CommandTypeScriptGenerator
         sb.AppendLine($"// 生成时间: {DateTime.UtcNow:O}");
         sb.AppendLine($"// 命令数量: {manifest.Commands.Count}");
         sb.AppendLine();
-        sb.AppendLine("import { wails } from '@wails-net/runtime';");
+        sb.AppendLine("import { wails } from '@wailsnet/runtime';");
         sb.AppendLine();
 
         if (manifest.Commands.Count == 0)

@@ -1,13 +1,13 @@
 /**
- * @wails-net/plugin-file-system — file-system 插件前端封装。
- * 命令前缀 `fs.*`（M3 runtime 变薄：从 @wails-net/runtime 迁移至此，按需安装）。
+ * @wailsnet/plugin-file-system — file-system 插件前端封装。
+ * 命令前缀 `fs.*`（M3 runtime 变薄：从 @wailsnet/runtime 迁移至此，按需安装）。
  * @platform windows,linux,macos,android  全平台通用插件。
  */
-import { call } from "@wails-net/runtime";
+import { call } from "@wailsnet/runtime";
 
 /**
  * 文件元数据，对应后端 Wails.Net.Plugins.FileSystem.FileStat。
- * 注：与 @wails-net/runtime 中 FileStat 字段名不同，此处定义本地类型。
+ * 注：与 @wailsnet/runtime 中 FileStat 字段名不同，此处定义本地类型。
  */
 export interface FileStat {
   /** 完整路径。 */
@@ -45,7 +45,7 @@ export const fileSystem = {
   /** 写入二进制文件（data 为 Base64 字符串，对应后端 byte[]）。 */
   writeBinary: (path: string, data: string) => call<void>("fs.writeBinary", [path, data]),
 
-  // ===== 前端 API 名命令（与 @wails-net/runtime/src/api/fs.ts 一致） =====
+  // ===== 前端 API 名命令（与 @wailsnet/runtime/src/api/fs.ts 一致） =====
   /** 读取文本文件全部内容（对应 fs.readTextFile）。 */
   readTextFile: (path: string) => call<string>("fs.readTextFile", [path]),
   /** 写入文本文件（覆盖模式，对应 fs.writeTextFile）。 */

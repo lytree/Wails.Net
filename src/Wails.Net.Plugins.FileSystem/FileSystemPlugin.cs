@@ -79,7 +79,7 @@ public class FileSystemPlugin : IPlugin
         context.Commands.MapCommand("fs.readBinary", (Func<string, byte[]>)ReadBinary, readScope);
         context.Commands.MapCommand("fs.writeBinary", (Action<string, byte[]>)WriteBinary, writeScope);
 
-        // 文件操作（前端 wails.fs.* API 名，与 @wails-net/runtime/src/api/fs.ts 一致）
+        // 文件操作（前端 wails.fs.* API 名，与 @wailsnet/runtime/src/api/fs.ts 一致）
         context.Commands.MapCommand("fs.readTextFile", (Func<string, string>)ReadText, readScope);
         context.Commands.MapCommand("fs.writeTextFile", (Action<string, string>)WriteText, writeScope);
         context.Commands.MapCommand("fs.readBinaryFile", (Func<string, byte[]>)ReadBinary, readScope);

@@ -901,7 +901,7 @@ public class WebviewWindow
     /// </code>
     /// 前端：
     /// <code>
-    /// import { wails } from '@wails-net/runtime';
+    /// import { wails } from '@wailsnet/runtime';
     /// wails.events.on('store.changed', (data) => { ... });
     /// </code>
     /// </para>

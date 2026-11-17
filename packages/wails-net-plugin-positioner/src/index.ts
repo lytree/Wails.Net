@@ -1,5 +1,5 @@
-/** M3 runtime 变薄：从 @wails-net/runtime 迁移，按需安装 */
-import { call } from "@wails-net/runtime";
+/** M3 runtime 变薄：从 @wailsnet/runtime 迁移，按需安装 */
+import { call } from "@wailsnet/runtime";
 
 export const positioner = {
   /** 将窗口移动到指定位置（相对于屏幕原点）。 */

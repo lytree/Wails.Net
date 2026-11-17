@@ -1,40 +1,40 @@
 # 前端 JavaScript API 参考
 
-> **⚠️ M3 变更提示**：`@wails-net/runtime` 自 M3 起「变薄」，只保留核心 API（`wails.call` / `wails.bindings` / `wails.events` / `wails.query` / `wails.invoke` / `wails.cancel`，以及 `Stream` / `JSONStream`）。
-> 窗口、剪贴板、对话框、托盘等命名空间已拆分到独立的 `@wails-net/plugin-*` 包，**不再挂载到 `wails` 对象上**。
+> **⚠️ M3 变更提示**：`@wailsnet/runtime` 自 M3 起「变薄」，只保留核心 API（`wails.call` / `wails.bindings` / `wails.events` / `wails.query` / `wails.invoke` / `wails.cancel`，以及 `Stream` / `JSONStream`）。
+> 窗口、剪贴板、对话框、托盘等命名空间已拆分到独立的 `@wailsnet/plugin-*` 包，**不再挂载到 `wails` 对象上**。
 > 下文若出现 `wails.window.setTitle(...)`、`wails.clipboard.setText(...)` 这类写法，均属 M2 单包时代的旧 API，请改用下列两种等价方式：
 
 ```ts
 // 方式一：核心 call —— 命令名 = <命名空间>.<动作>，参数为「选项对象数组」
-import { call } from "@wails-net/runtime";
+import { call } from "@wailsnet/runtime";
 await call("window.setTitle", [{ title: "新标题" }]);
 await call("window.minimize", []);
 await call("clipboard.setText", ["要复制的文本"]);
 
 // 方式二：类型化插件包（按需安装，内部同样是 call）
-import { window } from "@wails-net/plugin-window";
+import { window } from "@wailsnet/plugin-window";
 await window.setTitle("新标题");
 ```
 
 > 注意：命令必须由后端对应插件注册后才存在（如 `builder.UsePlugin<WindowPlugin>()`），否则调用会返回「命令未找到」。
 
 > 本文档全面描述 Wails.Net 项目的前端 JavaScript 运行时 API。
-> 核心 API 由 npm 包 [`@wails-net/runtime`](../../packages/wails-net-runtime/) 提供（TypeScript 实现，自包含 IPC 传输）；各命名空间的强类型封装位于 [`packages/wails-net-plugin-*`](../../packages/)。
-> 前端需执行 `import { wails } from "@wails-net/runtime";` 加载；后端通过 `Application.GenerateRuntimeJs()` 注入轻量 `window._wails` 标志对象（platform / isDebug / isServerMode / webSocketUrl / assetServerUrl），由 SDK 内部 `readRuntimeFlags()` 读取。
+> 核心 API 由 npm 包 [`@wailsnet/runtime`](../../packages/wails-net-runtime/) 提供（TypeScript 实现，自包含 IPC 传输）；各命名空间的强类型封装位于 [`packages/wails-net-plugin-*`](../../packages/)。
+> 前端需执行 `import { wails } from "@wailsnet/runtime";` 加载；后端通过 `Application.GenerateRuntimeJs()` 注入轻量 `window._wails` 标志对象（platform / isDebug / isServerMode / webSocketUrl / assetServerUrl），由 SDK 内部 `readRuntimeFlags()` 读取。
 
 ## 概述
 
-Wails.Net 在 Webview 启动时由后端注入一段轻量 `window._wails` 标志对象，前端业务运行时则由 npm 包 [`@wails-net/runtime`](../../packages/wails-net-runtime/) 加载：
+Wails.Net 在 Webview 启动时由后端注入一段轻量 `window._wails` 标志对象，前端业务运行时则由 npm 包 [`@wailsnet/runtime`](../../packages/wails-net-runtime/) 加载：
 
 1. **后端注入** `window._wails` — 暴露运行时元信息（platform / isDebug / isServerMode / webSocketUrl / assetServerUrl），由 `Application.GenerateRuntimeJs()` 生成。
-2. **前端加载** `import { wails } from "@wails-net/runtime";` — 包含全部可调用 API 与自包含 IPC 传输（HTTP / 原生 postMessage / Server 模式 WebSocket）。
+2. **前端加载** `import { wails } from "@wailsnet/runtime";` — 包含全部可调用 API 与自包含 IPC 传输（HTTP / 原生 postMessage / Server 模式 WebSocket）。
 
 所有 API 调用最终通过 SDK 内部 `transport.invoke(type, payload)` 发送，HTTP 通道走 `POST /wails/message`、原生通道走 WebView2 / WebKitGTK / Android `WailsBridge` 同步桥接。事件订阅通过 `wails.events.on(name, callback)` 注册本地回调；后端桌面模式走 `ExecuteScriptAsync` 调用全局 `window._wailsEmitEvent`，Server 模式走 WebSocket 推送 `{ type: "event", name, data }` 消息。
 
 ### 命名空间总览
 
 > **读法（M3）**：下表 `wails.xxx` 一行代表一类**命令前缀**（`xxx.*`），在代码里通过
-> `wails.call("xxx.<action>", [options])` 调用，或安装对应 `@wails-net/plugin-xxx` 包使用类型化封装。
+> `wails.call("xxx.<action>", [options])` 调用，或安装对应 `@wailsnet/plugin-xxx` 包使用类型化封装。
 > 只有 `wails` / `wails.bindings` / `wails.events` / `wails.query` / `wails.invoke` / `wails.cancel` 是运行时对象上的真实属性。
 
 | 命名空间 | 说明 | 对应参考 |
@@ -226,7 +226,7 @@ await call("window.setTitle", [{ title: "我的应用 - 首页" }]);
 await call("window.centre", []);
 
 // 2) 类型化封装
-import { window } from "@wails-net/plugin-window";
+import { window } from "@wailsnet/plugin-window";
 await window.setTitle("我的应用 - 首页");
 ```
 
@@ -2426,7 +2426,7 @@ await wails.call('toast.show', [{ message: "已保存" }]);
 
 ## 内部机制
 
-以下三个全局函数由 [`@wails-net/runtime` 的 transport 模块](../../packages/wails-net-runtime/src/internal/transport.ts) 提供，属于运行时内部实现，前端代码通常不直接调用，但理解其工作原理有助于高级用法与调试。
+以下三个全局函数由 [`@wailsnet/runtime` 的 transport 模块](../../packages/wails-net-runtime/src/internal/transport.ts) 提供，属于运行时内部实现，前端代码通常不直接调用，但理解其工作原理有助于高级用法与调试。
 
 ### window._wailsInvoke(method, params)
 
@@ -2497,7 +2497,7 @@ window._wailsEmitEvent("myCustomEvent", { foo: "bar" });
 
 ## 参考资源
 
-- 前端运行时 SDK：[`@wails-net/runtime`](../../packages/wails-net-runtime/)（TypeScript，自包含 IPC 传输 + 全部核心命名空间 + 46 个插件命令）
+- 前端运行时 SDK：[`@wailsnet/runtime`](../../packages/wails-net-runtime/)（TypeScript，自包含 IPC 传输 + 全部核心命名空间 + 46 个插件命令）
 - 传输层实现：[`internal/transport.ts`](../../packages/wails-net-runtime/src/internal/transport.ts)（HTTP / 原生 postMessage / WebSocket 三态通道 + 分块上传 + 调用取消）
 - ContextMenu 钩子：[`core/contextmenu.ts`](../../packages/wails-net-runtime/src/core/contextmenu.ts)（CSS 变量驱动，自动安装）
 - 后端标志注入：[`Application.GenerateRuntimeJs`](../../src/Wails.Net.Application/Application.cs)（`window._wails` 标志对象）

@@ -31,7 +31,7 @@ public sealed record PluginLayout
     public string? FrontendDir { get; init; }
 
     /// <summary>
-    /// 前端 npm 包名（读取 package.json 的 name 字段），如 <c>@wails-net/plugin-updater</c>。
+    /// 前端 npm 包名（读取 package.json 的 name 字段），如 <c>@wailsnet/plugin-updater</c>。
     /// </summary>
     public string? FrontendPackageName { get; init; }
 }
@@ -431,7 +431,7 @@ public sealed class PluginBuilder
     /// <summary>
     /// 在前端包目录中定位指定后端插件对应的 npm 包目录。
     /// 优先精确匹配 <c>packages/wails-net-plugin-{kebab}</c>，其次匹配 package.json name 为
-    /// <c>@wails-net/plugin-{kebab}</c> 的目录。
+    /// <c>@wailsnet/plugin-{kebab}</c> 的目录。
     /// </summary>
     /// <param name="root">仓库根目录。</param>
     /// <param name="shortName">后端插件短名（PascalCase，如 FileSystem）。</param>
@@ -451,7 +451,7 @@ public sealed class PluginBuilder
             return direct;
         }
 
-        var expectedName = $"@wails-net/plugin-{kebab}";
+        var expectedName = $"@wailsnet/plugin-{kebab}";
         foreach (var dir in Directory.GetDirectories(packagesDir, $"{FrontendDirPrefix}*"))
         {
             // 规范化比较：容忍 ToKebabCase 的数字边界（如 E2E → e2-e）与 package.json 实际命名差异

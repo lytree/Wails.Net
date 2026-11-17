@@ -333,7 +333,7 @@ public sealed class PluginScaffolder
     /// <returns>package.json 内容。</returns>
     private static string GeneratePackageJson(string kebab, string version) => $$"""
         {
-          "name": "@wails-net/plugin-{{kebab}}",
+          "name": "@wailsnet/plugin-{{kebab}}",
           "version": "{{version}}",
           "type": "module",
           "main": "./dist/index.js",
@@ -348,7 +348,7 @@ public sealed class PluginScaffolder
             "typecheck": "tsc --noEmit"
           },
           "dependencies": {
-            "@wails-net/runtime": "workspace:*"
+            "@wailsnet/runtime": "workspace:*"
           },
           "devDependencies": {
             "typescript": "^5.6.0"
@@ -396,11 +396,11 @@ public sealed class PluginScaffolder
 
         return $$"""
             /**
-             * @wails-net/plugin-{{kebab}} — {{commandPrefix}} 插件前端封装。
+             * @wailsnet/plugin-{{kebab}} — {{commandPrefix}} 插件前端封装。
              * 命令前缀 `{{commandPrefix}}.*`，后端经 L2 抽象层 `defineCommand` 转发（强类型化）。
             {{platformDoc}}
              */
-            import { defineCommand } from "@wails-net/runtime";
+            import { defineCommand } from "@wailsnet/runtime";
 
             /** 示例：{{commandPrefix}}.ping（无参数，返回字符串）。 */
             export const ping = defineCommand<[], string>("{{commandPrefix}}.ping", "none");

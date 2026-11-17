@@ -9,7 +9,7 @@ namespace Wails.Net.Application.Tests.Streams;
 /// <summary>
 /// Streams P0-1：验证 <see cref="Application.GenerateRuntimeJs"/> 在 server 模式注入
 /// <c>window._wails.streamFactory</c>（对应 Wails v3 Go 版本 <c>stream_prelude_server.go</c>），
-/// 桌面模式则不注入（走 held-poll，由 <c>@wails-net/runtime</c> 的 <c>Stream(name)</c> 提供）。
+/// 桌面模式则不注入（走 held-poll，由 <c>@wailsnet/runtime</c> 的 <c>Stream(name)</c> 提供）。
 /// </summary>
 [NotInParallel]
 public sealed class StreamRuntimeJsTests

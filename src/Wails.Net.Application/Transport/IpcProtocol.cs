@@ -28,7 +28,7 @@ public static class IpcProtocol
 
     /// <summary>
     /// handshake token 请求头名称（OPT-IPC-002）。
-    /// 与前端 <c>@wails-net/runtime</c> 的 <c>x-wails-token</c> 头保持一致；
+    /// 与前端 <c>@wailsnet/runtime</c> 的 <c>x-wails-token</c> 头保持一致；
     /// WebSocket 升级请求无法自定义请求头，改用查询参数
     /// <see cref="WebSocketTransport.HandshakeTokenQuery"/>，本头仅作回退读取。
     /// </summary>

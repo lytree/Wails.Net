@@ -170,7 +170,7 @@ jobs:
   # Job 1.5：前端（pnpm 工作区：构建 + 类型检查 + 单元测试）
   # ============================================================================
   # .NET 侧构建统一带 -p:SkipFrontendBuild=true，前端产物不在 build job 里生成，
-  # 因此 pnpm 工作区需要独立守门：@wails-net/* 公共包的 tsc 构建与 vitest 单元测试、
+  # 因此 pnpm 工作区需要独立守门：@wailsnet/* 公共包的 tsc 构建与 vitest 单元测试、
   # 以及三个示例（React / Vue JSX / Vue SFC）的 Vite 构建。
   # 缺这一段时前端测试会长期静默失败（历史上确有 2 条断言写错的用例未被发现）。
   test-frontend:
@@ -193,7 +193,7 @@ jobs:
       - name: 安装依赖（严格按 lockfile）
         run: pnpm install --frozen-lockfile
 
-      # 示例通过 "@wails-net/runtime": "workspace:*" 链接本地包，
+      # 示例通过 "@wailsnet/runtime": "workspace:*" 链接本地包，
       # 必须先构建 packages/*/dist，否则示例的 tsc 报 Cannot find module。
       - name: 构建公共包
         run: pnpm build
@@ -883,15 +883,26 @@ jobs:
   # ============================================================================
   # Job 6：发布 npm 双包（仅 tag 触发，M4 闭环）
   # ============================================================================
-  # 前端双包发布：@wails-net/runtime + 全部 @wails-net/plugin-*（39 个）。
+  # 前端双包发布：@wailsnet/runtime + 全部 @wailsnet/plugin-*（40 个），归属 npm org wailsnet。
   # 与 publish-nuget 并行；前置版本一致性校验（scripts/verify-versions.mjs，
   # Directory.Build.props 的 WailsNetVersion == 各 package.json version），
   # 不一致即失败，保证 NuGet 与 npm 同版本发布。
-  # 认证：NPM_TOKEN secret（npmjs.com 自动化 token，packages 具写权限）。
+  #
+  # 认证：Trusted Publishing（与 NuGet 侧同一套 OIDC 思路，无长期 token）。
+  #   - job 声明 id-token: write → GitHub 为本次运行签发 OIDC token；
+  #   - npm 侧为该仓库/工作流绑定 trusted publisher 后，`npm publish` 自动用 OIDC
+  #     token 换取一次性发布凭证，并自动附带 provenance；
+  #   - 因此不再需要 NPM_TOKEN secret，也不再由 setup-node 写 ${NODE_AUTH_TOKEN} 占位。
+  #   前提（首次发布需人工 bootstrap，见 docs/development/release-guide.md）：
+  #   41 个包已于 2026-11-17 首发，先在 npmjs.com 或 `pnpm trust:publisher` 绑定
+  #   trusted publisher（org=lytree / repo=Wails.Net / workflow=ci.yml），CI 才能免 token 发布。
   publish-npm:
     name: 发布到 npmjs.org
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      id-token: write # Trusted Publishing 必需：启用 GitHub OIDC token 颁发
+      contents: read
     steps:
       - name: 检出代码
         uses: actions/checkout@v7
@@ -900,26 +911,19 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
+          # 不设 registry-url：trusted publishing 不走 .npmrc 的 ${NODE_AUTH_TOKEN}，
+          # 目标 registry 由各 package.json 的 publishConfig.registry 指定。
 
       - name: 启用 pnpm
         run: |
           corepack enable
           corepack prepare pnpm@9.15.0 --activate
 
-      # 前置检查：secret 为空时 pnpm publish 只报 `npm error code ENEEDAUTH`，
-      # 看起来像 token 失效，实际是没配置；提前失败可省掉约 3 分钟的构建。
-      - name: 校验 NPM_TOKEN secret 已配置
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # Trusted Publishing 依赖 npm CLI >= 11.5.1；若改用暂存发布（npm stage publish）需 >= 11.15.0
+      - name: 校验 npm CLI 版本
         run: |
-          if [ -z "${NPM_TOKEN}" ]; then
-            echo "::error title=缺少 NPM_TOKEN secret::npm 发布需要 npmjs.com 自动化 token（Automation 或 Classic，对 @wails-net 作用域有 publish 权限）。"
-            echo "修复：仓库 Settings → Secrets and variables → Actions 新增 NPM_TOKEN。"
-            echo "详见 docs/development/release-guide.md。"
-            exit 1
-          fi
-          echo "NPM_TOKEN 已配置（长度 ${#NPM_TOKEN}）"
+          npm install -g npm@^11.15.0
+          npm --version
 
       - name: 版本一致性校验（WailsNetVersion == 前端包版本）
         run: node scripts/verify-versions.mjs
@@ -929,10 +933,33 @@ jobs:
           pnpm install --no-frozen-lockfile
           pnpm -r build
 
-      - name: 发布前端双包（runtime + 39 插件包）
-        run: pnpm -r publish --no-git-checks --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # 先 pnpm pack 把 workspace:* 改写成真实版本号，再用 npm publish 发布 tarball：
+      # npm 不认 workspace: 协议，而 pnpm 自身的 OIDC 支持落后于 npm CLI。
+      - name: 打包全部前端包为 tarball
+        run: |
+          mkdir -p artifacts/npm
+          pnpm -r --filter "./packages/**" pack --pack-destination "$PWD/artifacts/npm"
+
+      - name: 计算 dist-tag（预发布不顶掉 latest）
+        id: tag
+        run: |
+          VERSION=$(node -p "require('fs').readFileSync('Directory.Build.props','utf8').match(/<WailsNetVersion>([^<]+)</)[1]")
+          # 1.0.0-alpha.1 → alpha；1.0.0 → latest
+          TAG=$(node -p "const m='$VERSION'.match(/^\\d+\\.\\d+\\.\\d+-([a-zA-Z]+)/); m ? m[1].toLowerCase() : 'latest'")
+          echo "版本 $VERSION → dist-tag $TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      # 若 npm 侧的 trusted publisher 绑定为 stage-only，把下面的 npm publish 换成
+      # npm stage publish（CI 只入队，由维护者在 Staged Packages 用 2FA 审批）。
+      - name: 发布前端双包（runtime + 插件包，OIDC 免 token + provenance）
+        run: |
+          set -euo pipefail
+          for tgz in artifacts/npm/*.tgz; do
+            echo "==> 发布 $tgz (tag: ${{ steps.tag.outputs.tag }})"
+            npm publish "$tgz" --access public --provenance \
+              --tag "${{ steps.tag.outputs.tag }}" \
+              --registry https://registry.npmjs.org
+          done
 
   # ============================================================================
   # Job 7：发布 GitHub Release（仅 tag 触发）
