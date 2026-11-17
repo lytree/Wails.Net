@@ -19,7 +19,7 @@
 #     GitVersion 6.8.2 不会把 tag 识别为 version source（实测得到 1.0.0-271 之类的分支版本），
 #     发布线必须确定性取值，不能用分支计算结果覆盖发布版本。
 #   - 通过 -p:WailsNetVersion=<SemVer> 注入 build/pack 阶段，覆盖 Directory.Build.props 的默认值；
-#   - 打 Git tag（如 v1.0.0-alpha.1）即触发完整流水线，publish 阶段推送 NuGet 包到 nuget.org。
+#   - 打 Git tag（如 v1.0.1-alpha.1）即触发完整流水线，publish 阶段推送 NuGet 包到 nuget.org。
 #
 # 统一 SDK（Wails.Net.Sdk）：
 #   - multi-target net10.0;net10.0-windows10.0.19041.0，根据 TFM 自动选择平台 Bundle
@@ -102,7 +102,7 @@ jobs:
         id: gitversion
         run: |
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            # 发布线：标签名即版本号（v1.0.0-alpha.1 -> 1.0.0-alpha.1），
+            # 发布线：标签名即版本号（v1.0.1-alpha.1 -> 1.0.1-alpha.1），
             # 与 Directory.Build.props / packages/*/package.json 的 WailsNetVersion 对齐。
             VER="${{ github.ref_name }}"
             VER="${VER#[vV]}"
@@ -563,7 +563,7 @@ jobs:
       # IncludeSymbols=true，而模板包 IncludeBuildOutput=false、没有程序集与 PDB，
       # 符号包内容为空即报 NU5017。现已在 Wails.Net.Templates.csproj 关掉 IncludeSymbols，
       # 因此这里不再容忍失败（吞掉退出码会掩盖真实回归）。
-      # 仍需显式传 WailsNetVersion：否则该包沿用开发默认值 1.0.0-alpha.1，
+      # 仍需显式传 WailsNetVersion：否则该包沿用开发默认值 1.0.1-alpha.1，
       # 与同一次发布的其他包版本号不一致。
       - name: 打包 Templates 项目
         shell: pwsh
@@ -937,14 +937,21 @@ jobs:
       # npm 不认 workspace: 协议，而 pnpm 自身的 OIDC 支持落后于 npm CLI。
       - name: 打包全部前端包为 tarball
         run: |
+          set -euo pipefail
+          # 注意：pnpm 9.x 的 `pack` 不支持 -r / --filter（实测报 Unknown option: 'recursive'），
+          # 必须逐包进入目录执行 `pnpm --dir <pkg> pack`，否则整个 npm 发布作业在此步失败。
           mkdir -p artifacts/npm
-          pnpm -r --filter "./packages/**" pack --pack-destination "$PWD/artifacts/npm"
+          for dir in packages/*/; do
+            echo "==> 打包 $dir"
+            pnpm --dir "$dir" pack --pack-destination "$PWD/artifacts/npm"
+          done
+          echo "共生成 $(ls -1 artifacts/npm/*.tgz | wc -l) 个 tarball"
 
       - name: 计算 dist-tag（预发布不顶掉 latest）
         id: tag
         run: |
           VERSION=$(node -p "require('fs').readFileSync('Directory.Build.props','utf8').match(/<WailsNetVersion>([^<]+)</)[1]")
-          # 1.0.0-alpha.1 → alpha；1.0.0 → latest
+          # 1.0.1-alpha.1 → alpha；1.0.0 → latest
           TAG=$(node -p "const m='$VERSION'.match(/^\\d+\\.\\d+\\.\\d+-([a-zA-Z]+)/); m ? m[1].toLowerCase() : 'latest'")
           echo "版本 $VERSION → dist-tag $TAG"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
@@ -1020,7 +1027,7 @@ jobs:
         shell: bash
         run: |
           # 创建 Release（若已存在则跳过），自动生成 Release Notes。
-          # 预发布版本（tag 含 '-'，如 v1.0.0-alpha.1）必须带 --prerelease：
+          # 预发布版本（tag 含 '-'，如 v1.0.1-alpha.1）必须带 --prerelease：
           # 否则 GitHub 会把它标成 Latest，稳定版用户会被引导去下 alpha 包。
           PRERELEASE_ARGS=""
           if [[ "${{ github.ref_name }}" == *-* ]]; then
