@@ -73,6 +73,10 @@ public static class BrowserConsoleLogForwarderExtensions
     {
         private readonly BrowserConsoleLogForwarder _forwarder;
 
+        /// <summary>
+        /// 构造起始器并持有转发器实例，触发其构造期 LogHandler 注册。
+        /// </summary>
+        /// <param name="forwarder">已由 DI 构造的浏览器 console 日志转发器。</param>
         public BrowserConsoleLogForwarderInitializer(BrowserConsoleLogForwarder forwarder)
         {
             _forwarder = forwarder;
@@ -141,6 +145,10 @@ public static class BrowserConsoleLogForwarderExtensions
     {
         private readonly BrowserConsoleLogReceiver _receiver;
 
+        /// <summary>
+        /// 构造起始器并持有接收器实例，Host 启动时调用其 <see cref="BrowserConsoleLogReceiver.Start"/>。
+        /// </summary>
+        /// <param name="receiver">已由 DI 构造的浏览器 console 日志接收器。</param>
         public BrowserConsoleLogReceiverInitializer(BrowserConsoleLogReceiver receiver)
         {
             _receiver = receiver;

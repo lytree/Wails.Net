@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
 using Wails.Net.Application.Options;
 using Wails.Net.Application.Platform;
 using Wails.Net.Application.Windows;
@@ -41,6 +42,11 @@ public class WindowManager : IWindowManager, IPlatformWindowAccessor
     private Application? _application;
 
     /// <summary>
+    /// 诊断日志记录器；为 null 时不影响任何窗口管理行为。
+    /// </summary>
+    private readonly ILogger<WindowManager>? _logger;
+
+    /// <summary>
     /// 使用指定的平台应用构造 WindowManager 实例。
     /// 可传入 <c>null</c>（Server 模式或 DI 容器路径下 platformApp 后置注入场景）。
     /// R1-2：允许构造后通过 <see cref="SetPlatformApp"/> 注入平台应用，
@@ -48,10 +54,13 @@ public class WindowManager : IWindowManager, IPlatformWindowAccessor
     /// 避免 <see cref="Wails.Net.Application.Application"/> 同时持有两套窗口注册表。
     /// </summary>
     /// <param name="platformApp">平台应用实例，可为 null（Server 模式或 DI 路径）。</param>
-    public WindowManager(IPlatformApp? platformApp, Application? application = null)
+    /// <param name="application">Application 实例，可为 null；非 null 时用于窗口级 CSP 与原生 IPC 注册。</param>
+    /// <param name="logger">诊断日志记录器，可为 null（无日志降级）。</param>
+    public WindowManager(IPlatformApp? platformApp, Application? application = null, ILogger<WindowManager>? logger = null)
     {
         _platformApp = platformApp;
         _application = application;
+        _logger = logger;
         // RH-WIN-02 终态：平台层通过本管理器查询窗口，不再自持窗口字典。
         _platformApp?.AttachWindowAccessor(this);
     }
@@ -68,6 +77,7 @@ public class WindowManager : IWindowManager, IPlatformWindowAccessor
         _platformApp = platformApp;
         // RH-WIN-02 终态：DI 路径下 platformApp 后置注入时同样需要绑定窗口查询入口。
         _platformApp.AttachWindowAccessor(this);
+        _logger?.LogDebug("平台应用已注入 WindowManager：{PlatformApp}", platformApp.GetType().Name);
     }
 
     /// <summary>
@@ -158,6 +168,14 @@ public class WindowManager : IWindowManager, IPlatformWindowAccessor
         _windows[id] = window;
         if (!string.IsNullOrEmpty(options.Name))
         {
+            // 同名窗口会覆盖名称索引，导致按名称查找指向最新窗口；记录告警便于排查误用。
+            if (_windowNames.TryGetValue(options.Name, out var existingId) && existingId != id)
+            {
+                _logger?.LogWarning(
+                    "窗口名称重复：name={WindowName} 已被窗口 {ExistingId} 使用，名称索引将改指向窗口 {WindowId}",
+                    options.Name, existingId, id);
+            }
+
             _windowNames[options.Name] = id;
         }
 
@@ -180,6 +198,10 @@ public class WindowManager : IWindowManager, IPlatformWindowAccessor
 
         // P1-3-4：触发窗口创建事件，让外部组件可以订阅新窗口的控制台消息等
         WindowCreated?.Invoke(window);
+
+        _logger?.LogDebug(
+            "窗口已创建：id={WindowId} name={WindowName} 平台实现={HasImpl} 当前窗口数={WindowCount}",
+            id, options.Name, impl is not null, _windows.Count);
 
         return id;
     }
@@ -247,9 +269,10 @@ public class WindowManager : IWindowManager, IPlatformWindowAccessor
             {
                 window.Close();
             }
-            catch
+            catch (Exception ex)
             {
                 // 关闭窗口时的异常不应中断管理器操作
+                _logger?.LogWarning(ex, "销毁窗口时关闭原生窗口失败：id={WindowId} name={WindowName}", id, window.Name);
             }
         }
     }
@@ -287,9 +310,10 @@ public class WindowManager : IWindowManager, IPlatformWindowAccessor
         {
             _platformApp?.OnWindowDestroyed(id);
         }
-        catch
+        catch (Exception ex)
         {
             // 平台缓存清理失败不应中断窗口移除流程
+            _logger?.LogWarning(ex, "平台窗口缓存清理失败：id={WindowId}", id);
         }
 
         // RH-IPC-05：回收该窗口拥有的 Channel，防止前端未显式 channel:close 时泄漏。
@@ -297,10 +321,14 @@ public class WindowManager : IWindowManager, IPlatformWindowAccessor
         {
             Channels.ChannelManager.RemoveByWindow(id);
         }
-        catch
+        catch (Exception ex)
         {
             // 通道清理失败不应中断窗口移除流程
+            _logger?.LogWarning(ex, "窗口关联 Channel 清理失败：id={WindowId}", id);
         }
+
+        _logger?.LogDebug("窗口已释放：id={WindowId} name={WindowName} 剩余窗口数={WindowCount}",
+            id, window.Name, _windows.Count);
     }
 
     /// <summary>

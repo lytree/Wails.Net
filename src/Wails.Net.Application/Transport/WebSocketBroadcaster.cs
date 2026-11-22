@@ -77,6 +77,9 @@ public class WebSocketBroadcaster
     /// </summary>
     public int ClientCount => _mailboxes.Count;
 
+    /// <summary>
+    /// 使用默认 mailbox 容量构造无日志广播器。
+    /// </summary>
     public WebSocketBroadcaster()
         : this(null, DefaultMailboxCapacity)
     {

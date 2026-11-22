@@ -453,9 +453,10 @@ public class WebSocketTransport : ITransport, IWailsEventListener, IAssetServerT
         {
             wsContext = await context.AcceptWebSocketAsync(subProtocol: null);
         }
-        catch (WebSocketException)
+        catch (WebSocketException ex)
         {
-            // WebSocket 升级失败，忽略
+            // WebSocket 升级失败：客户端未按协议握手，记录后放弃该连接。
+            _logger?.LogWarning(ex, "WebSocket 升级失败，已放弃该连接");
             return;
         }
 

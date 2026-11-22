@@ -39,16 +39,22 @@ public sealed class WebSocketTransportMetrics
     /// <summary>控制消息处理失败次数。</summary>
     public long ControlRejected => Interlocked.Read(ref _controlRejected);
 
+    /// <summary>调用开始执行时递增在途计数。</summary>
     public void IncrementCallsInFlight() => Interlocked.Increment(ref _callsInFlight);
 
+    /// <summary>调用结束时递减在途计数。</summary>
     public void DecrementCallsInFlight() => Interlocked.Decrement(ref _callsInFlight);
 
+    /// <summary>调用因并发上限被拒绝时递增拒绝计数。</summary>
     public void IncrementCallsRejected() => Interlocked.Increment(ref _callsRejected);
 
+    /// <summary>调用完成（成功 / 失败 / 取消）时递增完成计数。</summary>
     public void IncrementCallsCompleted() => Interlocked.Increment(ref _callsCompleted);
 
+    /// <summary>控制消息（cancel 等）处理成功时递增处理计数。</summary>
     public void IncrementControlProcessed() => Interlocked.Increment(ref _controlProcessed);
 
+    /// <summary>控制消息处理失败时递增失败计数。</summary>
     public void IncrementControlRejected() => Interlocked.Increment(ref _controlRejected);
 
     /// <summary>捕获指标快照，便于周期性导出与断言。</summary>

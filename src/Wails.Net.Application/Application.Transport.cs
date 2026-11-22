@@ -391,7 +391,8 @@ public partial class Application
         {
             // 确保 MessageProcessor 已构造（NativeIpcTransport 需要它来路由消息）
             _messageProcessor ??= new MessageProcessor(
-                Bindings, Events, id => GetWindow(id), _commandDispatcher, _serviceProvider, InvocationGateway);
+                Bindings, Events, id => GetWindow(id), _commandDispatcher, _serviceProvider, InvocationGateway,
+                _serviceProvider?.GetService<ILogger<MessageProcessor>>());
 
             NativeIpcTransport = new NativeIpcTransport(_messageProcessor);
             Events.AddWailsEventListener(NativeIpcTransport);
@@ -410,10 +411,14 @@ public partial class Application
     /// <returns>响应消息，若无需响应则返回 null。</returns>
     public async Task<ResponseMessage?> HandleMessageFromFrontend(string message, uint? windowId = null)
     {
-        _messageProcessor ??= new MessageProcessor(Bindings, Events, id => GetWindow(id), _commandDispatcher, _serviceProvider, InvocationGateway);
+        _messageProcessor ??= new MessageProcessor(Bindings, Events, id => GetWindow(id), _commandDispatcher, _serviceProvider, InvocationGateway,
+            _serviceProvider?.GetService<ILogger<MessageProcessor>>());
         var parsed = _messageProcessor.ParseMessage(message);
         if (parsed is null)
         {
+            _logger?.LogWarning(
+                "前端消息解析失败，已忽略：windowId={WindowId} 长度={Length}",
+                windowId, message.Length);
             return null;
         }
 
@@ -423,7 +428,18 @@ public partial class Application
             parsed.WindowId = windowId;
         }
 
-        return await _messageProcessor.ProcessAsync(parsed);
+        try
+        {
+            return await _messageProcessor.ProcessAsync(parsed);
+        }
+        catch (Exception ex)
+        {
+            // 记录后原样抛出，保持既有错误传播语义不变。
+            _logger?.LogError(ex,
+                "处理前端消息失败：windowId={WindowId} type={Type} id={MessageId}",
+                parsed.WindowId, parsed.Type, parsed.Id);
+            throw;
+        }
     }
 
 }

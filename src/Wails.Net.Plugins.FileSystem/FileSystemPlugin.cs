@@ -107,55 +107,133 @@ public class FileSystemPlugin : IPlugin
     // 读类命令绑定 fs:allow-read，写类命令绑定 fs:allow-write
     // CommandDispatcher 调度时自动从参数提取路径并进行 Scope 校验
 
+    /// <summary>
+    /// 读取文本文件内容（命令 <c>fs.readText</c>，需 <c>fs:allow-read</c>）。
+    /// </summary>
+    /// <param name="path">文件路径（相对沙箱根目录或绝对路径）。</param>
+    /// <returns>文件文本内容。</returns>
     public string ReadText([ScopeParameter("fs:allow-read")] string path)
         => File.ReadAllText(GetSafePath(path));
 
+    /// <summary>
+    /// 写入文本文件（命令 <c>fs.writeText</c>，需 <c>fs:allow-write</c>）。
+    /// </summary>
+    /// <param name="path">文件路径。</param>
+    /// <param name="content">要写入的文本内容。</param>
     public void WriteText([ScopeParameter("fs:allow-write")] string path, string content)
         => File.WriteAllText(GetSafePath(path), content);
 
+    /// <summary>
+    /// 判断文件是否存在（命令 <c>fs.exists</c>，需 <c>fs:allow-read</c>）。
+    /// </summary>
+    /// <param name="path">文件路径。</param>
+    /// <returns>存在返回 true。</returns>
     public bool ExistsFile([ScopeParameter("fs:allow-read")] string path)
         => File.Exists(GetSafePath(path));
 
+    /// <summary>
+    /// 删除文件（命令 <c>fs.remove</c>，需 <c>fs:allow-write</c>）。
+    /// </summary>
+    /// <param name="path">文件路径。</param>
     public void DeleteFile([ScopeParameter("fs:allow-write")] string path)
         => File.Delete(GetSafePath(path));
 
+    /// <summary>
+    /// 读取二进制文件内容（命令 <c>fs.readBinary</c>，需 <c>fs:allow-read</c>）。
+    /// </summary>
+    /// <param name="path">文件路径。</param>
+    /// <returns>文件字节数组。</returns>
     public byte[] ReadBinary([ScopeParameter("fs:allow-read")] string path)
         => File.ReadAllBytes(GetSafePath(path));
 
+    /// <summary>
+    /// 写入二进制文件（命令 <c>fs.writeBinary</c>，需 <c>fs:allow-write</c>）。
+    /// </summary>
+    /// <param name="path">文件路径。</param>
+    /// <param name="data">要写入的字节数组。</param>
     public void WriteBinary([ScopeParameter("fs:allow-write")] string path, byte[] data)
         => File.WriteAllBytes(GetSafePath(path), data);
 
+    /// <summary>
+    /// 复制文件（命令 <c>fs.copy</c>；源需 <c>fs:allow-read</c>，目标需 <c>fs:allow-write</c>）。
+    /// </summary>
+    /// <param name="src">源文件路径。</param>
+    /// <param name="dest">目标文件路径；已存在时覆盖。</param>
     public void CopyFile(
         [ScopeParameter("fs:allow-read")] string src,
         [ScopeParameter("fs:allow-write")] string dest)
         => File.Copy(GetSafePath(src), GetSafePath(dest), true);
 
+    /// <summary>
+    /// 重命名/移动文件（命令 <c>fs.rename</c>；源需 <c>fs:allow-read</c>，目标需 <c>fs:allow-write</c>）。
+    /// </summary>
+    /// <param name="src">源文件路径。</param>
+    /// <param name="dest">目标文件路径。</param>
     public void RenameFile(
         [ScopeParameter("fs:allow-read")] string src,
         [ScopeParameter("fs:allow-write")] string dest)
         => File.Move(GetSafePath(src), GetSafePath(dest));
 
+    /// <summary>
+    /// 获取文件元信息（命令 <c>fs.stat</c>，需 <c>fs:allow-read</c>）。
+    /// </summary>
+    /// <param name="path">文件路径。</param>
+    /// <returns>文件大小、时间等元信息。</returns>
     public FileStat StatFile([ScopeParameter("fs:allow-read")] string path)
         => GetFileStat(GetSafePath(path));
 
+    /// <summary>
+    /// 异步读取文本文件内容（命令 <c>fs.readTextAsync</c>，需 <c>fs:allow-read</c>）。
+    /// </summary>
+    /// <param name="path">文件路径。</param>
+    /// <returns>文件文本内容。</returns>
     public async Task<string> ReadTextAsync([ScopeParameter("fs:allow-read")] string path)
         => await File.ReadAllTextAsync(GetSafePath(path));
 
+    /// <summary>
+    /// 异步写入文本文件（命令 <c>fs.writeAsync</c>，需 <c>fs:allow-write</c>）。
+    /// </summary>
+    /// <param name="path">文件路径。</param>
+    /// <param name="content">要写入的文本内容。</param>
     public async Task WriteTextAsync([ScopeParameter("fs:allow-write")] string path, string content)
         => await File.WriteAllTextAsync(GetSafePath(path), content);
 
+    /// <summary>
+    /// 创建目录（命令 <c>fs.mkdir</c>，需 <c>fs:allow-write</c>）。
+    /// </summary>
+    /// <param name="path">目录路径。</param>
     public void MakeDirectory([ScopeParameter("fs:allow-write")] string path)
         => Directory.CreateDirectory(GetSafePath(path));
 
+    /// <summary>
+    /// 删除目录（命令 <c>fs.rmdir</c>，需 <c>fs:allow-write</c>）。
+    /// </summary>
+    /// <param name="path">目录路径。</param>
+    /// <param name="recursive">是否递归删除非空目录。</param>
     public void RemoveDirectory([ScopeParameter("fs:allow-write")] string path, bool recursive)
         => Directory.Delete(GetSafePath(path), recursive);
 
+    /// <summary>
+    /// 判断目录是否存在（命令 <c>fs.existsDir</c>，需 <c>fs:allow-read</c>）。
+    /// </summary>
+    /// <param name="path">目录路径。</param>
+    /// <returns>存在返回 true。</returns>
     public bool ExistsDirectory([ScopeParameter("fs:allow-read")] string path)
         => Directory.Exists(GetSafePath(path));
 
+    /// <summary>
+    /// 列出目录下的直接子项（命令 <c>fs.readDir</c>，需 <c>fs:allow-read</c>）。
+    /// </summary>
+    /// <param name="path">目录路径。</param>
+    /// <returns>子项路径数组。</returns>
     public string[] ReadDirectory([ScopeParameter("fs:allow-read")] string path)
         => Directory.GetFileSystemEntries(GetSafePath(path));
 
+    /// <summary>
+    /// 递归列出目录下的所有子项（命令 <c>fs.readDirRecursive</c>，需 <c>fs:allow-read</c>）。
+    /// </summary>
+    /// <param name="path">目录路径。</param>
+    /// <returns>递归子项路径数组。</returns>
     public string[] ReadDirectoryRecursive([ScopeParameter("fs:allow-read")] string path)
         => Directory.GetFileSystemEntries(GetSafePath(path), "*", SearchOption.AllDirectories);
 

@@ -30,6 +30,15 @@ internal sealed class ClientMessageDispatcher
     private readonly ILogger<ClientMessageDispatcher>? _logger;
     private int _disposed;
 
+    /// <summary>
+    /// 构造每连接消息分发器。
+    /// </summary>
+    /// <param name="clientId">客户端标识（用于日志与诊断），不能为空。</param>
+    /// <param name="maxConcurrentCalls">同连接最大并发调用数，必须 &gt;= 1。</param>
+    /// <param name="processor">消息处理器，负责实际的消息解析与派发。</param>
+    /// <param name="broadcaster">WebSocket 广播器，用于回写响应。</param>
+    /// <param name="metrics">传输层指标计数器。</param>
+    /// <param name="logger">诊断日志记录器，可为 null。</param>
     public ClientMessageDispatcher(
         string clientId,
         int maxConcurrentCalls,
@@ -162,6 +171,9 @@ internal sealed class ClientMessageDispatcher
         }
     }
 
+    /// <summary>
+    /// 释放分发器持有的并发信号量。幂等：重复调用直接返回。
+    /// </summary>
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)

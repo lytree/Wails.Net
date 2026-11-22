@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Logging;
 using Wails.Net.Application.Bindings;
 using Wails.Net.Application.Channels;
 using Wails.Net.Application.Commands;
@@ -99,6 +100,11 @@ public partial class MessageProcessor
     /// 用于窗口操作消息的分发。可为 null（在测试或无窗口环境中）。
     /// </summary>
     private readonly Func<uint, WebviewWindow?>? _windowLookup;
+
+    /// <summary>
+    /// 诊断日志记录器；为 null 时静默降级（不影响消息处理语义）。
+    /// </summary>
+    private readonly ILogger<MessageProcessor>? _logger;
 
     /// <summary>
     /// 异步消息处理队列。
@@ -209,13 +215,15 @@ public partial class MessageProcessor
     /// <param name="commands">命令调度器，可为 null；为 null 时不进行命令回退。</param>
     /// <param name="services">DI 服务容器，用于创建命令上下文。</param>
     /// <param name="gateway">统一调用网关（R2-1 新增），可为 null。</param>
+    /// <param name="logger">诊断日志记录器，可为 null（静默降级）。</param>
     public MessageProcessor(
         BindingManager bindings,
         EventProcessor events,
         Func<uint, WebviewWindow?> windowLookup,
         CommandDispatcher? commands,
         IServiceProvider? services,
-        InvocationGateway? gateway)
+        InvocationGateway? gateway,
+        ILogger<MessageProcessor>? logger = null)
     {
         _bindings = bindings;
         _events = events;
@@ -223,6 +231,7 @@ public partial class MessageProcessor
         _commands = commands;
         _services = services;
         _gateway = gateway;
+        _logger = logger;
     }
 
     /// <summary>
@@ -746,6 +755,8 @@ public partial class MessageProcessor
         }
         catch (Exception ex)
         {
+            _logger?.LogError(ex, "命令派发失败：command={CommandName} windowId={WindowId}",
+                commandName, windowId);
             return new Dictionary<string, object?>
             {
                 ["result"] = null,
@@ -1302,9 +1313,11 @@ public partial class MessageProcessor
                 {
                     await ProcessAsync(message);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // 队列消费中的异常不应中断循环
+                    // 队列消费中的异常不应中断循环；记录日志以便定位前端消息导致的处理失败。
+                    _logger?.LogError(ex, "消息处理失败：type={Type} id={MessageId} windowId={WindowId}",
+                        message.Type, message.Id, message.WindowId);
                 }
             }
         }

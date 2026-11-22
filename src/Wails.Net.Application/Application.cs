@@ -277,7 +277,7 @@ public partial class Application
         // R1-2：构造期创建 WindowManager（platformApp 可为 null），
         // Application 不再持有 _windows/_nextWindowId 双注册表，统一委托给 WindowManager。
         // SetPlatformApp 时通过 SetPlatformApp(...) 注入 platformApp。
-        _windowManager = new WindowManager(_platformApp, this);
+        _windowManager = new WindowManager(_platformApp, this, services?.GetService<ILogger<WindowManager>>());
     }
 
 
@@ -336,6 +336,7 @@ public partial class Application
 
         _isRunning = true;
         LifecycleState = Hosting.ApplicationLifecycleState.Starting;
+        _logger?.LogInformation("应用启动开始：{AppName}", _options.Name);
 
         // Wails v3.1.0 #6287：先把 Run 之前排队的主线程任务在启动回调前按序执行。
         FlushPendingMainThreadActions();
@@ -399,6 +400,10 @@ public partial class Application
             _platformStartedTcs.TrySetResult();
             LifecycleState = Hosting.ApplicationLifecycleState.Running;
 
+            _logger?.LogInformation(
+                "应用已就绪，进入平台主循环：窗口数={WindowCount} 平台={Platform}",
+                _windowManager?.Count ?? 0, _platformApp.GetType().Name);
+
             try
             {
                 _platformApp.Run();
@@ -417,22 +422,21 @@ public partial class Application
             LifecycleState = Hosting.ApplicationLifecycleState.PlatformStarted;
             _platformStartedTcs.TrySetResult();
             LifecycleState = Hosting.ApplicationLifecycleState.Running;
+            _logger?.LogInformation("应用已就绪（Server 模式，无平台主循环）");
         }
 
         // 平台主循环退出后清理
+        _logger?.LogInformation("平台主循环已退出，开始关闭应用");
         Shutdown();
     }
 
     /// <summary>
-    /// 关闭应用。
+    /// 关闭应用（同步入口，向后兼容）。
     /// 执行关闭任务、OnShutdown 回调、取消取消令牌、关闭所有窗口、
     /// 停止传输层、停止资源服务器、按逆序关闭服务。
-    /// 对应 Wails v3 Go 版本 application.go 中的 Shutdown 方法。
-    /// </summary>
-    /// <summary>
-    /// 关闭应用（同步入口，向后兼容）。
     /// 委派给 <see cref="ShutdownAsync(CancellationToken)"/> 并同步等待。
     /// 推荐 Host 集成场景使用 <see cref="ShutdownAsync(CancellationToken)"/>。
+    /// 对应 Wails v3 Go 版本 application.go 中的 Shutdown 方法。
     /// </summary>
     public virtual void Shutdown()
     {
@@ -467,6 +471,9 @@ public partial class Application
 
         // RH-HOST-02：关闭顺序整体下沉到 ApplicationShutdownCoordinator。
         // 上下文在调用点按当前字段快照构建，协调器不反向依赖 Application 实例，关闭顺序可独立测试。
+        _logger?.LogInformation("应用关闭开始：窗口数={WindowCount} 插件数={PluginCount}",
+            _windowManager?.Count ?? 0, _pluginManager?.Plugins.Count ?? 0);
+
         var shutdown = new ApplicationShutdownCoordinator(new ApplicationShutdownContext
         {
             Options = _options,
@@ -497,6 +504,8 @@ public partial class Application
         });
 
         await shutdown.RunAsync(cancellationToken).ConfigureAwait(false);
+
+        _logger?.LogInformation("应用关闭完成：生命周期状态={LifecycleState}", LifecycleState);
     }
 
     /// <summary>

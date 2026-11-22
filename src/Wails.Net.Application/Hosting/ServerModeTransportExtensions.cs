@@ -213,6 +213,10 @@ public static class ServerModeTransportExtensions
     {
         private readonly WebSocketTransport _transport;
 
+        /// <summary>
+        /// 包装指定的 WebSocket 传输层作为事件监听器。
+        /// </summary>
+        /// <param name="transport">要包装的 WebSocket 传输层实例。</param>
         public WebSocketTransportEventListener(WebSocketTransport transport)
         {
             _transport = transport;
@@ -248,6 +252,12 @@ public static class ServerModeTransportExtensions
         private readonly WebSocketTransport _transport;
         private readonly ILogger<ServerModeTransportInitializer>? _logger;
 
+        /// <summary>
+        /// 构造初始化器，并在构造期完成 Server 模式传输装配（审计 §3.6 / R0-6）。
+        /// </summary>
+        /// <param name="application">目标应用实例；若其 <see cref="Application.Transport"/> 为空则自动装配。</param>
+        /// <param name="transport">待装配的 WebSocket 传输层。</param>
+        /// <param name="logger">诊断日志记录器，可为 null。</param>
         public ServerModeTransportInitializer(
             Application application,
             WebSocketTransport transport,
