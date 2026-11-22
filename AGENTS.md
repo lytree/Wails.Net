@@ -8,7 +8,7 @@
 ## 1. 项目背景
 
 - **项目**：Wails.Net — Wails v3 (Go) 的 .NET 10 移植实现
-- **参考版本**：`wails v3.1.0`（2026-11-01 weekly；2026-10-26 的 `v3.0.0` GA 之后首个 minor 版本，`v3.2.0-nightly.*` 为预发布不作基线；**2026-11-12 复核仍为最新正式版，无 `v3.1.x` hotfix / 无新 nightly**；差异与待实现项见 `docs/development/wails-v3-beta-comparison.md` §11–§13）
+- **参考版本**：`wails v3.1.0`（2026-11-01 weekly；2026-10-26 的 `v3.0.0` GA 之后首个 minor 版本，`v3.2.0-nightly.*` 为预发布不作基线；**2026-11-22 复核仍为最新正式版，无 `v3.1.x` hotfix / 无新 nightly（最新预发布仍为 `v3.2.0-nightly.20261103`）**；差异与待实现项见 `docs/development/wails-v3-beta-comparison.md` §11–§13，复核日志见 §13.5）
 - **参考范围**：**仅以 Wails v3 作为唯一上游参考实现**，不引入其他桌面框架作为对比基线或设计来源
 - **目标平台**：Windows、Linux、Android（macOS 已实现 `Wails.Net.Application.MacOS`：`#if MACOS` 分支为完整 AppKit + WKWebView 实现，`#else` 分支降级到 ServerMode；iOS 暂不实现）
 - **实施计划**：见 [`docs/architecture/optimization-roadmap.md`](docs/architecture/optimization-roadmap.md)（三条主线优化目标、任务拆解与验收）与 [`docs/README.md`](docs/README.md)（全库文档索引）
@@ -41,8 +41,8 @@
 - **Runtime/Window/IPC** → 参考 Wails v3（对象模型、IPC、多窗口、事件总线）
 - **Plugin/Security/Capability** → **Wails.Net 自研能力模型**（插件契约与 Wails v3 对齐，权限模型、Capability 声明、Scope 校验由本项目自主设计，不依赖外部框架）
 
-> **参考基线（2026-11-12 复核）**：
-> - Wails v3 = `v3.1.0`（2026-11-01 weekly；`v3.0.0` → `v3.1.0` 差异见对比文档 §12；2026-11-12 复核无新正式版，基线不变，遗留 P2 补齐见 §13）
+> **参考基线（2026-11-22 复核）**：
+> - Wails v3 = `v3.1.0`（2026-11-01 weekly；`v3.0.0` → `v3.1.0` 差异见对比文档 §12；2026-11-22 复核无新正式版，基线不变，遗留 P2 补齐见 §13）
 > - Wails v3 已进入 **周更发布节奏**：每周 bump minor（`v3.1.0`、`v3.2.0` …）、每日 `v3.x.0-nightly.YYYYMMDD` 预发布、hotfix 走 patch；`@wailsio/runtime` npm 版本与 Wails 发布版本号一致（当前 `3.1.0`）。基线维护时以 **最新 weekly/hotfix（不含 nightly）** 为准
 > - 上游差异确认详见 `docs/development/wails-v3-beta-comparison.md`（§1–§10 为 beta 时代历史结论，§11 为 GA 基线，§12 为 v3.1.0 基线，§13 为 2026-11-12 复核与 P2 补齐）与 `docs/comparison-with-wails-v3.md`（Wails.Net vs Wails v3 两方能力矩阵）
 
@@ -611,4 +611,4 @@ dotnet fsi script.fsx
 
 ---
 
-**最后更新**：2026-11-12（基线复核：Wails v3 仍为 `v3.1.0`（2026-11-01 weekly，无 `v3.1.x` hotfix、无新 nightly）；§1 参考范围收敛为 Wails v3 单一上游、§1.1.1 架构三主线（Plugin/Security 改为自研表述）、§8 资源链接同步；上一轮遗留的 2 项 P2（Windows 图标句柄生命周期、`DisableIcon` 选项）已补齐，见 `docs/development/wails-v3-beta-comparison.md` §13）
+**最后更新**：2026-11-22（基线复核：Wails v3 仍为 `v3.1.0`（2026-11-01 weekly，无 `v3.1.x` hotfix、无新 nightly，最新预发布仍为 `v3.2.0-nightly.20261103`），基线不变；上一轮遗留的 2 项 P2（Windows 图标句柄生命周期、`DisableIcon` 选项）已补齐，见 `docs/development/wails-v3-beta-comparison.md` §13）
