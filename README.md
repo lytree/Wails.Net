@@ -1,9 +1,9 @@
 # Wails.Net
 
-> 基于 .NET 10 的 [Wails v3](https://github.com/wailsapp/wails/tree/v3.1.0) 移植实现，专注于 Windows、Linux 和 Android 平台。
+> 基于 .NET 10 的 [Wails v3](https://github.com/wailsapp/wails/tree/v3.1.0) 移植实现，覆盖 Windows、Linux、Android 与 macOS 平台。
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20Android%20%7C%20macOS(skeleton)-lightgrey.svg)](#平台支持)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20Android%20%7C%20macOS-lightgrey.svg)](#平台支持)
 [![Version](https://img.shields.io/badge/version-1.0.0--alpha.1-orange.svg)](#版本状态)
 [![Status](https://img.shields.io/badge/status-alpha%20%28%E4%B8%8D%E5%86%BB%E7%BB%93%29-yellow.svg)](#版本状态)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
@@ -37,7 +37,7 @@ Wails.Net 是一个使用 .NET 10 和 Web 前端技术构建跨平台桌面应�
 
 ### 核心特性
 
-- **跨平台**：Windows（WebView2）、Linux（WebKitGTK-6.0 via GirCore 0.8.1）、Android（.NET Android + WebView）
+- **跨平台**：Windows（WebView2）、Linux（WebKitGTK-6.0 via GirCore 0.8.1）、Android（.NET Android + WebView）、macOS（AppKit + WKWebView，.NET for macOS 托管绑定）
 - **现代 .NET**：基于 .NET 10，支持 AOT、 trimming
 - **托管封装策略**：使用原生互操作，避免重量级依赖
 - **源生成器绑定**：编译期注册绑定（`IIncrementalGenerator`），AOT 友好，禁止反射（AGENTS.md §3.4）
@@ -61,6 +61,7 @@ Wails.Net 是一个使用 .NET 10 和 Web 前端技术构建跨平台桌面应�
 - **平台检测**：`PlatformFactory` 6 级回退检测链，保证任何环境可降级运行
 - **cake.cs 构建**：仓库根 `cake.cs`（Cake SDK 文件式脚本）统一构建，支持三平台自包含打包 + Linux .deb/.rpm + Windows Authenticode 自动签名
 - **MenuRole 角色菜单项**：21 个角色枚举 + 13 个工厂方法 + 3 个标准菜单组合（Edit/Window/Help），对齐 Wails v3 Role 常量，macOS 专属角色在其他平台静默 no-op
+- **原生应用菜单**：Windows `Win32Menu`（Win32 菜单栏 + `WM_COMMAND` 分发）、Linux `Gtk.PopoverMenuBar`、macOS `NSMenu`；无边框窗口可结合 `--wails-draggable` 与前端按钮（`window.minimize/maximize/close` 命令）实现自定义标题栏
 - **Android 平台事件系统**：12 个 Android 平台事件 ID（1267–1285）映射到 7 个公共 `ApplicationEventType`（LowMemory/ScreenLocked/ScreenUnlocked 等），前端可使用统一事件名跨平台订阅
 
 ## 快速开始
@@ -71,6 +72,7 @@ Wails.Net 是一个使用 .NET 10 和 Web 前端技术构建跨平台桌面应�
 - Windows：WebView2 Runtime（Windows 10/11 已预装）
 - Linux：GTK4、WebKitGTK 6.0、libadwaita
 - Android（可选）：`dotnet workload install android`（TFM `net10.0-android36.0`，最低 API Level 24）
+- macOS（可选）：`dotnet workload install macos` + Xcode（TFM `net10.0-macos`，最低 macOS 12.0；仅 macOS 主机自动启用，或 `-p:WailsNetEnableMacOS=true` 强制启用）
 
 ### 安装
 
@@ -105,6 +107,9 @@ dotnet run --project tests/Wails.Net.Application.Tests/Wails.Net.Application.Tes
 
 <!-- Android 平台 -->
 <PackageReference Include="Wails.Net.Bundle.Android" />
+
+<!-- macOS 平台（需 net10.0-macos 目标） -->
+<PackageReference Include="Wails.Net.Bundle.MacOS" />
 ```
 
 聚合包是 meta-package，本身不输出程序集，会通过传递依赖引入对应平台所需的全部 Wails.Net 包（Application、平台实现、AssetServer、Runtime.Js、Errors、Events、SourceGenerators）。
@@ -217,7 +222,7 @@ public class GreetingService
 |------|---------|------|
 | Windows | WebView2 | 已实现（窗口/对话框/剪贴板/系统托盘/快捷键/自启动） |
 | Linux | WebKitGTK 6.0 (GirCore) | 已实现（窗口/对话框/剪贴板/系统托盘/快捷键） |
-| macOS | WKWebView（规划中） | 骨架实现（G7）：已注册平台工厂，运行时降级到 ServerPlatformApp，GUI 能力待集成 |
+| macOS | WKWebView (AppKit) | 已实现（窗口/菜单/剪贴板/系统托盘/快捷键/自启动/Keychain/浏览器）；`net10.0-macos` 目标，非 macOS 宿主编译时降级到 ServerMode，原生分支需 macOS 实机验证 |
 | Android | Android.Webkit.WebView | 已实现（窗口/剪贴板/AssetServer/MainActivity） |
 | iOS | — | 暂不支持 |
 
@@ -230,7 +235,7 @@ Wails.Net/
 │   ├── Wails.Net.Application.Windows/  # Windows 平台实现（WebView2 + CsWin32）
 │   ├── Wails.Net.Application.Linux/    # Linux 平台实现（GirCore 0.8.1）
 │   ├── Wails.Net.Application.Android/  # Android 平台实现（.NET Android + WebView）
-│   ├── Wails.Net.Application.MacOS/    # macOS 平台骨架（G7，降级到 ServerPlatformApp）
+│   ├── Wails.Net.Application.MacOS/    # macOS 平台实现（AppKit + WKWebView / 非 macOS 降级 ServerMode）
 │   ├── Wails.Net.AssetServer/          # 资源服务器（含 Security/Nonce/Isolation）
 │   ├── @wailsnet/runtime/           # JS 运行时生成器
 │   ├── Wails.Net.SourceGenerators/     # 源代码生成器（AOT 友好）
@@ -240,6 +245,7 @@ Wails.Net/
 │   ├── Wails.Net.Bundle.Windows/       # Windows 平台聚合包（meta-package）
 │   ├── Wails.Net.Bundle.Linux/         # Linux 平台聚合包
 │   ├── Wails.Net.Bundle.Android/       # Android 平台聚合包
+│   ├── Wails.Net.Bundle.MacOS/         # macOS 平台聚合包
 │   ├── Wails.Net.Sdk/                  # 统一 SDK（multi-target 自动选择平台 Bundle）
 │   ├── Wails.Net.Cli/                  # CLI 工具（dotnet tool）
 │   └── Wails.Net.Templates/            # dotnet new 项目模板包
@@ -274,6 +280,19 @@ Wails.Net/
 | GirCore.Gtk-4.0 (0.8.1) | GTK4 UI 工具包 |
 | GirCore.WebKit-6.0 (0.8.1) | WebKitGTK 浏览器引擎 |
 | GirCore.Gio-2.0 (0.8.1) | GIO（D-Bus、GSettings） |
+
+### macOS 平台
+
+无第三方 GUI 框架或 NuGet 依赖，直接使用 .NET for macOS（`net10.0-macos`）提供的系统框架托管绑定：
+
+| 框架 | 用途 |
+|---|---|
+| AppKit | `NSApplication`/`NSWindow`/`NSMenu`/`NSStatusItem`/`NSWorkspace`/`NSPasteboard` |
+| Foundation | `NSString`/`NSUrl`/`NSData`/通知中心、KVC/KVO |
+| WebKit | `WKWebView` + `WKUserContentController`（IPC 上行）/ `EvaluateJavaScriptAsync`（下行） |
+| CoreGraphics | `CGRect` 等几何类型 |
+| Security | `SecRecord`/`SecKeyChain`（Keychain 凭据存储） |
+| ObjCRuntime | `ObjCRuntime.Class`、Selector 与回调桥 |
 
 ## 开发指南
 

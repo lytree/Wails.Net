@@ -28,7 +28,7 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 | [架构对标分析与统一 SDK 优化方案](architecture/benchmark-audit-and-unified-sdk-plan.md) | Wails v3 / ASP.NET Core 逐项 API 与功能对标矩阵；统一 SDK 方案（调试自动选平台、打包多平台编译）；可破坏性重构任务总表 |
 | [绑定系统与命令调度](architecture/binding-and-command-system.md) | `BindingManager`、`CommandDispatcher`、源生成器调用器、FNV-1a 哈希、绑定/命令双轨路由 |
 | [插件框架](architecture/plugin-system.md) | `IPlugin` 契约、`IPluginContext`、命令注册、生命周期、47 个内置插件（39 桌面 + 7 移动端 + 1 Android 运行时 / 40 个项目） |
-| [平台抽象层](architecture/platform-abstraction.md) | `IPlatformApp`、`IWebviewWindowImpl`、Server 模式降级、Windows/Linux/Android 实现 |
+| [平台抽象层](architecture/platform-abstraction.md) | `IPlatformApp`、`IWebviewWindowImpl`、Server 模式降级、Windows/Linux/Android/macOS 实现 |
 | [传输层与 IPC 通信](architecture/transport-and-ipc.md) | `ITransport`、AssetServerTransport、原生 IPC、WebSocket 广播、`EventIPCTransport` 回退、消息格式 |
 | [安全与权限模型](architecture/security-and-permissions.md) | CSP、URL 白名单、IPC 来源验证、`Capability` 自动加载、`PermissionManager`、Scope 校验 |
 | [权限模式迁移指南](architecture/permission-migration-guide.md) | Compatibility → Strict 迁移步骤、capability 文件编写、CSP 默认值、常见问题 |
@@ -97,6 +97,7 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 | [归档说明](archive/README.md) | 归档原因、被取代的主文档、使用建议与维护规则 |
 | [旧版能力矩阵](archive/comparison-with-tauri2-wails3.md) | 曾同时对比三个框架的能力矩阵原件 |
 | [旧版架构融合策略对比](archive/fusion-strategy-comparison.md) | 曾按三框架逐项论证融合策略的对比原件 |
+| [插件全景分析（2026-08-07 快照）](archive/plugins-analysis-2026-08-07.md) | 47 个内置插件与约 300 个命令的时点盘点，现由 [插件开发指南](plugins.md) 与 [插件框架](architecture/plugin-system.md) 取代 |
 
 ## 阅读建议
 
@@ -130,6 +131,7 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 | Windows WebView | Microsoft.Web.WebView2 1.0.4314.35 |
 | Win32 互操作 | Microsoft.Windows.CsWin32 0.3.371 |
 | Linux GTK | GirCore 0.8.1 |
+| macOS 绑定 | .NET for macOS（`net10.0-macos`，AppKit/WebKit/CoreGraphics/Security，无第三方 NuGet） |
 | Android 工作负载 | `android` 36.1.43（`net10.0-android36.0`，最低 API Level 24） |
 | CLI 解析 | System.CommandLine 2.0.15 |
 | 测试框架 | TUnit 1.83.8 |
@@ -145,4 +147,4 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 
 ---
 
-**最后更新**：2026-11-22（基线复核：Wails v3 仍为 `v3.1.0`（2026-11-01 weekly），无 `v3.1.x` hotfix、无 `v3.2.0` 正式版、无新 nightly（最新预发布仍为 `v3.2.0-nightly.20261103`），基线不变；详见 [Wails v3 上游差异与对齐记录](development/wails-v3-beta-comparison.md) §13.5）
+**最后更新**：2026-11-22（基线复核：Wails v3 仍为 `v3.1.0`（2026-11-01 weekly），无 `v3.1.x` hotfix、无 `v3.2.0` 正式版、无新 nightly（最新预发布仍为 `v3.2.0-nightly.20261103`），基线不变；详见 [Wails v3 上游差异与对齐记录](development/wails-v3-beta-comparison.md) §13.5。同轮索引同步：补充 macOS 平台说明与 [插件全景分析归档](archive/plugins-analysis-2026-08-07.md)）
