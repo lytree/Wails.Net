@@ -265,7 +265,8 @@ CsWin32 在编译期根据 NativeMethods.txt 中的目标 API 名称生成强类
 
 [LinuxPlatformApp.cs](../../src/Wails.Net.Application.Linux/LinuxPlatformApp.cs) 使用 GirCore 0.8.0 提供的 GTK4 托管绑定。关键设计：
 
-- **GTK 初始化**：`EnsureGtkInitialized()` 使用 `Interlocked.Exchange` 保证 `Gtk.Functions.Init()` 仅调用一次，必须在 UI 线程上执行。
+- **GTK 初始化**：`EnsureGtkInitialized()` 用 `GirCoreInitLock` + `Volatile` 双检保证 `gtk_init()` 仅执行一次，必须在 UI 线程上执行；初始化完成前 `_gtkInitialized` 保持 0，并发调用者会等待而不是带着未就绪的 GTK 继续执行。
+- **GirCore 模块初始化分层**：GirCore 以内部库名（`GLib` / `GObject` / `Gio` / `Gtk`）发起 P/Invoke，必须在调用前执行对应 `Module.Initialize()` 注册 `DllImportResolver`，否则抛 `DllNotFoundException: Unable to load shared library 'Gio'`。因此初始化分为两层：`EnsureGioInitialized()` 只注册 GLib/GObject/Gio（不需要显示服务器，供 GMenu 模型构建等纯 Gio 路径使用），`EnsureGtkInitialized()` 在其之上再调用 `Gtk.Functions.Init()`（需要 DISPLAY/WAYLAND_DISPLAY）。纯菜单构建路径（如 `LinuxMenu`）不得依赖 GTK 层初始化，否则无头环境下会连带触发 `gtk_init` 失败。
 - **主循环**：通过 `GLib.MainLoop` 驱动，`Run()` 阻塞直到 `Destroy()` 调用 `_mainLoop.Quit()`。
 - **主题读取**：优先通过 `Gio.Settings`（gsettings C API）读取 `org.gnome.desktop.interface` schema 的 `color-scheme` 键，失败时回退到 `gsettings` 命令行子进程，再回退到 `GTK_THEME` / `COLOR_SCHEME` 环境变量。
 - **强调色映射**：将 GNOME 的 `accent-color` 名称（如 `blue`、`teal`）映射为十六进制颜色字符串。

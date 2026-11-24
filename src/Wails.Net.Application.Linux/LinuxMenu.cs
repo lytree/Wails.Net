@@ -368,6 +368,12 @@ public sealed class LinuxMenu : IMenuImpl, IDisposable
     /// </summary>
     private void RebuildModel()
     {
+        // GMenu / SimpleAction 是 GLib+Gio 层对象，不依赖 GTK 与显示服务器，
+        // 但必须先注册 GirCore 的 DllImportResolver，否则 P/Invoke "Gio" 会抛 DllNotFoundException。
+        // 不能只依赖 LinuxPlatformApp.Start 的 GTK 初始化：菜单可能在窗口创建之前构建
+        // （无头测试、应用菜单先于首窗口），这条路径必须自给自足。
+        LinuxPlatformApp.EnsureGioInitialized();
+
         _actions.Clear();
         _actionGroup = Gio.SimpleActionGroup.New();
 

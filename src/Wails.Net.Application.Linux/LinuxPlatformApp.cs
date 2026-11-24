@@ -82,6 +82,22 @@ public sealed class LinuxPlatformApp : IPlatformApp
     private static int _gtkInitialized;
 
     /// <summary>
+    /// GirCore 基础模块（GLib / GObject / Gio）是否已初始化的标志（0=未初始化，1=已初始化）。
+    /// 与 <see cref="_gtkInitialized"/> 分开：不需要 GTK 控件与显示服务器的纯 GLib/Gio 逻辑
+    /// （如 GMenu 模型构建）只依赖这一层，不能强制调用 gtk_init。
+    /// </summary>
+    private static int _gioInitialized;
+
+    /// <summary>
+    /// GirCore 模块初始化的串行化锁。
+    /// 两层初始化（Gio 层与 GTK 层）会触达相同的 GLib/GObject 模块，
+    /// 而 GirCore 的 <c>Module.Initialize()</c> 只做了非原子的 <c>IsInitialized</c> 布尔判断；
+    /// 多线程同时进入会重复调用 <c>NativeLibrary.SetDllImportResolver</c>（同一程序集只允许一次），
+    /// 因此两条路径必须共用同一把锁。
+    /// </summary>
+    private static readonly object GirCoreInitLock = new();
+
+    /// <summary>
     /// GTK 主循环实例，Run() 时创建，Destroy() 时退出。
     /// </summary>
     private MainLoop? _mainLoop;
@@ -528,13 +544,67 @@ public sealed class LinuxPlatformApp : IPlatformApp
     }
 
     /// <summary>
-    /// 确保 GTK 已初始化。使用 Interlocked 实现线程安全的单次初始化。
-    /// 必须在创建任何 GTK 窗口或控件之前调用。
+    /// 确保 GirCore 基础模块（GLib / GObject / Gio）已初始化，即完成 DllImportResolver 注册。
+    /// <para>
+    /// GirCore 的 P/Invoke 使用内部库名（<c>GLib</c> / <c>Gio</c> …），必须由各模块的
+    /// <c>Module.Initialize()</c> 注册解析器，否则调用会以
+    /// <c>DllNotFoundException: Unable to load shared library 'Gio'</c> 失败。
+    /// </para>
+    /// <para>
+    /// 该层不触碰 GTK、不需要显示服务器，因此可安全用于无头环境（CI 单元测试）与
+    /// 「先建菜单、后起窗口」的调用顺序；需要真实控件时仍须再调用
+    /// <see cref="EnsureGtkInitialized"/>。
+    /// </para>
+    /// </summary>
+    internal static void EnsureGioInitialized()
+    {
+        // 快路径：已初始化则不进锁（无头测试会为每个菜单反复走到这里）。
+        if (Volatile.Read(ref _gioInitialized) == 1)
+        {
+            return;
+        }
+
+        lock (GirCoreInitLock)
+        {
+            if (_gioInitialized == 1)
+            {
+                return;
+            }
+
+            // 依赖顺序：GObject 依赖 GLib，Gio 依赖两者。各模块的 Initialize 自身幂等，
+            // 因此与 EnsureGtkInitialized 的级联初始化重复调用无副作用。
+            GLib.Module.Initialize();
+            GObject.Module.Initialize();
+            Gio.Module.Initialize();
+
+            Volatile.Write(ref _gioInitialized, 1);
+        }
+    }
+
+    /// <summary>
+    /// 确保 GTK 已初始化。使用互斥锁保证线程安全的单次初始化。
+    /// 必须在创建任何 GTK 窗口或控件之前调用；内部会先完成
+    /// <see cref="EnsureGioInitialized"/> 的 GirCore 基础模块注册。
     /// </summary>
     internal static void EnsureGtkInitialized()
     {
-        if (Interlocked.Exchange(ref _gtkInitialized, 1) == 0)
+        // 快路径：已初始化则不进锁。
+        if (Volatile.Read(ref _gtkInitialized) == 1)
         {
+            return;
+        }
+
+        lock (GirCoreInitLock)
+        {
+            if (_gtkInitialized == 1)
+            {
+                return;
+            }
+
+            // 先注册 GLib/GObject/Gio 的解析器，避免 WebKit 级联初始化时
+            // 与本类另一条初始化路径竞争同一程序集的 DllImportResolver。
+            EnsureGioInitialized();
+
             // 在 GTK 初始化前根据环境选择合适的显示后端。
             // WSLg 的 Wayland 实现存在 seat/shared_memory 不完整问题，
             // 默认回退到 X11 以避免 gdk_seat_get_keyboard 等错误。
@@ -549,6 +619,8 @@ public sealed class LinuxPlatformApp : IPlatformApp
             //   WebKit → Soup
             // 内部会调用 gtk_init() 完成 GTK4 初始化。
             WebKit.Module.Initialize();
+
+            Volatile.Write(ref _gtkInitialized, 1);
         }
     }
 
