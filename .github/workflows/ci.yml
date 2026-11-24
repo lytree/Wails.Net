@@ -2,7 +2,7 @@
 # Wails.Net GitHub Actions CI/CD 配置
 # ----------------------------------------------------------------------------
 # 流水线 Jobs：build → test → pack → dist → publish
-#   其中 test 分两路：test-frontend（pnpm 工作区，ubuntu）与各 .NET 测试作业（test-application / test-windows / test-linux / test-android）
+#   其中 test 分两路：test-frontend（pnpm 工作区，ubuntu）与各 .NET 测试作业（test-application / test-windows / test-macos / test-linux / test-android）
 #
 # 运行环境：
 #   - windows-latest：构建全部项目、Windows 测试、打包、三平台自包含构建
@@ -287,6 +287,38 @@ jobs:
 
       - name: 运行 Windows 平台测试
         run: dotnet run --project tests/Wails.Net.Application.Windows.Tests/Wails.Net.Application.Windows.Tests.csproj --no-build -c Release
+
+  # macOS 平台测试（固定 net10.0 骨架目标，不依赖 AppKit / 原生库）
+  # 骨架分支的 accelerator 解析、LaunchAgent plist 构造、环境目录布局等纯逻辑在任意宿主可验证；
+  # 完整的 AppKit 分支需在 macOS 主机上以 net10.0-macos 目标另行验证。
+  test-macos:
+    name: 测试 (macOS 平台骨架)
+    runs-on: windows-latest
+    needs: build
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 设置 .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: 缓存 NuGet 包
+        uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: 下载构建产物
+        uses: actions/download-artifact@v8
+        with:
+          name: build-output
+
+      - name: 运行 macOS 平台测试
+        run: dotnet run --project tests/Wails.Net.Application.MacOS.Tests/Wails.Net.Application.MacOS.Tests.csproj --no-build -c Release
 
   # Linux 平台测试（依赖 GirCore/GTK4 原生库，需在 Linux runner 上运行）
   test-linux:

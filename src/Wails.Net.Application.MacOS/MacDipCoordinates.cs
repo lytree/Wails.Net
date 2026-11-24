@@ -1,9 +1,5 @@
-using System.Runtime.CompilerServices;
-
-// 纯逻辑层无平台依赖，在 Windows 主机上也会编译；无条件暴露给测试程序集，
-// 避免仅在 macos TFM 条件下声明 InternalsVisibleTo 导致跨平台测试无法访问。
-[assembly: InternalsVisibleTo("Wails.Net.Application.MacOS.Tests")]
-
+// 纯逻辑层无平台依赖，在 Windows 主机上也会编译；测试可见性由
+// Wails.Net.Application.MacOS.csproj 中的 InternalsVisibleTo 无条件声明。
 namespace Wails.Net.Application.Platform;
 
 /// <summary>

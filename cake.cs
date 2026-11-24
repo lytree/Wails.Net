@@ -198,6 +198,11 @@ Task("Test")
         Information("========== 运行 AssetServer 测试 ==========");
         DotNetRun("tests/Wails.Net.AssetServer.Tests/Wails.Net.AssetServer.Tests.csproj", runSettings);
 
+        // macOS 测试项目固定编译 net10.0 骨架目标（AppKit 分支由 #if MACOS 保护），
+        // 不依赖原生库，可在任意宿主机上直接运行，因此不按 ctx 平台条件跳过。
+        Information("========== 运行 macOS 平台测试（net10.0 骨架目标）==========");
+        DotNetRun("tests/Wails.Net.Application.MacOS.Tests/Wails.Net.Application.MacOS.Tests.csproj", runSettings);
+
         if (ctx.IsRunningOnWindows())
         {
             Information("========== 运行 Windows 平台测试 ==========");

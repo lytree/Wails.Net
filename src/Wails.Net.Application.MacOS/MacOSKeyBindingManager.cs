@@ -147,11 +147,15 @@ public sealed class MacOSKeyBindingManager : IKeyBindingManager
     /// <summary>
     /// 解析 Wails 风格 accelerator（如 "CmdOrCtrl+Shift+K"、"Alt+F4"）为 Carbon 键码与修饰掩码。
     /// </summary>
+    /// <remarks>
+    /// 声明为 <c>internal</c> 以便单元测试直接校验键码表与修饰掩码组合，
+    /// 避免依赖 Carbon 原生注册（<c>#if MACOS</c>）才能验证解析逻辑。
+    /// </remarks>
     /// <param name="accelerator">accelerator 字符串。</param>
     /// <param name="keyCode">硬件键码，解析失败为 null。</param>
     /// <param name="modifiers">Carbon 修饰键掩码。</param>
     /// <returns>是否解析成功。</returns>
-    private static bool TryParseAccelerator(string accelerator, out int? keyCode, out uint modifiers)
+    internal static bool TryParseAccelerator(string accelerator, out int? keyCode, out uint modifiers)
     {
         keyCode = null;
         modifiers = 0;

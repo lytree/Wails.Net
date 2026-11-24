@@ -401,12 +401,25 @@ public async Task SetTitle_DoesNotThrow_ForValidString()
 
 ### 7.5 macOS 备注
 
-`tests/Wails.Net.Application.MacOS.Tests/MacOSPlatformSkeletonTests.cs` **不参与** GuiContract，原因：
+`tests/Wails.Net.Application.MacOS.Tests` **不参与** GuiContract，原因：
 
 - 本项目无 macOS 测试主机，`net10.0-macos` TFM 不可在本地编译；
 - `net10.0` 目标下 `MacOSWebviewWindow` 是 `#else` 分支的 ServerMode 占位，与 `Wails.Net.Application.Platform.ServerWebviewWindow` 行为等价，契约验证与 `ServerPlatformAppTests` 重叠。
 
-macOS 在测试套件中仅以"骨架行为不抛异常"的形式覆盖；完整的 AppKit 分支测试需在 macOS 上以独立测试项目或 E2E 形式补充。
+该项目的覆盖范围（全部可在任意宿主运行，CI 作业 `test-macos` 守门）：
+
+| 测试文件 | 覆盖点 |
+|---------|--------|
+| `MacDipCoordinatesTests` | DIP ↔ 物理像素换算、Y 翻转、多显示器目标选择 |
+| `MacOptionsTests` | `MacOptions` / `WebviewWindowMacOptions` 默认值 |
+| `MacOSPlatformSkeletonTests` | 平台骨架 no-op / 默认返回值 |
+| `MacOSKeyBindingManagerTests` | accelerator → Carbon 键码表与修饰掩码 |
+| `MacOSAutostartManagerTests` | LaunchAgent 标签归一化、plist 路径与 XML 转义 |
+| `MacOSEnvironmentManagerTests` | OS/架构标识、`~/Library/Application Support` 目录布局 |
+| `MacOSApplicationExtensionsTests` | `UseMacOS()` 平台应用与各管理器注册 |
+| `MacOSWebviewWindowSkeletonTests` | 骨架窗口 ID / 状态查询 / no-op 契约 |
+
+完整的 AppKit 分支仍需在 macOS 主机上以 `net10.0-macos` 目标以 E2E 形式验证；`Enable()` 等真实写入 LaunchAgents 的用例在非 macOS 主机上以 `Skip.Test` 显式跳过，避免静默通过。
 
 ---
 

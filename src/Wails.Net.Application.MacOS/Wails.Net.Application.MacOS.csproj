@@ -38,4 +38,14 @@
     <ProjectReference Include="..\Wails.Net.Application\Wails.Net.Application.csproj" />
   </ItemGroup>
 
+  <!--
+    测试程序集可见性：无条件声明（不随 macos TFM 条件变化）。
+    测试项目仅编译 net10.0 骨架目标，需要访问纯逻辑内部成员
+    （MacDipCoordinates、MacOSKeyBindingManager.TryParseAccelerator、
+    MacOSAutostartManager 的 plist 构造等）。
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Wails.Net.Application.MacOS.Tests" />
+  </ItemGroup>
+
 </Project>

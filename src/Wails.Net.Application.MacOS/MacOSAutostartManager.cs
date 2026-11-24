@@ -33,8 +33,9 @@ public sealed class MacOSAutostartManager : IAutostartManager
     /// <summary>
     /// 获取 LaunchAgents 目录路径（~/Library/LaunchAgents）。
     /// </summary>
+    /// <remarks>声明为 <c>internal</c> 以便单元测试校验路径拼接（不需要 macOS 主机）。</remarks>
     /// <returns>目录路径。</returns>
-    private static string GetLaunchAgentsDirectory()
+    internal static string GetLaunchAgentsDirectory()
         => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             "Library", "LaunchAgents");
@@ -42,15 +43,17 @@ public sealed class MacOSAutostartManager : IAutostartManager
     /// <summary>
     /// 获取 plist 文件完整路径。
     /// </summary>
+    /// <remarks>声明为 <c>internal</c> 以便单元测试校验路径拼接（不需要 macOS 主机）。</remarks>
     /// <returns>plist 路径。</returns>
-    private string GetPlistPath() => Path.Combine(GetLaunchAgentsDirectory(), $"{GetLabel()}.plist");
+    internal string GetPlistPath() => Path.Combine(GetLaunchAgentsDirectory(), $"{GetLabel()}.plist");
 
     /// <summary>
     /// 获取 LaunchAgent 标签。
     /// 对应 Wails v3 Go 版本 defaultLabel：优先 bundle id，否则 <c>wails.autostart.&lt;slug&gt;</c>。
     /// </summary>
+    /// <remarks>声明为 <c>internal</c> 以便单元测试校验 slug 归一化规则。</remarks>
     /// <returns>标签。</returns>
-    private string GetLabel()
+    internal string GetLabel()
     {
         var slug = new string(_appName.Where(char.IsLetterOrDigit).ToArray());
         return string.IsNullOrEmpty(slug) ? "wails.autostart.app" : $"wails.autostart.{slug}";
@@ -189,10 +192,11 @@ public sealed class MacOSAutostartManager : IAutostartManager
     /// 构造 LaunchAgent plist 内容（RunAtLoad + KeepAlive=false）。
     /// 对应 Wails v3 Go 版本 launchAgentPlist。
     /// </summary>
+    /// <remarks>声明为 <c>internal</c> 以便单元测试校验 plist 结构与 XML 转义（不需要 macOS 主机）。</remarks>
     /// <param name="label">标签。</param>
     /// <param name="exe">可执行文件路径。</param>
     /// <returns>plist XML 字符串。</returns>
-    private static string BuildPlist(string label, string exe)
+    internal static string BuildPlist(string label, string exe)
     {
         var sb = new StringBuilder();
         sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
@@ -217,9 +221,10 @@ public sealed class MacOSAutostartManager : IAutostartManager
     /// <summary>
     /// 转义 XML 特殊字符。
     /// </summary>
+    /// <remarks>声明为 <c>internal</c> 以便单元测试直接校验转义结果。</remarks>
     /// <param name="value">原始字符串。</param>
     /// <returns>转义后字符串。</returns>
-    private static string EscapeXml(string value)
+    internal static string EscapeXml(string value)
         => value
             .Replace("&", "&amp;")
             .Replace("<", "&lt;")

@@ -410,7 +410,7 @@ macOS 实现参照 Wails v3 官方源码（`v3/pkg/application/*_darwin.go` / `*
 ### 分发与验证
 
 - **打包**：`Wails.Net.Bundle.MacOS` 聚合包（与 `Sdk` 的 `net10.0-macos` TFM 映射），随 `WailsNetEnableMacOS`/主机判断条件启用。
-- **验证**：Windows/Linux 上仅能编译 `net10.0` 骨架目标；完整 AppKit 分支需在 macOS 上以 `net10.0-macos` 目标编译运行验证（`Wails.Net.Application.MacOS.Tests` 尚未建立，见 AGENTS.md 阶段计划）。
+- **验证**：Windows/Linux 上仅能编译 `net10.0` 骨架目标；完整 AppKit 分支需在 macOS 上以 `net10.0-macos` 目标编译运行验证。骨架目标的纯逻辑（DIP 换算、accelerator 键码表、LaunchAgent plist、环境目录布局、管理器注册）由 `tests/Wails.Net.Application.MacOS.Tests` 覆盖，并在 CI 的 `test-macos` 作业中运行。
 
 ## Server 模式
 
