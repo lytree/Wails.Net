@@ -48,11 +48,12 @@ bash scripts/pack-and-test.sh --skip-pack   # 已有包时的校验流程
 dotnet pack src/Wails.Net.Sdk/Wails.Net.Sdk.csproj -c Release -o artifacts/nupkg
 ```
 
-> 临时说明：示例当前通过 `VersionOverride="1.0.1-alpha.1"` 锁定包版本（仓库 CPM 版本为 `1.0.1-alpha.3`），
-> 待重新出包后删除该属性即可回退到集中版本管理。
+> 临时说明：示例当前通过 `VersionOverride="1.0.1-alpha.2"` 锁定包版本（仓库 CPM 版本为 `1.0.1-alpha.4`），
+> 必须指向 nuget.org 上已发布的版本——CI 先构建后打包，还原不到「本次正在发布」的版本；
+> 待更高版本落地 nuget.org 后删除该属性即可回退到集中版本管理。
 >
-> alpha.1 / alpha.2 包中的 `Wails.Net.Application.Windows` 缺少「原生 postMessage 推送必须回到 UI 线程」
-> 的修复（本仓库 `src` 已修复），这两个包下后端 `Emit` 的事件到不了前端；前端内置了 3 秒一次的
+> alpha.2 包中的 `Wails.Net.Application.Windows` 缺少「原生 postMessage 推送必须回到 UI 线程」
+> 的修复（本仓库 `src` 已修复），该包下后端 `Emit` 的事件到不了前端；前端内置了 3 秒一次的
 > 快照对账（`app.js#reconcileWithBackend`）作为兜底，列表与进度仍会自动更新。用 `--debug` 运行时
 > 可看到每条事件是否即时到达。
 

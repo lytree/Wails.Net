@@ -41,16 +41,18 @@
   -->
   <ItemGroup>
     <!--
-      VersionOverride：临时锁定到 1.0.1-alpha.1（仓库当前 CPM 版本为 1.0.1-alpha.3）。
-      alpha.1 的 SDK 包已包含 props XML 注释修复，可正常被消费者加载；
-      待 1.0.1-alpha.3 重新出包后删除 VersionOverride，回退到 Directory.Packages.props 的集中版本。
+      VersionOverride：临时锁定到 1.0.1-alpha.2（仓库当前 CPM 版本为 1.0.1-alpha.4）。
+      必须指向 nuget.org 上已发布的版本：CI 的 build 作业先于 pack/publish 执行，
+      无法还原「本次正在发布」的版本，也不读取本地 artifacts/nupkg 源。
+      alpha.2 的 SDK 包已包含 props XML 注释修复，可正常被消费者加载；
+      待更高版本在 nuget.org 落地后删除 VersionOverride，回退到 Directory.Packages.props 的集中版本。
 
-      注意：alpha.1/alpha.2 包中的 Wails.Net.Application.Windows 缺少
+      注意：alpha.2 包中的 Wails.Net.Application.Windows 缺少
       「原生 postMessage 推送需回到 UI 线程」的修复（本仓库 src 已修复，见
-      Win32WebviewWindow.PostNativeMessageAsync），因此这两个包下后端 Emit 的事件
+      Win32WebviewWindow.PostNativeMessageAsync），因此该包下后端 Emit 的事件
       到不了前端。前端为此内置了 3 秒一次的快照对账（app.js#reconcileWithBackend）
       作为兜底，列表与下载进度仍会自动更新；重新打包出新版本后可提升此版本号。
     -->
-    <PackageReference Include="Wails.Net.Sdk" VersionOverride="1.0.1-alpha.1" />
+    <PackageReference Include="Wails.Net.Sdk" VersionOverride="1.0.1-alpha.2" />
   </ItemGroup>
 </Project>
