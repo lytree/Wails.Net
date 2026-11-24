@@ -64,6 +64,7 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 | [插件前后端一体发布](development/plugin-packaging.md) | 双包模型（NuGet + npm 同版本发布）、vite 项目调用、类型提示、发布流水线 |
 | [插件前后端按平台拆分](development/plugin-platform-split.md) | 桌面端 / 安卓端 / 平台特有三维度的前后端拆分模型与能力边界 |
 | [Wails v3 上游差异与对齐记录](development/wails-v3-beta-comparison.md) | 以 `v3.1.0` 为当前基线的上游差异清单、可参考项、实现与回归记录（§1–§10 保留 beta 时代结论） |
+| [macOS 实现 × Wails v3 差异审计](development/macos-parity-audit-2026-11-17.md) | 以 `v3.1.0` 为基线，`src/Wails.Net.Application.MacOS/` 与上游 `v3/pkg/application/*darwin*` 的逐文件静态对照（P1/P2 差异清单，未经 macOS 实机验证） |
 | [贡献指南](development/contributing.md) | 编码规范、命名约定、Git 提交规范、PR 流程、代码审查要点 |
 | [发布指南](development/release-guide.md) | 版本号集中管理、发布流程、GitHub Actions CI/CD 流水线、NuGet 发布 |
 
