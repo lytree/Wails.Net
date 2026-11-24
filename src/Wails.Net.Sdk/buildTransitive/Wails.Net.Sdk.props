@@ -27,15 +27,16 @@
     RID → WailsNetPlatform 映射表（SDK-1，跨平台编译关键）。
     消费者可通过显式设置 WailsNetPlatform 覆盖此推断。
 
-    | RID 前缀 | 平台     |
-    |----------|---------|
-    | win-*    | windows |
-    | linux-*  | linux   |
-    | android-*| android |
-    | osx-*    | macos   |
+    win-*      → windows
+    linux-*    → linux
+    android-*  → android
+    osx-*      → macos
 
     效果：`dotnet build -r linux-x64`（TFM 不变，如 net10.0-windows10.0.19041.0）即可切换平台引用，
     无需修改 TFM。未识别的 RID 不设置 FromRid，回退到 TFM / OS 推断。
+
+    注意：XML 注释内不能出现连续两个短横线，因此这里不使用 Markdown 表格分隔行，
+    否则打包后的 props 会因非法注释而无法被消费者项目加载（MSB4024）。
   -->
   <PropertyGroup Condition="'$(WailsNetPlatform)' == ''">
     <!-- 优先级 2：RID 前缀映射（跨平台打包优先于 TFM，因为 RID 是打包维度的权威标识） -->
