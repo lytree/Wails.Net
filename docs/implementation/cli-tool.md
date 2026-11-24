@@ -205,12 +205,12 @@ wails.net new MyApp --template react-ts --directory D:\Projects
 
 ### 4.1 ProjectScaffolder 模板系统
 
-[ProjectScaffolder](../../src/Wails.Net.Cli/Scaffolding/ProjectScaffolder.cs) 对应 Go 版 `internal/project/project.go`，内置 4 个前端模板：
+[ProjectScaffolder](../../src/Wails.Net.Cli/Scaffolding/ProjectScaffolder.cs) 对应 Go 版 `internal/project/project.go`，内置 5 个前端模板：
 
 ```csharp
 private static readonly string[] SupportedTemplates =
 [
-    "vanilla-ts", "vue-ts", "react-ts", "svelte-ts",
+    "vanilla-ts", "vue-ts", "vue-tsx", "react-ts", "svelte-ts",
 ];
 ```
 
@@ -228,14 +228,17 @@ private static readonly string[] SupportedTemplates =
 frontend/
 ├── package.json                     # 含 vite/typescript/@wails/runtime
 ├── index.html
-└── src/main.ts                      # 模板专属入口
+└── src/main.ts                      # 模板专属入口（vue-tsx/react-ts 为 src/main.tsx）
 ```
 
 模板通过 C# 原始字符串字面量（`"""..."""`）和插值（`$$"""...{{projectName}}..."""`）生成，**不依赖外部模板文件**。`GeneratePackageJsonContent` 根据 `template` 分支写入不同的 devDependencies/dependencies：
 
 - `vue-ts`：`vue` + `@vitejs/plugin-vue`
+- `vue-tsx`：`vue@3.6.0-rc.15` + `vue-jsx`（纯 TSX，**不生成任何 `.vue` 文件**，也不引入 `@vitejs/plugin-vue` / `vue-tsc`；Vite 侧使用 `vue-jsx/vite` 插件，tsconfig 使用 `"jsx": "preserve"` + `"jsxImportSource": "vue-jsx"`）
 - `react-ts`：`react`/`react-dom` + `@vitejs/plugin-react` + `@types/*`
 - `svelte-ts`：`svelte` + `@sveltejs/vite-plugin-svelte`
+
+生成的 `frontend/pnpm-workspace.yaml` 统一放行 esbuild 构建脚本：pnpm 10+ 默认拦截依赖脚本，不放行会以 `ERR_PNPM_IGNORED_BUILDS` 非零退出（Vite 依赖 esbuild）。文件内同时写 `allowBuilds`（pnpm 11+ 键名）与 `onlyBuiltDependencies`（pnpm 10 旧键名），并保留非空 `packages` 以兼容 pnpm 9。
 
 生成的 `.csproj` 默认引用 `Wails.Net.Application` 和 `Wails.Net.Application.Windows`（Version="*"），目标是 `net10.0-windows10.0.19041.0`。
 

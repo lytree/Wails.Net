@@ -33,8 +33,12 @@ public sealed class ProjectScaffolder
 {
     /// <summary>
     /// 脚手架生成的 <c>@wailsnet/runtime</c> 依赖版本范围。
+    /// <para>
+    /// npm 上尚无 <c>1.0.1</c> 正式版，只有 <c>1.0.1-alpha.1</c>；范围必须显式包含该预发布版本，
+    /// 否则 <c>pnpm install</c> 会报 <c>ERR_PNPM_NO_MATCHING_VERSION</c>。
+    /// </para>
     /// </summary>
-    private const string RuntimePackageVersion = "^0.1.0";
+    private const string RuntimePackageVersion = "^1.0.1-alpha.1";
 
     /// <summary>
     /// 支持的前端模板名称。
@@ -43,6 +47,7 @@ public sealed class ProjectScaffolder
     [
         "vanilla-ts",
         "vue-ts",
+        "vue-tsx",
         "react-ts",
         "svelte-ts",
     ];
@@ -164,6 +169,12 @@ public sealed class ProjectScaffolder
                 "tsconfig.json",
                 GenerateTsConfigContent(normalizedTemplate)));
 
+            // pnpm 工作区配置（放行 esbuild 构建脚本，否则 pnpm 10+ 首次 install 直接失败）
+            createdFiles.Add(WriteFile(
+                frontendDir,
+                "pnpm-workspace.yaml",
+                GeneratePnpmWorkspaceContent()));
+
             // 前端 src 目录
             var frontendSrcDir = Path.Combine(frontendDir, "src");
             Directory.CreateDirectory(frontendSrcDir);
@@ -192,12 +203,13 @@ public sealed class ProjectScaffolder
     private static string NormalizeTemplate(string template) => template.ToLowerInvariant();
 
     /// <summary>
-    /// 获取模板对应的前端入口文件名。React 使用 JSX，需 <c>.tsx</c> 扩展名。
+    /// 获取模板对应的前端入口文件名。
+    /// <c>react-ts</c> 与 <c>vue-tsx</c> 使用 JSX/TSX，需 <c>.tsx</c> 扩展名。
     /// </summary>
     /// <param name="template">归一化后的模板名称。</param>
     /// <returns>入口文件名。</returns>
     private static string GetEntryFileName(string template) =>
-        template == "react-ts" ? "main.tsx" : "main.ts";
+        template is "react-ts" or "vue-tsx" ? "main.tsx" : "main.ts";
 
     private static string WriteFile(string dir, string fileName, string content)
     {
@@ -423,7 +435,7 @@ public sealed class ProjectScaffolder
         ```
         {{projectName}}/
         ├─ src/{{projectName}}/    .NET 后端（Program.cs、Bindings.cs）
-        ├─ frontend/            Vite 前端（index.html、src/、vite.config.ts）
+        ├─ frontend/            Vite 前端（index.html、src/、vite.config.ts、pnpm-workspace.yaml）
         ├─ capabilities/        能力声明文件（capabilities/default.json）
         ├─ appsettings.json     Host 配置（权限 Strict 模式 + CSP）
         └─ wails.json           Wails.Net 项目配置
@@ -461,6 +473,11 @@ public sealed class ProjectScaffolder
                 dependencies.Add(("vue", "^3.5.0"));
                 devDependencies.Add(("@vitejs/plugin-vue", "^5.2.0"));
                 devDependencies.Add(("vue-tsc", "^2.1.0"));
+                break;
+            case "vue-tsx":
+                // 纯 TSX 路线：vue-jsx 编译器（Oxc）替代 SFC 编译器，无需 @vitejs/plugin-vue 与 vue-tsc。
+                dependencies.Add(("vue", "3.6.0-rc.15"));
+                devDependencies.Add(("vue-jsx", "^3.3.0-rc.7"));
                 break;
             case "react-ts":
                 dependencies.Add(("react", "^18.3.1"));
@@ -542,6 +559,36 @@ public sealed class ProjectScaffolder
         return string.IsNullOrEmpty(name) ? "app-frontend" : $"{name}-frontend";
     }
 
+    /// <summary>
+    /// 生成 pnpm-workspace.yaml。
+    /// <para>
+    /// pnpm 10 起默认拦截依赖的构建脚本，Vite 依赖的 esbuild 未放行会让
+    /// <c>pnpm install</c> 以 <c>ERR_PNPM_IGNORED_BUILDS</c> 非零退出；
+    /// 该配置在 pnpm 11+ 只能写在 pnpm-workspace.yaml（package.json 的 <c>pnpm</c> 字段已不再读取）：
+    /// <list type="bullet">
+    /// <item><c>allowBuilds</c>：pnpm 11+ 的键名；</item>
+    /// <item><c>onlyBuiltDependencies</c>：pnpm 10 及更早版本的旧键名（11+ 忽略）。</item>
+    /// </list>
+    /// <c>packages</c> 不能为空，否则 pnpm 9 报 <c>packages field missing or empty</c>。
+    /// </para>
+    /// </summary>
+    /// <returns>pnpm-workspace.yaml 内容。</returns>
+    private static string GeneratePnpmWorkspaceContent() => """
+        # pnpm 工作区配置（单包工程：根包即本项目）
+        packages:
+          - "."
+
+        # 显式放行 esbuild（Vite 依赖）的构建脚本。
+        # pnpm 10+ 默认拦截依赖脚本，未放行会以 ERR_PNPM_IGNORED_BUILDS 失败。
+        # allowBuilds 为 pnpm 11+ 的键名。
+        allowBuilds:
+          esbuild: true
+
+        # pnpm 10 及更早版本的旧键名（pnpm 11+ 会忽略该项）。
+        onlyBuiltDependencies:
+          - esbuild
+        """;
+
     private static string GenerateIndexHtmlContent(string projectName, string template) => $$"""
         <!DOCTYPE html>
         <html lang="zh-CN">
@@ -568,6 +615,7 @@ public sealed class ProjectScaffolder
         var (import, plugin) = template switch
         {
             "vue-ts" => ("import vue from '@vitejs/plugin-vue';", "vue()"),
+            "vue-tsx" => ("import vueJsx from 'vue-jsx/vite';", "vueJsx()"),
             "react-ts" => ("import react from '@vitejs/plugin-react';", "react()"),
             "svelte-ts" => ("import { svelte } from '@sveltejs/vite-plugin-svelte';", "svelte()"),
             _ => (string.Empty, string.Empty),
@@ -605,7 +653,13 @@ public sealed class ProjectScaffolder
     /// <returns>tsconfig 内容。</returns>
     private static string GenerateTsConfigContent(string template)
     {
-        var jsxLine = template == "react-ts" ? "\n    \"jsx\": \"react-jsx\"," : string.Empty;
+        // vue-tsx 使用 vue-jsx 自带的 jsx-runtime（无全局 JSX 命名空间，必须显式指定 jsxImportSource）。
+        var jsxLine = template switch
+        {
+            "react-ts" => "\n    \"jsx\": \"react-jsx\",",
+            "vue-tsx" => "\n    \"jsx\": \"preserve\",\n    \"jsxImportSource\": \"vue-jsx\",",
+            _ => string.Empty,
+        };
 
         return $$"""
             {
@@ -651,6 +705,36 @@ public sealed class ProjectScaffolder
         });
 
         app.mount('#app');
+        """,
+        "vue-tsx" => """
+        // Wails.Net + Vue TSX 应用入口（纯 TSX，无 .vue 单文件组件）
+        // JSX 由 vue-jsx 编译（见 vite.config.ts），类型由 tsconfig 的 jsxImportSource 提供
+        import { createApp, defineComponent, onMounted, ref } from 'vue';
+        import { wails } from '@wailsnet/runtime';
+
+        const App = defineComponent({
+          name: 'App',
+          setup() {
+            const message = ref('正在调用后端…');
+
+            onMounted(async () => {
+              try {
+                message.value = String(await wails.call('GreetingService.Hello', ['Vue TSX']));
+              } catch (err) {
+                message.value = `调用失败：${err}`;
+              }
+            });
+
+            return () => (
+              <div>
+                <h1>Wails.Net + Vue TSX</h1>
+                <p>{message.value}</p>
+              </div>
+            );
+          },
+        });
+
+        createApp(App).mount('#app');
         """,
         "react-ts" => """
         import React, { useEffect, useState } from 'react';

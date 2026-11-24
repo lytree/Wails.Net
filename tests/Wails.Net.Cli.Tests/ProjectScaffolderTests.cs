@@ -19,6 +19,7 @@ public sealed class ProjectScaffolderTests
 
         await Assert.That(templates).Contains("vanilla-ts");
         await Assert.That(templates).Contains("vue-ts");
+        await Assert.That(templates).Contains("vue-tsx");
         await Assert.That(templates).Contains("react-ts");
         await Assert.That(templates).Contains("svelte-ts");
     }
@@ -26,9 +27,11 @@ public sealed class ProjectScaffolderTests
     [Test]
     [Arguments("vanilla-ts", true)]
     [Arguments("vue-ts", true)]
+    [Arguments("vue-tsx", true)]
     [Arguments("react-ts", true)]
     [Arguments("svelte-ts", true)]
     [Arguments("VUE-TS", true)] // 大小写不敏感
+    [Arguments("VUE-TSX", true)] // 大小写不敏感
     [Arguments("invalid", false)]
     [Arguments("", false)]
     [Arguments("angular", false)]
@@ -308,6 +311,111 @@ public sealed class ProjectScaffolderTests
             await Assert.That(content).Contains("createApp");
             await Assert.That(content).Contains("from 'vue'");
             await Assert.That(content).Contains("mount('#app')");
+        }
+        finally
+        {
+            DeleteDirectory(tempRoot);
+        }
+    }
+
+    [Test]
+    public async Task ScaffoldAsync_PackageJson_UsesResolvableRuntimeRange()
+    {
+        var tempRoot = CreateTempDirectory();
+        try
+        {
+            var scaffolder = new ProjectScaffolder();
+            var result = await scaffolder.ScaffoldAsync("MyApp", "vanilla-ts", tempRoot);
+
+            await Assert.That(result.Success).IsTrue();
+            var pkgContent = await File.ReadAllTextAsync(
+                Path.Combine(tempRoot.FullName, "MyApp", "frontend", "package.json"));
+
+            // 范围必须包含 1.0.1-alpha.1，否则 pnpm 无法解析（npm 上无 1.0.1 正式版）
+            await Assert.That(pkgContent).Contains("\"@wailsnet/runtime\": \"^1.0.1-alpha.1\"");
+        }
+        finally
+        {
+            DeleteDirectory(tempRoot);
+        }
+    }
+
+    [Test]
+    public async Task ScaffoldAsync_PnpmWorkspace_AllowsEsbuildBuildScript()
+    {
+        var tempRoot = CreateTempDirectory();
+        try
+        {
+            var scaffolder = new ProjectScaffolder();
+            var result = await scaffolder.ScaffoldAsync("MyApp", "vanilla-ts", tempRoot);
+
+            await Assert.That(result.Success).IsTrue();
+            var frontendDir = Path.Combine(tempRoot.FullName, "MyApp", "frontend");
+
+            // pnpm 11+ 的键名与新位置（package.json 的 pnpm 字段已不被读取）
+            var workspacePath = Path.Combine(frontendDir, "pnpm-workspace.yaml");
+            await Assert.That(File.Exists(workspacePath)).IsTrue();
+            var workspaceContent = await File.ReadAllTextAsync(workspacePath);
+            await Assert.That(workspaceContent).Contains("allowBuilds:");
+            await Assert.That(workspaceContent).Contains("esbuild: true");
+            // pnpm 10 旧键名 + pnpm 9 要求的非空 packages
+            await Assert.That(workspaceContent).Contains("onlyBuiltDependencies:");
+            await Assert.That(workspaceContent).Contains("packages:");
+
+            // package.json 必须是合法 JSON，且不再携带已失效的 pnpm 字段
+            var pkgContent = await File.ReadAllTextAsync(
+                Path.Combine(frontendDir, "package.json"));
+            using var doc = System.Text.Json.JsonDocument.Parse(pkgContent);
+            await Assert.That(doc.RootElement.TryGetProperty("pnpm", out _)).IsFalse();
+        }
+        finally
+        {
+            DeleteDirectory(tempRoot);
+        }
+    }
+
+    [Test]
+    public async Task ScaffoldAsync_VueTsxTemplate_UsesPureTsxWithoutVueFiles()
+    {
+        var tempRoot = CreateTempDirectory();
+        try
+        {
+            var scaffolder = new ProjectScaffolder();
+            var result = await scaffolder.ScaffoldAsync("MyApp", "vue-tsx", tempRoot);
+
+            await Assert.That(result.Success).IsTrue();
+            var frontendDir = Path.Combine(tempRoot.FullName, "MyApp", "frontend");
+
+            // 入口必须是 .tsx，且不使用运行时模板字符串
+            var mainPath = Path.Combine(frontendDir, "src", "main.tsx");
+            await Assert.That(File.Exists(mainPath)).IsTrue();
+            var mainContent = await File.ReadAllTextAsync(mainPath);
+            await Assert.That(mainContent).Contains("defineComponent");
+            await Assert.That(mainContent).Contains("from 'vue'");
+            await Assert.That(mainContent).Contains("@wailsnet/runtime");
+            await Assert.That(mainContent).Contains("<h1>");
+            await Assert.That(mainContent).DoesNotContain("template:");
+
+            // 模板内不得存在任何 .vue 单文件组件
+            var vueFiles = Directory.GetFiles(frontendDir, "*.vue", SearchOption.AllDirectories);
+            await Assert.That(vueFiles.Length).IsEqualTo(0);
+
+            // 依赖：vue-jsx + 指定的 vue 预发布版本，不含 SFC 工具链
+            var pkgContent = await File.ReadAllTextAsync(Path.Combine(frontendDir, "package.json"));
+            await Assert.That(pkgContent).Contains("\"vue\": \"3.6.0-rc.15\"");
+            await Assert.That(pkgContent).Contains("\"vue-jsx\":");
+            await Assert.That(pkgContent).DoesNotContain("@vitejs/plugin-vue");
+            await Assert.That(pkgContent).DoesNotContain("vue-tsc");
+
+            // Vite 使用 vue-jsx 插件
+            var viteContent = await File.ReadAllTextAsync(Path.Combine(frontendDir, "vite.config.ts"));
+            await Assert.That(viteContent).Contains("vue-jsx/vite");
+            await Assert.That(viteContent).Contains("vueJsx()");
+
+            // tsconfig 指定 vue-jsx 的 JSX 运行时
+            var tsconfigContent = await File.ReadAllTextAsync(Path.Combine(frontendDir, "tsconfig.json"));
+            await Assert.That(tsconfigContent).Contains("\"jsx\": \"preserve\"");
+            await Assert.That(tsconfigContent).Contains("\"jsxImportSource\": \"vue-jsx\"");
         }
         finally
         {
