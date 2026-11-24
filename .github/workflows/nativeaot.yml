@@ -10,6 +10,7 @@
 #
 # 验证对象：Wails.Net.Cli（控制台程序，无 GUI，引用 Application/Generator 全部核心库）。
 # 触发：push / PR（与主 CI 一致）。
+# 平台矩阵：Windows (win-x64) / Linux (linux-x64) / macOS (osx-arm64)。
 # ============================================================================
 
 name: NativeAOT
@@ -30,8 +31,21 @@ env:
 
 jobs:
   nativeaot-cli:
-    name: NativeAOT 裁剪发布 (CLI)
-    runs-on: windows-latest
+    name: NativeAOT 裁剪发布 (CLI, ${{ matrix.rid }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            exe_name: Wails.Net.Cli.exe
+          - os: ubuntu-latest
+            rid: linux-x64
+            exe_name: Wails.Net.Cli
+          - os: macos-latest
+            rid: osx-arm64
+            exe_name: Wails.Net.Cli
     steps:
       - name: 检出代码
         uses: actions/checkout@v7
@@ -49,7 +63,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      # NativeAOT 裁剪发布 CLI（win-x64）。
+      # Linux 上 NativeAOT 依赖 clang 与 zlib 开发头文件（macOS 自带 Xcode clang，
+      # Windows 使用 MSVC 链接器，均无需额外安装）。
+      - name: 安装 Linux NativeAOT 依赖
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang zlib1g-dev
+
+      # NativeAOT 裁剪发布 CLI（矩阵 rid：win-x64 / linux-x64 / osx-arm64）。
       # 说明：通过 -p:WailsAot=true 启用（项目级条件属性，避免命令行全局属性沿
       # ProjectReference 传播到 netstandard2.1 分析器项目导致 NETSDK1207）。
       # PublishAot=true 会触发 IL 裁剪与 AOT 编译；若核心库存在未注解的运行时反射，
@@ -58,17 +81,17 @@ jobs:
         shell: pwsh
         run: |
           dotnet publish src/Wails.Net.Cli/Wails.Net.Cli.csproj `
-            -c Release -r win-x64 `
+            -c Release -r ${{ matrix.rid }} `
             -p:WailsAot=true `
             -o ${{ env.AOT_OUTPUT }}
           if ($LASTEXITCODE -ne 0) { Write-Host "NativeAOT 发布失败"; exit 1 }
 
-      # 冒烟测试（--version）。注意：publish 输出的 exe 名为项目名（Wails.Net.Cli.exe），
-      # ToolCommandName=wails-net 仅对 dotnet tool 安装生效。
+      # 冒烟测试（--version）。注意：publish 输出的可执行文件名为项目名
+      # （Windows 带有 .exe 后缀），ToolCommandName=wails-net 仅对 dotnet tool 安装生效。
       - name: 冒烟测试（--version）
         shell: pwsh
         run: |
-          $exe = Join-Path ${{ env.AOT_OUTPUT }} "Wails.Net.Cli.exe"
+          $exe = Join-Path ${{ env.AOT_OUTPUT }} "${{ matrix.exe_name }}"
           if (-not (Test-Path $exe)) { Write-Host "错误：AOT 可执行文件未生成"; exit 1 }
           & $exe --version
           if ($LASTEXITCODE -ne 0) { Write-Host "--version 执行失败"; exit 1 }
@@ -76,14 +99,14 @@ jobs:
       - name: 冒烟测试（doctor）
         shell: pwsh
         run: |
-          $exe = Join-Path ${{ env.AOT_OUTPUT }} "Wails.Net.Cli.exe"
+          $exe = Join-Path ${{ env.AOT_OUTPUT }} "${{ matrix.exe_name }}"
           & $exe doctor
           if ($LASTEXITCODE -ne 0) { Write-Host "doctor 执行失败"; exit 1 }
 
       - name: 冒烟测试（generate --commands-manifest）
         shell: pwsh
         run: |
-          $exe = Join-Path ${{ env.AOT_OUTPUT }} "Wails.Net.Cli.exe"
+          $exe = Join-Path ${{ env.AOT_OUTPUT }} "${{ matrix.exe_name }}"
           $manifest = Join-Path ${{ runner.temp }} "commands.manifest.json"
           @'
           {"version":"1","generatedAt":"2026-08-15T00:00:00Z","commands":[{"name":"app.greet","requiredCapabilities":[],"anonymous":true,"parameters":[]}]}
@@ -93,19 +116,27 @@ jobs:
           if (-not (Test-Path (Join-Path ${{ runner.temp }} "aot-gen-out/commands.ts"))) { Write-Host "commands.ts 未生成"; exit 1 }
           Write-Host "generate 冒烟测试通过：commands.ts 已生成"
 
+      # 校验 AOT 输出：不应存在任何托管程序集（.dll）。各平台的原生依赖库
+      # （libSkiaSharp / e_sqlite3 / libsodium，后缀 .dll / .so / .dylib）予以豁免。
       - name: 校验 AOT 输出（无托管运行时依赖）
         shell: pwsh
         run: |
-          $exe = Join-Path ${{ env.AOT_OUTPUT }} "Wails.Net.Cli.exe"
-          $dlls = Get-ChildItem ${{ env.AOT_OUTPUT }} -Filter "*.dll" -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch '^(libSkiaSharp|e_sqlite3|libsodium)' }
+          $exe = Join-Path ${{ env.AOT_OUTPUT }} "${{ matrix.exe_name }}"
+          $nativeNames = '^(libSkiaSharp|e_sqlite3|libsodium)'
+          $managed = Get-ChildItem ${{ env.AOT_OUTPUT }} -Filter "*.dll" -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -notmatch $nativeNames }
+          if ($IsMacOS) {
+            $managed += Get-ChildItem ${{ env.AOT_OUTPUT }} -Filter "*.dylib" -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -notmatch $nativeNames }
+          }
           $info = Get-Item $exe
-          Write-Host "AOT 可执行文件大小: $([math]::Round($info.Length / 1MB, 1)) MB"
-          if ($dlls) { Write-Host "注意：输出目录存在非原生 DLL: $($dlls.Name -join ', ')"; exit 1 }
-          else { Write-Host "输出目录无托管 DLL（除原生依赖库）——完整 AOT 裁剪，禁反射收益验证通过" }
+          Write-Host "AOT 可执行文件大小 (${{ matrix.rid }}): $([math]::Round($info.Length / 1MB, 1)) MB"
+          if ($managed) { Write-Host "注意：输出目录存在非原生程序集: $(($managed | ForEach-Object { $_.Name }) -join ', ')"; exit 1 }
+          else { Write-Host "输出目录无托管 DLL（除原生依赖库）——完整 AOT 裁剪，禁反射收益验证通过 (${{ matrix.rid }})" }
 
       - name: 上传 AOT 产物
         uses: actions/upload-artifact@v7
         with:
-          name: nativeaot-cli
+          name: nativeaot-cli-${{ matrix.rid }}
           path: ${{ env.AOT_OUTPUT }}/
           retention-days: 7
