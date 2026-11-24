@@ -56,7 +56,19 @@ public sealed class LinuxMenu : IMenuImpl, IDisposable
     {
         _menu = menu;
         RebuildModel();
+
+        // 挂载平台实现：此后 Menu.Append / Menu.Remove / Menu.Update 会直接落到模型重建。
+        _menu.AttachImpl(this);
     }
+
+    /// <summary>
+    /// GMenu 模型重建后的回调。
+    /// <para>
+    /// 重建会产生全新的 <see cref="Gio.Menu"/> 与 <see cref="Gio.SimpleActionGroup"/> 对象，
+    /// 已创建窗口持有的仍是旧对象；必须由平台层把新模型重新注入各窗口，否则菜单栏不更新。
+    /// </para>
+    /// </summary>
+    internal Action? NativeChanged { get; set; }
 
     /// <summary>
     /// 获取包含所有菜单项 action 的 ActionGroup。
@@ -147,6 +159,7 @@ public sealed class LinuxMenu : IMenuImpl, IDisposable
         _callbacks.Clear();
         _actions.Clear();
         _actionGroup = null;
+        _menu.DetachImpl(this);
     }
 
     /// <inheritdoc />
@@ -366,6 +379,9 @@ public sealed class LinuxMenu : IMenuImpl, IDisposable
         {
             _menuBar.SetMenuModel(_menuModel);
         }
+
+        // 通知平台层把新模型/新 action group 重新注入各窗口。
+        NativeChanged?.Invoke();
     }
 
     /// <summary>
@@ -384,6 +400,13 @@ public sealed class LinuxMenu : IMenuImpl, IDisposable
                 var section = Gio.Menu.New();
                 model.AppendSection(null, section);
                 continue;
+            }
+
+            // 应用角色（如有）。应用菜单由构造函数直接走 BuildMenuModel，
+            // 不经过 AddMenuItem；不在此处补齐会导致角色项在菜单栏中无标签、点击无响应。
+            if (item.Role != MenuRole.None)
+            {
+                ApplyRole(item, window: null);
             }
 
             var label = item.Label ?? string.Empty;

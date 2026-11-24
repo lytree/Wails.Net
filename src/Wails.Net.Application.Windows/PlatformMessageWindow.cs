@@ -199,7 +199,7 @@ internal sealed class PlatformMessageWindow : IDisposable
     {
         if (category == "ImmersiveColorSet")
         {
-            WailsApplication.Get()?.Events.Emit(KnownEvents.ThemeChanged, null, null);
+            WailsApplication.Get()?.EmitThemeChanged();
         }
     }
 

@@ -193,6 +193,26 @@ public sealed class WindowsPlatformApp : IPlatformApp
     private PlatformMessageWindow? _platformMessageWindow;
 
     /// <summary>
+    /// 应用级明暗主题模式（Wails.Net 扩展），默认跟随系统。
+    /// <para>
+    /// 由 <see cref="Application.SetThemeMode"/> 下推；平台侧用它决定 DWM 标题栏、
+    /// 原生菜单与自绘标题栏主题按钮的明暗，系统主题变化时只有
+    /// <see cref="ThemeMode.System"/> 才会触发重算。
+    /// </para>
+    /// </summary>
+    private ThemeMode _themeMode = ThemeMode.System;
+
+    /// <summary>
+    /// 当前实际采用的明暗（Wails.Net 扩展）：<see cref="ThemeMode.System"/> 时取系统设置。
+    /// </summary>
+    internal bool IsDarkTheme => _themeMode switch
+    {
+        ThemeMode.Dark => true,
+        ThemeMode.Light => false,
+        _ => IsDarkMode(),
+    };
+
+    /// <summary>
     /// 构造 WindowsPlatformApp 实例。
     /// 在构造时设置进程 DPI 感知，确保后续窗口按高 DPI 正确缩放。
     /// </summary>
@@ -251,6 +271,22 @@ public sealed class WindowsPlatformApp : IPlatformApp
 
         // 默认返回亮色模式。
         return false;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// 逐窗口重刷 DWM 标题栏与原生菜单主题，并让窗口重绘非客户区以更新自绘主题按钮。
+    /// 窗口列表为空时只记录模式，后续 <see cref="CreateWebviewWindow"/> 会按新模式下发给新窗口。
+    /// </remarks>
+    public void SetThemeMode(ThemeMode mode)
+    {
+        _themeMode = mode;
+
+        var dark = IsDarkTheme;
+        foreach (var window in EnumerateWindows())
+        {
+            window.ApplyThemeMode(dark);
+        }
     }
 
     /// <inheritdoc />
@@ -393,12 +429,33 @@ public sealed class WindowsPlatformApp : IPlatformApp
 
         // 创建 Win32 菜单实现并构建原生菜单。
         _applicationMenu = new Win32Menu(menu);
+
+        // 菜单可在运行时增删改（Menu.Append/Remove/Update）；结构变化后需要重新
+        // 把菜单句柄应用到各窗口，触发 DrawMenuBar 重绘，否则菜单栏显示不会更新。
+        _applicationMenu.NativeChanged = RefreshMenuBar;
         _applicationMenu.Build();
 
         // 将菜单设置到所有已创建窗口。
         foreach (var window in EnumerateWindows())
         {
             window.SetMenuHandle(_applicationMenu.Hmenu);
+        }
+    }
+
+    /// <summary>
+    /// 把当前应用菜单句柄重新应用到各窗口，触发菜单栏重绘。
+    /// 由 <see cref="Win32Menu.NativeChanged"/> 在菜单结构变更后回调。
+    /// </summary>
+    private void RefreshMenuBar()
+    {
+        if (_applicationMenu is not { } appMenu || appMenu.Hmenu.IsNull)
+        {
+            return;
+        }
+
+        foreach (var window in EnumerateWindows())
+        {
+            window.SetMenuHandle(appMenu.Hmenu);
         }
     }
 
@@ -555,8 +612,9 @@ public sealed class WindowsPlatformApp : IPlatformApp
         // 将应用级 WindowsOptions 传入窗口，用于配置 WebView2 环境（用户数据目录、浏览器路径等）。
         var window = new Win32WebviewWindow(id, options, _windowsOptions);
 
-        // 应用暗色模式。
-        ApplyDarkModeToWindow(window.Hwnd, IsDarkMode());
+        // 应用明暗主题（Wails.Net 扩展）：按应用级主题模式换算实际明暗，
+        // 同时让窗口记录该状态，供自绘标题栏主题按钮选取前景色。
+        window.ApplyThemeMode(IsDarkTheme);
 
         // 应用菜单（若已设置）。
         if (_applicationMenu is not null)

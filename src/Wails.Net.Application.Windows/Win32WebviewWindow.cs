@@ -92,6 +92,31 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     private const uint WmNclButtonDown = 0x00A1;
 
     /// <summary>
+    /// WM_NCLBUTTONUP 消息常量（0x00A2），非客户区左键抬起。
+    /// </summary>
+    private const uint WmNclButtonUp = 0x00A2;
+
+    /// <summary>
+    /// WM_NCLBUTTONDBLCLK 消息常量（0x00A3），非客户区左键双击（默认会最大化窗口）。
+    /// </summary>
+    private const uint WmNclButtonDblClk = 0x00A3;
+
+    /// <summary>
+    /// WM_NCMOUSEMOVE 消息常量（0x00A0），非客户区鼠标移动。
+    /// </summary>
+    private const uint WmNcMouseMove = 0x00A0;
+
+    /// <summary>
+    /// WM_NCPAINT 消息常量（0x0085），非客户区绘制。
+    /// </summary>
+    private const uint WmNcPaint = 0x0085;
+
+    /// <summary>
+    /// WM_NCACTIVATE 消息常量（0x0086），窗口激活状态变化（标题栏整体重绘）。
+    /// </summary>
+    private const uint WmNcActivate = 0x0086;
+
+    /// <summary>
     /// WM_SETICON 消息常量（0x0080），设置窗口图标。
     /// </summary>
     private const uint WmSetIcon = 0x0080;
@@ -374,6 +399,24 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     private bool _wasMaximised;
 
     /// <summary>
+    /// 原生标题栏主题切换按钮（Wails.Net 扩展）。仅在
+    /// <see cref="WebviewWindowOptions.TitleBarThemeButton"/> 开启且窗口带原生标题栏时非 null。
+    /// </summary>
+    private Win32TitleBarThemeButton? _themeButton;
+
+    /// <summary>
+    /// 当前窗口实际采用的明暗（由 <see cref="ApplyThemeMode"/> 维护），
+    /// 供主题按钮自绘时选取前景 / 悬停颜色。
+    /// </summary>
+    private bool _isDarkTheme;
+
+    /// <summary>
+    /// 是否正在应用主题（<see cref="ApplyThemeMode"/> 执行中）。
+    /// 用于阻断 <c>SetWindowTheme</c> 同步回送 <c>WM_THEMECHANGED</c> 造成的递归。
+    /// </summary>
+    private bool _applyingTheme;
+
+    /// <summary>
     /// 构造 Win32WebviewWindow 实例并创建原生窗口。
     /// </summary>
     /// <param name="id">窗口 ID。</param>
@@ -527,6 +570,12 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         if (_options.Frameless)
         {
             SetFrameless(true);
+        }
+
+        // 原生标题栏主题按钮（Wails.Net 扩展）：依赖原生标题栏，无边框窗口不创建。
+        if (_options.TitleBarThemeButton && !_options.Frameless)
+        {
+            _themeButton = new Win32TitleBarThemeButton(_hwnd, enabled: true);
         }
 
         if (_options.AlwaysOnTop)
@@ -1466,13 +1515,47 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     /// 重写 <see cref="IWebviewWindowImpl.PostNativeMessageAsync"/> 默认实现。
     /// 直接调用 <c>CoreWebView2.PostWebMessageAsString</c>，绕过 ExecJS 注入路径。
     /// 前端通过 <c>window.chrome.webview.addEventListener('message', e =&gt; ...)</c> 接收。
+    /// <para>
+    /// <b>线程约束（2026-11-24 修复）</b>：<c>PostWebMessageAsString</c> 只能在 WebView2 所属
+    /// UI 线程调用。后端事件广播由 <see cref="Wails.Net.Application.Transport.NativeIpcTransport"/>
+    /// 的每窗口事件队列在线程池线程上投递，直接调用会抛 <c>RPC_E_WRONG_THREAD</c>，
+    /// 异常被队列消费者按 Debug 级别吞掉，表现为「后端 Emit 完全静默、前端收不到任何事件」。
+    /// 因此统一经 <see cref="Application.DispatchOnMainThread(Action)"/> 回到主线程执行
+    /// （已在主线程时该方法内联执行，不引入额外延迟）。
+    /// </para>
     /// </summary>
     /// <param name="message">要推送的 JSON 字符串。</param>
     /// <returns>表示推送操作的异步任务。</returns>
     public Task PostNativeMessageAsync(string message)
     {
         ArgumentNullException.ThrowIfNull(message);
-        _webview?.PostWebMessageAsString(message);
+
+        var webview = _webview;
+        if (webview is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        var app = Application.Get();
+        if (app is null)
+        {
+            // 无 Application 上下文（极端场景）：保持旧行为，不做线程调度。
+            webview.PostWebMessageAsString(message);
+            return Task.CompletedTask;
+        }
+
+        app.DispatchOnMainThread(() =>
+        {
+            try
+            {
+                webview.PostWebMessageAsString(message);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Wails.Net] 原生消息推送失败：{ex.Message}");
+            }
+        });
+
         return Task.CompletedTask;
     }
 
@@ -2051,7 +2134,14 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                         var category = Marshal.PtrToStringUni(lParam.Value);
                         if (category == "ImmersiveColorSet")
                         {
-                            Application.Get()?.Events.Emit(KnownEvents.ThemeChanged, null, null);
+                            // 跟随系统模式下，系统明暗变化需要同步刷新原生标题栏 / 菜单 / 主题按钮。
+                            var app = Application.Get();
+                            if (app?.ThemeMode == ThemeMode.System)
+                            {
+                                instance.ApplyThemeMode(app.IsDarkTheme);
+                            }
+
+                            app?.EmitThemeChanged();
                         }
                     }
                     catch
@@ -2106,6 +2196,85 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
                 }
 
                 break;
+
+            // ── 原生标题栏主题按钮（Wails.Net 扩展）──
+            // 按钮绘制在非客户区，只能在 NC 消息链里处理：
+            // 绘制必须在 DefWindowProc(WM_NCPAINT) 之后叠加，点击必须在 WM_NCLBUTTON* 中拦截，
+            // 否则会被系统解释为「拖动标题栏 / 双击最大化」。
+            case WmNcPaint:
+            {
+                // 先让系统绘制标题栏与按钮，再叠加自绘主题按钮。
+                var paintResult = PInvoke.DefWindowProc(hWnd, msg, wParam, lParam);
+                instance?.PaintThemeButton();
+                return paintResult;
+            }
+
+            case WmNcActivate:
+            {
+                // 激活状态变化会整体重绘标题栏（前景色也不同），需清除悬停态后重绘按钮。
+                instance?.ApplyThemeActivationState();
+                var activateResult = PInvoke.DefWindowProc(hWnd, msg, wParam, lParam);
+                instance?.PaintThemeButton();
+                return activateResult;
+            }
+
+            case WmNcMouseMove:
+            {
+                if (instance is not null)
+                {
+                    var ncX = unchecked((short)(lParam.Value & 0xFFFF));
+                    var ncY = unchecked((short)((lParam.Value >> 16) & 0xFFFF));
+                    instance.UpdateThemeButtonHover(ncX, ncY);
+                }
+
+                break;
+            }
+
+            case WmNclButtonDown:
+            {
+                if (instance is not null)
+                {
+                    var ncX = unchecked((short)(lParam.Value & 0xFFFF));
+                    var ncY = unchecked((short)((lParam.Value >> 16) & 0xFFFF));
+                    if (instance.HandleThemeButtonDown(ncX, ncY))
+                    {
+                        return default;
+                    }
+                }
+
+                break;
+            }
+
+            case WmNclButtonUp:
+            {
+                if (instance is not null)
+                {
+                    var ncX = unchecked((short)(lParam.Value & 0xFFFF));
+                    var ncY = unchecked((short)((lParam.Value >> 16) & 0xFFFF));
+                    if (instance.HandleThemeButtonUp(ncX, ncY))
+                    {
+                        return default;
+                    }
+                }
+
+                break;
+            }
+
+            case WmNclButtonDblClk:
+            {
+                // 双击主题按钮不应触发「标题栏双击最大化」。
+                if (instance is not null)
+                {
+                    var ncX = unchecked((short)(lParam.Value & 0xFFFF));
+                    var ncY = unchecked((short)((lParam.Value >> 16) & 0xFFFF));
+                    if (instance.IsOverThemeButton(ncX, ncY))
+                    {
+                        return default;
+                    }
+                }
+
+                break;
+            }
         }
 
         return PInvoke.DefWindowProc(hWnd, msg, wParam, lParam);
@@ -2698,6 +2867,150 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
         ApplyFrameChange();
     }
 
+    /// <summary>
+    /// 应用明暗主题到本窗口（Wails.Net 扩展）：DWM 标题栏 + 原生菜单主题，
+    /// 并刷新非客户区以重绘主题按钮。
+    /// </summary>
+    /// <param name="dark">是否暗色。</param>
+    /// <remarks>
+    /// 必须防重入：<see cref="Win32Theme.SetMenuTheme"/> 内部调用 <c>SetWindowTheme</c> 时，
+    /// 系统会同步回送 <c>WM_THEMECHANGED</c>；若不拦截，消息处理里再次调用本方法就会
+    /// 形成 <c>SetWindowTheme → WM_THEMECHANGED → ApplyThemeMode</c> 的无限递归。
+    /// </remarks>
+    internal void ApplyThemeMode(bool dark)
+    {
+        if (_applyingTheme)
+        {
+            return;
+        }
+
+        _applyingTheme = true;
+        try
+        {
+            _isDarkTheme = dark;
+
+            if (_hwnd.IsNull)
+            {
+                return;
+            }
+
+            WindowsPlatformApp.ApplyDarkModeToWindow(_hwnd, dark);
+            RedrawNonClientArea();
+        }
+        finally
+        {
+            _applyingTheme = false;
+        }
+    }
+
+    /// <summary>
+    /// 重绘窗口非客户区（标题栏 / 边框）。用于自绘主题按钮状态变化后立即刷新。
+    /// </summary>
+    private void RedrawNonClientArea()
+    {
+        if (_hwnd.IsNull)
+        {
+            return;
+        }
+
+        PInvoke.RedrawWindow(
+            _hwnd,
+            null,
+            default,
+            REDRAW_WINDOW_FLAGS.RDW_FRAME | REDRAW_WINDOW_FLAGS.RDW_INVALIDATE);
+    }
+
+    /// <summary>
+    /// 在窗口 DC 上叠加绘制主题按钮。由 <c>WM_NCPAINT</c> 在 <c>DefWindowProc</c> 之后调用，
+    /// 以覆盖系统刚绘制完的标题栏。
+    /// </summary>
+    private void PaintThemeButton()
+    {
+        if (_themeButton is null || _hwnd.IsNull)
+        {
+            return;
+        }
+
+        var hdc = PInvoke.GetWindowDC(_hwnd);
+        if (hdc.IsNull)
+        {
+            return;
+        }
+
+        try
+        {
+            _themeButton.Paint(hdc, Application.Get()?.ThemeMode ?? ThemeMode.System, _isDarkTheme);
+        }
+        finally
+        {
+            _ = PInvoke.ReleaseDC(_hwnd, hdc);
+        }
+    }
+
+    /// <summary>
+    /// 处理非客户区鼠标移动：刷新主题按钮悬停态并按需重绘。
+    /// </summary>
+    /// <param name="x">屏幕 X 坐标。</param>
+    /// <param name="y">屏幕 Y 坐标。</param>
+    private void UpdateThemeButtonHover(int x, int y)
+    {
+        if (_themeButton?.UpdateHover(x, y) == true)
+        {
+            RedrawNonClientArea();
+        }
+    }
+
+    /// <summary>
+    /// 处理非客户区左键按下：命中主题按钮时消费消息（阻止标题栏拖动）。
+    /// </summary>
+    /// <param name="x">屏幕 X 坐标。</param>
+    /// <param name="y">屏幕 Y 坐标。</param>
+    /// <returns>已消费返回 true。</returns>
+    private bool HandleThemeButtonDown(int x, int y)
+    {
+        if (_themeButton?.HandleButtonDown(x, y) != true)
+        {
+            return false;
+        }
+
+        RedrawNonClientArea();
+        return true;
+    }
+
+    /// <summary>
+    /// 处理非客户区左键抬起：在主题按钮上抬起则切换主题模式。
+    /// </summary>
+    /// <param name="x">屏幕 X 坐标。</param>
+    /// <param name="y">屏幕 Y 坐标。</param>
+    /// <returns>已消费返回 true。</returns>
+    private bool HandleThemeButtonUp(int x, int y)
+    {
+        if (_themeButton is null)
+        {
+            return false;
+        }
+
+        var handled = _themeButton.HandleButtonUp(x, y);
+        RedrawNonClientArea();
+        return handled;
+    }
+
+    /// <summary>
+    /// 判断屏幕坐标点是否落在主题按钮内（用于拦截双击最大化）。
+    /// </summary>
+    /// <param name="x">屏幕 X 坐标。</param>
+    /// <param name="y">屏幕 Y 坐标。</param>
+    /// <returns>命中返回 true。</returns>
+    private bool IsOverThemeButton(int x, int y) => _themeButton?.Contains(x, y) ?? false;
+
+    /// <summary>
+    /// 窗口激活状态变化时清理主题按钮的悬停 / 按下态。
+    /// </summary>
+    private void ApplyThemeActivationState()
+    {
+        _themeButton?.ResetState();
+    }
+
     /// <inheritdoc />
     public void OpenDevTools()
     {
@@ -2826,6 +3139,15 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <para>
+    /// <b>线程约束（2026-11-24 修复）</b>：<c>ExecuteScriptAsync</c> 同样只能在 WebView2 所属
+    /// UI 线程调用。事件下行在未启用原生 IPC 时由
+    /// <see cref="Wails.Net.Application.Transport.EventIPCTransport"/> 通过 ExecJS 注入
+    /// <c>window._wailsEmitEvent(...)</c>，而该调用发生在线程池线程上，直接执行会抛
+    /// <c>RPC_E_WRONG_THREAD</c> 并被上层按 Debug 级别吞掉。这里统一回到主线程执行。
+    /// </para>
+    /// </remarks>
     public void ExecJS(string js)
     {
         // P0-2：窗口已关闭或 WebView 尚未就绪/已失效时不再注入脚本。
@@ -2836,7 +3158,30 @@ public sealed class Win32WebviewWindow : IWebviewWindowImpl, IDisposable
             return;
         }
 
-        _ = _webview?.ExecuteScriptAsync(js);
+        var webview = _webview;
+        if (webview is null)
+        {
+            return;
+        }
+
+        var app = Application.Get();
+        if (app is null)
+        {
+            _ = webview.ExecuteScriptAsync(js);
+            return;
+        }
+
+        app.DispatchOnMainThread(() =>
+        {
+            try
+            {
+                _ = webview.ExecuteScriptAsync(js);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Wails.Net] 注入脚本失败：{ex.Message}");
+            }
+        });
     }
 
     /// <inheritdoc />

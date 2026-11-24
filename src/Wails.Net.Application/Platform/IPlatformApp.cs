@@ -165,6 +165,26 @@ public interface IPlatformApp
     bool IsDarkMode();
 
     /// <summary>
+    /// 应用应用级明暗主题模式（Wails.Net 扩展）。
+    /// <para>
+    /// 由 <see cref="Application.SetThemeMode"/> 调用，平台实现负责把模式换算为实际明暗，
+    /// 并刷新平台绘制的界面元素与原生标题栏主题按钮：
+    /// Windows 为 DWM 标题栏 / 原生菜单 / 非客户区自绘按钮，
+    /// macOS 为 <c>NSApplication.Appearance</c> 与标题栏附件视图，
+    /// Linux 为 GTK 暗色偏好与 HeaderBar 按钮。
+    /// </para>
+    /// <para>
+    /// 默认空实现：不支持原生主题的平台（Android / ServerMode）忽略该调用，
+    /// 前端仍可通过 <c>wails:theme:changed</c> 事件自行切换页面主题。
+    /// </para>
+    /// </summary>
+    /// <param name="mode">目标主题模式。</param>
+    void SetThemeMode(ThemeMode mode)
+    {
+        // 默认空实现，由平台特定实现覆盖。
+    }
+
+    /// <summary>
     /// 获取系统强调色。
     /// </summary>
     /// <returns>系统强调色字符串。</returns>

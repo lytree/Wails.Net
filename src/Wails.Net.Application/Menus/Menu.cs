@@ -66,8 +66,51 @@ public class Menu
 
     /// <summary>
     /// 平台实现实例。
+    /// <para>
+    /// 属于运行时状态，不参与 JSON 序列化（平台实现不可序列化）。
+    /// </para>
     /// </summary>
+    [JsonIgnore]
     public IMenuImpl? Impl { get; internal set; }
+
+    /// <summary>
+    /// 所属父菜单（容器）。顶层菜单为 null。
+    /// <para>
+    /// 叶子菜单项自身没有独立的原生句柄，其属性更新（label/enabled/checked/accelerator）
+    /// 必须通过容器实现下发到平台。调用方应优先使用 <see cref="OwningImpl"/>，
+    /// 它会沿此链路上溯到最近的已挂载实现。
+    /// </para>
+    /// <para>
+    /// 属于运行时关系，不参与 JSON 序列化。
+    /// </para>
+    /// </summary>
+    [JsonIgnore]
+    public Menu? Parent { get; internal set; }
+
+    /// <summary>
+    /// 最近的已挂载平台实现：优先自身 <see cref="Impl"/>，否则沿 <see cref="Parent"/> 向上查找。
+    /// <para>
+    /// 叶子菜单项与 macOS/Linux 的嵌套子菜单项都没有独立的平台对象，
+    /// 其属性更新必须交给最近的容器实现处理。调用 <see cref="IMenuImpl.UpdateMenuItem"/>
+    /// 前应先通过本属性解析目标实现，否则 <c>item.Impl</c> 为 null 会导致更新被静默丢弃。
+    /// </para>
+    /// </summary>
+    [JsonIgnore]
+    public IMenuImpl? OwningImpl
+    {
+        get
+        {
+            for (Menu? node = this; node is not null; node = node.Parent)
+            {
+                if (node.Impl is not null)
+                {
+                    return node.Impl;
+                }
+            }
+
+            return null;
+        }
+    }
 
     /// <summary>
     /// 默认构造函数。
@@ -83,6 +126,56 @@ public class Menu
     public Menu(string label)
     {
         Label = label;
+    }
+
+    /// <summary>
+    /// 挂载平台实现，并把直接子菜单项的 <see cref="Parent"/> 指回当前菜单。
+    /// <para>
+    /// 由平台实现在构建原生菜单时调用。<see cref="Menu"/> 位于 Application 程序集，
+    /// 而各平台实现位于独立程序集，此处通过 <c>InternalsVisibleTo</c> 开放。
+    /// </para>
+    /// <para>
+    /// 挂载后 <see cref="Append"/> / <see cref="Remove"/> / <see cref="Clear"/> / <see cref="Update"/>
+    /// 才会真正作用到原生菜单；未挂载时上述操作只修改托管模型。
+    /// </para>
+    /// </summary>
+    /// <param name="impl">平台实现。</param>
+    internal void AttachImpl(IMenuImpl impl)
+    {
+        Impl = impl;
+
+        // 整棵树的父指针都要补齐：反序列化得到的菜单树不会经过 Append，
+        // 而 <see cref="OwningImpl"/> 依赖这条链路上溯到容器实现。
+        AttachParents(this);
+    }
+
+    /// <summary>
+    /// 递归设置子项的 <see cref="Parent"/>。
+    /// </summary>
+    /// <param name="node">当前节点。</param>
+    private static void AttachParents(Menu node)
+    {
+        foreach (var item in node.Items)
+        {
+            item.Parent = node;
+
+            if (item.Items.Count > 0)
+            {
+                AttachParents(item);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 卸下平台实现（仅当当前挂载的就是该实现时）。
+    /// </summary>
+    /// <param name="impl">平台实现。</param>
+    internal void DetachImpl(IMenuImpl impl)
+    {
+        if (ReferenceEquals(Impl, impl))
+        {
+            Impl = null;
+        }
     }
 
     /// <summary>
@@ -226,8 +319,13 @@ public class Menu
     /// <param name="item">要追加的菜单项。</param>
     public void Append(MenuItem item)
     {
+        ArgumentNullException.ThrowIfNull(item);
+
+        item.Parent = this;
         Items.Add(item);
-        Impl?.AddMenuItem(item, Items.Count - 1);
+        // 用 OwningImpl 而非 Impl：macOS/Linux 的嵌套子菜单不持有独立平台对象，
+        // 追加操作必须交给最近的容器实现，否则原生菜单不会更新。
+        OwningImpl?.AddMenuItem(item, Items.Count - 1);
     }
 
     /// <summary>
@@ -236,8 +334,17 @@ public class Menu
     /// <param name="item">要移除的菜单项。</param>
     public void Remove(MenuItem item)
     {
-        Items.Remove(item);
-        Impl?.RemoveMenuItem(item);
+        if (!Items.Remove(item))
+        {
+            return;
+        }
+
+        OwningImpl?.RemoveMenuItem(item);
+
+        if (ReferenceEquals(item.Parent, this))
+        {
+            item.Parent = null;
+        }
     }
 
     /// <summary>
@@ -247,7 +354,12 @@ public class Menu
     {
         foreach (var item in Items)
         {
-            Impl?.RemoveMenuItem(item);
+            OwningImpl?.RemoveMenuItem(item);
+
+            if (ReferenceEquals(item.Parent, this))
+            {
+                item.Parent = null;
+            }
         }
 
         Items.Clear();
@@ -255,12 +367,29 @@ public class Menu
 
     /// <summary>
     /// 更新菜单，通知平台实现刷新。
+    /// <para>
+    /// 递归下推到持有独立平台实现的子菜单；没有独立实现的嵌套子菜单
+    /// （macOS/Linux 走整树重建）已由祖先实现覆盖，无需重复下推。
+    /// </para>
     /// </summary>
     public void Update()
     {
+        // macOS/Linux 的嵌套子菜单没有独立实现，需上溯到根实现才能触发整树重建。
+        var impl = OwningImpl;
+        if (impl is null)
+        {
+            return;
+        }
+
         foreach (var item in Items)
         {
-            Impl?.UpdateMenuItem(item);
+            impl.UpdateMenuItem(item);
+
+            // 仅在子菜单自己持有平台实现时才需要单独下推（Windows 的每个 popup 各有实例）。
+            if (item.Impl is not null)
+            {
+                item.Update();
+            }
         }
     }
 

@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Wails.Net.Application.Menus.Context;
 
 namespace Wails.Net.Application.Menus;
@@ -18,7 +19,13 @@ public class MenuItem : Menu
     /// 此回调不接收参数。若需访问菜单点击上下文（被点击的菜单项、复选框状态、上下文菜单数据），
     /// 请使用 <see cref="CallbackWithContext"/>。
     /// </para>
+    /// <para>
+    /// 回调是后端运行时委托，不参与 JSON 序列化：否则 <c>menu.getApplicationMenu</c>
+    /// 回读带回调的真实菜单时会抛 <see cref="NotSupportedException"/>。前端下发的菜单回调为 null，
+    /// 由平台按 <see cref="Role"/> 重新绑定。
+    /// </para>
     /// </summary>
+    [JsonIgnore]
     public Action? Callback { get; set; }
 
     /// <summary>
@@ -28,7 +35,11 @@ public class MenuItem : Menu
     /// 当此回调不为 null 时，平台实现优先调用此回调（而非 <see cref="Callback"/>），
     /// 并传入包含被点击菜单项、复选框状态和上下文菜单数据的 <see cref="MenuContext"/>。
     /// </para>
+    /// <para>
+    /// 与 <see cref="Callback"/> 一样不参与 JSON 序列化（委托不可序列化）。
+    /// </para>
     /// </summary>
+    [JsonIgnore]
     public Action<MenuContext>? CallbackWithContext { get; set; }
 
     /// <summary>

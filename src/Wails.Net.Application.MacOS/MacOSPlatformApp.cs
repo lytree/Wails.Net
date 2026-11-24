@@ -33,6 +33,25 @@ public sealed class MacOSPlatformApp : IPlatformApp
     private readonly ApplicationOptions _options;
 
     /// <summary>
+    /// 应用级明暗主题模式（Wails.Net 扩展），默认跟随系统。
+    /// <para>
+    /// 由 <see cref="WailsApplication.SetThemeMode"/> 下推；平台侧用它决定
+    /// <c>NSApplication.Appearance</c> 的取值（含原生菜单、标题栏与标题栏主题按钮）。
+    /// </para>
+    /// </summary>
+    private ThemeMode _themeMode = ThemeMode.System;
+
+    /// <summary>
+    /// 当前实际采用的明暗（Wails.Net 扩展）：<see cref="ThemeMode.System"/> 时取系统设置。
+    /// </summary>
+    internal bool IsDarkTheme => _themeMode switch
+    {
+        ThemeMode.Dark => true,
+        ThemeMode.Light => false,
+        _ => IsDarkMode(),
+    };
+
+    /// <summary>
     /// 窗口只读查询入口（RH-WIN-02 终态）。
     /// 由 <see cref="Wails.Net.Application.Managers.WindowManager"/> 注入，替代此前的自持窗口字典。
     /// </summary>
@@ -388,6 +407,78 @@ public sealed class MacOSPlatformApp : IPlatformApp
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <para>
+    /// macOS 侧以 <c>NSApplication.Appearance</c> 表达主题：<c>NSAppearanceNameDarkAqua</c> /
+    /// <c>NSAppearanceNameAqua</c> 分别强制暗 / 亮，设 <c>null</c> 恢复「跟随系统」。
+    /// 这是 AppKit 官方的应用级外观覆盖点，原生菜单、标题栏、对话框会一并跟随。
+    /// </para>
+    /// <para>
+    /// 已通过 <c>MacWindowOptions.Appearance</c> 单独指定外观的窗口不受影响
+    /// （窗口级外观优先级高于应用级，属于用户显式选择）。
+    /// </para>
+    /// <para>
+    /// 应用尚未 <c>Run</c> 时只记录模式（此时触碰 <c>NSApplication</c> 会过早创建应用对象），
+    /// 由首个窗口创建时的 <see cref="ApplyThemeToWindows"/> 补上。
+    /// </para>
+    /// </remarks>
+    public void SetThemeMode(ThemeMode mode)
+    {
+        _themeMode = mode;
+
+#if MACOS
+        if (WailsApplication.Get()?.IsRunning != true)
+        {
+            return;
+        }
+
+        // 外观变更必须在主线程执行；事件回调可能来自绑定线程。
+        DispatchOnMainThread(ApplyThemeToWindows);
+#else
+        // 非 macOS 目标：仅记录模式，供骨架实现与后续窗口创建查询。
+#endif
+    }
+
+    /// <summary>
+    /// 把当前主题模式落到 <c>NSApplication.Appearance</c>，并刷新各窗口的原生标题栏主题按钮。
+    /// </summary>
+    /// <remarks>
+    /// 由 <see cref="SetThemeMode"/> 与 <see cref="CreateWebviewWindow"/> 调用，
+    /// 保证「应用启动时已指定主题」的场景下首个窗口也是正确外观。
+    /// </remarks>
+    internal void ApplyThemeToWindows()
+    {
+#if MACOS
+        var application = AppKit.NSApplication.SharedApplication;
+        if (application is null)
+        {
+            return;
+        }
+
+        // NSApplication.Appearance 语义上「null = 跟随系统」，但不同版本的 AppKit 绑定
+        // 对它的可空标注并不一致；这里显式关闭可空检查，避免 CS8625 被当成错误。
+#nullable disable
+        if (_themeMode == ThemeMode.System)
+        {
+            // null = 跟随系统；系统切换明暗时会自动生效。
+            application.Appearance = null;
+        }
+        else
+        {
+            using var name = new Foundation.NSString(
+                IsDarkTheme ? "NSAppearanceNameDarkAqua" : "NSAppearanceNameAqua");
+            application.Appearance = AppKit.NSAppearance.GetAppearance(name);
+        }
+#nullable restore
+
+        foreach (var window in EnumerateWindows())
+        {
+            window.ApplyThemeMode();
+        }
+#endif
+    }
+
+    /// <inheritdoc />
     public bool IsDarkMode()
     {
 #if MACOS
@@ -464,6 +555,10 @@ public sealed class MacOSPlatformApp : IPlatformApp
         var window = new MacOSWebviewWindow(id, options, _options.Mac);
         // 窗口登记由 WindowManager 完成（RH-WIN-02 终态），平台侧不再持有窗口字典。
         window.Create();
+
+        // 应用级主题：启动期 SetThemeMode 只记录模式（此时 NSApplication 尚未运行），
+        // 首个窗口创建后在这里补应用，保证首窗外观与选项一致。
+        ApplyThemeToWindows();
         return window;
 #else
         return _stub.CreateWebviewWindow(id, options);

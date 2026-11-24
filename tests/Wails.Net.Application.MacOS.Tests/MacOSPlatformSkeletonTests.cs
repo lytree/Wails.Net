@@ -153,6 +153,26 @@ public class MacOSPlatformSkeletonTests
     }
 
     [Test]
+    public async Task Menu_AttachesAndDetachesImpl()
+    {
+        var menu = new Menus.Menu("Test");
+        var file = menu.AddSubmenu("文件");
+        file.AddMenuItem("打开");
+
+        var impl = new MacOSMenu(menu);
+
+        // 挂载后 Menu.Append/Remove/Update 才会触发 NSMenu 重建。
+        await Assert.That(ReferenceEquals(menu.Impl, impl)).IsTrue();
+        // macOS 的嵌套子菜单不持有独立 MacOSMenu，必须能上溯到根实现。
+        await Assert.That(ReferenceEquals(file.OwningImpl, impl)).IsTrue();
+
+        impl.Destroy();
+
+        await Assert.That(menu.Impl is null).IsTrue();
+        await Assert.That(file.OwningImpl is null).IsTrue();
+    }
+
+    [Test]
     public async Task SystemTray_Skeleton_NoOp()
     {
         var tray = new MacOSSystemTray(1);

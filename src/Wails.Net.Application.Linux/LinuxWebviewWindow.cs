@@ -300,6 +300,23 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     private PopoverMenuBar? _appMenuBar;
 
     /// <summary>
+    /// 自定义标题栏（Wails.Net 扩展）。
+    /// 仅在开启原生标题栏主题按钮，或显式指定非默认标题栏样式时创建；
+    /// 为 null 表示沿用 GTK 默认标题栏。
+    /// </summary>
+    private HeaderBar? _titleBar;
+
+    /// <summary>
+    /// 原生标题栏主题切换按钮（Wails.Net 扩展），随 <see cref="_titleBar"/> 一起创建。
+    /// </summary>
+    private LinuxTitleBarThemeButton? _themeButton;
+
+    /// <summary>
+    /// 当前标题栏样式，重建 HeaderBar 时用于保持样式语义。
+    /// </summary>
+    private TitleBarStyle _titleBarStyle = TitleBarStyle.Default;
+
+    /// <summary>
     /// 构造 LinuxWebviewWindow 实例并创建 GTK 窗口与 WebKit WebView。
     /// </summary>
     /// <param name="id">窗口 ID。</param>
@@ -419,6 +436,86 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
         _window.SetDefaultSize(width, height);
 
         _window.SetResizable(_options.Resizable);
+
+        // 原生标题栏主题按钮（Wails.Net 扩展）：GTK 无法向默认标题栏插入控件，
+        // 因此仅在开启该选项时才接管标题栏；未开启时行为与之前完全一致。
+        if (_options.TitleBarThemeButton && !_options.Frameless)
+        {
+            RebuildTitleBar();
+        }
+    }
+
+    /// <summary>
+    /// 重建自定义标题栏（Wails.Net 扩展）。
+    /// <para>
+    /// 统一负责三件事：按 <see cref="_titleBarStyle"/> 决定是否显示标题文字；
+    /// 在 <see cref="WebviewWindowOptions.TitleBarThemeButton"/> 开启时把主题按钮
+    /// <c>PackEnd</c> 到窗口控制按钮左侧；把 HeaderBar 装回窗口。
+    /// </para>
+    /// </summary>
+    private void RebuildTitleBar()
+    {
+        if (_window is null || !OperatingSystem.IsLinux() || _options.Frameless)
+        {
+            return;
+        }
+
+        var bar = HeaderBar.New();
+        bar.SetShowTitleButtons(true);
+
+        // hidden / hiddenInset：隐藏标题文字，仅保留窗口控制按钮（与 Wails v3 语义一致）。
+        // GirCore 未暴露 gtk_header_bar_set_show_title，改用空标题控件达到同样效果。
+        if (_titleBarStyle is TitleBarStyle.Hidden or TitleBarStyle.HiddenInset)
+        {
+            bar.SetTitleWidget(Label.New(string.Empty));
+        }
+
+        if (_options.TitleBarThemeButton)
+        {
+            _themeButton ??= new LinuxTitleBarThemeButton(
+                _window.GetDisplay(),
+                OnTitleBarThemeButtonClicked);
+
+            // 重建 HeaderBar 时旧标题栏仍持有按钮，先摘下再装到新栏，避免 GTK 报「已有父容器」。
+            if (_themeButton.Widget.GetParent() is not null)
+            {
+                _themeButton.Widget.Unparent();
+            }
+
+            bar.PackEnd(_themeButton.Widget);
+        }
+
+        _window.SetTitlebar(bar);
+        _titleBar = bar;
+
+        _themeButton?.Update(WailsApplication.Get()?.ThemeMode ?? ThemeMode.System);
+    }
+
+    /// <summary>
+    /// 点击原生标题栏主题按钮：按「按系统 → 暗黑 → 明亮」循环切换应用级主题。
+    /// </summary>
+    /// <remarks>
+    /// 只切换模式，不直接改界面：<see cref="WailsApplication.SetThemeMode"/> 会把模式下推给
+    /// 平台（GTK 暗色偏好 + 各窗口图标）并广播 <c>wails:theme:changed</c>。
+    /// </remarks>
+    private static void OnTitleBarThemeButtonClicked()
+    {
+        var app = WailsApplication.Get();
+        if (app is null)
+        {
+            return;
+        }
+
+        app.SetThemeMode(ThemeModeCycle.Next(app.ThemeMode));
+    }
+
+    /// <summary>
+    /// 刷新原生标题栏主题按钮（Wails.Net 扩展），由平台在主题模式变化时调用。
+    /// </summary>
+    /// <param name="mode">当前主题模式。</param>
+    internal void ApplyThemeMode(ThemeMode mode)
+    {
+        _themeButton?.Update(mode);
     }
 
     /// <summary>
@@ -1767,9 +1864,26 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
     public void SetFrameless(bool frameless)
     {
         // GTK4 无边框通过 SetDecorated(false) 实现。
-        if (_window is not null)
+        if (_window is null)
         {
-            _window.SetDecorated(!frameless);
+            return;
+        }
+
+        _window.SetDecorated(!frameless);
+
+        // 无边框时没有标题栏可承载主题按钮：移除自定义 HeaderBar；
+        // 取消无边框后按选项重建（含主题按钮）。
+        if (frameless)
+        {
+            if (_titleBar is not null)
+            {
+                _window.SetTitlebar(null);
+                _titleBar = null;
+            }
+        }
+        else if (_options.TitleBarThemeButton)
+        {
+            RebuildTitleBar();
         }
     }
 
@@ -2223,25 +2337,30 @@ public sealed class LinuxWebviewWindow : IWebviewWindowImpl, IDisposable
 
         // GTK4 标题栏样式通过自定义 HeaderBar 实现。
         // 对应 Go 版 webview_window_linux.go 中的 SetTitleBarStyle 实现。
+        _titleBarStyle = style;
+
         switch (style)
         {
             case TitleBarStyle.Hidden:
             case TitleBarStyle.HiddenInset:
-                // hidden 样式：隐藏标题文本，仅保留窗口控制按钮。
-                var hiddenBar = HeaderBar.New();
-                hiddenBar.SetShowTitleButtons(true);
-                _window.SetTitlebar(hiddenBar);
-                break;
             case TitleBarStyle.Unified:
-                // unified 样式：使用统一 HeaderBar，标题与内容融合。
-                var unifiedBar = HeaderBar.New();
-                unifiedBar.SetShowTitleButtons(true);
-                _window.SetTitlebar(unifiedBar);
+                // 需要自定义 HeaderBar：主题按钮（若开启）随之一并重建。
+                RebuildTitleBar();
                 break;
             case TitleBarStyle.Default:
             default:
-                // 默认样式：移除自定义 HeaderBar，恢复系统默认标题栏。
-                _window.SetTitlebar(null);
+                // 默认样式：未开启主题按钮时移除自定义 HeaderBar，恢复系统默认标题栏；
+                // 开启时仍需 HeaderBar 承载按钮，按默认样式（显示标题）重建。
+                if (_options.TitleBarThemeButton)
+                {
+                    RebuildTitleBar();
+                }
+                else if (_titleBar is not null)
+                {
+                    _window.SetTitlebar(null);
+                    _titleBar = null;
+                }
+
                 break;
         }
     }

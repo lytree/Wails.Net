@@ -77,8 +77,20 @@ internal sealed class StubPlatformApp : IPlatformApp
     /// <inheritdoc />
     public bool IsOnMainThread() => true;
 
+    /// <summary>
+    /// <see cref="IsDarkMode"/> 的返回值，默认 false（系统明亮），
+    /// 用于验证 <see cref="Options.ThemeMode.System"/> 下应用跟随系统明暗。
+    /// </summary>
+    public bool IsDarkModeResult { get; set; }
+
+    /// <summary>最近一次 <see cref="SetThemeMode"/> 收到的模式，未调用时为 null。</summary>
+    public ThemeMode? LastThemeMode { get; private set; }
+
     /// <inheritdoc />
-    public bool IsDarkMode() => false;
+    public bool IsDarkMode() => IsDarkModeResult;
+
+    /// <inheritdoc />
+    public void SetThemeMode(ThemeMode mode) => LastThemeMode = mode;
 
     /// <inheritdoc />
     public string GetAccentColor() => string.Empty;

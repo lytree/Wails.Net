@@ -79,10 +79,12 @@ app.Options.OnAfterStart = () =>
     editMenu.AddRoleItem(MenuRole.SelectAll);
 
     // 视图菜单：包含子菜单（主题）与复选菜单项（侧边栏）
+    // 主题三态与原生标题栏上的主题按钮共用 Application.ThemeMode，两者互相同步。
     var viewMenu = menu.AddSubmenu("视图");
     var themeMenu = viewMenu.AddSubmenu("主题");
-    themeMenu.AddCheckboxMenuItem("浅色", true, () => OnMenuClick(app, menuLogService, "view.theme.light"));
-    themeMenu.AddCheckboxMenuItem("深色", false, () => OnMenuClick(app, menuLogService, "view.theme.dark"));
+    themeMenu.AddRadioMenuItem("按系统", true, () => SetTheme(app, menuLogService, ThemeMode.System));
+    themeMenu.AddRadioMenuItem("暗黑", false, () => SetTheme(app, menuLogService, ThemeMode.Dark));
+    themeMenu.AddRadioMenuItem("明亮", false, () => SetTheme(app, menuLogService, ThemeMode.Light));
     viewMenu.AddSeparator();
     viewMenu.AddCheckboxMenuItem("显示侧边栏", true, () => OnMenuClick(app, menuLogService, "view.sidebar"));
 
@@ -100,6 +102,11 @@ app.Options.OnAfterStart = () =>
         Title = isDebugMode ? "Wails.Net Demo - Menu (Debug)" : "Wails.Net Demo - Menu",
         Width = 1000,
         Height = 700,
+
+        // 在原生标题栏「最小化」旁显示主题按钮，点击循环 按系统 → 暗黑 → 明亮，
+        // 与 视图 → 主题 菜单项驱动同一份应用级主题状态
+        //（Windows 自绘 / macOS 标题栏附件视图 / Linux HeaderBar 按钮）。
+        TitleBarThemeButton = true,
     });
 
     // Debug 模式：窗口创建后自动打开 DevTools（延迟等待 WebView2 初始化完成）
@@ -125,6 +132,19 @@ static void OnMenuClick(Wails.Net.Application.Application app, MenuLogService lo
 {
     logService.RecordClick(menuId);
     app.Events.Emit("menu:clicked", new { id = menuId, time = DateTime.Now.ToString("HH:mm:ss") });
+}
+
+// 主题切换：直接驱动应用级主题（原生标题栏 / 原生菜单 / 标题栏主题按钮共用同一状态），
+// 同时按菜单点击记录历史，前端据此能看到来源。
+static void SetTheme(Wails.Net.Application.Application app, MenuLogService logService, ThemeMode mode)
+{
+    app.SetThemeMode(mode);
+    OnMenuClick(app, logService, mode switch
+    {
+        ThemeMode.Dark => "view.theme.dark",
+        ThemeMode.Light => "view.theme.light",
+        _ => "view.theme.system",
+    });
 }
 
 await desktopApp.RunAsync();

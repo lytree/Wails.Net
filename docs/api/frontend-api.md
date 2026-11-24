@@ -1242,6 +1242,34 @@ const unsub = await wails.application.onThemeChanged((isDark) => {
 });
 ```
 
+**事件负载（`wails:theme:changed`）**
+
+平台在两类时机广播该事件：应用主动切换主题（原生标题栏主题按钮、`Application.SetThemeMode`），
+以及系统主题变化（仅在「按系统」模式下才会改变实际明暗）。负载同时携带三态模式与解析结果：
+
+```javascript
+wails.events.on("wails:theme:changed", (payload) => {
+  // payload.themeMode: "system" | "light" | "dark"
+  // payload.isDark:    解析后的实际明暗
+  state.theme = payload.themeMode === "system" ? "auto" : payload.themeMode;
+  document.documentElement.dataset.theme = payload.isDark ? "dark" : "light";
+});
+```
+
+**原生标题栏主题按钮**
+
+`WebviewWindowOptions.TitleBarThemeButton = true` 时，框架会在原生标题栏加一个主题按钮，
+点击在「按系统 → 暗黑 → 明亮」之间循环（顺序由 `ThemeModeCycle` 统一维护，三个平台一致）：
+
+| 平台 | 按钮位置 | 实现 |
+| --- | --- | --- |
+| Windows | 最小化按钮左侧 | 非客户区自绘（`WM_NCPAINT` + `WM_GETTITLEBARINFOEX` 取几何） |
+| macOS | 红绿灯按钮右侧 | `NSTitlebarAccessoryViewController`（LayoutAttribute = Left） |
+| Linux | 窗口控制按钮左侧 | 接管 `GtkHeaderBar` 并 `PackEnd` 按钮 |
+
+按钮只驱动平台绘制的界面（标题栏、原生菜单、对话框），页面主题由前端订阅
+`wails:theme:changed` 后自行切换，两者共用同一份 `ThemeMode` 状态。
+
 ## 加密存储 API (wails.stronghold)
 
 加密安全存储。对应 [packages/wails-net-runtime README](../../packages/wails-net-runtime/README.md) 中的 `stronghold` 命名空间，参考 —。

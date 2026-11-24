@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wails.Net 资源嗅探下载器</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+    <div class="app">
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="logo">RD</div>
+                <div class="brand-text">
+                    <strong data-i18n="app.name">资源下载器</strong>
+                    <span data-i18n="app.sub">Res Downloader</span>
+                </div>
+            </div>
+
+            <nav class="nav">
+                <button class="nav-item active" data-view="resources" type="button">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+                    <span data-i18n="nav.resources">获取资源</span>
+                </button>
+                <button class="nav-item" data-view="settings" type="button">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+                    <span data-i18n="nav.settings">系统设置</span>
+                </button>
+                <button class="nav-item" data-view="about" type="button">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+                    <span data-i18n="nav.about">关于</span>
+                </button>
+            </nav>
+
+            <div class="sidebar-foot">
+                <button class="mini-btn" id="themeBtn" type="button" title="Theme">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A8.5 8.5 0 1 1 11.2 3 6.5 6.5 0 0 0 21 12.8z"/></svg>
+                    <span data-i18n="nav.theme">主题</span>
+                </button>
+                <button class="mini-btn" id="localeBtn" type="button" title="Language">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z"/></svg>
+                    <span id="localeText">EN</span>
+                </button>
+            </div>
+        </aside>
+
+        <main class="main">
+            <section class="view active" id="view-resources">
+                <header class="page-head">
+                    <div>
+                        <h1 data-i18n="resources.title">获取资源</h1>
+                        <p class="sub" data-i18n="resources.sub">打开抓取后，在浏览器 / 小程序 / 客户端里播放或浏览内容即可自动嗅探</p>
+                    </div>
+                    <div class="head-actions">
+                        <span class="pill" id="proxyPill"><i class="dot"></i><span id="proxyText">代理未启动</span></span>
+                        <button class="pill action" id="sysProxyPill" type="button">系统代理未开启</button>
+                        <button class="pill action" id="certPill" type="button">证书未安装</button>
+                    </div>
+                </header>
+
+                <div class="toolbar">
+                    <button class="btn grab" id="grabBtn" type="button">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+                        <span id="grabText">开启抓取</span>
+                        <b class="badge" id="grabCount" hidden>0</b>
+                    </button>
+
+                    <div class="dropdown" id="typeDropdown">
+                        <button class="btn ghost" id="typeBtn" type="button">
+                            <span data-i18n="resources.type">抓取类型</span>
+                            <i class="caret"></i>
+                        </button>
+                        <div class="dropdown-panel" id="typePanel" hidden></div>
+                    </div>
+
+                    <div class="spacer"></div>
+
+                    <label class="search">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+                        <input id="searchInput" type="search" placeholder="搜索描述 / 域名 / 链接" data-i18n-placeholder="resources.search" />
+                    </label>
+
+                    <button class="btn ghost danger" id="clearBtn" type="button" data-i18n="resources.clear">清空列表</button>
+                    <button class="btn primary" id="batchDownloadBtn" type="button" data-i18n="resources.batchDownload">批量下载</button>
+
+                    <div class="dropdown align-right" id="moreDropdown">
+                        <button class="btn ghost icon-only" id="moreBtn" type="button" title="更多">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+                        </button>
+                        <div class="dropdown-panel" id="morePanel" hidden>
+                            <button data-more="cancel" type="button" data-i18n="resources.batchCancel">取消下载</button>
+                            <button data-more="export" type="button" data-i18n="resources.batchExport">批量导出</button>
+                            <button data-more="import" type="button" data-i18n="resources.batchImport">批量导入</button>
+                            <button data-more="exportUrl" type="button" data-i18n="resources.exportUrl">导出链接</button>
+                            <hr />
+                            <button data-more="openFolder" type="button" data-i18n="resources.openFolder">下载目录</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="table" id="resourceTable">
+                    <div class="thead">
+                        <div class="cell check"><input type="checkbox" id="selectAll" /></div>
+                        <div class="cell domain" data-i18n="table.domain">域名</div>
+                        <div class="cell type" data-i18n="table.type">类型</div>
+                        <div class="cell preview" data-i18n="table.preview">预览</div>
+                        <div class="cell status" data-i18n="table.status">状态</div>
+                        <div class="cell desc" data-i18n="table.desc">描述</div>
+                        <div class="cell size" data-i18n="table.size">大小</div>
+                        <div class="cell path" data-i18n="table.path">保存路径</div>
+                        <div class="cell actions" data-i18n="table.actions">操作</div>
+                    </div>
+                    <div class="tbody" id="resourceBody"></div>
+                    <div class="empty" id="resourceEmpty">
+                        <div class="empty-icon">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16v12H4zM4 7l8 6 8-6"/></svg>
+                        </div>
+                        <h3 data-i18n="resources.emptyTitle">还没有嗅探到资源</h3>
+                        <ol>
+                            <li data-i18n="resources.empty1">点击左上角「开启抓取」，代理默认监听 127.0.0.1:8899。</li>
+                            <li data-i18n="resources.empty2">首次使用请安装根证书，否则 HTTPS 无法解密。</li>
+                            <li data-i18n="resources.empty3">开启系统代理后，在浏览器、小程序或客户端里播放目标内容。</li>
+                        </ol>
+                    </div>
+                </div>
+
+                <footer class="table-foot">
+                    <span id="resCount">共 0 个资源</span>
+                    <span class="foot-links">
+                        <a href="javascript:;" id="certLink" data-i18n="footer.cert">证书下载</a>
+                        <a href="javascript:;" id="sourceLink" data-i18n="footer.source">软件源码</a>
+                        <a href="javascript:;" id="helpLink" data-i18n="footer.help">帮助支持</a>
+                    </span>
+                </footer>
+            </section>
+
+            <section class="view" id="view-settings" hidden>
+                <header class="page-head">
+                    <div>
+                        <h1 data-i18n="settings.title">系统设置</h1>
+                        <p class="sub" data-i18n="settings.sub">不清楚的项保持默认即可，修改 Host / Port 会自动重启代理</p>
+                    </div>
+                    <div class="head-actions">
+                        <button class="btn primary" id="saveSettingsBtn" type="button" data-i18n="common.save">保存</button>
+                    </div>
+                </header>
+
+                <div class="tabs">
+                    <button class="tab active" data-tab="basic" type="button" data-i18n="settings.basic">基础设置</button>
+                    <button class="tab" data-tab="advanced" type="button" data-i18n="settings.advanced">高级设置</button>
+                </div>
+
+                <div class="form-wrap">
+                    <div class="tab-panel active" id="tab-basic">
+                        <label class="field">
+                            <span data-i18n="settings.saveDir">保存目录</span>
+                            <div class="row">
+                                <input id="setSaveDirectory" type="text" />
+                                <button class="btn ghost small" id="openSaveFolderBtn" type="button" data-i18n="settings.open">打开</button>
+                            </div>
+                        </label>
+
+                        <label class="field">
+                            <span data-i18n="settings.filename">文件命名</span>
+                            <div class="row">
+                                <input id="setFilenameLen" type="number" min="0" max="9999" placeholder="0" class="narrow" />
+                                <label class="check inline"><input id="setFilenameTime" type="checkbox" /> <span data-i18n="settings.filenameTime">末尾加时间</span></label>
+                                <em class="hint" data-i18n="settings.filenameTip">长度仅在描述非空时生效，0 表示默认 10 个字符</em>
+                            </div>
+                        </label>
+
+                        <label class="field">
+                            <span data-i18n="settings.quality">清晰度</span>
+                            <div class="row">
+                                <select id="setQuality">
+                                    <option value="0">默认（推荐）</option>
+                                    <option value="1">超清</option>
+                                    <option value="2">高画质</option>
+                                    <option value="3">中画质</option>
+                                    <option value="4">低画质</option>
+                                </select>
+                                <em class="hint" data-i18n="settings.qualityTip">仅对微信视频号有效</em>
+                            </div>
+                        </label>
+
+                        <div class="field switches">
+                            <label class="check"><input id="setAutoProxy" type="checkbox" /> <span data-i18n="settings.autoProxy">自动拦截</span><em class="hint" data-i18n="settings.autoProxyTip">打开软件时自动启用抓取与系统代理</em></label>
+                            <label class="check"><input id="setWxAction" type="checkbox" /> <span data-i18n="settings.wxAction">全量拦截</span><em class="hint" data-i18n="settings.wxActionTip">微信视频号是否拦截列表中的全部视频</em></label>
+                            <label class="check"><input id="setInsertTail" type="checkbox" /> <span data-i18n="settings.insertTail">添入尾部</span><em class="hint" data-i18n="settings.insertTailTip">新资源追加到列表末尾，否则插入头部</em></label>
+                        </div>
+
+                        <section class="cert-box">
+                            <div class="cert-head">
+                                <strong data-i18n="settings.cert">根证书</strong>
+                                <span class="pill" id="certState">未安装</span>
+                            </div>
+                            <p class="hint" data-i18n="settings.certTip">用于 HTTPS 解密嗅探。私钥仅保存在本机应用数据目录，不会上传。Windows 安装时会弹出安全警告，需要点击「是」。</p>
+                            <div class="row wrap">
+                                <button class="btn primary small" id="installCertBtn" type="button" data-i18n="settings.installCert">一键安装</button>
+                                <button class="btn ghost small" id="exportCertBtn" type="button" data-i18n="settings.exportCert">导出 .cer</button>
+                                <button class="btn ghost small" id="openCertUrlBtn" type="button" data-i18n="settings.downloadCert">浏览器下载</button>
+                            </div>
+                            <code class="cert-path" id="certPath"></code>
+                        </section>
+
+                        <section class="danger-box">
+                            <div>
+                                <strong data-i18n="settings.reset">重置应用</strong>
+                                <p class="hint" data-i18n="settings.resetTip">会删除已拦截数据与本地设置并重启应用，请谨慎操作。</p>
+                            </div>
+                            <button class="btn danger" id="resetBtn" type="button" data-i18n="settings.resetAction">清理缓存并重启</button>
+                        </section>
+                    </div>
+
+                    <div class="tab-panel" id="tab-advanced">
+                        <div class="grid-2">
+                            <label class="field">
+                                <span>Host</span>
+                                <input id="setHost" type="text" placeholder="127.0.0.1" />
+                            </label>
+                            <label class="field">
+                                <span>Port</span>
+                                <input id="setPort" type="number" min="1" max="65535" placeholder="8899" />
+                            </label>
+                        </div>
+
+                        <label class="field">
+                            <span data-i18n="settings.upstream">上游代理</span>
+                            <div class="row">
+                                <input id="setUpstreamProxy" type="text" placeholder="http://127.0.0.1:7890" />
+                                <label class="check inline"><input id="setOpenProxy" type="checkbox" /> <span data-i18n="settings.enable">启用</span></label>
+                            </div>
+                            <em class="hint" data-i18n="settings.upstreamTip">用于结合其他代理工具，格式：http://user:pass@host:port</em>
+                        </label>
+
+                        <label class="field switches">
+                            <label class="check"><input id="setDownloadProxy" type="checkbox" /> <span data-i18n="settings.downloadProxy">下载代理</span><em class="hint" data-i18n="settings.downloadProxyTip">下载时是否使用上游代理</em></label>
+                        </label>
+
+                        <div class="grid-2">
+                            <label class="field">
+                                <span data-i18n="settings.connections">连接数</span>
+                                <input id="setTaskNumber" type="number" min="1" max="64" />
+                                <em class="hint" data-i18n="settings.connectionsTip">单任务分片并发，通常 CPU 核心数 ×2</em>
+                            </label>
+                            <label class="field">
+                                <span data-i18n="settings.downNumber">下载数</span>
+                                <input id="setDownNumber" type="number" min="1" max="10" />
+                                <em class="hint" data-i18n="settings.downNumberTip">同时进行的下载任务数</em>
+                            </label>
+                        </div>
+
+                        <label class="field">
+                            <span>UserAgent</span>
+                            <input id="setUserAgent" type="text" />
+                        </label>
+
+                        <label class="field">
+                            <span>Headers</span>
+                            <input id="setUseHeaders" type="text" placeholder="default 或 User-Agent,Referer,Cookie" />
+                            <em class="hint" data-i18n="settings.headersTip">下载时重放的请求头，默认 default 使用系统内置集合</em>
+                        </label>
+
+                        <label class="field">
+                            <span data-i18n="settings.rule">域名规则</span>
+                            <textarea id="setRule" rows="5" placeholder="*&#10;*.qq.com&#10;!static.qq.com"></textarea>
+                            <em class="hint" data-i18n="settings.ruleTip">每行一条，* 匹配全部，支持 *.domain 与 ! 排除；后者覆盖前者</em>
+                        </label>
+
+                        <label class="field">
+                            <span data-i18n="settings.mimeMap">拦截规则（MIME）</span>
+                            <textarea id="setMimeMap" rows="12" spellcheck="false"></textarea>
+                            <em class="hint" data-i18n="settings.mimeMapTip">JSON 格式，键为 Content-Type，值为 {"Type":"类型","Suffix":".后缀"}，修改后重启生效</em>
+                        </label>
+                    </div>
+                </div>
+            </section>
+
+            <section class="view" id="view-about" hidden>
+                <header class="page-head">
+                    <div>
+                        <h1 data-i18n="about.title">关于</h1>
+                        <p class="sub" data-i18n="about.sub">一款集资源嗅探 + 多连接下载于一体的桌面工具</p>
+                    </div>
+                </header>
+
+                <div class="about-card">
+                    <div class="about-logo">RD</div>
+                    <div>
+                        <h2 id="aboutName">Wails.Net 资源嗅探下载器</h2>
+                        <p class="muted" id="aboutVersion">v1.0.0</p>
+                    </div>
+                </div>
+
+                <p class="about-desc" data-i18n="about.desc">
+                    通过本地 MITM 代理抓包并筛选可下载资源，原理与 Fiddler / Charles / 浏览器 DevTools 类似，
+                    但针对视频、音频、图片、m3u8 与直播流做了更友好的筛选与展示。
+                </p>
+
+                <div class="about-grid">
+                    <div class="info-card">
+                        <h3 data-i18n="about.env">运行环境</h3>
+                        <dl id="aboutEnv"></dl>
+                    </div>
+                    <div class="info-card">
+                        <h3 data-i18n="about.links">相关链接</h3>
+                        <ul class="links">
+                            <li><a href="javascript:;" data-link="https://github.com/putyy/res-downloader" data-i18n="about.origin">原项目 res-downloader</a></li>
+                            <li><a href="javascript:;" data-link="https://github.com/wailsnet" data-i18n="about.framework">Wails.Net 框架</a></li>
+                            <li><a href="javascript:;" id="aboutCertLink" data-i18n="footer.cert">证书下载</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <p class="disclaimer" data-i18n="about.disclaimer">
+                    本示例仅用于学习与研究，请勿用于商业或违法用途。下载内容请确保拥有合法授权。
+                </p>
+            </section>
+        </main>
+    </div>
+
+    <div class="modal" id="previewModal" hidden>
+        <div class="modal-card preview-card">
+            <header class="modal-head">
+                <h2 data-i18n="preview.title">预览</h2>
+                <button class="btn icon" data-close="previewModal" type="button">×</button>
+            </header>
+            <div class="preview-body" id="previewBody"></div>
+            <footer class="modal-foot">
+                <button class="btn ghost small" id="previewCopyBtn" type="button" data-i18n="resources.copyLink">复制链接</button>
+                <button class="btn ghost small" id="previewOpenBtn" type="button" data-i18n="resources.openLink">打开链接</button>
+                <button class="btn primary small" id="previewDownloadBtn" type="button" data-i18n="resources.download">下载</button>
+            </footer>
+        </div>
+    </div>
+
+    <div class="modal" id="importModal" hidden>
+        <div class="modal-card">
+            <header class="modal-head">
+                <h2 data-i18n="import.title">批量导入</h2>
+                <button class="btn icon" data-close="importModal" type="button">×</button>
+            </header>
+            <div class="modal-body">
+                <p class="hint" data-i18n="import.tip">每行一条：URL 编码的 JSON（批量导出的格式）或纯链接。</p>
+                <textarea id="importText" rows="12" spellcheck="false" placeholder="https://example.com/a.mp4"></textarea>
+            </div>
+            <footer class="modal-foot">
+                <button class="btn ghost" data-close="importModal" type="button" data-i18n="common.cancel">取消</button>
+                <button class="btn primary" id="importSubmitBtn" type="button" data-i18n="common.submit">提交</button>
+            </footer>
+        </div>
+    </div>
+
+    <div class="modal" id="confirmModal" hidden>
+        <div class="modal-card small">
+            <header class="modal-head">
+                <h2 id="confirmTitle">清空列表</h2>
+                <button class="btn icon" data-close="confirmModal" type="button">×</button>
+            </header>
+            <div class="modal-body">
+                <p id="confirmDesc" class="hint">清空所有记录？正在下载的任务会保留。</p>
+                <label class="check"><input id="confirmRemember" type="checkbox" /> <span data-i18n="clear.remember">记住此选择，下次直接清除</span></label>
+            </div>
+            <footer class="modal-foot">
+                <button class="btn ghost" data-close="confirmModal" type="button" data-i18n="common.cancel">取消</button>
+                <button class="btn danger" id="confirmOkBtn" type="button" data-i18n="common.confirm">确认</button>
+            </footer>
+        </div>
+    </div>
+
+    <div class="row-menu" id="rowMenu" hidden></div>
+    <div class="toast-wrap" id="toastWrap"></div>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>

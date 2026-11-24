@@ -64,6 +64,26 @@ public class WebviewWindowOptions
     public bool Frameless { get; set; } = false;
 
     /// <summary>
+    /// 是否在原生标题栏「最小化」按钮旁显示明暗主题切换按钮（Wails.Net 扩展）。
+    /// <para>
+    /// 点击在「按系统 → 暗黑 → 明亮」三态间循环（规则由 <see cref="ThemeModeCycle"/> 统一维护），
+    /// 实际明暗由 <see cref="ApplicationOptions.ThemeMode"/> 统一驱动（所有窗口同步生效）。
+    /// </para>
+    /// <para>
+    /// 各平台实现方式不同：
+    /// <list type="bullet">
+    ///   <item>Windows：在非客户区（NC）自绘，位于最小化按钮左侧。</item>
+    ///   <item>macOS：作为标题栏附件视图（<c>NSTitlebarAccessoryViewController</c>）放在红绿灯按钮右侧。</item>
+    ///   <item>Linux：接管窗口标题栏（<c>GtkHeaderBar</c>）并在窗口控制按钮左侧插入按钮。</item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// 依赖原生标题栏，<see cref="Frameless"/> 为 true 时无效；Android / ServerMode 无原生标题栏，不显示按钮。
+    /// </para>
+    /// </summary>
+    public bool TitleBarThemeButton { get; set; } = false;
+
+    /// <summary>
     /// 是否总置顶。
     /// </summary>
     public bool AlwaysOnTop { get; set; } = false;

@@ -40,6 +40,21 @@ public class ApplicationOptions
     public bool Headless { get; set; } = false;
 
     /// <summary>
+    /// 应用级明暗主题模式（Wails.Net 扩展）。
+    /// <para>
+    /// 决定平台绘制的界面元素采用明亮还是暗黑外观：Windows 为 DWM 标题栏 / 原生菜单，
+    /// macOS 为 <c>NSApplication.Appearance</c>（标题栏、原生菜单、对话框），
+    /// Linux 为 GTK 的 <c>gtk-application-prefer-dark-theme</c>；同时决定原生标题栏主题按钮的图标。
+    /// <see cref="ThemeMode.System"/> 表示跟随系统设置，
+    /// <see cref="ThemeMode.Light"/> / <see cref="ThemeMode.Dark"/> 表示锁定，忽略系统变化。
+    /// </para>
+    /// <para>
+    /// 运行期可通过 <see cref="Application.SetThemeMode"/> 切换，切换后立即作用于所有窗口。
+    /// </para>
+    /// </summary>
+    public ThemeMode ThemeMode { get; set; } = ThemeMode.System;
+
+    /// <summary>
     /// 关闭窗口时是否隐藏而非退出。
     /// </summary>
     public bool HideOnClose { get; set; } = false;

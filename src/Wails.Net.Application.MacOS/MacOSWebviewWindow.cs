@@ -101,6 +101,12 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
     private NSWindow? _window;
 
     /// <summary>
+    /// 原生标题栏主题切换按钮（Wails.Net 扩展，仅开启
+    /// <see cref="WebviewWindowOptions.TitleBarThemeButton"/> 时创建）。
+    /// </summary>
+    private MacOSTitleBarThemeButton? _themeButton;
+
+    /// <summary>
     /// 原生 WKWebView 实例。
     /// </summary>
     private WKWebView? _webView;
@@ -324,11 +330,46 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
 
             // 应用窗口选项。
             ApplyWindowOptions(macOptions, titleBar);
+
+            // 原生标题栏主题按钮（Wails.Net 扩展）：挂在红绿灯按钮右侧，点击三态循环。
+            if (_options.TitleBarThemeButton && !_options.Frameless)
+            {
+                _themeButton = new MacOSTitleBarThemeButton(_window!, OnTitleBarThemeButtonActivated);
+                _themeButton.Attach();
+                _themeButton.Update(WailsApplication.Get()?.ThemeMode ?? ThemeMode.System);
+            }
         });
 #endif
     }
 
 #if MACOS
+    /// <summary>
+    /// 点击原生标题栏主题按钮：按「按系统 → 暗黑 → 明亮」循环切换应用级主题。
+    /// </summary>
+    /// <remarks>
+    /// 只切换模式，不直接改外观：<see cref="WailsApplication.SetThemeMode"/> 会把模式下推给
+    /// 平台（<c>NSApplication.Appearance</c>）并广播 <c>wails:theme:changed</c>，
+    /// 页面与原生界面因此始终同步。
+    /// </remarks>
+    private static void OnTitleBarThemeButtonActivated()
+    {
+        var app = WailsApplication.Get();
+        if (app is null)
+        {
+            return;
+        }
+
+        app.SetThemeMode(ThemeModeCycle.Next(app.ThemeMode));
+    }
+
+    /// <summary>
+    /// 刷新原生标题栏主题按钮的图标与提示（由平台在主题模式变化时调用）。
+    /// </summary>
+    internal void ApplyThemeMode()
+    {
+        _themeButton?.Update(WailsApplication.Get()?.ThemeMode ?? ThemeMode.System);
+    }
+
     /// <summary>
     /// 应用 WKWebView 偏好设置。
     /// 对应 Wails v3 Go 版本 webview_window_darwin.go 的 preferences 应用逻辑。

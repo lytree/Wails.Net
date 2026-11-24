@@ -1,5 +1,6 @@
 using System.Net.NetworkInformation;
 using Gio;
+using Wails.Net.Application.Options;
 using Wails.Net.Events;
 
 namespace Wails.Net.Application.Platform;
@@ -103,7 +104,15 @@ internal sealed class LinuxSystemEventWatcher : IDisposable
             // 主题相关 key 变化时触发 ThemeChanged 事件
             if (key is "color-scheme" or "gtk-theme")
             {
-                Application.Get()?.Events.Emit(KnownEvents.ThemeChanged, null, null);
+                var app = Application.Get();
+                app?.EmitThemeChanged();
+
+                // 跟随系统模式下，GTK 的暗色偏好需要按新的系统值重新下发
+                // （平台只在 System 模式下重算，锁定明亮 / 暗黑时保持不变）。
+                if (app is not null && app.ThemeMode == ThemeMode.System)
+                {
+                    (app.PlatformApp as LinuxPlatformApp)?.ApplyThemeToWindows();
+                }
             }
         }
         catch

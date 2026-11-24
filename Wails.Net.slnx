@@ -17,6 +17,7 @@
     <Project Path="examples/Wails.Net.Demo.MultiWindow/Wails.Net.Demo.MultiWindow.csproj" />
     <Project Path="examples/Wails.Net.Demo.Notifications/Wails.Net.Demo.Notifications.csproj" />
     <Project Path="examples/Wails.Net.Demo.React/Wails.Net.Demo.React.csproj" />
+    <Project Path="examples/Wails.Net.Demo.ResDownloader/Wails.Net.Demo.ResDownloader.csproj" />
     <Project Path="examples/Wails.Net.Demo.Screen/Wails.Net.Demo.Screen.csproj" />
     <Project Path="examples/Wails.Net.Demo.Server/Wails.Net.Demo.Server.csproj" />
     <Project Path="examples/Wails.Net.Demo.Services/Wails.Net.Demo.Services.csproj" />

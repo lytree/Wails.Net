@@ -78,6 +78,15 @@ public sealed class MenuPluginTests
         return (app, menuManager);
     }
 
+    /// <summary>
+    /// 取子菜单的菜单项 ID。
+    /// <see cref="Menu.AddSubmenu"/> 的声明返回类型是 <see cref="Menu"/>，
+    /// 实际实例为 <see cref="MenuItem"/>，而 ID 只定义在 <see cref="MenuItem"/> 上。
+    /// </summary>
+    /// <param name="menu">子菜单实例。</param>
+    /// <returns>字符串形式的菜单项 ID（命令参数使用该形态）。</returns>
+    private static string IdOf(Menu menu) => ((MenuItem)menu).ID.ToString();
+
     // ---------------------------------------------------------------------
     // 基础测试
     // ---------------------------------------------------------------------
@@ -108,6 +117,20 @@ public sealed class MenuPluginTests
         await Assert.That(context.Commands.Find("menu.setContextMenu")).IsNotNull();
         await Assert.That(context.Commands.Find("menu.popup")).IsNotNull();
         await Assert.That(context.Commands.Find("menu.updateMenuItem")).IsNotNull();
+    }
+
+    [Test]
+    public async Task Configure_RegistersMenuRoleCommands()
+    {
+        // MenuRole 相关命令此前无任何命令级测试覆盖，单独守门注册链路。
+        var plugin = new MenuPlugin();
+        var context = CreatePluginContext();
+        plugin.Configure(context);
+
+        await Assert.That(context.Commands.Find("menu.addRoleItem")).IsNotNull();
+        await Assert.That(context.Commands.Find("menu.addStandardEditMenu")).IsNotNull();
+        await Assert.That(context.Commands.Find("menu.addStandardWindowMenu")).IsNotNull();
+        await Assert.That(context.Commands.Find("menu.addStandardHelpMenu")).IsNotNull();
     }
 
     // ---------------------------------------------------------------------
@@ -695,5 +718,186 @@ public sealed class MenuPluginTests
             });
 
         await Assert.That(newItem.Label).IsEqualTo("New File");
+    }
+
+    // ---------------------------------------------------------------------
+    // menu.addRoleItem
+    // ---------------------------------------------------------------------
+
+    [Test]
+    public async Task AddRoleItem_AppendsRoleItemToParentAndReturnsId()
+    {
+        var plugin = new MenuPlugin();
+        var context = CreatePluginContext();
+        plugin.Configure(context);
+        var (_, menuManager) = CreateAppWithMenuManager();
+        var cmdCtx = CreateCommandContext();
+
+        var appMenu = new Menu("App");
+        var editMenu = appMenu.AddSubmenu("编辑");
+        menuManager.SetApplicationMenu(appMenu);
+
+        var result = InvokeCommand(context.Commands, "menu.addRoleItem", cmdCtx,
+            new MenuAddRoleItemOptions { ParentId = IdOf(editMenu), Role = MenuRole.Copy });
+
+        await Assert.That(editMenu.Items.Count).IsEqualTo(1);
+        await Assert.That(editMenu.Items[0].Role).IsEqualTo(MenuRole.Copy);
+
+        // 返回值是字符串形式的菜单项 ID，前端据此调用 menu.updateMenuItem。
+        var created = editMenu.Items[0];
+        await Assert.That(result).IsEqualTo(created.ID.ToString());
+    }
+
+    [Test]
+    public async Task AddRoleItem_WithExplicitLabel_KeepsCallerLabel()
+    {
+        var plugin = new MenuPlugin();
+        var context = CreatePluginContext();
+        plugin.Configure(context);
+        var (_, menuManager) = CreateAppWithMenuManager();
+        var cmdCtx = CreateCommandContext();
+
+        var appMenu = new Menu("App");
+        var editMenu = appMenu.AddSubmenu("编辑");
+        menuManager.SetApplicationMenu(appMenu);
+
+        InvokeCommand(context.Commands, "menu.addRoleItem", cmdCtx,
+            new MenuAddRoleItemOptions { ParentId = IdOf(editMenu), Role = MenuRole.Paste, Label = "粘贴为纯文本" });
+
+        await Assert.That(editMenu.Items[0].Label).IsEqualTo("粘贴为纯文本");
+    }
+
+    [Test]
+    public async Task AddRoleItem_UnknownParent_ThrowsInvalidOperationException()
+    {
+        var plugin = new MenuPlugin();
+        var context = CreatePluginContext();
+        plugin.Configure(context);
+        CreateAppWithMenuManager();
+        var cmdCtx = CreateCommandContext();
+
+        await Assert.That(() => InvokeCommand(context.Commands, "menu.addRoleItem", cmdCtx,
+            new MenuAddRoleItemOptions { ParentId = "99999", Role = MenuRole.Copy }))
+            .ThrowsExactly<InvalidOperationException>();
+    }
+
+    [Test]
+    public async Task AddRoleItem_EmptyParentId_ThrowsArgumentException()
+    {
+        var plugin = new MenuPlugin();
+        var context = CreatePluginContext();
+        plugin.Configure(context);
+        CreateAppWithMenuManager();
+        var cmdCtx = CreateCommandContext();
+
+        await Assert.That(() => InvokeCommand(context.Commands, "menu.addRoleItem", cmdCtx,
+            new MenuAddRoleItemOptions { ParentId = "", Role = MenuRole.Copy }))
+            .ThrowsExactly<ArgumentException>();
+    }
+
+    [Test]
+    public async Task AddRoleItem_FindsParentInNestedSubmenu()
+    {
+        var plugin = new MenuPlugin();
+        var context = CreatePluginContext();
+        plugin.Configure(context);
+        var (_, menuManager) = CreateAppWithMenuManager();
+        var cmdCtx = CreateCommandContext();
+
+        var appMenu = new Menu("App");
+        var viewMenu = appMenu.AddSubmenu("视图");
+        var themeMenu = viewMenu.AddSubmenu("主题");
+        menuManager.SetApplicationMenu(appMenu);
+
+        InvokeCommand(context.Commands, "menu.addRoleItem", cmdCtx,
+            new MenuAddRoleItemOptions { ParentId = IdOf(themeMenu), Role = MenuRole.Fullscreen });
+
+        await Assert.That(themeMenu.Items.Count).IsEqualTo(1);
+        await Assert.That(themeMenu.Items[0].Role).IsEqualTo(MenuRole.Fullscreen);
+    }
+
+    // ---------------------------------------------------------------------
+    // menu.addStandardEditMenu / addStandardWindowMenu / addStandardHelpMenu
+    // ---------------------------------------------------------------------
+
+    [Test]
+    public async Task AddStandardEditMenu_AppendsUndoRedoAndClipboardRoles()
+    {
+        var plugin = new MenuPlugin();
+        var context = CreatePluginContext();
+        plugin.Configure(context);
+        var (_, menuManager) = CreateAppWithMenuManager();
+        var cmdCtx = CreateCommandContext();
+
+        var appMenu = new Menu("App");
+        var editMenu = appMenu.AddSubmenu("编辑");
+        menuManager.SetApplicationMenu(appMenu);
+
+        InvokeCommand(context.Commands, "menu.addStandardEditMenu", cmdCtx,
+            new MenuParentOptions { ParentId = IdOf(editMenu) });
+
+        // Undo/Redo/Separator/Cut/Copy/Paste/SelectAll — 顺序与 AddStandardEditMenu 一致。
+        await Assert.That(editMenu.Items.Count).IsEqualTo(7);
+        await Assert.That(editMenu.Items[0].Role).IsEqualTo(MenuRole.Undo);
+        await Assert.That(editMenu.Items[1].Role).IsEqualTo(MenuRole.Redo);
+        await Assert.That(editMenu.Items[2].Role).IsEqualTo(MenuRole.Separator);
+        await Assert.That(editMenu.Items[2].IsSeparator).IsTrue();
+        await Assert.That(editMenu.Items[3].Role).IsEqualTo(MenuRole.Cut);
+        await Assert.That(editMenu.Items[4].Role).IsEqualTo(MenuRole.Copy);
+        await Assert.That(editMenu.Items[5].Role).IsEqualTo(MenuRole.Paste);
+        await Assert.That(editMenu.Items[6].Role).IsEqualTo(MenuRole.SelectAll);
+    }
+
+    [Test]
+    public async Task AddStandardWindowMenu_AppendsMinimizeMaximizeAndClose()
+    {
+        var plugin = new MenuPlugin();
+        var context = CreatePluginContext();
+        plugin.Configure(context);
+        var (_, menuManager) = CreateAppWithMenuManager();
+        var cmdCtx = CreateCommandContext();
+
+        var appMenu = new Menu("App");
+        var windowMenu = appMenu.AddSubmenu("窗口");
+        menuManager.SetApplicationMenu(appMenu);
+
+        InvokeCommand(context.Commands, "menu.addStandardWindowMenu", cmdCtx,
+            new MenuParentOptions { ParentId = IdOf(windowMenu) });
+
+        // Minimize/Maximize/Separator/CloseWindow — 顺序与 AddStandardWindowMenu 一致。
+        await Assert.That(windowMenu.Items.Count).IsEqualTo(4);
+        await Assert.That(windowMenu.Items[0].Role).IsEqualTo(MenuRole.Minimize);
+        await Assert.That(windowMenu.Items[1].Role).IsEqualTo(MenuRole.Maximize);
+        await Assert.That(windowMenu.Items[2].Role).IsEqualTo(MenuRole.Separator);
+        await Assert.That(windowMenu.Items[3].Role).IsEqualTo(MenuRole.CloseWindow);
+    }
+
+    [Test]
+    public async Task AddStandardHelpMenu_AppendsAboutItemWithMetadata()
+    {
+        var plugin = new MenuPlugin();
+        var context = CreatePluginContext();
+        plugin.Configure(context);
+        var (_, menuManager) = CreateAppWithMenuManager();
+        var cmdCtx = CreateCommandContext();
+
+        var appMenu = new Menu("App");
+        var helpMenu = appMenu.AddSubmenu("帮助");
+        menuManager.SetApplicationMenu(appMenu);
+
+        InvokeCommand(context.Commands, "menu.addStandardHelpMenu", cmdCtx,
+            new MenuAddStandardHelpOptions
+            {
+                ParentId = IdOf(helpMenu),
+                Label = "关于本应用",
+                Metadata = new AboutMetadata { Name = "Wails.Net", Version = "1.0.0" },
+            });
+
+        await Assert.That(helpMenu.Items.Count).IsEqualTo(1);
+        var about = helpMenu.Items[0];
+        await Assert.That(about.Role).IsEqualTo(MenuRole.About);
+        await Assert.That(about.Label).IsEqualTo("关于本应用");
+        await Assert.That(about.AboutMetadata).IsNotNull();
+        await Assert.That(about.AboutMetadata!.Name).IsEqualTo("Wails.Net");
     }
 }

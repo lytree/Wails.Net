@@ -292,7 +292,6 @@ public class MenuPlugin : IPlugin
                     if (TryGetString(value, out var label))
                     {
                         item.Label = label;
-                        item.Impl?.SetLabel(label);
                     }
                     break;
 
@@ -300,7 +299,6 @@ public class MenuPlugin : IPlugin
                     if (ToBool(value) is bool enabled)
                     {
                         item.IsDisabled = !enabled;
-                        item.Impl?.SetEnabled(enabled);
                     }
                     break;
 
@@ -308,7 +306,6 @@ public class MenuPlugin : IPlugin
                     if (ToBool(value) is bool disabled)
                     {
                         item.IsDisabled = disabled;
-                        item.Impl?.SetEnabled(!disabled);
                     }
                     break;
 
@@ -316,7 +313,6 @@ public class MenuPlugin : IPlugin
                     if (ToBool(value) is bool isChecked)
                     {
                         item.Checked = isChecked;
-                        item.Impl?.SetChecked(isChecked);
                     }
                     break;
 
@@ -324,7 +320,6 @@ public class MenuPlugin : IPlugin
                     if (TryGetString(value, out var accelerator))
                     {
                         item.Accelerator = accelerator;
-                        item.Impl?.SetAccelerator(accelerator);
                     }
                     break;
 
@@ -340,8 +335,10 @@ public class MenuPlugin : IPlugin
             }
         }
 
-        // 通知平台实现整体刷新
-        item.Impl?.UpdateMenuItem(item);
+        // 通知平台实现刷新。
+        // 叶子菜单项与 macOS/Linux 的嵌套项没有独立的平台对象（item.Impl 为 null），
+        // 必须由最近的容器实现（OwningImpl）改写对应的原生子项。
+        item.OwningImpl?.UpdateMenuItem(item);
     }
 
     /// <summary>

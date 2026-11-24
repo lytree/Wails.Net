@@ -394,7 +394,11 @@ public partial class Application
                 Bindings, Events, id => GetWindow(id), _commandDispatcher, _serviceProvider, InvocationGateway,
                 _serviceProvider?.GetService<ILogger<MessageProcessor>>());
 
-            NativeIpcTransport = new NativeIpcTransport(_messageProcessor);
+            // 传入日志器：NativeIpcTransport 的事件投递走每窗口队列，单条投递失败
+            // （窗口已销毁、跨线程调用被平台拒绝等）只记录 Debug 日志，无日志器时会完全静默。
+            NativeIpcTransport = new NativeIpcTransport(
+                _messageProcessor,
+                _serviceProvider?.GetService<ILogger<NativeIpcTransport>>());
             Events.AddWailsEventListener(NativeIpcTransport);
         }
     }

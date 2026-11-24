@@ -47,6 +47,10 @@ public sealed class MacOSMenu : IMenuImpl, IDisposable
     {
         _menu = menu;
         Rebuild();
+
+        // 挂载平台实现：此后 Menu.Append / Menu.Remove / Menu.Update 会触发 NSMenu 重建。
+        // NSMenu 实例本身在 Rebuild 中被复用，因此 NSApp.MainMenu 无需重新设置。
+        _menu.AttachImpl(this);
     }
 
 #if MACOS
@@ -100,6 +104,7 @@ public sealed class MacOSMenu : IMenuImpl, IDisposable
         _nsMenu = null;
         _nativeItems.Clear();
 #endif
+        _menu.DetachImpl(this);
     }
 
     /// <inheritdoc />

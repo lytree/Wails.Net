@@ -135,4 +135,92 @@ public partial class Application
         return _platformApp?.GetAccentColor() ?? "#000000";
     }
 
+    /// <summary>
+    /// 获取当前应用级明暗主题模式（Wails.Net 扩展）。
+    /// <para>
+    /// 与 <see cref="IsDarkMode"/> 的区别：<see cref="IsDarkMode"/> 只反映系统设置，
+    /// 本属性反映应用实际采用的模式（可能被 <see cref="SetThemeMode"/> 锁定为明亮或暗黑）。
+    /// </para>
+    /// </summary>
+    public ThemeMode ThemeMode => _themeMode;
+
+    /// <summary>
+    /// 获取按当前主题模式解析后的实际明暗（Wails.Net 扩展）。
+    /// <para>
+    /// <see cref="ThemeMode.System"/> 时取 <see cref="IsDarkMode"/>；
+    /// <see cref="ThemeMode.Light"/> / <see cref="ThemeMode.Dark"/> 时直接返回锁定值。
+    /// </para>
+    /// </summary>
+    public bool IsDarkTheme => ResolveDarkTheme(_themeMode);
+
+    /// <summary>
+    /// 设置应用级明暗主题模式（Wails.Net 扩展），并立即作用于所有窗口。
+    /// <para>
+    /// 生效范围：平台绘制的界面元素与原生标题栏主题按钮
+    /// （Windows 为 DWM 标题栏 / 原生菜单 / 非客户区自绘按钮，
+    /// macOS 为 <c>NSApplication.Appearance</c> 与标题栏附件视图，
+    /// Linux 为 GTK 暗色偏好与 HeaderBar 按钮）。
+    /// 前端页面主题不由框架接管，前端应订阅 <see cref="KnownEvents.ThemeChanged"/> 后
+    /// 按 <see cref="ThemeMode"/> / <see cref="IsDarkTheme"/> 自行切换样式。
+    /// </para>
+    /// <para>
+    /// 模式发生变化时会广播 <see cref="KnownEvents.ThemeChanged"/>，负载为
+    /// <see cref="CreateThemeChangedPayload"/> 的返回值，前端据此同步页面主题。
+    /// </para>
+    /// </summary>
+    /// <param name="mode">目标主题模式。</param>
+    public void SetThemeMode(ThemeMode mode)
+    {
+        if (_themeMode == mode)
+        {
+            return;
+        }
+
+        _themeMode = mode;
+        _platformApp?.SetThemeMode(mode);
+        EmitThemeChanged();
+    }
+
+    /// <summary>
+    /// 构建主题变化事件负载（Wails.Net 扩展）：<c>{ themeMode, isDark }</c>。
+    /// <para>
+    /// <c>themeMode</c> 取 <c>"system"</c> / <c>"light"</c> / <c>"dark"</c>（小写，便于前端
+    /// 直接写入 <c>document.documentElement.dataset.theme</c>）；<c>isDark</c> 为解析后的实际明暗，
+    /// 供不区分模式、只关心明暗的前端使用。
+    /// </para>
+    /// </summary>
+    /// <returns>可被 JSON 序列化的事件负载。</returns>
+    public object CreateThemeChangedPayload() => new
+    {
+        themeMode = ThemeModeCycle.ToWireName(_themeMode),
+        isDark = IsDarkTheme,
+    };
+
+    /// <summary>
+    /// 广播主题变化事件（Wails.Net 扩展），统一负载结构。
+    /// <para>
+    /// 应用主动切换（<see cref="SetThemeMode"/>）与系统主题变化（平台事件、<c>WM_SETTINGCHANGE</c> 等）
+    /// 都走这里，前端只需实现一种处理逻辑。
+    /// </para>
+    /// </summary>
+    public void EmitThemeChanged()
+    {
+        Events.Emit(KnownEvents.ThemeChanged, CreateThemeChangedPayload(), null);
+    }
+
+    /// <summary>
+    /// 按主题模式解析实际明暗：<see cref="ThemeMode.System"/> 回落到系统设置。
+    /// </summary>
+    /// <param name="mode">主题模式。</param>
+    /// <returns>暗色返回 true，明亮返回 false。</returns>
+    internal bool ResolveDarkTheme(ThemeMode mode)
+    {
+        return mode switch
+        {
+            ThemeMode.Dark => true,
+            ThemeMode.Light => false,
+            _ => IsDarkMode(),
+        };
+    }
+
 }

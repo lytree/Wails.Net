@@ -32,6 +32,16 @@ public partial class Application
     private readonly ServiceRegistry _serviceRegistry = new();
 
     /// <summary>
+    /// 当前应用级明暗主题模式（Wails.Net 扩展）。
+    /// <para>
+    /// 构造期取自 <see cref="ApplicationOptions.ThemeMode"/>，运行期由
+    /// <see cref="SetThemeMode"/> 改写；平台层据此决定原生标题栏 / 原生菜单的明暗。
+    /// </para>
+    /// </summary>
+    private ThemeMode _themeMode = ThemeMode.System;
+
+
+    /// <summary>
     /// 配置驱动的窗口工厂（RH-HOST-02 抽出）。
     /// 承载 <see cref="Hosting.DesktopApplicationBuilder.Build"/> 传入的窗口配置，
     /// 在 <see cref="Run"/> 的 UI 线程上按需创建，避免主线程创建窗口导致 Win32 线程亲和性问题。
@@ -144,6 +154,11 @@ public partial class Application
     public void SetPlatformApp(IPlatformApp platformApp)
     {
         _platformApp = platformApp;
+
+        // 把构造期确定的应用级主题模式下推给平台，保证首个窗口创建时即采用正确明暗。
+        // 此时通常尚无窗口，平台实现的 SetThemeMode 只记录状态。
+        _platformApp.SetThemeMode(_themeMode);
+
         // R1-2：复用构造期创建的 WindowManager，避免再次 new 造成窗口注册表分离。
         _windowManager?.SetPlatformApp(platformApp);
         _dialogManager = new DialogManager(platformApp, () => IsRunning);
@@ -257,6 +272,7 @@ public partial class Application
         _options = options;
         Bindings = bindings;
         Events = events;
+        _themeMode = options.ThemeMode;
         _serviceProvider = services;
         _globalApplication = this;
         _hooks.AddShutdownTasks(options.ShutdownTasks);
@@ -646,8 +662,17 @@ public partial class Application
     /// <param name="eventId">平台事件 ID。</param>
     public void HandlePlatformEvent(uint eventId)
     {
-        var eventName = KnownEvents.GetEventName(eventId);
-        Events.Emit(eventName, null, null);
+        if (eventId == (uint)ApplicationEventType.ThemeChanged)
+        {
+            // 系统主题变化走统一负载（含当前应用级模式与解析后的明暗），
+            // 供前端按「按系统 / 暗黑 / 明亮」三态同步页面主题。
+            EmitThemeChanged();
+        }
+        else
+        {
+            var eventName = KnownEvents.GetEventName(eventId);
+            Events.Emit(eventName, null, null);
+        }
 
         // 同时触发应用事件路径，对齐 Wails v3 EventManager.handleApplicationEvent。
         if (Enum.IsDefined(typeof(ApplicationEventType), eventId))

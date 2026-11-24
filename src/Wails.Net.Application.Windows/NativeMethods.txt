@@ -151,6 +151,7 @@ SetMenuItemInfoW
 GetMenuItemInfoW
 GetMenuItemCount
 GetMenuItemID
+GetMenuState
 EnableMenuItem
 CheckMenuItem
 ModifyMenuW
@@ -180,3 +181,6 @@ FlashWindowEx
 FLASHWINFO
 FLASHWINFO_FLAGS
 RegisterWindowMessage
+GetWindowDC
+RedrawWindow
+REDRAW_WINDOW_FLAGS

@@ -56,6 +56,26 @@ public sealed class LinuxPlatformApp : IPlatformApp
     private int _mainThreadId;
 
     /// <summary>
+    /// 应用级明暗主题模式（Wails.Net 扩展），默认跟随系统。
+    /// <para>
+    /// 由 <see cref="Application.SetThemeMode"/> 下推；平台侧用它设置 GTK 的
+    /// <c>gtk-application-prefer-dark-theme</c>（标题栏、原生菜单、对话框一并跟随），
+    /// 并刷新各窗口原生标题栏上的主题按钮。
+    /// </para>
+    /// </summary>
+    private ThemeMode _themeMode = ThemeMode.System;
+
+    /// <summary>
+    /// 当前实际采用的明暗（Wails.Net 扩展）：<see cref="ThemeMode.System"/> 时取系统设置。
+    /// </summary>
+    internal bool IsDarkTheme => _themeMode switch
+    {
+        ThemeMode.Dark => true,
+        ThemeMode.Light => false,
+        _ => IsDarkMode(),
+    };
+
+    /// <summary>
     /// GTK 是否已初始化的标志（0=未初始化，1=已初始化）。
     /// 使用 Interlocked 确保线程安全的单次初始化。
     /// </summary>
@@ -224,6 +244,79 @@ public sealed class LinuxPlatformApp : IPlatformApp
     public bool IsOnMainThread()
     {
         return Environment.CurrentManagedThreadId == _mainThreadId;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// <para>
+    /// Linux 侧用 GTK 设置 <c>gtk-application-prefer-dark-theme</c> 表达主题：
+    /// GTK4 没有「应用级外观」对象，这个开关是影响全部 GTK 控件
+    /// （标题栏、弹出菜单、对话框）的官方途径。它无法表达「恢复跟随系统」，
+    /// 因此 <see cref="ThemeMode.System"/> 时按 <see cref="IsDarkMode"/> 的实时结果取值；
+    /// 系统主题变化由 <see cref="LinuxSystemEventWatcher"/> 触发，
+    /// 应用只在跟随系统模式下才会跟着改变。
+    /// </para>
+    /// </remarks>
+    public void SetThemeMode(ThemeMode mode)
+    {
+        _themeMode = mode;
+        ApplyThemeToWindows();
+    }
+
+    /// <summary>
+    /// 把当前主题模式落到 GTK 设置与各窗口的原生标题栏主题按钮上。
+    /// </summary>
+    /// <remarks>
+    /// 由 <see cref="SetThemeMode"/> 与 <see cref="CreateWebviewWindow"/> 调用：
+    /// 启动期 GTK 尚未初始化时只记录模式，首个窗口创建后再补应用。
+    /// </remarks>
+    internal void ApplyThemeToWindows()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        // GTK 未初始化时不能触碰 GtkSettings（会创建默认 settings 对象引发告警）。
+        if (_gtkInitialized != 1)
+        {
+            return;
+        }
+
+        // GTK 调用必须在主线程；回调可能来自 WebKit / D-Bus / 绑定线程。
+        if (!IsOnMainThread())
+        {
+            DispatchOnMainThread(ApplyThemeToWindows);
+            return;
+        }
+
+        ApplyGtkPreferDarkTheme(IsDarkTheme);
+
+        foreach (var window in EnumerateWindows())
+        {
+            window.ApplyThemeMode(_themeMode);
+        }
+    }
+
+    /// <summary>
+    /// 设置 GTK 全局暗色偏好。
+    /// </summary>
+    /// <param name="dark">是否使用暗色。</param>
+    private static void ApplyGtkPreferDarkTheme(bool dark)
+    {
+        try
+        {
+            var settings = Gtk.Settings.GetDefault();
+            if (settings is not null)
+            {
+                settings.GtkApplicationPreferDarkTheme = dark;
+            }
+        }
+        catch (Exception ex)
+        {
+            // 缺少 GTK 主题引擎等场景下失败不应影响主题切换的其余部分。
+            Debug.WriteLine($"[Wails.Net] 设置 GTK 暗色偏好失败：{ex.Message}");
+        }
     }
 
     /// <inheritdoc />
@@ -710,6 +803,30 @@ public sealed class LinuxPlatformApp : IPlatformApp
         // 对应 Go 版 application_linux_gtk3.go 中的菜单构建逻辑。
         // LinuxMenu 同时创建 SimpleAction 并连接 OnActivate 回调，使菜单项点击可响应。
         _appMenu = new LinuxMenu(menu);
+
+        // 菜单可在运行时增删改：每次重建都会产生新的 GMenu / ActionGroup 对象，
+        // 需要通过回调把新对象重新注入已创建窗口。
+        _appMenu.NativeChanged = RefreshApplicationMenu;
+        RefreshApplicationMenu();
+    }
+
+    /// <summary>
+    /// 把当前应用菜单的 GMenu 模型与 ActionGroup 重新注入各窗口。
+    /// 由 <see cref="LinuxMenu.NativeChanged"/> 在模型重建后回调。
+    /// </summary>
+    private void RefreshApplicationMenu()
+    {
+        if (_appMenu is not { } appMenu ||
+            appMenu.MenuModel is not { } model ||
+            appMenu.ActionGroup is not { } group)
+        {
+            return;
+        }
+
+        foreach (var window in EnumerateWindows())
+        {
+            window.SetApplicationMenu(model, group);
+        }
     }
 
     /// <inheritdoc />
@@ -873,6 +990,10 @@ public sealed class LinuxPlatformApp : IPlatformApp
         // 将应用级 LinuxOptions 传入窗口，用于配置 WebKitGTK 环境（用户数据目录、附加参数等）。
         // 窗口登记由 WindowManager 完成（RH-WIN-02 终态），平台侧不再持有窗口字典。
         var window = new LinuxWebviewWindow(id, options, _linuxOptions);
+
+        // 应用级主题：启动期 GTK 未初始化时 SetThemeMode 只记录模式，
+        // 首个窗口创建后在这里补应用 GTK 暗色偏好，并刷新各窗口的主题按钮。
+        ApplyThemeToWindows();
 
         // 若已设置应用菜单，将其应用到新窗口（注入 GMenu 模型与 ActionGroup）。
         if (_appMenu is not null)
