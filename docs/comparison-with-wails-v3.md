@@ -1,8 +1,9 @@
 # Wails.Net vs Wails v3 能力矩阵
 
-> 本文档对比 **Wails.Net**（当前项目，Wails v3 的 .NET 10 移植实现）与 **Wails v3**（Go 参考实现，`v3.1.0`，2026-11-01 weekly）的功能实现项与差异项。
+> 本文档对比 **Wails.Net**（当前项目，Wails v3 的 .NET 10 移植实现）与 **Wails v3**（Go 参考实现，`v3.1.0`，2026-11-01 weekly；2026-11-24 复核仍为最新正式版）的功能实现项与差异项。
 >
 > - **更新日期**：2026-11-12（文档体系收敛：移除外部框架对比基线，矩阵收敛为 Wails.Net 与上游 Wails v3 两方；能力项基于当前 `src/` 代码核对，P1/P2 阶段项与历史核对结论保留）
+> - **基线复核**：2026-11-24 复核上游正式版仍为 `v3.1.0`（无 `v3.1.x` hotfix、无 `v3.2.0` weekly，nightly 于 11-23 恢复），本矩阵结论无需调整，详见 [上游差异与对齐记录](development/wails-v3-beta-comparison.md) §14
 > - **对比基线**：基于本仓库当前 `src/` 实际代码状态
 > - **架构策略**（见 [AGENTS.md](../AGENTS.md) §1.1.1）：
 >   - Host/DI/Config/Logging → 参考 ASP.NET Core（Microsoft.Extensions.* 全栈）

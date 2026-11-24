@@ -140,7 +140,7 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 
 ## 参考资源
 
-- [Wails v3 源码](https://github.com/wailsapp/wails/tree/v3.1.0) — Go 版本参考实现（`v3.1.0` weekly，2026-11-01；2026-11-22 复核仍为最新正式版，无 `v3.1.x` hotfix）
+- [Wails v3 源码](https://github.com/wailsapp/wails/tree/v3.1.0) — Go 版本参考实现（`v3.1.0` weekly，2026-11-01；2026-11-24 复核仍为最新正式版，无 `v3.1.x` hotfix，nightly 已于 11-23 恢复）
 - [GirCore](https://github.com/gircore/gir.core) — GTK4 .NET 绑定
 - [TUnit](https://github.com/thomhurst/TUnit) — 现代 .NET 测试框架
 - [CsWin32](https://github.com/microsoft/CsWin32) — Win32 源生成器
@@ -148,4 +148,4 @@ Wails.Net 是 Wails v3 (Go) 的 .NET 10 移植实现，融合 ASP.NET Core 的 G
 
 ---
 
-**最后更新**：2026-11-22（基线复核：Wails v3 仍为 `v3.1.0`（2026-11-01 weekly），无 `v3.1.x` hotfix、无 `v3.2.0` 正式版、无新 nightly（最新预发布仍为 `v3.2.0-nightly.20261103`），基线不变；详见 [Wails v3 上游差异与对齐记录](development/wails-v3-beta-comparison.md) §13.5。同轮索引同步：补充 macOS 平台说明与 [插件全景分析归档](archive/plugins-analysis-2026-08-07.md)）
+**最后更新**：2026-11-24（基线复核：Wails v3 仍为 `v3.1.0`（2026-11-01 weekly），无 `v3.1.x` hotfix、无 `v3.2.0` 正式版，基线不变；nightly 于 2026-11-23 恢复（最新 `v3.2.0-nightly.20261123`），上游 11-20 → 11-24 共 8 提交均为 `chore` / Go 测试重试 / `wake` 工具描述修正，`v3/` 生产代码零变更，详见 [Wails v3 上游差异与对齐记录](development/wails-v3-beta-comparison.md) §14。同轮索引同步：新增 [macOS 实现差异审计](development/macos-parity-audit-2026-11-17.md) 条目）
