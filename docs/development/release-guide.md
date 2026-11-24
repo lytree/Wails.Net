@@ -9,16 +9,16 @@
 版本号集中在 [Directory.Build.props](../../Directory.Build.props) 的 `WailsNetVersion` 属性中维护：
 
 ```xml
-<WailsNetVersion>1.0.1-alpha.2</WailsNetVersion>
+<WailsNetVersion>1.0.1-alpha.3</WailsNetVersion>
 ```
 
 所有 `src/` 下的程序集与 NuGet 包将自动派生以下属性：
 
 | 属性 | 说明 | 示例 |
 |------|------|------|
-| `Version` | NuGet 包版本，含预发布标签 | `1.0.1-alpha.2` |
-| `PackageVersion` | NuGet 包版本（与 Version 同步） | `1.0.1-alpha.2` |
-| `InformationalVersion` | 显示用版本，含预发布标签 | `1.0.1-alpha.2` |
+| `Version` | NuGet 包版本，含预发布标签 | `1.0.1-alpha.3` |
+| `PackageVersion` | NuGet 包版本（与 Version 同步） | `1.0.1-alpha.3` |
+| `InformationalVersion` | 显示用版本，含预发布标签 | `1.0.1-alpha.3` |
 | `AssemblyVersion` | CLR 程序集版本，4 段数字 | `0.1.0.0` |
 | `FileVersion` | Windows 文件版本，4 段数字 | `0.1.0.0` |
 
@@ -33,7 +33,7 @@ MAJOR.MINOR.PATCH[-prerelease]
 | 版本类型 | 示例 | 适用场景 |
 |----------|------|----------|
 | 正式版 | `1.0.0` | 稳定发布 |
-| Alpha 预发布 | `1.0.1-alpha.2` | 早期开发，API 可能变动 |
+| Alpha 预发布 | `1.0.1-alpha.3` | 早期开发，API 可能变动 |
 | Beta 预发布 | `1.0.0-beta.1` | 功能完整，可能有 bug |
 | RC 候选版 | `1.0.0-rc.1` | 候选发布，仅修复 bug |
 
@@ -80,11 +80,11 @@ git push origin main --tags
 
 - `publish-nuget`：推送 NuGet 包到 nuget.org（Trusted Publishing OIDC）
 - `publish-npm`：推送前端双包到 npmjs.org——`@wailsnet/runtime` + 全部 `@wailsnet/plugin-*`（M4 闭环）
-- `publish-github-release`：创建 GitHub Release 并上传三平台构建产物
+- `publish-github-release`：创建 GitHub Release 并上传四平台构建产物
 
 发布前 CI 执行版本一致性校验（`scripts/verify-versions.mjs`）：`Directory.Build.props` 的 `WailsNetVersion` 必须等于所有 `packages/*/package.json` 的 `version`，不一致即失败——保证 NuGet 与 npm 同版本发布。
 
-> **tag 触发时版本直取标签名**：CI 的 `gitversion` 作业在 `github.ref_type == tag` 时不再调用 GitVersion，而是直接取 `github.ref_name` 去掉 `v` 前缀（如 `v1.0.1-alpha.2` → `1.0.1-alpha.2`），并派生 `assemblySemVer`。原因是 GitVersion 6.8.2 在当前配置下不会把 tag 识别为 version source，会算出 `1.0.0-271` 之类的分支版本，导致 NuGet / GitHub Release 与 npm 版本错位。因此发布前需保证 **tag 名 = `WailsNetVersion` = 各 `package.json` 的 `version`**；脚本校验后两者，tag 名由发布者保证。非 tag 构建仍由 GitVersion 按分支计算版本。
+> **tag 触发时版本直取标签名**：CI 的 `gitversion` 作业在 `github.ref_type == tag` 时不再调用 GitVersion，而是直接取 `github.ref_name` 去掉 `v` 前缀（如 `v1.0.1-alpha.3` → `1.0.1-alpha.3`），并派生 `assemblySemVer`。原因是 GitVersion 6.8.2 在当前配置下不会把 tag 识别为 version source，会算出 `1.0.0-271` 之类的分支版本，导致 NuGet / GitHub Release 与 npm 版本错位。因此发布前需保证 **tag 名 = `WailsNetVersion` = 各 `package.json` 的 `version`**；脚本校验后两者，tag 名由发布者保证。非 tag 构建仍由 GitVersion 按分支计算版本。
 
 本地校验命令：
 
@@ -109,7 +109,7 @@ build → test → pack → dist → publish
 ```
 
 > **触发分级（非 tag 只构建与测试）**：任意分支 push 与 Pull Request 只运行 `build` 与 `test`；
-> `pack` / `dist-windows` / `dist-linux` / `dist-android` / `publish-nuget` / `publish-npm` /
+> `pack` / `dist-windows` / `dist-linux` / `dist-macos` / `dist-android` / `publish-nuget` / `publish-npm` /
 > `publish-github-release` 一律以 `if: startsWith(github.ref, 'refs/tags/v')` 限定，只有推送
 > `v*.*.*` 标签时才执行。例外是 `test-android-e2e`（模拟器 + KVM 成本高），只在 `main` 与 tag 上运行。
 > 本地 `pnpm publish:npm` 亦受同一约束：HEAD 不位于 `v<WailsNetVersion>` 标签时拒绝发布。
@@ -123,10 +123,11 @@ build → test → pack → dist → publish
 | pack | 打包 NuGet | windows-latest | 打包 NuGet 包（nupkg + snupkg） |
 | dist | dist-windows | windows-latest | Windows 自包含构建（win-x64/x86/arm64） |
 | dist | dist-linux | ubuntu-latest | Linux 自包含构建（linux-x64/arm64，含 .deb/.rpm 原生包打包） |
+| dist | dist-macos | macos-latest | macOS 自包含构建（osx-arm64/x64 → `.app` + `.zip` + `.dmg`） |
 | dist | dist-android | windows-latest | Android APK 构建（android-arm64/x64/arm，允许失败） |
 | publish | publish-nuget | windows-latest | 通过 Trusted Publishing(OIDC) 推送全部 nupkg（含 CLI/SDK/Templates）到 nuget.org（仅 tag 触发，无需 API Key） |
 | publish | publish-npm | ubuntu-latest | 通过 Trusted Publishing(OIDC) 推送前端双包 `@wailsnet/runtime` + 全部 `@wailsnet/plugin-*`（40 个）到 npmjs.com 的 **wailsnet** 组织（仅 tag 触发，需前置版本一致性校验，无需 token） |
-| publish | publish-github-release | ubuntu-latest | 创建 GitHub Release 并上传 nupkg + 三平台 dist 产物（仅 tag 触发） |
+| publish | publish-github-release | ubuntu-latest | 创建 GitHub Release 并上传 nupkg + 四平台 dist 产物（仅 tag 触发） |
 
 ### 触发条件
 
@@ -143,7 +144,7 @@ build → test → pack → dist → publish
 
 - GitHub Actions 托管的 windows-latest 运行器
 - 通过 `actions/setup-dotnet@v4` 安装 .NET 10 SDK
-- 用于构建全部项目、Windows 测试、打包、三平台自包含构建
+- 用于构建全部项目、Windows 测试、打包、Windows/Android 自包含构建
 
 #### Linux Runner（ubuntu-latest）
 
@@ -152,6 +153,13 @@ build → test → pack → dist → publish
 - 安装 GTK4 + WebKitGTK 6.0 原生库
 - 安装 `dpkg-dev` 与 `rpm` 包（提供 `dpkg-deb` 和 `rpmbuild` 命令，用于 .deb/.rpm 原生包打包）
 - 用于 Linux 平台测试（允许失败）与 Linux 自包含构建（dist-linux，必须成功）
+
+#### macOS Runner（macos-latest）
+
+- GitHub Actions 托管的 macos-latest 运行器（Apple Silicon）
+- 通过 `actions/setup-dotnet@v6` 安装 .NET 10 SDK
+- 安装 `android` 与 `macos` 工作负载：`android` 供 Pack 阶段评估 Android 工程，`macos` 提供 `net10.0-macos` 目标包
+- 用于 macOS 自包含构建（dist-macos：`osx-arm64` / `osx-x64` → `.app` + `.zip` + `.dmg`）
 
 ### 必需的 Secrets
 
@@ -176,7 +184,7 @@ build → test → pack → dist → publish
 
 > 已发布的正式版本无法"补成"预发布之外的另一种形态：如果 tag 建错了 Release 属性，用 `PATCH /repos/{owner}/{repo}/releases/{id}` 改 `prerelease` / `make_latest` 即可，无需重建 tag。
 
-**预发布 tag 的处理**：tag 名含 `-`（如 `v1.0.1-alpha.2`）时，`publish-github-release` 会自动加 `--prerelease`，避免 alpha 包被 GitHub 标成 Latest 引导稳定版用户下载。
+**预发布 tag 的处理**：tag 名含 `-`（如 `v1.0.1-alpha.3`）时，`publish-github-release` 会自动加 `--prerelease`，避免 alpha 包被 GitHub 标成 Latest 引导稳定版用户下载。
 
 ### 构建产物
 
@@ -190,6 +198,7 @@ tag 触发时，`publish-github-release` job 会创建 GitHub Release 并上传�
 - **NuGet 包**：全部 `.nupkg` / `.snupkg`（SDK / CLI / Templates / Bundle 等）
 - **Windows 自包含**：`.zip`（win-x64 / win-x86 / win-arm64）
 - **Linux 自包含**：`.tar.gz` / `.deb` / `.rpm`（linux-x64 / linux-arm64）
+- **macOS 自包含**：`.zip` / `.dmg`（osx-arm64 / osx-x64，内含 `Wails.Net.Demo.app` bundle）
 - **Android**：`.apk`（android-arm64 / android-x64 / android-arm，构建允许失败时可能缺失）
 
 Release 标题为 `Wails.Net <版本号>`，Release Notes 由 GitHub 自动生成（基于 commit 历史）。使用内置 `GITHUB_TOKEN`，无需额外配置 Secret。
@@ -305,24 +314,24 @@ npm stage approve <id>        # 2FA 确认后才真正上线
 ```bash
 npm view @wailsnet/runtime version dist-tags --registry https://registry.npmjs.org
 npm view @wailsnet/plugin-dialog dependencies --registry https://registry.npmjs.org
-# 依赖应显示 "@wailsnet/runtime": "1.0.1-alpha.2"，而不是 workspace:*
+# 依赖应显示 "@wailsnet/runtime": "1.0.1-alpha.3"，而不是 workspace:*
 ```
 
 ### dist-tag 规则（重要）
 
-`1.0.1-alpha.2` 这类预发布版本**必须带 `--tag alpha`**，否则会顶掉 `latest`，
+`1.0.1-alpha.3` 这类预发布版本**必须带 `--tag alpha`**，否则会顶掉 `latest`，
 让 `pnpm add @wailsnet/runtime` 装到 alpha。脚本与 CI 都已自动处理：
 
 | 版本 | dist-tag |
 |------|----------|
-| `1.0.1-alpha.2` | `alpha` |
+| `1.0.1-alpha.3` | `alpha` |
 | `1.2.0-beta.3` | `beta` |
 | `0.1.0` | `latest` |
 
 手动补救：`npm dist-tag add @wailsnet/runtime@0.1.0 --tag latest`。
 
 > 注意：**首次发布**（包在 registry 上还不存在）时，npm 会无条件把 `latest` 指向这第一个版本，
-> 即使传了 `--tag alpha`。所以 alpha 首发阶段 `latest` 与 `alpha` 会同时指向 `1.0.1-alpha.2`；
+> 即使传了 `--tag alpha`。所以 alpha 首发阶段 `latest` 与 `alpha` 会同时指向 `1.0.1-alpha.3`；
 > 等首个正式版发布后 `latest` 才会自然归位。
 
 ### 暂存模式（staged）踩坑记录
@@ -451,7 +460,7 @@ dotnet pack Wails.Net.slnx -c Release -o artifacts/packages -p:SkipFrontendBuild
 dotnet pack src/Wails.Net.Templates/Wails.Net.Templates.csproj -c Release -o artifacts/packages
 
 # 5. 验证包内容
-dotnet nuget push --dry-run artifacts/packages/Wails.Net.Application.1.0.1-alpha.2.nupkg
+dotnet nuget push --dry-run artifacts/packages/Wails.Net.Application.1.0.1-alpha.3.nupkg
 ```
 
 ### 一键打包与冒烟测试（推荐）
@@ -596,7 +605,7 @@ Wails.Net 默认从 `{ContentRoot}/capabilities/` 目录自动加载 Capability 
 
 详细字段参见 `Wails.Net.Application.Security.CapabilityFileLoader` 文档。
 
-## 三平台签名流程
+## 四平台签名流程
 
 ### Windows Authenticode 签名
 
@@ -643,6 +652,27 @@ signtool verify /pa /v MyApplication.exe
 
 - `PATH` 中的 `azuresigntool.exe`
 - 未找到时提示安装：`dotnet tool install --global AzureSignTool`
+
+### macOS codesign 与公证
+
+**工具**：`codesign` / `xcrun notarytool`（Xcode Command Line Tools 自带）
+
+**CI 自动签名**：`Dist-MacOS` task 在 `.app` 生成后、打包 `.zip` / `.dmg` 之前，按环境变量门控调用 `codesign`（`--options runtime` 启用 Hardened Runtime）：
+
+| 环境变量 | 说明 |
+|----------|------|
+| `WAILS_MACOS_SIGN_IDENTITY` | Developer ID Application 证书标识（如 `Developer ID Application: Your Name (TEAMID)`）；未设置则跳过，产物仅有 .NET SDK 生成的 ad-hoc 签名，适合内部/本机构建 |
+
+**本地签名与验证**：
+
+```bash
+codesign --force --deep --options runtime --timestamp \
+  --sign "Developer ID Application: Your Name (TEAMID)" Wails.Net.Demo.app
+codesign --verify --deep --strict --verbose=2 Wails.Net.Demo.app
+spctl --assess --type execute --verbose Wails.Net.Demo.app
+```
+
+**公证（尚未集成）**：`cake.cs` 目前不包含 `notarytool` 步骤。对外分发前需自行提交公证并对 `.dmg` 执行 `stapler staple`，否则 Gatekeeper 仍会拦截从网络下载的 `.zip` / `.dmg`。
 
 ### Linux GPG 签名
 

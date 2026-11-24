@@ -10,7 +10,7 @@
 - **项目**：Wails.Net — Wails v3 (Go) 的 .NET 10 移植实现
 - **参考版本**：`wails v3.1.0`（2026-11-01 weekly；2026-10-26 的 `v3.0.0` GA 之后首个 minor 版本，`v3.2.0-nightly.*` 为预发布不作基线；**2026-11-24 复核仍为最新正式版，无 `v3.1.x` hotfix；nightly 已于 11-23 恢复（最新 `v3.2.0-nightly.20261123`，中断 19 天）**；差异与待实现项见 `docs/development/wails-v3-beta-comparison.md` §11–§14，复核日志见 §13.5 与 §14）
 - **参考范围**：**仅以 Wails v3 作为唯一上游参考实现**，不引入其他桌面框架作为对比基线或设计来源
-- **目标平台**：Windows、Linux、Android（macOS 已实现 `Wails.Net.Application.MacOS`：`#if MACOS` 分支为完整 AppKit + WKWebView 实现，`#else` 分支降级到 ServerMode；iOS 暂不实现）
+- **目标平台**：Windows、Linux、macOS、Android（macOS 已实现 `Wails.Net.Application.MacOS`：`#if MACOS` 分支为完整 AppKit + WKWebView 实现，`#else` 分支降级到 ServerMode；`cake.cs` 的 `Dist-MacOS` 目标在 macOS 主机产出 `.app` + `.zip` + `.dmg`；iOS 暂不实现）
 - **实施计划**：见 [`docs/architecture/optimization-roadmap.md`](docs/architecture/optimization-roadmap.md)（三条主线优化目标、任务拆解与验收）与 [`docs/README.md`](docs/README.md)（全库文档索引）
 
 ### 1.1 技术选型（已确定，不可更改）
@@ -70,7 +70,7 @@
 5. **阶段 5** ✅ Windows 平台实现
 6. **阶段 6** ✅ Linux 平台实现（GirCore 0.8.1）
 7. **阶段 7** ✅ CLI 工具与代码生成器
-8. **阶段 8** ✅ Android 平台实现与三平台自包含构建（.NET Android + WebView）
+8. **阶段 8** ✅ Android 平台实现与四平台自包含构建（.NET Android + WebView；`cake.cs` Dist 覆盖 Windows/Linux/macOS/Android）
 
 ### 2.2 每阶段交付标准（Definition of Done）
 

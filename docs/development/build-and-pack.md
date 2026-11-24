@@ -426,7 +426,7 @@ dotnet run cake.cs
 dotnet run cake.cs -- --target=Build --configuration=Release
 dotnet run cake.cs -- --target=Pack --configuration=Release
 
-# 三平台自包含构建
+# 四平台自包含构建（macOS 目标需在 macOS 主机执行）
 dotnet run cake.cs -- --target=DistAll --rid=all
 
 # 局部构建（未安装 Android 工作负载时的本机验证方式）

@@ -10,7 +10,7 @@
 
 ## 版本状态
 
-> ⚠️ **当前版本 `1.0.1-alpha.2`（R3-E 后）尚未冻结**。API 可能在 1.0.0 GA 之前继续调整；锁定版本请使用精确版本号（如 `1.0.1-alpha.2`）而非通配符。
+> ⚠️ **当前版本 `1.0.1-alpha.3`（R3-E 后）尚未冻结**。API 可能在 1.0.0 GA 之前继续调整；锁定版本请使用精确版本号（如 `1.0.1-alpha.3`）而非通配符。
 
 | 阶段 | 版本范围 | 状态 | 关键变化 |
 |------|---------|------|---------|
@@ -59,7 +59,7 @@ Wails.Net 是一个使用 .NET 10 和 Web 前端技术构建跨平台桌面应�
 - **CSP 安全**：`NonceInjector` 注入 CSP nonce、`IsolationInjector` 隔离模式
 - **DPI 缩放**：`DpiScalePlugin` 提供屏幕缩放因子查询与控制
 - **平台检测**：`PlatformFactory` 6 级回退检测链，保证任何环境可降级运行
-- **cake.cs 构建**：仓库根 `cake.cs`（Cake SDK 文件式脚本）统一构建，支持三平台自包含打包 + Linux .deb/.rpm + Windows Authenticode 自动签名
+- **cake.cs 构建**：仓库根 `cake.cs`（Cake SDK 文件式脚本）统一构建，支持四平台自包含打包（Windows/Linux/macOS/Android）+ Linux .deb/.rpm + macOS .app/.dmg + Windows Authenticode 自动签名
 - **MenuRole 角色菜单项**：21 个角色枚举 + 13 个工厂方法 + 3 个标准菜单组合（Edit/Window/Help），对齐 Wails v3 Role 常量，macOS 专属角色在其他平台静默 no-op
 - **原生应用菜单**：Windows `Win32Menu`（Win32 菜单栏 + `WM_COMMAND` 分发）、Linux `Gtk.PopoverMenuBar`、macOS `NSMenu`；无边框窗口可结合 `--wails-draggable` 与前端按钮（`window.minimize/maximize/close` 命令）实现自定义标题栏
 - **Android 平台事件系统**：12 个 Android 平台事件 ID（1267–1285）映射到 7 个公共 `ApplicationEventType`（LowMemory/ScreenLocked/ScreenUnlocked 等），前端可使用统一事件名跨平台订阅
@@ -249,7 +249,7 @@ Wails.Net/
 │   ├── Wails.Net.Sdk/                  # 统一 SDK（multi-target 自动选择平台 Bundle）
 │   ├── Wails.Net.Cli/                  # CLI 工具（dotnet tool）
 │   └── Wails.Net.Templates/            # dotnet new 项目模板包
-├── cake.cs                             # Cake SDK 文件式构建脚本（三平台自包含打包）
+├── cake.cs                             # Cake SDK 文件式构建脚本（四平台自包含打包）
 ├── tests/                              # 测试（6 个可执行测试项目 + 1 个共享契约库 + 1 个 Android E2E 脚本）
 ├── examples/                           # 示例项目
 └── docs/                               # 文档
@@ -337,14 +337,15 @@ bash scripts/pack-and-test.sh --skip-pack
 
 脚本会在仓库外临时目录创建测试项目，用 `PackageReference` 引用 `Wails.Net.Sdk` 验证可构建，并 `dotnet tool install Wails.Net.Cli` 验证 `wails-net` 可执行。详见 [发布指南](docs/development/release-guide.md#一键打包与冒烟测试推荐)。
 
-### 三平台自包含打包（cake.cs）
+### 四平台自包含打包（cake.cs）
 
 仓库使用仓库根目录的 **`cake.cs`**（Cake SDK 文件式脚本，`#:sdk Cake.Sdk`）作为唯一构建入口：
 
 ```bash
-# 使用 cake.cs 构建三平台自包含包
+# 使用 cake.cs 构建四平台自包含包
 dotnet run cake.cs -- --target=Dist --platform=windows --rid=all
 dotnet run cake.cs -- --target=Dist --platform=linux --rid=all
+dotnet run cake.cs -- --target=Dist --platform=macos --rid=all   # 需在 macOS 主机执行
 dotnet run cake.cs -- --target=Dist --platform=android --rid=all
 
 # Dry-run 预览（不实际构建）
@@ -354,7 +355,9 @@ dotnet run cake.cs -- --target=Dist --dry-run --skip-frontend
 dotnet run cake.cs -- --target=Build --solution=src/Wails.Net.Application/Wails.Net.Application.csproj
 ```
 
-可用参数：`--target`（默认 `Default` = `Test`）、`--configuration`、`--platform`、`--rid`、`--build-version`、`--output`、`--linux-formats`、`--skip-frontend`、`--dry-run`、`--rebuild`、`--solution`。
+macOS 目标产出 `.app` bundle（`Contents/MacOS` + `Info.plist`），并按 `--macos-formats`（默认 `zip,dmg`）生成 `.zip` 与 `.dmg`；`net10.0-macos` 需要 macOS SDK，无法在其他宿主上交叉编译，非 macOS 主机上该目标会跳过并给出提示。
+
+可用参数：`--target`（默认 `Default` = `Test`）、`--configuration`、`--platform`、`--rid`、`--build-version`、`--output`、`--linux-formats`、`--macos-formats`、`--skip-frontend`、`--dry-run`、`--rebuild`、`--solution`。
 
 ### 编码规范
 
@@ -375,7 +378,7 @@ dotnet run cake.cs -- --target=Build --solution=src/Wails.Net.Application/Wails.
 5. ✅ **Windows 平台实现** — WebView2 骨架、注册表主题检测、剪贴板、自启动、环境信息
 6. ✅ **Linux 平台实现** — GirCore 0.8.1/GTK4 骨架、环境变量主题检测、剪贴板存根、XDG 自启动、环境信息
 7. ✅ **CLI 工具与生成器** — 脚手架、TS 绑定生成、环境诊断、项目构建
-8. ✅ **Android 平台实现与三平台自包含构建** — `android` 工作负载、`net10.0-android36.0` TFM（最低运行 API Level 24）、Single-Activity + Fragment、WebMessageListener IPC、`cake.cs` 构建
+8. ✅ **Android 平台实现与四平台自包含构建** — `android` 工作负载、`net10.0-android36.0` TFM（最低运行 API Level 24）、Single-Activity + Fragment、WebMessageListener IPC、`cake.cs` 构建（Windows/Linux/macOS/Android）
 
 ### 功能对齐阶段（P0/P1/P2）
 

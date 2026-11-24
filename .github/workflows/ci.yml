@@ -5,8 +5,9 @@
 #   其中 test 分两路：test-frontend（pnpm 工作区，ubuntu）与各 .NET 测试作业（test-application / test-windows / test-macos / test-linux / test-android）
 #
 # 运行环境：
-#   - windows-latest：构建全部项目、Windows 测试、打包、三平台自包含构建
+#   - windows-latest：构建全部项目、Windows 测试、打包、Windows/Android 自包含构建
 #   - ubuntu-latest：前端 pnpm 工作区构建与单元测试；Linux 平台测试（需 GTK4 原生库，允许失败）
+#   - macos-latest：macOS 自包含构建（net10.0-macos 只能在 macOS 上编译，产出 .app/.zip/.dmg）
 #
 # 触发条件：
 #   - push 到任意分支 / Pull Request：只运行 build → test（不打包、不产出发布产物）
@@ -14,7 +15,7 @@
 #
 # 原则：**除 tag 外的任何提交只做“构建 + 测试”**。pack / dist / publish 三类作业
 # 一律以 `if: startsWith(github.ref,'refs/tags/v')` 限定，避免在非发布分支上产出
-# 无法追溯的包，也避免消耗三平台自包含构建的 runner 时间。
+# 无法追溯的包，也避免消耗四平台自包含构建的 runner 时间。
 #
 # 版本号管理（GitVersion 自动计算）：
 #   - 非 tag 构建：gitversion 作业读取仓库根目录 GitVersion.yml，按 Git 历史/分支算出版本号；
@@ -33,6 +34,7 @@
 #   - dist 阶段调用 cake.cs（Cake 构建脚本），通过 --rid all 一键构建该平台全部架构
 #   - Windows: win-x64, win-x86, win-arm64（主构建，必须成功）
 #   - Linux:   linux-x64, linux-arm64（交叉编译，允许失败）
+#   - macOS:   osx-arm64, osx-x64（需 macos 工作负载，产出 .app + .zip + .dmg）
 #   - Android: android-arm64, android-x64, android-arm（需 Android SDK，允许失败）
 # ============================================================================
 
@@ -685,12 +687,13 @@ jobs:
           retention-days: 7
 
   # ============================================================================
-  # Job 4：三平台自包含构建（Windows / Linux / Android，仅 tag 触发）
+  # Job 4：四平台自包含构建（Windows / Linux / macOS / Android，仅 tag 触发）
   # ============================================================================
   # 调用 cake.cs（Cake 构建脚本）统一构建，通过 --rid all 一键构建该平台全部架构。
   # 生成自包含可执行文件，无需终端用户安装 .NET 运行时。
   #   - Windows: win-x64, win-x86, win-arm64 → .exe + .zip
   #   - Linux:   linux-x64, linux-arm64     → 二进制 + .tar.gz
+  #   - macOS:   osx-arm64, osx-x64         → .app + .zip + .dmg（含 Info.plist，需 macos 工作负载）
   #   - Android: android-arm64, android-x64, android-arm → .apk
   dist-windows:
     name: 自包含构建 (Windows)
@@ -793,6 +796,61 @@ jobs:
         with:
           name: dist-linux
           path: ${{ env.DIST_OUTPUT }}/linux/
+          retention-days: 7
+
+  dist-macos:
+    name: 自包含构建 (macOS)
+    # net10.0-macos 需要 macOS SDK 与 macos 工作负载，无法在其他宿主上交叉编译，
+    # 因此必须在 GitHub 托管的 macOS 运行器上构建（默认 arm64，同时交叉发布 osx-x64）。
+    runs-on: macos-latest
+    needs: [pack, gitversion]
+    if: startsWith(github.ref, 'refs/tags/v')
+    env:
+      WAILS_NET_VERSION: ${{ needs.gitversion.outputs.semVer }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 设置 .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: 缓存 NuGet 包
+        uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      # Dist 流程的 PackTask 会对整个解决方案打包（含 net10.0-android TFM 工程），
+      # 需 android 工作负载才能评估/打包 Android 工程，否则 NETSDK1147；
+      # macos 工作负载提供 net10.0-macos 目标包与 AppKit 绑定。
+      - name: 安装 Android 与 macOS 工作负载
+        run: dotnet workload install android macos
+
+      - name: 创建构建输出目录
+        shell: bash
+        run: mkdir -p ${{ env.DIST_OUTPUT }}
+
+      # 调用 Cake 构建 macOS 全部 RID（osx-arm64, osx-x64）
+      - name: 构建 macOS 自包含（全部 RID）
+        shell: bash
+        run: dotnet run cake.cs -- --build-version=${{ env.WAILS_NET_VERSION }} --target=Dist --platform=macos --rid=all --macos-formats=zip,dmg --configuration=Release --output=${{ env.DIST_OUTPUT }} --skip-frontend
+
+      - name: 列出构建产物
+        shell: bash
+        run: find ${{ env.DIST_OUTPUT }}/macos -maxdepth 3 -type f -ls
+
+      # .app 目录逐文件上传会丢可执行位，分发以 zip / dmg 为准；只上传分发件避免产物膨胀
+      - name: 上传 macOS 构建产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist-macos
+          path: |
+            ${{ env.DIST_OUTPUT }}/macos/**/*.zip
+            ${{ env.DIST_OUTPUT }}/macos/**/*.dmg
           retention-days: 7
 
   dist-android:
@@ -1010,13 +1068,13 @@ jobs:
   # ============================================================================
   # 创建 GitHub Release 并上传全部发布产物，供用户直接从 GitHub 下载：
   #   - NuGet 包（.nupkg / .snupkg）：SDK / CLI / Templates / Bundle 等
-  #   - 三平台自包含构建产物：Windows .zip、Linux .tar.gz(.deb/.rpm)、Android .apk
+  #   - 四平台自包含构建产物：Windows .zip、Linux .tar.gz(.deb/.rpm)、macOS .zip/.dmg、Android .apk
   # 与 publish-nuget 并行：nuget.org 面向 dotnet 工具链消费者，GitHub Release 面向
   # 直接下载二进制的用户。使用预装的 gh CLI 创建 Release 并上传资产。
   publish-github-release:
     name: 发布 GitHub Release
     runs-on: ubuntu-latest
-    needs: [pack, dist-windows, dist-linux, dist-android, gitversion]
+    needs: [pack, dist-windows, dist-linux, dist-macos, dist-android, gitversion]
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write # gh release create 需要 write 权限
@@ -1044,6 +1102,12 @@ jobs:
           name: dist-linux
           path: artifacts/dist/linux
 
+      - name: 下载 macOS 自包含产物
+        uses: actions/download-artifact@v8
+        with:
+          name: dist-macos
+          path: artifacts/dist/macos
+
       - name: 下载 Android 自包含产物
         uses: actions/download-artifact@v8
         with:
@@ -1056,7 +1120,7 @@ jobs:
           echo "=== NuGet 包 ==="
           find artifacts/packages -type f \( -name '*.nupkg' -o -name '*.snupkg' \) -ls
           echo "=== 自包含构建产物 ==="
-          find artifacts/dist -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.apk' -o -name '*.deb' -o -name '*.rpm' \) -ls
+          find artifacts/dist -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.apk' -o -name '*.deb' -o -name '*.rpm' -o -name '*.dmg' \) -ls
 
       - name: 创建 GitHub Release
         env:
@@ -1086,11 +1150,11 @@ jobs:
           find artifacts/packages -type f \( -name '*.nupkg' -o -name '*.snupkg' \) -print0 |
             xargs -0 gh release upload "${{ github.ref_name }}" --clobber
 
-      - name: 上传三平台构建产物到 Release
+      - name: 上传四平台构建产物到 Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          # 上传 Windows/Linux/Android 自包含产物（zip/tar.gz/apk/deb/rpm）
-          find artifacts/dist -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.apk' -o -name '*.deb' -o -name '*.rpm' \) -print0 |
+          # 上传 Windows/Linux/macOS/Android 自包含产物（zip/tar.gz/dmg/apk/deb/rpm）
+          find artifacts/dist -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.dmg' -o -name '*.apk' -o -name '*.deb' -o -name '*.rpm' \) -print0 |
             xargs -0 gh release upload "${{ github.ref_name }}" --clobber

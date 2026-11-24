@@ -19,6 +19,7 @@
 //   dotnet run cake.cs -- --target=Dist --platform=windows --rid=all
 //   dotnet run cake.cs -- --target=DistAll --dry-run --skip-frontend
 //   dotnet run cake.cs -- --target=Dist-Linux --platform=linux --rid=linux-x64 --linux-formats=deb
+//   dotnet run cake.cs -- --target=Dist-MacOS --platform=macos --rid=all --macos-formats=zip,dmg
 //   dotnet run cake.cs -- --target=Build --solution=src/Wails.Net.Application/Wails.Net.Application.csproj
 //                                       # 局部构建（未安装 Android 工作负载时的本机验证方式）
 //
@@ -45,6 +46,8 @@ var skipFrontend = Argument("skip-frontend", false);
 var dryRun = Argument("dry-run", false);
 var rebuild = Argument("rebuild", false);
 var linuxFormats = Argument("linux-formats", "targz");
+// macOS 产物格式：zip（.app 压缩包，保留可执行位与符号链接）/ dmg（分发镜像，需 hdiutil）
+var macosFormats = Argument("macos-formats", "zip,dmg");
 // 可选的构建目标（默认为解决方案）：本地缺少 Android 工作负载时，可传单个工程做局部验证
 var buildTarget = Argument("solution", "Wails.Net.slnx");
 
@@ -423,6 +426,103 @@ Task("Dist-Linux")
     });
 
 // ============================================================================
+// TASK: Dist-MacOS
+// ============================================================================
+
+Task("Dist-MacOS")
+    .IsDependentOn("Pack")
+    .WithCriteria(ctx => ShouldBuildPlatform(ctx, "macos"))
+    .Does(ctx =>
+    {
+        var version = GetVersion();
+        var formats = ResolveMacOSFormats();
+        Information($"========== macOS 自包含构建 v{version}（格式: {string.Join(", ", formats)}）==========");
+
+        if (!System.IO.File.Exists(DemoProject))
+        {
+            Warning($"Demo 项目不存在: {DemoProject}，跳过 macOS 自包含构建");
+            return;
+        }
+
+        // net10.0-macos 需要 macOS SDK 与 macos 工作负载，只能在 macOS 主机上发布。
+        // 与 Android 不同，这里没有"宿主机降级"路径，非 macOS 主机直接跳过并说明原因。
+        if (!OperatingSystem.IsMacOS())
+        {
+            Warning("当前主机不是 macOS，跳过 macOS 自包含构建（net10.0-macos 无法交叉编译）");
+            return;
+        }
+
+        var appName = System.IO.Path.GetFileNameWithoutExtension(DemoProject);
+        var rids = ResolveRIDs(ctx, "macos", ridArgument);
+        Information($"将构建 {rids.Count} 个 RID: {string.Join(", ", rids)}");
+
+        foreach (var rid in rids)
+        {
+            Information($"----- 构建 macOS/{rid} -----");
+            var outputDir = $"{outputRoot}/macos/{version}/{rid}";
+            var appDir = System.IO.Path.Combine(outputDir, $"{appName}.app");
+            var zipPath = $"{outputRoot}/macos/{version}/{appName}-{version}-{rid}.zip";
+            var dmgPath = $"{outputRoot}/macos/{version}/{appName}-{version}-{rid}.dmg";
+
+            if (dryRun)
+            {
+                Information($"[DRY-RUN] 将输出到: {outputDir}");
+                Information($"[DRY-RUN] 将创建 .app: {appDir}");
+                if (formats.Contains("zip")) Information($"[DRY-RUN] 将创建 zip: {zipPath}");
+                if (formats.Contains("dmg")) Information($"[DRY-RUN] 将创建 dmg: {dmgPath}");
+                continue;
+            }
+
+            EnsureDirectoryExists(outputDir);
+            CleanDirectory(outputDir);
+
+            // 先发布到暂存目录，再整体移入 .app/Contents/MacOS：
+            // 自包含产物（运行时 + 托管 DLL + frontend 静态资源）必须与可执行文件同级，
+            // 因为 DesktopApplicationBuilder 以 AppContext.BaseDirectory 解析 Assets.RootPath。
+            var stagingDir = System.IO.Path.Combine(outputDir, "publish");
+
+            var publishSettings = new DotNetPublishSettings
+            {
+                Configuration = configuration,
+                Runtime = rid,
+                SelfContained = true,
+                OutputDirectory = stagingDir,
+                // 不能沿用 Restore 任务的产物：带 Runtime 的 publish 要求 assets 文件里
+                // 存在形如 net10.0-macos/<rid> 的目标，而按 host TFM 还原的 Restore 不会生成它，
+                // 会报 NETSDK1047（assets file doesn't have a target for 'net10.0-macos/osx-arm64'）。
+                // 这里让 publish 自己按 RID 还原，多花几秒换取可重复的自包含构建。
+                NoRestore = false,
+                // 与 Windows/Linux 同理：多目标项目需显式指定框架，否则会把 windows TFM
+                // 也用 osx RID 发布一遍（TFM 与 RID 错配，NU1201）。
+                Framework = "net10.0-macos",
+                MSBuildSettings = CreateMSBuildSettings(),
+            };
+            publishSettings.MSBuildSettings.Properties["PublishSingleFile"] = new[] { "true" };
+            publishSettings.MSBuildSettings.Properties["PublishTrimmed"] = new[] { "false" };
+            if (skipFrontend) publishSettings.MSBuildSettings.Properties["SkipFrontendBuild"] = new[] { "true" };
+
+            DotNetPublish(DemoProject, publishSettings);
+
+            var bundleDir = CreateMacOSAppBundle(outputDir, appName, version, stagingDir);
+            Information($"已创建 .app: {bundleDir}");
+
+            SignMacOSBundle(ctx, bundleDir);
+
+            if (formats.Contains("zip"))
+            {
+                CreateMacOSZip(bundleDir, zipPath);
+            }
+
+            if (formats.Contains("dmg"))
+            {
+                CreateMacOSDmg(bundleDir, dmgPath, $"{appName} {version}");
+            }
+        }
+
+        Information("========== macOS 构建完成 ==========");
+    });
+
+// ============================================================================
 // TASK: Dist-Android
 // ============================================================================
 
@@ -534,17 +634,18 @@ Task("Dist-Android")
     });
 
 // ============================================================================
-// TASK: Dist（聚合三平台）
+// TASK: Dist（聚合四平台）
 // ============================================================================
 
 Task("Dist")
     .IsDependentOn("Dist-Windows")
     .IsDependentOn("Dist-Linux")
+    .IsDependentOn("Dist-MacOS")
     .IsDependentOn("Dist-Android")
     .Does(() =>
     {
         var version = GetVersion();
-        Information("========== 三平台统一构建 ==========");
+        Information("========== 全平台统一构建（Windows / Linux / macOS / Android）==========");
         Information($"版本:      {version}");
         Information($"配置:      {configuration}");
         Information($"平台:      {platform}");
@@ -561,6 +662,7 @@ Task("Dist")
 Task("DistAll")
     .IsDependentOn("Dist-Windows")
     .IsDependentOn("Dist-Linux")
+    .IsDependentOn("Dist-MacOS")
     .IsDependentOn("Dist-Android")
     .Does(ctx =>
     {
@@ -570,9 +672,10 @@ Task("DistAll")
         Information($"配置:      {configuration}");
         Information($"输出根:    {outputRoot}");
         Information($"Linux 格式: {linuxFormats}");
+        Information($"macOS 格式: {macosFormats}");
         Information($"跳过前端:  {skipFrontend}");
         Information($"Dry-run:   {dryRun}");
-        Information($"产物目录:  {outputRoot}/{{windows,linux,android}}/{version}/");
+        Information($"产物目录:  {outputRoot}/{{windows,linux,macos,android}}/{version}/");
 
         // 汇总各平台构建的 RID 数量
         foreach (var plat in AllPlatforms())
@@ -613,17 +716,19 @@ DotNetMSBuildSettings CreateMSBuildSettings()
     return settings;
 }
 
-/// <summary>支持的三平台 RID 列表。</summary>
+/// <summary>支持的平台 RID 列表。</summary>
 string[] GetPlatformRIDs(string plat) => plat switch
 {
     "windows" => new[] { "win-x64", "win-x86", "win-arm64" },
     "linux" => new[] { "linux-x64", "linux-arm64" },
+    // macOS 只支持 64 位（.NET 10 已放弃 osx-x86），默认 osx-arm64（Apple Silicon）
+    "macos" => new[] { "osx-arm64", "osx-x64" },
     "android" => new[] { "android-arm64", "android-x64", "android-arm" },
     _ => Array.Empty<string>(),
 };
 
-/// <summary>支持的三平台列表。</summary>
-string[] AllPlatforms() => new[] { "windows", "linux", "android" };
+/// <summary>支持的全部平台列表。</summary>
+string[] AllPlatforms() => new[] { "windows", "linux", "macos", "android" };
 
 /// <summary>
 /// 解析 --rid 参数，返回指定平台要构建的 RID 列表。
@@ -642,6 +747,7 @@ List<string> ResolveRIDsCore(ICakeContext ctx, string plat, string ridArgument, 
     {
         "windows" => "win-x64",
         "linux" => "linux-x64",
+        "macos" => "osx-arm64",
         "android" => "android-arm64",
         _ => (string?)null,
     };
@@ -698,6 +804,32 @@ List<string> ResolveLinuxFormats()
     return result.Count == 0 ? new List<string> { "targz" } : result;
 }
 
+/// <summary>解析 --macos-formats 参数，返回要生成的 macOS 产物格式列表。</summary>
+List<string> ResolveMacOSFormats()
+{
+    var supported = new[] { "zip", "dmg" };
+    if (string.IsNullOrEmpty(macosFormats) || macosFormats.Equals("all", StringComparison.OrdinalIgnoreCase))
+    {
+        return new List<string>(supported);
+    }
+
+    var result = new List<string>();
+    var parts = macosFormats.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    foreach (var f in parts)
+    {
+        var lower = f.ToLowerInvariant();
+        if (Array.IndexOf(supported, lower) >= 0)
+        {
+            if (!result.Contains(lower)) result.Add(lower);
+        }
+        else
+        {
+            Warning($"不支持的 macOS 格式: {f}（支持: {string.Join(", ", supported)}）");
+        }
+    }
+    return result.Count == 0 ? new List<string> { "zip" } : result;
+}
+
 /// <summary>读取 Directory.Build.props 中的 WailsNetVersion（--build-version 优先）。</summary>
 string GetVersion()
 {
@@ -745,6 +877,240 @@ void CreateTarGz(string sourceDir, string tarGzPath)
         if (System.IO.File.Exists(tempTar)) System.IO.File.Delete(tempTar);
     }
     Information($"已创建 tar.gz: {tarGzPath}");
+}
+
+/// <summary>
+/// 由已发布的自包含产物构造 macOS .app bundle：
+/// <c>Contents/MacOS</c>（可执行文件 + 运行时 + 静态资源）、<c>Contents/Resources</c>、<c>Info.plist</c>、<c>PkgInfo</c>。
+/// </summary>
+/// <param name="outputDir">该 RID 的产物目录。</param>
+/// <param name="appName">应用名（同时是可执行文件名，取自 Demo 工程文件名）。</param>
+/// <param name="version">版本号（写入 CFBundleShortVersionString）。</param>
+/// <param name="stagingDir">dotnet publish 的暂存目录，内容会被整体移入 Contents/MacOS。</param>
+/// <returns>生成的 .app 目录绝对/相对路径。</returns>
+string CreateMacOSAppBundle(string outputDir, string appName, string version, string stagingDir)
+{
+    var appDir = System.IO.Path.Combine(outputDir, $"{appName}.app");
+    if (System.IO.Directory.Exists(appDir)) System.IO.Directory.Delete(appDir, recursive: true);
+
+    var contentsDir = System.IO.Path.Combine(appDir, "Contents");
+    var macOsDir = System.IO.Path.Combine(contentsDir, "MacOS");
+    var resourcesDir = System.IO.Path.Combine(contentsDir, "Resources");
+    System.IO.Directory.CreateDirectory(macOsDir);
+    System.IO.Directory.CreateDirectory(resourcesDir);
+
+    CopyAllFiles(stagingDir, macOsDir);
+    if (System.IO.Directory.Exists(stagingDir)) System.IO.Directory.Delete(stagingDir, recursive: true);
+
+    var exePath = System.IO.Path.Combine(macOsDir, appName);
+    if (!System.IO.File.Exists(exePath))
+    {
+        Warning($"未在 {macOsDir} 找到可执行文件 {appName}，生成的 .app 可能无法启动");
+    }
+    else
+    {
+        StartProcess("chmod", new ProcessSettings { Arguments = $"+x \"{exePath}\"" });
+    }
+
+    var meta = ReadMacOSBundleMetadata(DemoProject, appName);
+    System.IO.File.WriteAllText(
+        System.IO.Path.Combine(contentsDir, "Info.plist"),
+        BuildInfoPlist(appName, version, meta));
+    // PkgInfo（APPL????）是老式 bundle 类型标记，Finder 与部分分发工具仍会读取。
+    System.IO.File.WriteAllText(System.IO.Path.Combine(contentsDir, "PkgInfo"), "APPL????");
+
+    return appDir;
+}
+
+/// <summary>
+/// 读取 wails.json 中的 bundle 元数据（identifier / name / category / copyright / description）。
+/// 对应 <c>Wails.Net.Cli.Config.BundleConfig</c> 的字段，缺失时回退到 Demo 默认值。
+/// </summary>
+(string Identifier, string DisplayName, string Category, string Copyright, string Description)
+    ReadMacOSBundleMetadata(string projectFile, string fallbackName)
+{
+    var identifier = "io.wailsnet.demo";
+    var displayName = fallbackName;
+    var category = "Developer Tools";
+    var copyright = string.Empty;
+    var description = string.Empty;
+
+    var projectDir = System.IO.Path.GetDirectoryName(projectFile);
+    var jsonPath = string.IsNullOrEmpty(projectDir) ? null : System.IO.Path.Combine(projectDir!, "wails.json");
+    if (jsonPath is not null && System.IO.File.Exists(jsonPath))
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(System.IO.File.ReadAllText(jsonPath));
+            var root = doc.RootElement;
+            displayName = ReadJsonString(root, "name") ?? displayName;
+            description = ReadJsonString(root, "description") ?? description;
+            if (root.TryGetProperty("bundle", out var bundle) &&
+                bundle.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                identifier = ReadJsonString(bundle, "identifier") ?? identifier;
+                copyright = ReadJsonString(bundle, "copyright") ?? copyright;
+                category = ReadJsonString(bundle, "category") ?? category;
+            }
+        }
+        catch (Exception ex)
+        {
+            Warning($"解析 {jsonPath} 失败，使用默认 bundle 元数据: {ex.Message}");
+        }
+    }
+
+    return (identifier, displayName, category, copyright, description);
+}
+
+/// <summary>读取 JSON 对象的字符串属性，非字符串或缺失时返回 null。</summary>
+string? ReadJsonString(System.Text.Json.JsonElement element, string property) =>
+    element.TryGetProperty(property, out var value) && value.ValueKind == System.Text.Json.JsonValueKind.String
+        ? value.GetString()
+        : null;
+
+/// <summary>把 wails.json 的 bundle.category（如 Developer Tools）映射为 LSApplicationCategoryType。</summary>
+string MacOSCategoryIdentifier(string category)
+{
+    if (string.IsNullOrWhiteSpace(category)) return "public.app-category.developer-tools";
+
+    var slug = category.Trim().ToLowerInvariant().Replace(" & ", "-").Replace(' ', '-');
+    var builder = new System.Text.StringBuilder();
+    foreach (var c in slug)
+    {
+        if (char.IsLetterOrDigit(c) || c == '-') builder.Append(c);
+    }
+
+    var normalized = builder.ToString().Trim('-');
+    return string.IsNullOrEmpty(normalized)
+        ? "public.app-category.developer-tools"
+        : $"public.app-category.{normalized}";
+}
+
+/// <summary>生成 macOS Info.plist 内容（CFBundleVersion 必须是纯数字点分版本）。</summary>
+string BuildInfoPlist(
+    string appName,
+    string version,
+    (string Identifier, string DisplayName, string Category, string Copyright, string Description) meta)
+{
+    string Escape(string? value) => System.Security.SecurityElement.Escape(value ?? string.Empty) ?? string.Empty;
+
+    // CFBundleShortVersionString 保留语义化版本（含预发布标签），CFBundleVersion 剥离标签。
+    var numericVersion = version.Split('-')[0];
+    // 显式写 \n：raw string 的末行不含换行，直接内联会让版权条目与下一行黏在一起。
+    var copyrightEntry = string.IsNullOrWhiteSpace(meta.Copyright)
+        ? string.Empty
+        : $"    <key>NSHumanReadableCopyright</key>\n    <string>{Escape(meta.Copyright)}</string>\n";
+
+    return $"""
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>{Escape(meta.DisplayName)}</string>
+    <key>CFBundleExecutable</key>
+    <string>{Escape(appName)}</string>
+    <key>CFBundleIdentifier</key>
+    <string>{Escape(meta.Identifier)}</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>{Escape(appName)}</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>{Escape(version)}</string>
+    <key>CFBundleVersion</key>
+    <string>{Escape(numericVersion)}</string>
+    <key>LSApplicationCategoryType</key>
+    <string>{Escape(MacOSCategoryIdentifier(meta.Category))}</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>12.0</string>
+{copyrightEntry}    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+</dict>
+</plist>
+""";
+}
+
+/// <summary>
+/// macOS 产物签名（环境变量 <c>WAILS_MACOS_SIGN_IDENTITY</c> 门控）。
+/// 未配置时跳过：.NET SDK 发布的 osx 可执行文件自带 ad-hoc 签名，本机可运行；
+/// 对外分发需 Developer ID + 公证（公证流程未实现，见 docs/development/release-guide.md）。
+/// </summary>
+void SignMacOSBundle(ICakeContext ctx, string appDir)
+{
+    var identity = Environment.GetEnvironmentVariable("WAILS_MACOS_SIGN_IDENTITY");
+    if (string.IsNullOrEmpty(identity))
+    {
+        Information("未设置 WAILS_MACOS_SIGN_IDENTITY，跳过 codesign（产物仅 ad-hoc 签名，适合内部构建）");
+        return;
+    }
+
+    Information($"----- 使用 Developer ID 签名 {appDir} -----");
+    // --options runtime 启用 Hardened Runtime（公证的前置条件）
+    var exitCode = StartProcess("codesign", new ProcessSettings
+    {
+        Arguments = $"--force --deep --options runtime --timestamp --sign \"{identity}\" \"{appDir}\"",
+    });
+    if (exitCode != 0)
+    {
+        throw new CakeException(
+            $"codesign 退出码 {exitCode}，签名失败（已配置 WAILS_MACOS_SIGN_IDENTITY，禁止发布未签名产物）");
+    }
+
+    var verifyExit = StartProcess("codesign", new ProcessSettings
+    {
+        Arguments = $"--verify --deep --strict \"{appDir}\"",
+    });
+    if (verifyExit != 0) Warning($"codesign 校验未通过: {appDir}");
+    else Information($"已签名: {appDir}");
+}
+
+/// <summary>
+/// 用 ditto 把 .app 压成 zip。
+/// 不用 .NET 的 ZipFile：它不保留可执行位与符号链接，解压后 .app 内的主程序会失去 +x。
+/// </summary>
+void CreateMacOSZip(string appDir, string zipPath)
+{
+    var parent = System.IO.Path.GetDirectoryName(zipPath);
+    if (!string.IsNullOrEmpty(parent)) System.IO.Directory.CreateDirectory(parent!);
+    if (System.IO.File.Exists(zipPath)) System.IO.File.Delete(zipPath);
+
+    var exitCode = StartProcess("ditto", new ProcessSettings
+    {
+        Arguments = $"-c -k --sequesterRsrc --keepParent \"{appDir}\" \"{zipPath}\"",
+    });
+    if (exitCode != 0 || !System.IO.File.Exists(zipPath))
+    {
+        throw new CakeException($"ditto 退出码 {exitCode}，zip 生成失败");
+    }
+
+    Information($"已创建 zip: {zipPath}");
+}
+
+/// <summary>用 hdiutil 生成压缩 dmg 分发镜像（失败非阻塞，zip 产物不受影响）。</summary>
+void CreateMacOSDmg(string appDir, string dmgPath, string volumeName)
+{
+    var parent = System.IO.Path.GetDirectoryName(dmgPath);
+    if (!string.IsNullOrEmpty(parent)) System.IO.Directory.CreateDirectory(parent!);
+    if (System.IO.File.Exists(dmgPath)) System.IO.File.Delete(dmgPath);
+
+    var exitCode = StartProcess("hdiutil", new ProcessSettings
+    {
+        Arguments = $"create -volname \"{volumeName}\" -srcfolder \"{appDir}\" -ov -format UDZO \"{dmgPath}\"",
+    });
+    if (exitCode != 0 || !System.IO.File.Exists(dmgPath))
+    {
+        Warning($"hdiutil 退出码 {exitCode}，dmg 生成失败（zip 产物不受影响）");
+        return;
+    }
+
+    Information($"已创建 dmg: {dmgPath}");
 }
 
 /// <summary>Windows 产物签名（环境变量门控，签名失败非阻塞）。</summary>
