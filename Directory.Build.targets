@@ -1,0 +1,18 @@
+<Project>
+
+  <!--
+    根构建目标文件（Directory.Build.targets）
+    对所有项目生效；MSBuild 从项目目录向上查找首个 Directory.Build.targets，
+    因此 src/、tests/、examples/ 下的项目都会导入本文件。
+
+    构建期修补（如剔除第三方包带入的多余程序集引用）统一放在各产品项目自己的
+    buildTransitives/ 资产里，再由本文件 Import 复用 —— 这样源码构建与包消费
+    走的是同一份逻辑，不会出现两份实现漂移。
+
+    目前引用：
+      - Wails.Net.Application.Windows/buildTransitive/Wails.Net.Application.Windows.targets
+        移除 WebView2 包无条件下发的 WPF 程序集引用，消除 MSB3277（WindowsBase 版本冲突）。
+  -->
+  <Import Project="$(MSBuildThisFileDirectory)src/Wails.Net.Application.Windows/buildTransitive/Wails.Net.Application.Windows.targets" />
+
+</Project>

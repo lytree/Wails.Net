@@ -1,0 +1,40 @@
+<Project>
+
+  <!--
+    Wails.Net.Application.Windows —— 构建期修补（随包下发的 buildTransitive 资产）
+
+    此文件通过 NuGet 包的 buildTransitive/ 目录下发给消费者，因此：
+      - 直接引用 Wails.Net.Application.Windows 的项目会导入它；
+      - 通过 Wails.Net.Bundle.Windows 等聚合包间接依赖的项目也会导入它（buildTransitive 可穿透传递）。
+    仓库内部同源复用：根目录的 Directory.Build.targets 直接 Import 本文件，
+    保证「源码构建」与「包消费」两条路径的修补逻辑完全一致，避免两份实现漂移。
+
+    ===== 移除 WebView2 包带入的 WPF 程序集引用 =====
+
+    背景：
+      Microsoft.Web.WebView2 的 build/Common.targets 在「.NET 5+」分支中会无条件引用
+        lib_manual\net5.0-windows10.0.17763.0\Microsoft.Web.WebView2.Wpf.dll
+      本框架只使用 WinForms 版（Microsoft.Web.WebView2.WinForms.dll）与 Core 版，
+      不需要 WPF 版。
+
+    问题：
+      该 Wpf.dll 编译于 .NET 5 时代，元数据记录的是
+        WindowsBase, Version=5.0.0.0
+      而 .NET 6 起 WindowsBase 的版本号统一回到
+        WindowsBase, Version=4.0.0.0（由 Microsoft.NETCore.App.Ref 提供），
+      两者冲突，ResolveAssemblyReference 报 MSB3277（选 4.0.0.0 为主版本），
+      并把无用的 Wpf.dll（约 87 KB）复制进输出目录。
+
+    处理：
+      在程序集解析前移除该 Reference。条件用 Filename 元数据匹配，
+      未引用 WebView2 的项目不会命中，属空操作。
+      必须用 Target 而非静态 ItemGroup：Reference 由 NuGet 的 buildTransitive targets
+      在项目文件求值之后注入，csproj 里的静态 ItemGroup 删不到。
+  -->
+  <Target Name="DropWebView2WpfReference" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition="'%(Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
+    </ItemGroup>
+  </Target>
+
+</Project>

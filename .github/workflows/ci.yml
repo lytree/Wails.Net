@@ -660,6 +660,33 @@ jobs:
           $buildFiles | Format-Table Name, FullName
           Remove-Item -Recurse -Force $sdkTempDir
 
+      # 验证 Windows 平台包（Wails.Net.Application.Windows）携带 buildTransitive 修补资产
+      # 该资产移除 WebView2 包无条件下发的 Microsoft.Web.WebView2.Wpf.dll 引用，
+      # 用于消除消费者侧的 MSB3277（WindowsBase 4.0.0.0 与 5.0.0.0 冲突）。
+      # 文件名必须与 PackageId 一致，否则 NuGet 不会自动导入（会报 NU5129）。
+      - name: 验证 Wails.Net.Application.Windows 包
+        shell: pwsh
+        run: |
+          $pkg = Get-ChildItem ${{ env.PACKAGE_OUTPUT }} -Filter "Wails.Net.Application.Windows.*.nupkg" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $pkg) { Write-Host "错误：Wails.Net.Application.Windows 包未生成"; exit 1 }
+          Write-Host "Wails.Net.Application.Windows 包已生成: $($pkg.Name)"
+          $tempDir = Join-Path $env:TEMP "win-app-verify-$(Get-Random)"
+          New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
+          Copy-Item $pkg.FullName -Destination (Join-Path $tempDir "pkg.zip")
+          Expand-Archive -Path (Join-Path $tempDir "pkg.zip") -DestinationPath $tempDir -Force
+          $targetsFile = Join-Path $tempDir "buildTransitive\Wails.Net.Application.Windows.targets"
+          if (-not (Test-Path $targetsFile)) {
+            Write-Host "错误：包内缺少 buildTransitive/Wails.Net.Application.Windows.targets（消费者将无法自动消除 MSB3277）"
+            exit 1
+          }
+          # 确认修补逻辑真的在包里，而不只是一个空文件
+          if (-not (Select-String -Path $targetsFile -Pattern 'DropWebView2WpfReference' -SimpleMatch -Quiet)) {
+            Write-Host "错误：buildTransitive targets 未包含 DropWebView2WpfReference 目标"
+            exit 1
+          }
+          Write-Host "Wails.Net.Application.Windows buildTransitive/ 验证通过"
+          Remove-Item -Recurse -Force $tempDir
+
       - name: 列出生成的包
         shell: pwsh
         run: Get-ChildItem ${{ env.PACKAGE_OUTPUT }} -Filter "*.nupkg" | Format-Table Name, Length

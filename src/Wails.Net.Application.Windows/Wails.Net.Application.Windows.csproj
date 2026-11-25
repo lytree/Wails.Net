@@ -32,4 +32,18 @@
     <InternalsVisibleTo Include="Wails.Net.Application.Windows.Tests" />
   </ItemGroup>
 
+  <!--
+    将 buildTransitive/ 下的修补资产打包进 NuGet 包。
+    消费者（含通过 Wails.Net.Bundle.Windows 间接依赖的项目）会自动导入，
+    用于移除 WebView2 包无条件下发的 WPF 程序集引用（消除 MSB3277）。
+    仓库内源码构建由根 Directory.Build.targets Import 同一文件复用，逻辑单一来源。
+  -->
+  <ItemGroup>
+    <!-- PackagePath 必须写到文件名：用 Update 时该项的 TargetPath 已含 buildTransitive\ 目录，
+         若这里只给目录会被再拼接一次（生成 buildTransitive\buildTransitive\xxx.targets） -->
+    <None Update="buildTransitive\Wails.Net.Application.Windows.targets"
+          Pack="true"
+          PackagePath="buildTransitive\Wails.Net.Application.Windows.targets" />
+  </ItemGroup>
+
 </Project>
