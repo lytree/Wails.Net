@@ -65,12 +65,15 @@ jobs:
 
       # Linux 上 NativeAOT 依赖 clang 与 zlib 开发头文件（macOS 自带 Xcode clang，
       # Windows 使用 MSVC 链接器，均无需额外安装）。
+      # 同时安装 GTK4 + WebKitGTK 6.0 开发库：doctor 冒烟测试在 Linux 上会硬性检查
+      # pkg-config gtk4 / webkitgtk-6.0 与 libgtk-4.so.1 等共享库，缺失即退出码 1。
+      # 需 -dev 包（提供 .pc 文件供 pkg-config 检测），运行时库随 -dev 依赖一并安装。
       - name: 安装 Linux NativeAOT 依赖
         if: runner.os == 'Linux'
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang zlib1g-dev
+          sudo apt-get install -y clang zlib1g-dev libgtk-4-dev libwebkitgtk-6.0-dev
 
       # NativeAOT 裁剪发布 CLI（矩阵 rid：win-x64 / linux-x64 / osx-arm64）。
       # 说明：通过 -p:WailsAot=true 启用（项目级条件属性，避免命令行全局属性沿
@@ -122,7 +125,10 @@ jobs:
         shell: pwsh
         run: |
           $exe = Join-Path ${{ env.AOT_OUTPUT }} "${{ matrix.exe_name }}"
-          $nativeNames = '^(libSkiaSharp|e_sqlite3|libsodium)'
+          # 豁免名单为原生依赖库：Windows 命名无 lib 前缀（e_sqlite3.dll / libsodium.dll），
+          # Linux/macOS 带 lib 前缀（libSkiaSharp.so / libe_sqlite3.dylib / libsodium.dylib），
+          # 故 (lib)? 必须可选，否则 libe_sqlite3.dylib 会被误判为托管程序集。
+          $nativeNames = '^(lib)?(SkiaSharp|e_sqlite3|sodium)'
           $managed = Get-ChildItem ${{ env.AOT_OUTPUT }} -Filter "*.dll" -ErrorAction SilentlyContinue |
             Where-Object { $_.Name -notmatch $nativeNames }
           if ($IsMacOS) {
