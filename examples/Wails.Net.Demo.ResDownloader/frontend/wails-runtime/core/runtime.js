@@ -5,9 +5,21 @@
  * 以及底层 `invoke` / `cancel`。所有插件与核心命名空间最终都通过 `call` 与后端通信。
  */
 import { bindingId, transport } from "../internal/transport.js";
+import { createChannel } from "./channel.js";
 /** 通用调用入口。 */
-export function call(name, args = []) {
-    return transport.invoke("call", { name, args });
+export function call(name, args = [], opts) {
+    return transport.invoke("call", { name, args }, normalizeCallOptions(opts));
+}
+/**
+ * 归一化 call 选项：通道句柄 → 通道 ID。
+ */
+function normalizeCallOptions(opts) {
+    if (!opts)
+        return undefined;
+    const ch = opts.channel;
+    if (ch == null)
+        return undefined;
+    return { channel: typeof ch === "string" ? ch : ch.id };
 }
 /** 按 ID 调用绑定方法。 */
 export function callWithId(id, args = []) {
@@ -18,8 +30,8 @@ export function query(q) {
     return transport.invoke("query", { query: q });
 }
 /** 底层调用。 */
-export function invoke(type, payload) {
-    return transport.invoke(type, payload);
+export function invoke(type, payload, opts) {
+    return transport.invoke(type, payload, normalizeCallOptions(opts));
 }
 /** 取消调用。 */
 export function cancel(callId) {
@@ -46,5 +58,8 @@ export const wails = {
     query,
     invoke,
     cancel,
+    channel: {
+        create: (options) => createChannel(options),
+    },
 };
 //# sourceMappingURL=runtime.js.map

@@ -23,10 +23,19 @@ import { bindings, call, cancel, events, invoke, query, wails as coreWails, } fr
 import { installContextMenu, openContextMenu, } from "./core/contextmenu.js";
 // 底层 / 错误
 import { CallError, toCallError } from "./internal/call-error.js";
+import { JSONStream, Stream, WailsSocket } from "./internal/stream.js";
 import { bindingId, transport, unpack } from "./internal/transport.js";
 import { fnv1a } from "./internal/fnv1a.js";
 /** 命名空间集合（核心 API）。 */
-const namespaces = {};
+const namespaces = {
+    /**
+     * 打开一个在 Go 端用 `app.HandleStream(name, handler)` 声明的双向字节流。
+     * server 构建下返回真实 WebSocket，其余情况返回 {@link WailsSocket}。
+     */
+    Stream,
+    /** {@link Stream} 的 JSON 编解码封装（对应 Go 侧 `SendJSON` / `ReceiveJSON`）。 */
+    JSONStream,
+};
 /** Wails.Net 前端 SDK 实例。 */
 export const wails = {
     ...coreWails,
@@ -35,9 +44,13 @@ export const wails = {
 // ---- 具名导出（兼容 `import { wails } from "@wailsnet/runtime"` 与高级用法）----
 export { call, bindings, events, query, invoke, cancel };
 export { defineCommand } from "./core/commands.js";
+// 双向通道（RH-IPC-05）
+export { createChannel, ChannelClosedError } from "./core/channel.js";
 export { CallError, toCallError };
 export { transport, unpack, bindingId, fnv1a };
 export { installContextMenu, openContextMenu };
+// Streams（Wails v3 beta Streams 机制的前端客户端）
+export { Stream, JSONStream, WailsSocket };
 export * from "./api/common.js";
 export default wails;
 //# sourceMappingURL=index.js.map

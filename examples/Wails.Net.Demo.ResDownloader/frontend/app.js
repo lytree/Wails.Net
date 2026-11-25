@@ -539,7 +539,6 @@ async function boot() {
 
     subscribeBackendEvents();
     applyTypeFilterToBackend();
-    startReconciler();
 }
 
 function restoreTypeSelection() {
@@ -645,82 +644,6 @@ function subscribeBackendEvents() {
         // 删除已由前端同步处理，这里只做持久化
         persistResources();
     });
-}
-
-/* ------------------------------------------------------------------ */
-/* 兜底对账                                                            */
-/* ------------------------------------------------------------------ */
-
-let reconcileTimer = 0;
-
-/**
- * 定时与后端快照对账。
- * 事件通道是首选路径；但若消费的 SDK 包不具备后端事件推送能力，
- * 列表会停在首次拉取的快照上。3 秒一次的轻量对账保证「列表 / 进度」最终一致，
- * 事件正常时它只会读到相同数据、不产生额外渲染。
- */
-function startReconciler() {
-    if (reconcileTimer) {
-        return;
-    }
-
-    reconcileTimer = window.setInterval(reconcileWithBackend, 3000);
-}
-
-async function reconcileWithBackend() {
-    if (document.hidden) {
-        return;
-    }
-
-    let list;
-    try {
-        list = await call("GetResources");
-    } catch {
-        return;
-    }
-
-    if (!Array.isArray(list)) {
-        return;
-    }
-
-    const localIds = state.resources.map((item) => item.id).sort().join(",");
-    const remoteIds = list.map((item) => item.id).sort().join(",");
-
-    if (localIds !== remoteIds) {
-        state.resources = list;
-        for (const id of [...state.selected]) {
-            if (!list.some((item) => item.id === id)) {
-                state.selected.delete(id);
-            }
-        }
-
-        renderResources();
-        persistResources();
-        return;
-    }
-
-    let changed = false;
-    for (const remote of list) {
-        const local = state.resources.find((item) => item.id === remote.id);
-        if (!local) {
-            continue;
-        }
-
-        if (
-            local.status !== remote.status
-            || local.progress !== remote.progress
-            || local.savePath !== remote.savePath
-            || local.size !== remote.size
-        ) {
-            Object.assign(local, remote);
-            patchRow(local);
-            changed = true;
-        }
-    }
-
-    if (changed) {
-        persistResources();
-    }
 }
 
 /* ------------------------------------------------------------------ */

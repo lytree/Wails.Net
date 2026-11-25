@@ -34,6 +34,7 @@ let targets =
         "examples/Wails.Net.Demo.Menu"
         "examples/Wails.Net.Demo.MultiWindow"
         "examples/Wails.Net.Demo.Notifications"
+        "examples/Wails.Net.Demo.ResDownloader"
         "examples/Wails.Net.Demo.Screen"
         "examples/Wails.Net.Demo.Services"
         "examples/Wails.Net.Demo.SingleInstance"
