@@ -9,16 +9,16 @@
 版本号集中在 [Directory.Build.props](../../Directory.Build.props) 的 `WailsNetVersion` 属性中维护：
 
 ```xml
-<WailsNetVersion>1.0.1-alpha.4</WailsNetVersion>
+<WailsNetVersion>1.0.1-alpha.5</WailsNetVersion>
 ```
 
 所有 `src/` 下的程序集与 NuGet 包将自动派生以下属性：
 
 | 属性 | 说明 | 示例 |
 |------|------|------|
-| `Version` | NuGet 包版本，含预发布标签 | `1.0.1-alpha.4` |
-| `PackageVersion` | NuGet 包版本（与 Version 同步） | `1.0.1-alpha.4` |
-| `InformationalVersion` | 显示用版本，含预发布标签 | `1.0.1-alpha.4` |
+| `Version` | NuGet 包版本，含预发布标签 | `1.0.1-alpha.5` |
+| `PackageVersion` | NuGet 包版本（与 Version 同步） | `1.0.1-alpha.5` |
+| `InformationalVersion` | 显示用版本，含预发布标签 | `1.0.1-alpha.5` |
 | `AssemblyVersion` | CLR 程序集版本，4 段数字 | `0.1.0.0` |
 | `FileVersion` | Windows 文件版本，4 段数字 | `0.1.0.0` |
 
@@ -33,7 +33,7 @@ MAJOR.MINOR.PATCH[-prerelease]
 | 版本类型 | 示例 | 适用场景 |
 |----------|------|----------|
 | 正式版 | `1.0.0` | 稳定发布 |
-| Alpha 预发布 | `1.0.1-alpha.4` | 早期开发，API 可能变动 |
+| Alpha 预发布 | `1.0.1-alpha.5` | 早期开发，API 可能变动 |
 | Beta 预发布 | `1.0.0-beta.1` | 功能完整，可能有 bug |
 | RC 候选版 | `1.0.0-rc.1` | 候选发布，仅修复 bug |
 
@@ -84,7 +84,7 @@ git push origin main --tags
 
 发布前 CI 执行版本一致性校验（`scripts/verify-versions.mjs`）：`Directory.Build.props` 的 `WailsNetVersion` 必须等于所有 `packages/*/package.json` 的 `version`，不一致即失败——保证 NuGet 与 npm 同版本发布。
 
-> **tag 触发时版本直取标签名**：CI 的 `gitversion` 作业在 `github.ref_type == tag` 时不再调用 GitVersion，而是直接取 `github.ref_name` 去掉 `v` 前缀（如 `v1.0.1-alpha.4` → `1.0.1-alpha.4`），并派生 `assemblySemVer`。原因是 GitVersion 6.8.2 在当前配置下不会把 tag 识别为 version source，会算出 `1.0.0-271` 之类的分支版本，导致 NuGet / GitHub Release 与 npm 版本错位。因此发布前需保证 **tag 名 = `WailsNetVersion` = 各 `package.json` 的 `version`**；脚本校验后两者，tag 名由发布者保证。非 tag 构建仍由 GitVersion 按分支计算版本。
+> **tag 触发时版本直取标签名**：CI 的 `gitversion` 作业在 `github.ref_type == tag` 时不再调用 GitVersion，而是直接取 `github.ref_name` 去掉 `v` 前缀（如 `v1.0.1-alpha.5` → `1.0.1-alpha.5`），并派生 `assemblySemVer`。原因是 GitVersion 6.8.2 在当前配置下不会把 tag 识别为 version source，会算出 `1.0.0-271` 之类的分支版本，导致 NuGet / GitHub Release 与 npm 版本错位。因此发布前需保证 **tag 名 = `WailsNetVersion` = 各 `package.json` 的 `version`**；脚本校验后两者，tag 名由发布者保证。非 tag 构建仍由 GitVersion 按分支计算版本。
 
 本地校验命令：
 
@@ -184,7 +184,7 @@ build → test → pack → dist → publish
 
 > 已发布的正式版本无法"补成"预发布之外的另一种形态：如果 tag 建错了 Release 属性，用 `PATCH /repos/{owner}/{repo}/releases/{id}` 改 `prerelease` / `make_latest` 即可，无需重建 tag。
 
-**预发布 tag 的处理**：tag 名含 `-`（如 `v1.0.1-alpha.4`）时，`publish-github-release` 会自动加 `--prerelease`，避免 alpha 包被 GitHub 标成 Latest 引导稳定版用户下载。
+**预发布 tag 的处理**：tag 名含 `-`（如 `v1.0.1-alpha.5`）时，`publish-github-release` 会自动加 `--prerelease`，避免 alpha 包被 GitHub 标成 Latest 引导稳定版用户下载。
 
 ### 构建产物
 
@@ -314,24 +314,24 @@ npm stage approve <id>        # 2FA 确认后才真正上线
 ```bash
 npm view @wailsnet/runtime version dist-tags --registry https://registry.npmjs.org
 npm view @wailsnet/plugin-dialog dependencies --registry https://registry.npmjs.org
-# 依赖应显示 "@wailsnet/runtime": "1.0.1-alpha.4"，而不是 workspace:*
+# 依赖应显示 "@wailsnet/runtime": "1.0.1-alpha.5"，而不是 workspace:*
 ```
 
 ### dist-tag 规则（重要）
 
-`1.0.1-alpha.4` 这类预发布版本**必须带 `--tag alpha`**，否则会顶掉 `latest`，
+`1.0.1-alpha.5` 这类预发布版本**必须带 `--tag alpha`**，否则会顶掉 `latest`，
 让 `pnpm add @wailsnet/runtime` 装到 alpha。脚本与 CI 都已自动处理：
 
 | 版本 | dist-tag |
 |------|----------|
-| `1.0.1-alpha.4` | `alpha` |
+| `1.0.1-alpha.5` | `alpha` |
 | `1.2.0-beta.3` | `beta` |
 | `0.1.0` | `latest` |
 
 手动补救：`npm dist-tag add @wailsnet/runtime@0.1.0 --tag latest`。
 
 > 注意：**首次发布**（包在 registry 上还不存在）时，npm 会无条件把 `latest` 指向这第一个版本，
-> 即使传了 `--tag alpha`。所以 alpha 首发阶段 `latest` 与 `alpha` 会同时指向 `1.0.1-alpha.4`；
+> 即使传了 `--tag alpha`。所以 alpha 首发阶段 `latest` 与 `alpha` 会同时指向 `1.0.1-alpha.5`；
 > 等首个正式版发布后 `latest` 才会自然归位。
 
 ### 暂存模式（staged）踩坑记录
@@ -460,7 +460,7 @@ dotnet pack Wails.Net.slnx -c Release -o artifacts/packages -p:SkipFrontendBuild
 dotnet pack src/Wails.Net.Templates/Wails.Net.Templates.csproj -c Release -o artifacts/packages
 
 # 5. 验证包内容
-dotnet nuget push --dry-run artifacts/packages/Wails.Net.Application.1.0.1-alpha.4.nupkg
+dotnet nuget push --dry-run artifacts/packages/Wails.Net.Application.1.0.1-alpha.5.nupkg
 ```
 
 ### 一键打包与冒烟测试（推荐）

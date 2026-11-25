@@ -48,7 +48,7 @@ bash scripts/pack-and-test.sh --skip-pack   # 已有包时的校验流程
 dotnet pack src/Wails.Net.Sdk/Wails.Net.Sdk.csproj -c Release -o artifacts/nupkg
 ```
 
-> 临时说明：示例当前通过 `VersionOverride="1.0.1-alpha.2"` 锁定包版本（仓库 CPM 版本为 `1.0.1-alpha.4`），
+> 临时说明：示例当前通过 `VersionOverride="1.0.1-alpha.2"` 锁定包版本（仓库 CPM 版本为 `1.0.1-alpha.5`），
 > 必须指向 nuget.org 上已发布的版本——CI 先构建后打包，还原不到「本次正在发布」的版本；
 > 待更高版本落地 nuget.org 后删除该属性即可回退到集中版本管理。
 >
