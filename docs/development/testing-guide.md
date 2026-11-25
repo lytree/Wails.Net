@@ -421,6 +421,8 @@ public async Task SetTitle_DoesNotThrow_ForValidString()
 
 完整的 AppKit 分支仍需在 macOS 主机上以 `net10.0-macos` 目标以 E2E 形式验证；`Enable()` 等真实写入 LaunchAgents 的用例在非 macOS 主机上以 `Skip.Test` 显式跳过，避免静默通过。
 
+> **AutostartPlugin 的 macOS 例外**：`AutostartPluginTests` 的写入型往返用例（`EnableDisable_RoundTrip`、`EnableThenDisable_CleansUp`）在 Windows（注册表）与 Linux（`.desktop`）上真实执行，在 macOS 上则以 `SkipTestException` 跳过——macOS 的 `Enable` 会写 `~/Library/LaunchAgents` 并 `launchctl bootstrap`，而 plist 的 `ProgramArguments` 指向测试宿主、`RunAtLoad=true`，launchd 会立即再拉起一份测试宿主进程。真实 LaunchAgent 往返统一走 macOS E2E。`DisableNotEnabled`（幂等禁用）三平台均安全，照常执行。
+
 ---
 
 ## 8. 测试最佳实践

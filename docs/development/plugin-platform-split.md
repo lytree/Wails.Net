@@ -67,7 +67,7 @@
 | `OpenerPlugin` | `opener` | `IBrowserManager` + ShellExecute/gtk_show_uri |
 | `ShellPlugin` | `shell` | Process + 白名单校验 |
 | `GlobalShortcutPlugin` | `globalshortcut` | `IKeyBindingManager`（RegisterHotKey / GTK） |
-| `AutostartPlugin` | `autostart` | `IAutostartManager`（注册表 / .desktop） |
+| `AutostartPlugin` | `autostart` | `IAutostartManager`（注册表 / .desktop / LaunchAgent plist） |
 | `PowerManagementPlugin` | `power-management` | 平台电源 API |
 | `ApplicationPlugin` | `application` | `Application` 静态单例 + 平台能力 |
 | `DpiScalePlugin` | `dpi-scale` | 窗口缩放 API |

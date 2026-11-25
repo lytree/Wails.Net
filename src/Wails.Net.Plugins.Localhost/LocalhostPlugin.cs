@@ -209,27 +209,51 @@ public class LocalhostPlugin : IPlugin
         {
             if (_running) return;
 
-            _cts = new CancellationTokenSource();
-            _listener = new HttpListener();
-            _listener.Prefixes.Add($"http://localhost:{_port}/");
-            _listener.Start();
+            var cts = new CancellationTokenSource();
+            var listener = new HttpListener();
+            listener.Prefixes.Add($"http://localhost:{_port}/");
+            listener.Start();
+
+            _cts = cts;
+            _listener = listener;
             _running = true;
 
-            // 异步处理请求
-            _ = Task.Run(() => ProcessRequestsAsync(_cts.Token));
+            // 异步处理请求。
+            // 必须把 listener / token 以参数形式传入：若在 lambda 内读取 _cts/_listener 字段，
+            // 并发的 Stop() 会把字段置为 null，导致任务启动瞬间抛 NullReferenceException
+            // （作为未观察任务异常泄漏到测试会话/进程终结器）。
+            _ = Task.Run(() => ProcessRequestsAsync(listener, cts.Token));
         }
 
         /// <summary>
-        /// 停止服务器。
+        /// 停止服务器。可重复调用（幂等）。
         /// </summary>
         public void Stop()
         {
+            var cts = Interlocked.Exchange(ref _cts, null);
+            var listener = Interlocked.Exchange(ref _listener, null);
             _running = false;
-            _cts?.Cancel();
-            _listener?.Stop();
-            _cts?.Dispose();
-            _cts = null;
-            _listener = null;
+
+            try
+            {
+                cts?.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // 已释放，忽略。
+            }
+
+            try
+            {
+                listener?.Stop();
+            }
+            catch (ObjectDisposedException)
+            {
+                // 已释放，忽略。
+            }
+
+            listener?.Close();
+            cts?.Dispose();
         }
 
         /// <summary>
@@ -268,15 +292,16 @@ public class LocalhostPlugin : IPlugin
         /// <summary>
         /// 异步处理传入请求。
         /// </summary>
+        /// <param name="listener">监听器实例（以参数传入，避免与 <see cref="Stop"/> 竞态）。</param>
         /// <param name="cancellationToken">取消令牌。</param>
-        private async Task ProcessRequestsAsync(CancellationToken cancellationToken)
+        private async Task ProcessRequestsAsync(HttpListener listener, CancellationToken cancellationToken)
         {
-            while (!cancellationToken.IsCancellationRequested && _listener is not null)
+            while (!cancellationToken.IsCancellationRequested && listener.IsListening)
             {
                 HttpListenerContext ctx;
                 try
                 {
-                    ctx = await _listener.GetContextAsync().ConfigureAwait(false);
+                    ctx = await listener.GetContextAsync().ConfigureAwait(false);
                 }
                 catch (HttpListenerException)
                 {
@@ -286,9 +311,14 @@ public class LocalhostPlugin : IPlugin
                 {
                     break;
                 }
+                catch (InvalidOperationException)
+                {
+                    // 监听器已停止（Stop 与 GetContextAsync 并发时可能抛出）。
+                    break;
+                }
 
                 // 不等待，并行处理
-                _ = Task.Run(() => HandleRequestAsync(ctx), cancellationToken);
+                _ = Task.Run(() => HandleRequestAsync(ctx), CancellationToken.None);
             }
         }
 
