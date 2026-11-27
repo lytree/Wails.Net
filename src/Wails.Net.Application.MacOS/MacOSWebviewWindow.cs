@@ -668,7 +668,11 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
         }
 
         _window?.MakeKeyAndOrderFront(null!);
-        NSApplication.SharedApplication.Activate();
+        // NSApplication.Activate() 自 macOS 14 起才可用（CA1416），更低版本仅置前窗口。
+        if (OperatingSystem.IsMacOSVersionAtLeast(14))
+        {
+            NSApplication.SharedApplication.Activate();
+        }
 #endif
     }
 
@@ -787,8 +791,9 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
 #if MACOS
         if (_window is not null)
         {
-            if (!NSApplication.SharedApplication.Active)
+            if (!NSApplication.SharedApplication.Active && OperatingSystem.IsMacOSVersionAtLeast(14))
             {
+                // NSApplication.Activate() 自 macOS 14 起才可用（CA1416）。
                 NSApplication.SharedApplication.Activate();
             }
 
@@ -1649,7 +1654,7 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
         // 注入用户 CSS（动态 style 标签）。
         if (!string.IsNullOrEmpty(_options.CSS))
         {
-            var css = JsonSerializer.Serialize(_options.CSS);
+            var css = JsonSerializer.Serialize(_options.CSS, MacOSJsonContext.Default.String);
             ExecJS($"(function(){{var s=document.createElement('style');s.appendChild(document.createTextNode({css}));document.head.appendChild(s);}})();");
         }
 
@@ -1700,6 +1705,11 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
     /// <see cref="HandleScriptMessage"/> 的异步实现：等待消息处理完成后再回主线程推送响应。
     /// </summary>
     /// <param name="message">消息体字符串。</param>
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026",
+        Justification = "ResponseMessage.Result 是 Dictionary<string, object?> 动态负载，源生成序列化无法覆盖；" +
+                        "macOS 构建（cake Dist-MacOS）不启用裁剪与 AOT，运行时反射路径可用。")]
     private async Task HandleScriptMessageAsync(string message)
     {
         try
@@ -1738,7 +1748,7 @@ public sealed class MacOSWebviewWindow : IWebviewWindowImpl
     /// <param name="json">JSON 字符串。</param>
     internal void PostNativeMessage(string json)
     {
-        var escaped = JsonSerializer.Serialize(json);
+        var escaped = JsonSerializer.Serialize(json, MacOSJsonContext.Default.String);
         ExecJS($"window.__wailsNative && window.__wailsNative.onMessage({escaped});");
     }
 

@@ -162,7 +162,12 @@ public sealed class MacOSPlatformApp : IPlatformApp
         // 应用级设置。
         var macOptions = _options.Mac;
         app.ActivationPolicy = (AppKit.NSApplicationActivationPolicy)(macOptions?.ActivationPolicy ?? 0);
-        app.Activate();
+        // NSApplication.Activate() 自 macOS 14 起才可用（CA1416）；更低版本跳过激活，
+        // 窗口仍由随后的 Run() 正常显示，避免在 macOS 12/13 上调用不存在的 selector。
+        if (OperatingSystem.IsMacOSVersionAtLeast(14))
+        {
+            app.Activate();
+        }
 
         // 屏幕缓存（首次访问时惰性枚举）。
         app.Run();
@@ -208,7 +213,7 @@ public sealed class MacOSPlatformApp : IPlatformApp
 #if MACOS
         try
         {
-            var message = System.Text.Json.JsonSerializer.Serialize(args);
+            var message = System.Text.Json.JsonSerializer.Serialize(args, MacOSJsonContext.Default.StringArray);
             var center = Foundation.NSDistributedNotificationCenter.DefaultCenter;
             var uniqueId = _options.SingleInstanceUniqueID ?? _name;
             using var name = new Foundation.NSString(uniqueId);
@@ -1072,7 +1077,7 @@ public sealed class MacOSPlatformApp : IPlatformApp
                 {
                     try
                     {
-                        var args = System.Text.Json.JsonSerializer.Deserialize<string[]>(message);
+                        var args = System.Text.Json.JsonSerializer.Deserialize(message, MacOSJsonContext.Default.StringArray);
                         if (args is not null)
                         {
                             WailsApplication.Get()?.RaiseSecondInstanceLaunched(args);
