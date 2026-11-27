@@ -9,6 +9,12 @@
     -->
     <TargetFrameworks>net10.0</TargetFrameworks>
     <TargetFrameworks Condition="'$(WailsNetEnableAndroid)' == 'true'">net10.0;net10.0-android36.0</TargetFrameworks>
+    <!--
+      清空 Directory.Build.props 预设的单目标属性，否则 MSBuild 只编译 net10.0，
+      而 NuGet pack 仍遍历 TargetFrameworks，导致 NU5026（详见
+      Wails.Net.Application.MacOS 项目内同位置说明）。
+    -->
+    <TargetFramework></TargetFramework>
     <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('android'))">24</SupportedOSPlatformVersion>
   </PropertyGroup>
 

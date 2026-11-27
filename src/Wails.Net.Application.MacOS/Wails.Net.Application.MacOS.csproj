@@ -12,6 +12,15 @@
     -->
     <TargetFrameworks>net10.0</TargetFrameworks>
     <TargetFrameworks Condition="'$(WailsNetEnableMacOS)' == 'true' OR $([MSBuild]::IsOSPlatform('osx'))">net10.0;net10.0-macos</TargetFrameworks>
+    <!--
+      必须清空 Directory.Build.props 预设的单目标属性：
+      根构建文件全局设了 <TargetFramework>net10.0</TargetFramework>，若此处保留，
+      MSBuild 会按"单目标"只编译 net10.0，而 NuGet pack（Cake 用 NoBuild 模式）
+      仍按 TargetFrameworks 遍历全部 TFM，去找从未生成的 net10.0-macos 产物，
+      报 NU5026「磁盘上找不到要打包的文件」——这正是 dist-macos 作业失败的根因。
+      清空后 MSBuild 走交叉编译路径，按 TargetFrameworks 逐目标生成产物。
+    -->
+    <TargetFramework></TargetFramework>
     <!-- 最低 macOS 12.0（Monterey，2021），对应 .NET for macOS 运行时支持范围 -->
     <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('macos'))">12.0</SupportedOSPlatformVersion>
     <IsPackable>true</IsPackable>

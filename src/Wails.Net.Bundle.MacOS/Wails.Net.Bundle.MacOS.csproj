@@ -24,6 +24,12 @@
   <PropertyGroup>
     <TargetFrameworks>net10.0</TargetFrameworks>
     <TargetFrameworks Condition="'$(WailsNetEnableMacOS)' == 'true' OR $([MSBuild]::IsOSPlatform('osx'))">net10.0;net10.0-macos</TargetFrameworks>
+    <!--
+      清空 Directory.Build.props 预设的单目标属性，否则 MSBuild 只编译 net10.0，
+      而 NuGet pack 仍遍历 TargetFrameworks，导致 NU5026（详见
+      Wails.Net.Application.MacOS 项目内同位置说明）。
+    -->
+    <TargetFramework></TargetFramework>
     <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('macos'))">12.0</SupportedOSPlatformVersion>
     <IsPackable>true</IsPackable>
     <PackageId>Wails.Net.Bundle.MacOS</PackageId>
