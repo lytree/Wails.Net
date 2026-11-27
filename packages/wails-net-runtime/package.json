@@ -1,6 +1,6 @@
 {
   "name": "@wailsnet/runtime",
-  "version": "1.0.1-alpha.5",
+  "version": "1.0.1-alpha.6",
   "description": "TypeScript frontend runtime SDK for Wails.Net (the .NET 10 port of Wails v3). Self-contained IPC transport (WebView2 / WebKitGTK / Android native postMessage with scheme POST fallback, Server-mode WebSocket) plus strongly-typed wrappers for every core namespace and all 46 built-in/mobile plugins.",
   "type": "module",
   "main": "./dist/index.js",
