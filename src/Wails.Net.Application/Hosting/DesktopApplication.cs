@@ -17,6 +17,7 @@ public sealed class DesktopApplication : IDesktopApplication
 {
     private readonly IHost _host;
     private readonly Application _application;
+    private readonly ILogger<DesktopApplication>? _logger;
     private readonly CancellationTokenSource _cts = new();
 
     /// <summary>应用名称</summary>
@@ -51,6 +52,17 @@ public sealed class DesktopApplication : IDesktopApplication
         _host = host;
         _application = application;
         Name = name;
+
+        // 构造期就把日志器取到字段上：RunAsync 的 catch 分支可能在 Host 释放之后执行，
+        // 那时再向容器要服务会抛 ObjectDisposedException，把真正的失败原因整个盖掉。
+        try
+        {
+            _logger = host.Services.GetService<ILogger<DesktopApplication>>();
+        }
+        catch (ObjectDisposedException)
+        {
+            _logger = null;
+        }
     }
 
     /// <summary>
@@ -72,10 +84,37 @@ public sealed class DesktopApplication : IDesktopApplication
         }
         catch (Exception ex)
         {
-            var logger = _host.Services.GetService<ILogger<DesktopApplication>>();
-            logger?.LogError(ex, "应用运行时发生未处理异常");
+            ReportFatal(ex);
             return 1;
         }
+    }
+
+    /// <summary>
+    /// 上报未能从 <see cref="RunAsync"/> 正常返回的致命异常。
+    /// <para>
+    /// 该路径常在 Host 已释放后执行：此时日志器本身可能已不可用，因此这里必须保证「上报」绝不抛异常，
+    /// 否则原始失败原因会被 <see cref="ObjectDisposedException"/> 覆盖，进程带着无信息的栈崩溃。
+    /// </para>
+    /// </summary>
+    /// <param name="ex">导致应用退出的异常。</param>
+    private void ReportFatal(Exception ex)
+    {
+        try
+        {
+            if (_logger is not null)
+            {
+                _logger.LogError(ex, "应用运行时发生未处理异常");
+                return;
+            }
+        }
+        catch (Exception logFailure)
+        {
+            // 日志管道本身可能已随容器释放而不可用（如 EventLog 提供程序已关闭），
+            // 这种失败绝不能盖掉原始异常——降级到标准错误输出。
+            Console.Error.WriteLine($"（写入日志失败：{logFailure.GetType().Name}）");
+        }
+
+        Console.Error.WriteLine($"应用运行时发生未处理异常：{ex}");
     }
 
     /// <summary>
